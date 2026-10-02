@@ -1,0 +1,35 @@
+[versions]
+# Project
+bikesched = "0.1.0-SNAPSHOT"
+java = "26"
+
+# Gradle plugins
+foojay-resolver = "1.0.0"
+
+# Libraries
+postgresql = "42.7.13"
+slf4j = "2.0.20"
+logback = "1.6.5"
+junit = "6.1.3"
+assertj = "3.27.7"
+testcontainers = "2.0.5"
+
+[libraries]
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+
+testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+
+[bundles]
+testing = ["junit-jupiter", "assertj-core", "logback-classic", "testcontainers-junit-jupiter", "testcontainers-postgresql"]
+
+[plugins]
+foojay-resolver = { id = "org.gradle.toolchains.foojay-resolver-convention", version.ref = "foojay-resolver" }

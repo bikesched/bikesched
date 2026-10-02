@@ -1,0 +1,300 @@
+package bikesched.core;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.sql.SQLException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.postgresql.ds.PGSimpleDataSource;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+@Testcontainers
+class DatabaseTest {
+
+    @Container
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
+
+    private static final Duration DEAD_AFTER = Duration.ofSeconds(15);
+
+    static PGSimpleDataSource dataSource;
+    static Database database;
+
+    @BeforeAll
+    static void migrate() {
+        dataSource = new PGSimpleDataSource();
+        dataSource.setUrl(POSTGRES.getJdbcUrl());
+        dataSource.setUser(POSTGRES.getUsername());
+        dataSource.setPassword(POSTGRES.getPassword());
+        database = new Database(dataSource);
+        assertThat(database.migrate()).containsExactly(1);
+    }
+
+    @BeforeEach
+    void deleteJobsAndNodes() throws SQLException {
+        execute("delete from bikesched_jobs");
+        execute("delete from bikesched_nodes");
+    }
+
+    @Test
+    void migrateIsIdempotent() {
+        assertThat(database.migrate()).isEmpty();
+    }
+
+    @Test
+    void registersNewNodeWithGivenId() {
+        UUID id = UUID.randomUUID();
+
+        assertThat(database.registerNode(id, "node-1", DEAD_AFTER)).contains(id);
+    }
+
+    @Test
+    void refusesNameHeldByLiveNode() {
+        UUID first = UUID.randomUUID();
+        database.registerNode(first, "node-1", DEAD_AFTER);
+
+        assertThat(database.registerNode(UUID.randomUUID(), "node-1", DEAD_AFTER)).isEmpty();
+    }
+
+    @Test
+    void takesOverNameHeldByDeadNode() throws SQLException {
+        UUID dead = UUID.randomUUID();
+        database.registerNode(dead, "node-1", DEAD_AFTER);
+        execute("update bikesched_nodes set last_heartbeat_at = now() - interval '1 minute'");
+
+        assertThat(database.registerNode(UUID.randomUUID(), "node-1", DEAD_AFTER)).contains(dead);
+        assertThat(lastHeartbeat(dead)).isAfter(OffsetDateTime.now().minusSeconds(10));
+    }
+
+    @Test
+    void heartbeatUpdatesRegisteredNode() throws SQLException {
+        UUID id = UUID.randomUUID();
+        database.registerNode(id, "node-1", DEAD_AFTER);
+        execute("update bikesched_nodes set last_heartbeat_at = now() - interval '1 minute'");
+
+        assertThat(database.heartbeat(id)).isTrue();
+        assertThat(lastHeartbeat(id)).isAfter(OffsetDateTime.now().minusSeconds(10));
+    }
+
+    @Test
+    void heartbeatOfUnknownNodeReturnsFalse() {
+        assertThat(database.heartbeat(UUID.randomUUID())).isFalse();
+    }
+
+    @Test
+    void deregisterRemovesNode() {
+        UUID id = UUID.randomUUID();
+        database.registerNode(id, "node-1", DEAD_AFTER);
+
+        assertThat(database.deregisterNode(id)).isTrue();
+        assertThat(database.heartbeat(id)).isFalse();
+        assertThat(database.deregisterNode(id)).isFalse();
+    }
+
+    @Test
+    void insertJobStoresScheduledJob() throws SQLException {
+        UUID node = registerNode("node-1");
+        UUID jobId = UUID.randomUUID();
+        Instant scheduledAt = Instant.now().minusSeconds(1).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+
+        database.insertJob(jobId, "mail", "{\"to\": \"alice\"}", scheduledAt);
+
+        assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0 and locked_by is null"))
+                .isEqualTo(1);
+        assertThat(database.claimJobs(node, 10)).singleElement().satisfies(job -> {
+            assertThat(job.id()).isEqualTo(jobId);
+            assertThat(job.type()).isEqualTo("mail");
+            assertThat(job.payload()).isEqualTo("{\"to\": \"alice\"}");
+            assertThat(job.scheduledAt()).isEqualTo(scheduledAt);
+        });
+    }
+
+    @Test
+    void claimJobsClaimsJobsOfAnyType() throws SQLException {
+        UUID node = registerNode("node-1");
+        insertJobs(1, 0, "now()"); // type 'test'
+        execute("insert into bikesched_jobs (id, job_type) values (gen_random_uuid(), 'other')");
+
+        assertThat(database.claimJobs(node, 10)).extracting(Job::type).containsExactlyInAnyOrder("test", "other");
+    }
+
+    @Test
+    void failJobRetriesUntilMaxAttemptsThenMarksFailed() throws SQLException {
+        UUID node = registerNode("node-1");
+        UUID otherNode = registerNode("node-2");
+        insertJobs(1, 0, "now()");
+
+        Job first = database.claimJobs(node, 10).getFirst();
+        assertThat(database.failJob(first.id(), otherNode, "boom")).as("not claimed by that node").isEmpty();
+        assertThat(database.failJob(first.id(), node, "boom 1")).contains("SCHEDULED");
+        database.claimJobs(node, 10);
+        assertThat(database.failJob(first.id(), node, "boom 2")).contains("SCHEDULED");
+        Job third = database.claimJobs(node, 10).getFirst();
+        assertThat(third.attempts()).isEqualTo(3);
+        assertThat(database.failJob(first.id(), node, "boom 3")).contains("FAILED");
+
+        assertThat(count("state = 'FAILED' and attempts = 3 and last_error = 'boom 3' and locked_by is null "
+                + "and finished_at is not null")).isEqualTo(1);
+        assertThat(database.claimJobs(node, 10)).isEmpty();
+    }
+
+    @Test
+    void claimJobsClaimsAtMostLimitOfDueScheduledJobs() throws SQLException {
+        UUID node = registerNode("node-1");
+        insertJobs(12, 0, "now() - interval '1 minute'");
+        insertJobs(1, 0, "now() + interval '1 hour'"); // not due yet
+        execute("insert into bikesched_jobs (id, job_type, state, locked_by) values "
+                + "(gen_random_uuid(), 'test', 'RUNNING', '" + node + "')"); // already running
+
+        List<Job> first = database.claimJobs(node, 10);
+        List<Job> second = database.claimJobs(node, 10);
+
+        assertThat(first).hasSize(10);
+        assertThat(second).hasSize(2).doesNotContainAnyElementsOf(first);
+        assertThat(database.claimJobs(node, 10)).isEmpty();
+        assertThat(first).allSatisfy(job -> {
+            assertThat(job.type()).isEqualTo("test");
+            assertThat(job.attempts()).isEqualTo(1);
+            assertThat(job.maxAttempts()).isEqualTo(3);
+        });
+        assertThat(count("state = 'RUNNING' and locked_by = '" + node + "'")).isEqualTo(13);
+        assertThat(count("state = 'SCHEDULED'")).isEqualTo(1);
+    }
+
+    @Test
+    void claimJobsReturnsHighestPriorityFirst() throws SQLException {
+        UUID node = registerNode("node-1");
+        insertJobs(3, 0, "now()");
+        insertJobs(2, 5, "now()");
+
+        assertThat(database.claimJobs(node, 2)).extracting(Job::priority).containsExactly(5, 5);
+        assertThat(database.claimJobs(node, 10)).extracting(Job::priority).containsExactly(0, 0, 0);
+    }
+
+    @Test
+    void completeJobMarksItSucceeded() throws SQLException {
+        UUID node = registerNode("node-1");
+        UUID otherNode = registerNode("node-2");
+        insertJobs(1, 0, "now()");
+        Job job = database.claimJobs(node, 10).getFirst();
+
+        assertThat(database.completeJob(job.id(), otherNode)).isFalse();
+        assertThat(database.completeJob(job.id(), node)).isTrue();
+        assertThat(database.completeJob(job.id(), node)).isFalse();
+        assertThat(count("state = 'SUCCEEDED' and locked_by is null and finished_at is not null")).isEqualTo(1);
+    }
+
+    @Test
+    void releaseJobsReschedulesRunningJobsOfNode() throws SQLException {
+        UUID node = registerNode("node-1");
+        UUID otherNode = registerNode("node-2");
+        insertJobs(5, 0, "now()");
+        database.claimJobs(node, 3);
+        database.claimJobs(otherNode, 1);
+
+        assertThat(database.releaseJobs(node)).isEqualTo(3);
+        assertThat(count("state = 'SCHEDULED' and locked_by is null")).isEqualTo(4);
+        assertThat(count("state = 'RUNNING' and locked_by = '" + otherNode + "'")).isEqualTo(1);
+        assertThat(database.deregisterNode(node)).isTrue();
+    }
+
+    @Test
+    void deleteDeadNodesRemovesOnlyLongDeadNodesWithoutRunningJobs() throws SQLException {
+        UUID alive = registerNode("alive");
+        UUID recentlyDead = registerNode("recently-dead");
+        UUID longDead = registerNode("long-dead");
+        UUID longDeadWithJob = registerNode("long-dead-busy");
+        UUID caller = registerNode("caller");
+        execute("update bikesched_nodes set last_heartbeat_at = now() - interval '45 seconds' where id = '"
+                + recentlyDead + "'");
+        execute("update bikesched_nodes set last_heartbeat_at = now() - interval '2 minutes' where id in ('"
+                + longDead + "', '" + longDeadWithJob + "', '" + caller + "')");
+        insertRunningJobs(longDeadWithJob, 1);
+
+        assertThat(database.deleteDeadNodes(caller, Duration.ofSeconds(60)))
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.nodeId()).isEqualTo(longDead);
+                    assertThat(node.nodeName()).isEqualTo("long-dead");
+                    assertThat(node.lastHeartbeatAt()).isBefore(Instant.now().minusSeconds(60));
+                });
+
+        assertThat(database.heartbeat(alive)).isTrue();
+        assertThat(database.heartbeat(recentlyDead)).as("dead, but not for twice the timeout yet").isTrue();
+        assertThat(database.heartbeat(longDeadWithJob)).as("still referenced by a running job").isTrue();
+        assertThat(database.heartbeat(caller)).as("the calling node is never deleted").isTrue();
+        assertThat(database.heartbeat(longDead)).isFalse();
+    }
+
+    @Test
+    void releaseJobsOfDeadNodesOnlyTouchesNodesWithStaleHeartbeat() throws SQLException {
+        UUID alive = registerNode("alive");
+        UUID dead = registerNode("dead");
+        UUID deadWithoutJobs = registerNode("dead-idle");
+        UUID caller = registerNode("caller");
+        execute("update bikesched_nodes set last_heartbeat_at = now() - interval '1 minute' where id in ('"
+                + dead + "', '" + deadWithoutJobs + "', '" + caller + "')");
+        insertRunningJobs(alive, 2);
+        insertRunningJobs(dead, 3);
+        insertRunningJobs(caller, 1);
+
+        assertThat(database.releaseJobsOfDeadNodes(caller, Duration.ofSeconds(30)))
+                .containsExactly(new Database.DeadNodeJobs(dead, "dead", 3));
+
+        assertThat(count("state = 'SCHEDULED' and locked_by is null")).isEqualTo(3);
+        assertThat(count("state = 'RUNNING' and locked_by = '" + alive + "'")).isEqualTo(2);
+        assertThat(count("state = 'RUNNING' and locked_by = '" + caller + "'"))
+                .as("the calling node never releases its own jobs")
+                .isEqualTo(1);
+        assertThat(database.releaseJobsOfDeadNodes(caller, Duration.ofSeconds(30))).isEmpty();
+        assertThat(database.releaseJobsOfDeadNodes(alive, Duration.ofSeconds(30)))
+                .containsExactly(new Database.DeadNodeJobs(caller, "caller", 1));
+    }
+
+    private static void insertRunningJobs(UUID node, int count) throws SQLException {
+        execute("insert into bikesched_jobs (id, job_type, state, locked_by, locked_at) select gen_random_uuid(), "
+                + "'test', 'RUNNING', '" + node + "', now() from generate_series(1, " + count + ")");
+    }
+
+    private static UUID registerNode(String name) {
+        return database.registerNode(UUID.randomUUID(), name, DEAD_AFTER).orElseThrow();
+    }
+
+    private static void insertJobs(int count, int priority, String scheduledAt) throws SQLException {
+        execute("insert into bikesched_jobs (id, job_type, priority, scheduled_at) select gen_random_uuid(), 'test', "
+                + priority + ", " + scheduledAt + " from generate_series(1, " + count + ")");
+    }
+
+    private static long count(String where) throws SQLException {
+        try (var connection = dataSource.getConnection();
+                var statement = connection.createStatement();
+                var rs = statement.executeQuery("select count(*) from bikesched_jobs where " + where)) {
+            rs.next();
+            return rs.getLong(1);
+        }
+    }
+
+    private static void execute(String sql) throws SQLException {
+        try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
+            statement.execute(sql);
+        }
+    }
+
+    private static OffsetDateTime lastHeartbeat(UUID nodeId) throws SQLException {
+        try (var connection = dataSource.getConnection();
+                var select = connection.prepareStatement("select last_heartbeat_at from bikesched_nodes where id = ?")) {
+            select.setObject(1, nodeId);
+            try (var rs = select.executeQuery()) {
+                rs.next();
+                return rs.getObject(1, OffsetDateTime.class);
+            }
+        }
+    }
+}
