@@ -293,6 +293,23 @@ jobs per node, at most one pending occurrence per recurring job (partial unique 
 waiting for an event, and event lookup and cleanup. Waiting for, suspending at and publishing
 events also take transaction-scoped advisory locks per event name and key; no table is involved.
 
+## Examples
+
+The `bikesched-examples` module contains runnable examples, each covered by a test against
+PostgreSQL:
+
+- **Taxi booking** ([`bikesched.examples.taxi`](bikesched-examples/src/main/java/bikesched/examples/taxi)):
+  a ride request is sent to a taxi broker, waits for a driver to accept it with a price and for the
+  customer to accept that price, then reserves the payment, approves the ride at the broker and
+  sends the customer a push notification with the estimated time of arrival. One job with durable
+  steps and event waits; without a driver or an answer in time, the ride is cancelled. Payloads and
+  events are records, mapped with Jackson via `JacksonJsonMapper`.
+
+```shell
+docker compose up -d
+./gradlew :bikesched-examples:run         # honors POSTGRES_PORT as well
+```
+
 ## Building
 
 Requirements: JDK 26 (or let Gradle provision it via the toolchain) and Docker for the tests,

@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "bikesched"
 
 include("bikesched-core")
+include("bikesched-examples")
