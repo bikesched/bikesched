@@ -4,6 +4,8 @@ import bikesched.core.Bikesched;
 import bikesched.core.job.Job;
 import java.time.Duration;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Books a taxi ride as one durable bikesched job:
@@ -22,9 +24,16 @@ import java.util.UUID;
  * <p>Each step runs once: if a step fails (e.g. the payment provider is down), the job is retried
  * and continues after the last completed step. While waiting for the driver or the customer, the
  * job holds no thread and no database connection; it survives restarts and may continue on another
- * node. Without a driver or an answer in time, or if the customer declines, the ride is cancelled.
+ * node.
+ *
+ * <p>Steps with side effects declare a compensation: if the ride is cancelled (no driver or no
+ * answer in time, the price declined, or the customer cancelling via {@link #cancelRide}) or fails
+ * permanently (e.g. the broker cannot approve it), bikesched undoes the completed steps in reverse
+ * order: it releases the payment and withdraws the ride at the broker.
  */
 public final class TaxiBooking {
+
+  private static final Logger LOG = LoggerFactory.getLogger(TaxiBooking.class);
 
   /** The job type of rides. */
   public static final String JOB_TYPE = "taxi-ride";
@@ -88,7 +97,7 @@ public final class TaxiBooking {
    * @return the id of the ride's job
    */
   public UUID requestRide(RideRequest ride) {
-    return bikesched.newJob(JOB_TYPE).payload(ride).maxAttempts(5).schedule();
+    return bikesched.newJob(JOB_TYPE).payload(ride).maxAttempts(3).schedule();
   }
 
   /**
@@ -112,21 +121,41 @@ public final class TaxiBooking {
   }
 
   /**
-   * The ride's job. It runs again from the start after every wait and retry: completed steps and
-   * received events are skipped, returning their stored results.
+   * The customer cancels the ride, e.g. in the app, while it is being booked: what was done so far
+   * is compensated.
+   *
+   * @param jobId the id of the ride's job
+   * @return {@code false} if the booking has ended already
+   */
+  public boolean cancelRide(UUID jobId) {
+    return bikesched.cancel(jobId, "Cancelled by the customer");
+  }
+
+  /**
+   * The ride's job. It runs again from the start after every wait and retry, and to compensate it:
+   * completed steps and received events are skipped, returning their stored results.
+   *
+   * <p>Each step logs its data when it executes; a compensation logs exactly the same data (same
+   * formatting method), so both can be matched in the log. The log pattern adds the job id and step
+   * name, which bikesched puts into the logging context while a step or compensation runs.
    */
   private void book(Job job) throws Exception {
     RideRequest ride = job.payload(RideRequest.class);
     String customer = ride.customerId();
 
     // 1. Hand the request to the broker, which forwards it to its drivers.
-    job.step(
-        "send-to-broker",
-        Void.class,
-        _ -> {
-          broker.requestRide(ride);
-          return null;
-        });
+    job.newStep("send-to-broker", Void.class)
+        .compensateWith(
+            _ -> {
+              LOG.info("Compensating: withdrawing {}", describe(ride));
+              broker.cancelRide(ride.rideId());
+            })
+        .run(
+            _ -> {
+              LOG.info("Executing: requesting {}", describe(ride));
+              broker.requestRide(ride);
+              return null;
+            });
 
     // 2. Wait until a driver accepts the ride with a price.
     DriverOffer offer =
@@ -138,11 +167,11 @@ public final class TaxiBooking {
           "notify-no-driver",
           Void.class,
           _ -> {
-            broker.cancelRide(ride.rideId());
+            LOG.info("Executing: no driver accepted {}", describe(ride));
             notifications.send(customer, "Sorry, no taxi is available right now.");
             return null;
           });
-      job.cancel("No driver accepted the ride within " + driverTimeout);
+      job.cancel("No driver accepted the ride within " + driverTimeout); // withdraws the request
       return;
     }
 
@@ -151,6 +180,7 @@ public final class TaxiBooking {
         "ask-for-price",
         Void.class,
         _ -> {
+          LOG.info("Executing: asking {} to accept {}", customer, describe(offer));
           notifications.send(
               customer,
               offer.driverName()
@@ -168,36 +198,47 @@ public final class TaxiBooking {
             .timeout(priceTimeout, () -> false)
             .receive(event -> event.payload(PriceDecision.class).accepted());
     if (!accepted) {
-      job.step(
-          "cancel-at-broker",
-          Void.class,
-          _ -> {
-            broker.cancelRide(ride.rideId());
-            return null;
-          });
-      job.cancel("The customer did not accept the price");
+      job.cancel("The customer did not accept the price"); // withdraws the request
       return;
     }
 
-    // 4. Reserve the payment (charged after the ride).
+    // 4. Reserve the payment (charged after the ride); released if the booking does not complete.
+    //    The compensation receives the stored reservation, so it logs the same payment data.
     PaymentReservation reservation =
-        job.step(
-            "reserve-payment",
-            PaymentReservation.class,
-            _ -> payments.reserve(customer, offer.price(), offer.currency(), ride.rideId()));
+        job.newStep("reserve-payment", PaymentReservation.class)
+            .compensateWith(
+                stored -> {
+                  LOG.info("Compensating: releasing {}", describe(stored));
+                  payments.release(stored);
+                })
+            .run(
+                _ -> {
+                  PaymentReservation reserved =
+                      payments.reserve(customer, offer.price(), offer.currency(), ride.rideId());
+                  LOG.info("Executing: reserved {}", describe(reserved));
+                  return reserved;
+                });
 
     // 5. Approve the ride at the broker: the driver is on the way.
     RideApproval approval =
         job.step(
             "approve-ride",
             RideApproval.class,
-            _ -> broker.approveRide(ride.rideId(), offer, reservation));
+            _ -> {
+              LOG.info("Executing: approving {} with {}", describe(ride), describe(reservation));
+              return broker.approveRide(ride.rideId(), offer, reservation);
+            });
 
     // 6. Tell the customer when the taxi arrives.
     job.step(
         "notify-eta",
         Void.class,
         _ -> {
+          LOG.info(
+              "Executing: notifying {} of {}, arriving in {} minutes",
+              customer,
+              approval.driverName(),
+              approval.etaMinutes());
           notifications.send(
               customer,
               approval.driverName()
@@ -206,5 +247,31 @@ public final class TaxiBooking {
                   + " minutes.");
           return null;
         });
+  }
+
+  private static String describe(RideRequest ride) {
+    return "ride "
+        + ride.rideId()
+        + " of "
+        + ride.customerId()
+        + " ("
+        + ride.pickup()
+        + " -> "
+        + ride.destination()
+        + ")";
+  }
+
+  private static String describe(DriverOffer offer) {
+    return "offer of driver " + offer.driverId() + " for " + offer.price() + " " + offer.currency();
+  }
+
+  private static String describe(PaymentReservation reservation) {
+    return "payment "
+        + reservation.reservationId()
+        + " ("
+        + reservation.amount()
+        + " "
+        + reservation.currency()
+        + ")";
   }
 }

@@ -1,14 +1,7 @@
 package bikesched.core.internal;
 
-import bikesched.core.BikeschedException;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -72,22 +65,10 @@ final class NodeStore {
    *     if a live node already holds the name
    */
   Optional<UUID> registerNode(UUID newNodeId, String name, Duration deadAfter) {
-    try (Connection connection = database.connection();
-        PreparedStatement register = connection.prepareStatement(REGISTER_NODE_SQL)) {
-      register.setObject(1, newNodeId);
-      register.setString(2, name);
-      register.setDouble(3, deadAfter.toMillis() / 1000.0);
-      UUID nodeId = null;
-      try (ResultSet rs = register.executeQuery()) {
-        if (rs.next()) {
-          nodeId = rs.getObject(1, UUID.class);
-        }
-      }
-      Database.commitIfNeeded(connection);
-      return Optional.ofNullable(nodeId);
-    } catch (SQLException e) {
-      throw new BikeschedException("Could not register bikesched node '" + name + "'", e);
-    }
+    return database.withConnection(
+        "Registering bikesched node '" + name + "'",
+        db ->
+            db.one(REGISTER_NODE_SQL, row -> row.uuid(1), newNodeId, name, Sql.seconds(deadAfter)));
   }
 
   /**
@@ -121,24 +102,13 @@ final class NodeStore {
    * @return the deleted nodes
    */
   List<DeletedNode> deleteDeadNodes(UUID callingNodeId, Duration olderThan) {
-    try (Connection connection = database.connection();
-        PreparedStatement delete = connection.prepareStatement(DELETE_DEAD_NODES_SQL)) {
-      delete.setObject(1, callingNodeId);
-      delete.setDouble(2, olderThan.toMillis() / 1000.0);
-      List<DeletedNode> deleted = new ArrayList<>();
-      try (ResultSet rs = delete.executeQuery()) {
-        while (rs.next()) {
-          deleted.add(
-              new DeletedNode(
-                  rs.getObject(1, UUID.class),
-                  rs.getString(2),
-                  rs.getObject(3, OffsetDateTime.class).toInstant()));
-        }
-      }
-      Database.commitIfNeeded(connection);
-      return deleted;
-    } catch (SQLException e) {
-      throw new BikeschedException("Deleting dead bikesched nodes failed", e);
-    }
+    return database.withConnection(
+        "Deleting dead bikesched nodes",
+        db ->
+            db.list(
+                DELETE_DEAD_NODES_SQL,
+                row -> new DeletedNode(row.uuid(1), row.string(2), row.instant(3)),
+                callingNodeId,
+                Sql.seconds(olderThan)));
   }
 }

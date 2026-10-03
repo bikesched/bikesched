@@ -5,11 +5,7 @@ import bikesched.core.JsonMapper;
 import bikesched.core.internal.schema.SchemaMigrator;
 import bikesched.core.job.Job;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
@@ -20,8 +16,10 @@ import javax.sql.DataSource;
  * #steps()}, {@link #events()}). Thread-safe; every call borrows its own connection from the data
  * source.
  *
- * <p>{@link SQLException}s are wrapped in {@link BikeschedException}. Writes are committed
- * explicitly if the data source hands out connections with auto-commit disabled.
+ * <p>Stores run their statements through {@link Sql}, obtained from {@link #withConnection}, {@link
+ * #inTransaction} or {@link #onCallerConnection}. {@link SQLException}s are wrapped in {@link
+ * BikeschedException}. Writes are committed explicitly if the data source hands out connections
+ * with auto-commit disabled.
  */
 public final class Database {
 
@@ -125,23 +123,56 @@ public final class Database {
     return url.substring(0, properties).replaceFirst("//[^/]*@", "//");
   }
 
-  static Duration toDuration(Long millis) {
-    return millis == null ? null : Duration.ofMillis(millis);
+  /**
+   * Runs the work on one of bikesched's own connections, committing afterwards if the connection is
+   * not in auto-commit mode (rolling back if the work fails). For single statements; work whose
+   * statements must share a transaction uses {@link #inTransaction}.
+   *
+   * @param action describes the work for the exception message, e.g. {@code "Claiming jobs"}
+   * @throws BikeschedException wrapping an {@link SQLException}, with message {@code "<action>
+   *     failed"}
+   */
+  <T> T withConnection(String action, Sql.Work<T> work) {
+    try (Connection connection = dataSource.getConnection()) {
+      if (connection.getAutoCommit()) {
+        return work.run(new Sql(connection));
+      }
+      try {
+        T result = work.run(new Sql(connection));
+        connection.commit();
+        return result;
+      } catch (SQLException | RuntimeException e) {
+        rollback(connection, e);
+        throw e;
+      }
+    } catch (SQLException e) {
+      throw new BikeschedException(action + " failed", e);
+    }
   }
 
-  static Instant toInstant(OffsetDateTime time) {
-    return time == null ? null : time.toInstant();
+  /**
+   * Runs a single insert, update or delete on one of bikesched's own connections, see {@link
+   * #withConnection}.
+   *
+   * @return the number of affected rows
+   */
+  int update(String sql, String action, Object... parameters) {
+    return withConnection(action, db -> db.update(sql, parameters));
   }
 
-  /** Borrows a connection from the data source; the caller closes it. */
-  Connection connection() throws SQLException {
-    return dataSource.getConnection();
-  }
-
-  /** Work on a connection within a transaction. */
-  @FunctionalInterface
-  interface TransactionWork<T> {
-    T run(Connection connection) throws SQLException;
+  /**
+   * Runs the work on a caller-supplied connection, as part of the caller's transaction: the
+   * connection is neither committed nor closed.
+   *
+   * @throws BikeschedException wrapping an {@link SQLException}, with message {@code "<action>
+   *     failed"}
+   */
+  static <T> T onCallerConnection(Connection connection, String action, Sql.Work<T> work) {
+    try {
+      return work.run(new Sql(connection));
+    } catch (SQLException e) {
+      throw new BikeschedException(action + " failed", e);
+    }
   }
 
   /**
@@ -149,24 +180,40 @@ public final class Database {
    * completes, rolled back if it throws. Needed whenever statements must share a transaction (e.g.
    * an advisory lock held across them), also with auto-commit connections.
    */
-  <T> T inTransaction(String action, TransactionWork<T> work) {
+  <T> T inTransaction(String action, Sql.Work<T> work) {
+    return inTransaction(action, false, work);
+  }
+
+  /**
+   * Runs the work in a read-only transaction on one of bikesched's own connections: PostgreSQL
+   * rejects any write in it. The connection's read-only setting is restored afterwards (pooled
+   * connections are reused).
+   */
+  <T> T inReadOnlyTransaction(String action, Sql.Work<T> work) {
+    return inTransaction(action, true, work);
+  }
+
+  private <T> T inTransaction(String action, boolean readOnly, Sql.Work<T> work) {
     try (Connection connection = dataSource.getConnection()) {
       boolean autoCommit = connection.getAutoCommit();
+      boolean wasReadOnly = connection.isReadOnly();
       if (autoCommit) {
         connection.setAutoCommit(false);
       }
+      if (readOnly != wasReadOnly) {
+        connection.setReadOnly(readOnly); // before the transaction starts (BEGIN READ ONLY)
+      }
       try {
-        T result = work.run(connection);
+        T result = work.run(new Sql(connection));
         connection.commit();
         return result;
       } catch (SQLException | RuntimeException e) {
-        try {
-          connection.rollback();
-        } catch (SQLException rollbackFailure) {
-          e.addSuppressed(rollbackFailure);
-        }
+        rollback(connection, e);
         throw e;
       } finally {
+        if (readOnly != wasReadOnly) {
+          connection.setReadOnly(wasReadOnly);
+        }
         if (autoCommit) {
           connection.setAutoCommit(true);
         }
@@ -176,29 +223,11 @@ public final class Database {
     }
   }
 
-  int update(String sql, String action, Object... parameters) {
-    try (Connection connection = dataSource.getConnection()) {
-      int updated = execute(connection, sql, parameters);
-      commitIfNeeded(connection);
-      return updated;
-    } catch (SQLException e) {
-      throw new BikeschedException(action + " failed", e);
-    }
-  }
-
-  /** Executes an update on the given connection without committing or closing it. */
-  static int execute(Connection connection, String sql, Object... parameters) throws SQLException {
-    try (PreparedStatement statement = connection.prepareStatement(sql)) {
-      for (int i = 0; i < parameters.length; i++) {
-        statement.setObject(i + 1, parameters[i]);
-      }
-      return statement.executeUpdate();
-    }
-  }
-
-  static void commitIfNeeded(Connection connection) throws SQLException {
-    if (!connection.getAutoCommit()) {
-      connection.commit();
+  private static void rollback(Connection connection, Exception failure) {
+    try {
+      connection.rollback();
+    } catch (SQLException rollbackFailure) {
+      failure.addSuppressed(rollbackFailure);
     }
   }
 }

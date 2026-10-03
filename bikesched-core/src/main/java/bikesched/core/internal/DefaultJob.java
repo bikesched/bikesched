@@ -4,16 +4,21 @@ import bikesched.core.BikeschedLogContext;
 import bikesched.core.JsonMapper;
 import bikesched.core.event.Event;
 import bikesched.core.event.EventWait;
+import bikesched.core.job.Compensation;
 import bikesched.core.job.Job;
 import bikesched.core.job.JobFailure;
 import bikesched.core.job.Schedule;
 import bikesched.core.job.Step;
+import bikesched.core.job.StepBuilder;
 import bikesched.core.job.StepHandler;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Deque;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +28,10 @@ import org.slf4j.MDC;
  * The {@link Job} implementation: a job claimed from {@code bikesched_jobs} for execution on this
  * node. Besides the handler API it carries what bikesched itself needs to schedule, time out and
  * record the job (priority, schedule time, timeout, cancellation state).
+ *
+ * <p>A job claimed to be compensated runs its handler in compensation mode: steps and event waits
+ * only return what they stored, completed steps register their compensations (latest first), and
+ * the first one that has not completed ends the replay with {@link CompensationReplayEnded}.
  */
 final class DefaultJob implements Job {
 
@@ -39,6 +48,13 @@ final class DefaultJob implements Job {
   private final Duration timeout;
   private final String schedule;
   private final Instant plannedAt;
+  private final boolean compensating;
+  private final int compensationAttempts;
+  private final boolean cancelRequested;
+  private final String cancelRequestMessage;
+
+  /** Compensations registered while replaying for compensation, latest first. */
+  private final Deque<PendingCompensation> compensations = new ConcurrentLinkedDeque<>();
 
   // Set by the handler, read by bikesched after the handler returned (the handler may use other
   // threads).
@@ -62,6 +78,10 @@ final class DefaultJob implements Job {
     this.timeout = claimed.timeout();
     this.schedule = claimed.schedule();
     this.plannedAt = claimed.plannedAt();
+    this.compensating = claimed.compensatedState() != null;
+    this.compensationAttempts = claimed.compensationAttempts();
+    this.cancelRequested = claimed.cancelRequested();
+    this.cancelRequestMessage = claimed.cancelMessage();
   }
 
   @Override
@@ -109,6 +129,73 @@ final class DefaultJob implements Job {
    */
   Instant plannedAt() {
     return plannedAt;
+  }
+
+  @Override
+  public boolean isCompensating() {
+    return compensating;
+  }
+
+  /** The number of compensation attempts including the current one (while compensating). */
+  int compensationAttempts() {
+    return compensationAttempts;
+  }
+
+  /** Whether the job's cancellation was requested via {@code Bikesched.cancel}. */
+  boolean cancelRequested() {
+    return cancelRequested;
+  }
+
+  /** The message of the requested cancellation, {@code null} if none. */
+  String cancelRequestMessage() {
+    return cancelRequestMessage;
+  }
+
+  /**
+   * A compensation registered while replaying the handler for compensation.
+   *
+   * @param stepName the step to compensate
+   * @param call runs the compensation with the step's stored result
+   */
+  record PendingCompensation(String stepName, StepCall<Void> call) {}
+
+  /** The compensations registered by the replay, in the order to run them (latest step first). */
+  List<PendingCompensation> compensations() {
+    return List.copyOf(compensations);
+  }
+
+  /**
+   * Runs a compensation and records it: the step becomes {@code COMPENSATED}.
+   *
+   * @throws Exception the exception of the compensation, after recording it with the step
+   */
+  void compensate(PendingCompensation compensation) throws Exception {
+    String name = compensation.stepName();
+    Runnable restoreStepName = putStepName(name);
+    long start = System.nanoTime();
+    try {
+      LOG.debug("Compensating step {} of job {}", name, id);
+      try {
+        compensation.call().call();
+      } catch (Exception e) {
+        LOG.debug(
+            "Compensating step {} of job {} FAILED in {} ms: {}",
+            name,
+            id,
+            millisSince(start),
+            e.toString());
+        try {
+          database.steps().failCompensation(id, name, e.toString());
+        } catch (RuntimeException recording) {
+          e.addSuppressed(recording);
+        }
+        throw e;
+      }
+      database.steps().compensateStep(id, name);
+      LOG.debug("Step {} of job {} COMPENSATED in {} ms", name, id, millisSince(start));
+    } finally {
+      restoreStepName.run();
+    }
   }
 
   /** Higher priorities are claimed first. */
@@ -185,21 +272,40 @@ final class DefaultJob implements Job {
 
   @Override
   public <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception {
+    return step(name, resultType, handler, null);
+  }
+
+  /** Runs a step, with a compensation or without ({@code null}). */
+  <T> T step(
+      String name,
+      Class<T> resultType,
+      StepHandler<T> handler,
+      Compensation<? super T> compensation)
+      throws Exception {
     Objects.requireNonNull(resultType, "resultType");
     JsonMapper mapper = database.jsonMapper();
-    return runStep(name, handler, mapper::toJson, json -> mapper.fromJson(json, resultType));
+    return runStep(
+        name, handler, mapper::toJson, json -> mapper.fromJson(json, resultType), compensation);
   }
 
   @Override
   public String step(String name, StepHandler<String> handler) throws Exception {
-    return runStep(name, handler, json -> json, json -> json);
+    return runStep(name, handler, json -> json, json -> json, null);
+  }
+
+  @Override
+  public <T> StepBuilder<T> newStep(String name, Class<T> resultType) {
+    requireName(name, "step name");
+    Objects.requireNonNull(resultType, "resultType");
+    return new DefaultStepBuilder<>(this, name, resultType);
   }
 
   private <T> T runStep(
       String name,
       StepHandler<T> handler,
       Function<? super T, String> toJson,
-      Function<String, T> fromJson)
+      Function<String, T> fromJson,
+      Compensation<? super T> compensation)
       throws Exception {
     Objects.requireNonNull(name, "name");
     Objects.requireNonNull(handler, "handler");
@@ -209,19 +315,38 @@ final class DefaultJob implements Job {
     Runnable restoreStepName = putStepName(name);
     try {
       var completed = database.steps().findCompletedStep(id, name);
+      if (compensating) {
+        if (completed.isEmpty()) {
+          throw new CompensationReplayEnded(name);
+        }
+        T result = read(completed.get(), fromJson);
+        if (compensation != null && !completed.get().compensated()) {
+          compensations.push(
+              new PendingCompensation(
+                  name,
+                  () -> {
+                    compensation.compensate(result);
+                    return null;
+                  }));
+        }
+        return result;
+      }
       if (completed.isEmpty()) {
         var stepAttempt = database.steps().startStep(id, name);
         if (stepAttempt.isPresent()) {
-          return executeStep(name, stepAttempt.get(), handler, toJson);
+          return executeStep(name, stepAttempt.get(), handler, toJson, compensation != null);
         }
         completed = database.steps().findCompletedStep(id, name); // completed in the meantime
       }
       LOG.debug("Step {} of job {} already completed, reusing its result", name, id);
-      String json = completed.map(StepStore.CompletedStep::result).orElse(null);
-      return json == null ? null : fromJson.apply(json);
+      return completed.isEmpty() ? null : read(completed.get(), fromJson);
     } finally {
       restoreStepName.run();
     }
+  }
+
+  private static <T> T read(StepStore.CompletedStep step, Function<String, T> fromJson) {
+    return step.result() == null ? null : fromJson.apply(step.result());
   }
 
   /**
@@ -278,6 +403,17 @@ final class DefaultJob implements Job {
   Event receiveEvent(String stepName, String eventName, String eventKey, Duration timeout) {
     Runnable restoreStepName = putStepName(stepName);
     try {
+      if (compensating) {
+        // Replay only: return what the wait stored, never start or time out a wait.
+        var step = database.steps().findStep(id, stepName);
+        String state = step.map(StepStore.StoredStep::state).orElse("");
+        return switch (state) {
+          case "SUCCEEDED" ->
+              new DefaultEvent(eventName, eventKey, step.get().result(), database.jsonMapper());
+          case "TIMED_OUT" -> null;
+          default -> throw new CompensationReplayEnded(stepName);
+        };
+      }
       var wait = database.events().awaitEvent(id, stepName, eventName, eventKey, timeout);
       switch (wait.state()) {
         case "SUCCEEDED" -> {
@@ -320,14 +456,20 @@ final class DefaultJob implements Job {
   }
 
   private <T> T executeStep(
-      String name, int stepAttempt, StepHandler<T> handler, Function<? super T, String> toJson)
+      String name,
+      int stepAttempt,
+      StepHandler<T> handler,
+      Function<? super T, String> toJson,
+      boolean compensable)
       throws Exception {
     LOG.debug("Executing step {} of job {} (attempt {})", name, id, stepAttempt);
     long start = System.nanoTime();
     T result;
     try {
       result = handler.run(new Step(id, name, stepAttempt));
-      database.steps().completeStep(id, name, result == null ? null : toJson.apply(result));
+      database
+          .steps()
+          .completeStep(id, name, result == null ? null : toJson.apply(result), compensable);
     } catch (Exception e) {
       recordStepFailure(name, stepAttempt, e, start);
       throw e;

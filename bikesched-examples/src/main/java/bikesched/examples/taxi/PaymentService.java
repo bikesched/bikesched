@@ -17,4 +17,11 @@ public interface PaymentService {
    */
   PaymentReservation reserve(
       String customerId, BigDecimal amount, String currency, String reference);
+
+  /**
+   * Releases a reservation, e.g. because the ride was cancelled. Idempotent.
+   *
+   * @param reservation the reservation
+   */
+  void release(PaymentReservation reservation);
 }

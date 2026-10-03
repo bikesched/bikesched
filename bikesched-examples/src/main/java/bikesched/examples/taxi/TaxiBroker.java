@@ -25,7 +25,8 @@ public interface TaxiBroker {
   RideApproval approveRide(String rideId, DriverOffer offer, PaymentReservation reservation);
 
   /**
-   * Withdraws the ride request, e.g. because the customer declined the price.
+   * Withdraws the ride request or approval, e.g. because the customer declined the price or
+   * cancelled the ride. Idempotent.
    *
    * @param rideId the ride
    */

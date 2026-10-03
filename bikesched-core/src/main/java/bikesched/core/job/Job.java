@@ -30,7 +30,8 @@ import java.util.UUID;
  *
  * <p>A handler can split its work into durable {@link #step(String, Class, StepHandler) steps}: a
  * step that completed is not executed again when the job is retried, its stored result is returned
- * instead.
+ * instead. Steps built with {@link #newStep(String, Class)} can have a compensation that undoes
+ * them if the job is cancelled or fails permanently.
  */
 public interface Job {
 
@@ -137,6 +138,52 @@ public interface Job {
   String step(String name, StepHandler<String> handler) throws Exception;
 
   /**
+   * Builds a durable step that can have a compensation (a saga): if the job is cancelled, or fails
+   * permanently, after the step completed, the compensation undoes it before the job ends.
+   *
+   * <pre>{@code
+   * bikesched.registerHandler("order", job -> {
+   *     Order order = job.payload(Order.class);
+   *     PaymentReservation reservation =
+   *         job.newStep("reserve-payment", PaymentReservation.class)
+   *             .compensateWith(r -> payments.release(r))
+   *             .run(step -> payments.reserve(order));
+   *     job.newStep("ship", Void.class).run(step -> {   // no compensation: same as job.step(...)
+   *         shipping.ship(order, reservation);
+   *         return null;
+   *     });
+   * });
+   * }</pre>
+   *
+   * <p>Compensation is optional: a job whose completed steps have no compensation is cancelled or
+   * failed right away, as without this method. Otherwise the job becomes {@code COMPENSATING}: a
+   * node runs its handler again in compensation mode, where completed steps return their stored
+   * results (registering their compensations) and the replay ends at the first step or event wait
+   * that has not completed, or when the handler returns or throws. Then the compensations run in
+   * reverse order, each recorded once it succeeded (steps become {@code COMPENSATED}). A failed
+   * compensation is retried in further compensation attempts (up to the job's maximum number of
+   * attempts, with the node's retry backoff), afterwards the job is {@code COMPENSATION_FAILED}.
+   * Once all compensations ran, the job ends {@code CANCELLED} or {@code FAILED}.
+   *
+   * @param name the step name, unique within the job
+   * @param resultType the type of the step result, used to read a stored result back and passed to
+   *     the compensation
+   * @param <T> the type of the step result
+   * @return the step builder
+   * @throws IllegalArgumentException if the name is blank
+   */
+  <T> StepBuilder<T> newStep(String name, Class<T> resultType);
+
+  /**
+   * Returns whether the handler runs to compensate the job (see {@link #newStep(String, Class)}):
+   * steps then only return their stored results and are not executed. Code outside of steps runs
+   * again, so a handler may check this to skip side effects there.
+   *
+   * @return {@code true} while the job is compensated
+   */
+  boolean isCompensating();
+
+  /**
    * Starts waiting for an event, as a durable step; {@link EventWait#receive(EventHandler)} returns
    * it once the event published with the given name and key was received. If it has not been
    * published yet, the job's attempt ends in {@code receive} (it does not return) and the job is
@@ -185,9 +232,10 @@ public interface Job {
 
   /**
    * Marks this job as cancelled. Once the handler returns, bikesched sets the job to {@code
-   * CANCELLED} (it is not retried) and clears {@code last_error}. The handler keeps running until
-   * it returns; a cancelled job stays cancelled even if the handler then throws or its attempt
-   * times out.
+   * CANCELLED} (it is not retried) and clears {@code last_error}; if completed steps have a {@link
+   * StepBuilder#compensateWith(Compensation) compensation}, the job is compensated first. The
+   * handler keeps running until it returns; a cancelled job stays cancelled even if the handler
+   * then throws or its attempt times out. Ignored while {@link #isCompensating() compensating}.
    */
   default void cancel() {
     cancel(null);

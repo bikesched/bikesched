@@ -15,6 +15,7 @@ public final class SimulatedTaxiBroker implements TaxiBroker {
   private final BlockingQueue<RideRequest> requests = new LinkedBlockingQueue<>();
   private final List<String> approvedRides = new CopyOnWriteArrayList<>();
   private final Set<String> cancelledRides = ConcurrentHashMap.newKeySet();
+  private volatile boolean approvalsFail;
 
   /** Creates the broker. */
   public SimulatedTaxiBroker() {}
@@ -28,6 +29,9 @@ public final class SimulatedTaxiBroker implements TaxiBroker {
   @Override
   public RideApproval approveRide(
       String rideId, DriverOffer offer, PaymentReservation reservation) {
+    if (approvalsFail) {
+      throw new IllegalStateException("broker unavailable");
+    }
     System.out.println(
         "[broker] ride "
             + rideId
@@ -42,8 +46,18 @@ public final class SimulatedTaxiBroker implements TaxiBroker {
 
   @Override
   public void cancelRide(String rideId) {
-    System.out.println("[broker] ride " + rideId + " cancelled");
-    cancelledRides.add(rideId);
+    if (cancelledRides.add(rideId)) {
+      System.out.println("[broker] ride " + rideId + " cancelled");
+    }
+  }
+
+  /**
+   * Lets approving rides fail, e.g. to simulate an outage of the broker.
+   *
+   * @param fail whether approvals fail
+   */
+  public void failApprovals(boolean fail) {
+    this.approvalsFail = fail;
   }
 
   /**

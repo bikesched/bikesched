@@ -6,6 +6,7 @@ plugins {
 dependencies {
     implementation(project(":bikesched-core"))
     implementation(libs.postgresql)
+    implementation(libs.slf4j.api)
     // Payloads, events and step results are records, mapped to JSON with Jackson.
     implementation(libs.jackson.databind)
     runtimeOnly(libs.logback.classic)

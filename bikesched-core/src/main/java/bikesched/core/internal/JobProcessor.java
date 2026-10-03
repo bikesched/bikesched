@@ -29,6 +29,12 @@ import org.slf4j.LoggerFactory;
  *   <li>returned normally: {@code SUCCEEDED}
  * </ol>
  *
+ * <p>A job whose cancellation was requested is cancelled without running its handler. A cancelled
+ * or permanently failed job with completed compensable steps becomes {@code COMPENSATING} instead
+ * of ending; when claimed again, its handler is replayed in compensation mode and the registered
+ * compensations run, ending the job (or retrying the compensation, see {@link Job#newStep(String,
+ * Class)}).
+ *
  * <p>Thread-safe; holds no per-job state.
  */
 public final class JobProcessor {
@@ -104,6 +110,12 @@ public final class JobProcessor {
    * @return a description of the recorded outcome, for logging
    */
   private String runAndRecord(DefaultJob job) {
+    if (job.isCompensating()) {
+      return compensate(job);
+    }
+    if (job.cancelRequested()) {
+      return recordCancellation(job, job.cancelRequestMessage(), false);
+    }
     JobHandler handler = handlers.apply(job.type());
     if (handler == null) {
       LOG.error(
@@ -157,7 +169,7 @@ public final class JobProcessor {
             job.type(),
             failure);
       }
-      return recordCancellation(job);
+      return recordCancellation(job, job.cancelMessage(), true);
     } else if (job.failure() != null) {
       if (failure != null) {
         // The handler's explicit failure (and its retry settings) wins over the exception.
@@ -242,20 +254,28 @@ public final class JobProcessor {
     }
   }
 
-  private String recordCancellation(DefaultJob job) {
-    String message = job.cancelMessage();
+  /**
+   * Records the cancellation of a job: by its handler ({@code byHandler}), or on request right
+   * after claiming it, without running the handler (which does not use up an attempt).
+   */
+  private String recordCancellation(DefaultJob job, String message, boolean byHandler) {
     try {
       NewJob next = nextOccurrence(job);
-      var cancelled = database.jobs().cancelJob(job.id(), nodeId, message, next);
+      var cancelled = database.jobs().cancelJob(job.id(), nodeId, message, byHandler, next);
       if (cancelled.isPresent()) {
+        boolean compensating = cancelled.get().compensating();
         LOG.info(
-            "Job {} of type {} cancelled by its handler (attempt {} of {}){}",
+            "Job {} of type {} cancelled {}{}{}",
             job.id(),
             job.type(),
-            job.attempts(),
-            job.maxAttempts(),
-            message == null ? "" : ": " + message);
-        return "CANCELLED" + nextOccurrenceOutcome(next, cancelled.get());
+            byHandler
+                ? "by its handler (attempt " + job.attempts() + " of " + job.maxAttempts() + ")"
+                : "on request",
+            message == null ? "" : ": " + message,
+            compensating ? ", compensating its steps" : "");
+        return compensating
+            ? "COMPENSATING after cancellation"
+            : "CANCELLED" + nextOccurrenceOutcome(next, cancelled.get().nextOccurrenceScheduled());
       } else {
         LOG.warn(
             "Job {} of type {} was cancelled but no longer running on this node",
@@ -271,6 +291,162 @@ public final class JobProcessor {
 
   private String recordFailure(DefaultJob job, Exception failure) {
     return recordFailure(job, failure.toString(), failure, null, null);
+  }
+
+  /**
+   * Compensates a job: replays its handler in compensation mode, which registers the compensations
+   * of its completed steps until the first step that has not completed, then runs them, latest step
+   * first, and records the outcome.
+   */
+  private String compensate(DefaultJob job) {
+    JobHandler handler = handlers.apply(job.type());
+    if (handler == null) {
+      LOG.error(
+          "No handler registered for job type {} on bikesched node {} ({}), cannot compensate job"
+              + " {}",
+          job.type(),
+          nodeName,
+          nodeId,
+          job.id());
+      return recordCompensationFailure(
+          job,
+          null,
+          new BikeschedException(
+              "No handler registered for job type '"
+                  + job.type()
+                  + "' on bikesched node "
+                  + nodeName));
+    }
+    Duration timeout = job.timeout().orElse(defaultJobTimeout);
+    var attempt = new JobAttempt(job, Thread.currentThread(), timeoutExecutor, nodeId.toString());
+    if (timeout != null) {
+      attempt.startTimeout(timeout);
+    }
+    job.attach(attempt);
+    job.defaultEventTimeout(defaultEventTimeout);
+    String compensatingStep = null;
+    Exception failure = null;
+    int compensated = 0;
+    try {
+      LOG.debug(
+          "Compensating job {} of type {} (compensation attempt {} of {}) on bikesched node {} ({})",
+          job.id(),
+          job.type(),
+          job.compensationAttempts(),
+          job.maxAttempts(),
+          nodeName,
+          nodeId);
+      try {
+        handler.run(job);
+      } catch (CompensationReplayEnded e) {
+        // The replay reached a step that has not completed: nothing to compensate after it.
+      } catch (Exception e) {
+        LOG.debug(
+            "Handler of job {} threw while replaying it for compensation, compensating the steps"
+                + " completed before: {}",
+            job.id(),
+            e.toString());
+      }
+      for (DefaultJob.PendingCompensation compensation : job.compensations()) {
+        compensatingStep = compensation.stepName();
+        job.compensate(compensation);
+        compensated++;
+      }
+      compensatingStep = null;
+    } catch (Exception e) {
+      failure = e;
+    }
+    boolean timedOut = attempt.finish(); // no interrupt can arrive after this
+    Thread.interrupted(); // see runAndRecord
+    if (failure != null) {
+      return recordCompensationFailure(
+          job,
+          compensatingStep,
+          timedOut
+              ? new BikeschedException("Compensation timed out after " + attempt.timeout(), failure)
+              : failure);
+    }
+    return recordCompensated(job, compensated);
+  }
+
+  private String recordCompensated(DefaultJob job, int compensated) {
+    try {
+      NewJob next = nextOccurrence(job);
+      var ended = database.jobs().completeCompensation(job.id(), nodeId, next);
+      if (ended.isEmpty()) {
+        LOG.warn("Job {} was no longer compensating on this node when completing it", job.id());
+        return NOT_RUNNING;
+      }
+      LOG.info(
+          "Job {} of type {} compensated {} step(s), it is {}",
+          job.id(),
+          job.type(),
+          compensated,
+          ended.get().state());
+      return "COMPENSATED "
+          + compensated
+          + " step(s), "
+          + ended.get().state()
+          + nextOccurrenceOutcome(next, ended.get().nextOccurrenceScheduled());
+    } catch (RuntimeException e) {
+      LOG.warn("Completing the compensation of job {} failed", job.id(), e);
+      return NOT_RECORDED;
+    }
+  }
+
+  /** Records a failed compensation attempt; {@code step} is the failed compensation, if any. */
+  private String recordCompensationFailure(DefaultJob job, String step, Exception failure) {
+    String error =
+        step == null ? failure.toString() : "Compensating step '" + step + "' failed: " + failure;
+    Duration retryAfter = backoffDelay(job, job.compensationAttempts());
+    try {
+      NewJob next = nextOccurrence(job);
+      var failed = database.jobs().failCompensation(job.id(), nodeId, error, retryAfter, next);
+      if (failed.isEmpty()) {
+        LOG.warn(
+            "Compensating job {} of type {} failed and it was no longer compensating on this node:"
+                + " {}",
+            job.id(),
+            job.type(),
+            error,
+            failure);
+        return NOT_RUNNING;
+      } else if (failed.get().ended()) {
+        LOG.error(
+            "Compensating job {} of type {} failed permanently after {} compensation attempt(s):"
+                + " {}",
+            job.id(),
+            job.type(),
+            job.compensationAttempts(),
+            error,
+            failure);
+        return "COMPENSATION_FAILED"
+            + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled());
+      } else {
+        String when =
+            retryAfter == null ? "as soon as possible" : "at " + failed.get().scheduledAt();
+        LOG.warn(
+            "Compensating job {} of type {} failed (compensation attempt {} of {}), compensating"
+                + " again {}: {}",
+            job.id(),
+            job.type(),
+            job.compensationAttempts(),
+            failed.get().maxAttempts(),
+            when,
+            error,
+            failure);
+        return "COMPENSATING again (attempt "
+            + (job.compensationAttempts() + 1)
+            + " of "
+            + failed.get().maxAttempts()
+            + ") "
+            + when;
+      }
+    } catch (RuntimeException e) {
+      e.addSuppressed(failure);
+      LOG.warn("Recording the failed compensation of job {} failed", job.id(), e);
+      return NOT_RECORDED;
+    }
   }
 
   /**
@@ -314,8 +490,12 @@ public final class JobProcessor {
    * as possible. A misbehaving backoff must not prevent recording the failure.
    */
   private Duration backoffDelay(Job job) {
+    return backoffDelay(job, job.attempts());
+  }
+
+  private Duration backoffDelay(Job job, int failedAttempt) {
     try {
-      Duration delay = retryBackoff.delay(job.attempts());
+      Duration delay = retryBackoff.delay(failedAttempt);
       if (delay == null || delay.isNegative()) {
         LOG.warn(
             "Retry backoff returned an invalid delay {} for job {}, retrying as soon as possible",
@@ -350,6 +530,15 @@ public final class JobProcessor {
             error,
             cause);
         return NOT_RUNNING;
+      } else if (failed.get().compensating()) {
+        LOG.error(
+            "Job {} of type {} failed permanently after {} attempt(s), compensating its steps: {}",
+            job.id(),
+            job.type(),
+            job.attempts(),
+            error,
+            cause);
+        return "COMPENSATING after attempt " + job.attempts();
       } else if (!failed.get().retried()) {
         LOG.error(
             "Job {} of type {} failed permanently after {} attempt(s): {}",

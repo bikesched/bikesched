@@ -1,7 +1,9 @@
 package bikesched.core.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import bikesched.core.BikeschedException;
 import org.junit.jupiter.api.Test;
 
 class DatabaseTest extends AbstractStoreTest {
@@ -36,5 +38,24 @@ class DatabaseTest extends AbstractStoreTest {
     assertThat(database.describe())
         .matches("jdbc:postgresql://[^/@?]+:\\d+/\\w+ \\(PostgreSQL 18\\..*\\)")
         .doesNotContain("password");
+  }
+
+  @Test
+  void readOnlyTransactionRejectsWrites() {
+    assertThatThrownBy(
+            () ->
+                database.inReadOnlyTransaction(
+                    "Writing in a read-only transaction",
+                    db -> db.update("delete from bikesched_jobs")))
+        .isInstanceOf(BikeschedException.class)
+        .hasMessage("Writing in a read-only transaction failed")
+        .hasStackTraceContaining("cannot execute DELETE in a read-only transaction");
+
+    int jobs =
+        database.inReadOnlyTransaction(
+            "Reading in a read-only transaction",
+            db ->
+                db.one("select count(*) from bikesched_jobs", row -> row.integer(1)).orElseThrow());
+    assertThat(jobs).isNotNegative();
   }
 }

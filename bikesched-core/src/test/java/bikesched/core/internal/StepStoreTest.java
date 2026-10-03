@@ -32,7 +32,7 @@ class StepStoreTest extends AbstractStoreTest {
     database.steps().completeStep(jobId, "a", "{\"x\": 1}");
 
     assertThat(database.steps().findCompletedStep(jobId, "a"))
-        .contains(new StepStore.CompletedStep("{\"x\": 1}"));
+        .contains(new StepStore.CompletedStep("{\"x\": 1}", false));
     assertThat(database.steps().startStep(jobId, "a")).as("no restart once succeeded").isEmpty();
     assertThat(
             countSteps(
@@ -42,7 +42,7 @@ class StepStoreTest extends AbstractStoreTest {
     assertThat(database.steps().startStep(jobId, "b")).contains(1);
     database.steps().completeStep(jobId, "b", null);
     assertThat(database.steps().findCompletedStep(jobId, "b"))
-        .contains(new StepStore.CompletedStep(null));
+        .contains(new StepStore.CompletedStep(null, false));
   }
 
   @Test

@@ -7,6 +7,7 @@ import bikesched.core.Node;
 import bikesched.core.event.EventBuilder;
 import bikesched.core.job.JobBuilder;
 import bikesched.core.job.JobHandler;
+import bikesched.core.job.JobInfo;
 import bikesched.core.job.RecurringJobBuilder;
 import bikesched.core.job.Step;
 import java.sql.Connection;
@@ -372,6 +373,33 @@ public final class DefaultBikesched implements Bikesched {
     }
     Objects.requireNonNull(eventKey, "eventKey");
     return new DefaultEventBuilder(eventName, eventKey, database.jsonMapper(), this::publish);
+  }
+
+  @Override
+  public Optional<JobInfo> findJob(UUID jobId) {
+    Objects.requireNonNull(jobId, "jobId");
+    if (closed.get()) {
+      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
+    }
+    initializer.ensureInitialized();
+    return database.jobs().findJob(jobId).map(JobInfo.class::cast);
+  }
+
+  @Override
+  public boolean cancel(UUID jobId, String message) {
+    Objects.requireNonNull(jobId, "jobId");
+    if (closed.get()) {
+      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
+    }
+    initializer.ensureInitialized();
+    boolean requested = database.jobs().requestCancel(jobId, message);
+    if (requested) {
+      LOG.info("Cancellation of job {} requested{}", jobId, message == null ? "" : ": " + message);
+    } else {
+      LOG.debug(
+          "Job {} cannot be cancelled: it does not exist, has ended or is compensating", jobId);
+    }
+    return requested;
   }
 
   /** Publishes an event built by an {@link EventBuilder}. */

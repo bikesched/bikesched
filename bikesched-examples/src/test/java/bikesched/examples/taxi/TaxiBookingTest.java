@@ -94,6 +94,37 @@ class TaxiBookingTest {
     assertThat(payments.reservations()).isEmpty();
   }
 
+  @Test
+  void rideCancelledByTheCustomerIsWithdrawnAtTheBroker() throws Exception {
+    TaxiBooking booking = start(Duration.ofMinutes(1));
+    UUID jobId = booking.requestRide(ride);
+    broker.nextRequest(ANSWER_TIMEOUT);
+    awaitState(jobId, "WAITING");
+
+    assertThat(booking.cancelRide(jobId)).isTrue();
+
+    awaitState(jobId, "CANCELLED");
+    assertThat(broker.cancelledRides()).containsExactly(ride.rideId());
+    assertThat(booking.cancelRide(jobId)).as("already cancelled").isFalse();
+  }
+
+  @Test
+  void failedApprovalReleasesThePaymentAndWithdrawsTheRide() throws Exception {
+    broker.failApprovals(true);
+    TaxiBooking booking = start(Duration.ofMinutes(1));
+    UUID jobId = booking.requestRide(ride);
+    broker.nextRequest(ANSWER_TIMEOUT);
+    booking.driverAccepted(ride.rideId(), offer);
+    notifications.next(ANSWER_TIMEOUT);
+
+    booking.priceDecided(ride.rideId(), true);
+
+    awaitState(jobId, "FAILED");
+    assertThat(payments.releasedReservations()).containsExactly("reservation-" + ride.rideId());
+    assertThat(broker.cancelledRides()).containsExactly(ride.rideId());
+    assertThat(broker.approvedRides()).isEmpty();
+  }
+
   private TaxiBooking start(Duration driverTimeout) {
     bikesched =
         Bikesched.builder()

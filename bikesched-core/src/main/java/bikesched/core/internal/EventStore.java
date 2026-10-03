@@ -1,17 +1,11 @@
 package bikesched.core.internal;
 
-import bikesched.core.BikeschedException;
 import bikesched.core.event.EventWait;
 import bikesched.core.job.Step;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Types;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -73,12 +67,14 @@ final class EventStore {
   // Ends a RUNNING attempt whose handler suspended at a waiting event step: WAITING until the
   // event arrives or the wait's deadline (scheduled_at; 'infinity' without one) has passed. If the
   // event was published since the step started waiting (it is no longer WAITING), the job is
-  // scheduled right away. Suspending does not use up an attempt.
+  // scheduled right away, as is a job whose cancellation was requested (to cancel it). Suspending
+  // does not use up an attempt.
   private static final String SUSPEND_JOB_SQL =
       """
             update bikesched_jobs j
                set state = case when s.state = 'WAITING' then 'WAITING' else 'SCHEDULED' end,
-                   scheduled_at = case when s.state = 'WAITING' then coalesce(s.wait_until, 'infinity')
+                   scheduled_at = case when s.state = 'WAITING' and j.cancel_requested_at is null
+                                       then coalesce(s.wait_until, 'infinity')
                                        else now() end,
                    attempts = j.attempts - 1, locked_by = null, locked_at = null, updated_at = now()
               from bikesched_steps s
@@ -155,67 +151,71 @@ final class EventStore {
             + stepName
             + "' of job "
             + jobId,
-        connection -> {
-          lockEvent(connection, eventName, eventKey);
-          try (PreparedStatement find = connection.prepareStatement(FIND_EVENT_STEP_SQL)) {
-            find.setObject(1, jobId);
-            find.setString(2, stepName);
-            try (ResultSet rs = find.executeQuery()) {
-              if (rs.next()) {
-                String state = rs.getString(1);
-                if (!eventName.equals(rs.getString(3)) || !eventKey.equals(rs.getString(4))) {
-                  throw new IllegalStateException(
-                      "Step '"
-                          + stepName
-                          + "' of job "
-                          + jobId
-                          + (rs.getString(3) == null
-                              ? " is a regular step"
-                              : " waits for event " + rs.getString(3) + "/" + rs.getString(4))
-                          + ", not for event "
-                          + eventName
-                          + "/"
-                          + eventKey
-                          + "; step names must be unique within a job");
+        db -> {
+          lockEvent(db, eventName, eventKey);
+          Optional<EventStep> step =
+              db.one(
+                  FIND_EVENT_STEP_SQL,
+                  row ->
+                      new EventStep(
+                          row.string(1),
+                          row.string(2),
+                          row.string(3),
+                          row.string(4),
+                          row.instant(5),
+                          row.bool(6)),
+                  jobId,
+                  stepName);
+          if (step.isPresent()) {
+            EventStep found = step.get();
+            if (!eventName.equals(found.eventName()) || !eventKey.equals(found.eventKey())) {
+              throw new IllegalStateException(
+                  "Step '"
+                      + stepName
+                      + "' of job "
+                      + jobId
+                      + (found.eventName() == null
+                          ? " is a regular step"
+                          : " waits for event " + found.eventName() + "/" + found.eventKey())
+                      + ", not for event "
+                      + eventName
+                      + "/"
+                      + eventKey
+                      + "; step names must be unique within a job");
+            }
+            switch (found.state()) {
+              case "SUCCEEDED" -> {
+                return new EventWait(found.state(), found.result(), null);
+              }
+              case "TIMED_OUT" -> {
+                return new EventWait(found.state(), null, null);
+              }
+              default -> { // WAITING
+                if (found.deadlinePassed()) {
+                  db.update(TIME_OUT_EVENT_STEP_SQL, jobId, stepName);
+                  return new EventWait("TIMED_OUT", null, null);
                 }
-                switch (state) {
-                  case "SUCCEEDED" -> {
-                    return new EventWait(state, rs.getString(2), null);
-                  }
-                  case "TIMED_OUT" -> {
-                    return new EventWait(state, null, null);
-                  }
-                  default -> { // WAITING
-                    Instant waitUntil = Database.toInstant(rs.getObject(5, OffsetDateTime.class));
-                    if (rs.getBoolean(6)) {
-                      Database.execute(connection, TIME_OUT_EVENT_STEP_SQL, jobId, stepName);
-                      return new EventWait("TIMED_OUT", null, null);
-                    }
-                    return new EventWait("WAITING", null, waitUntil);
-                  }
-                }
+                return new EventWait("WAITING", null, found.waitUntil());
               }
             }
           }
-          Optional<PublishedEvent> published = latestEvent(connection, eventName, eventKey);
+          Optional<PublishedEvent> published =
+              db.one(
+                  LATEST_EVENT_SQL, row -> new PublishedEvent(row.string(1)), eventName, eventKey);
           if (published.isPresent()) {
             String payload = published.get().payload();
-            Database.execute(
-                connection, RECEIVE_EVENT_STEP_SQL, jobId, stepName, payload, eventName, eventKey);
+            db.update(RECEIVE_EVENT_STEP_SQL, jobId, stepName, payload, eventName, eventKey);
             return new EventWait("SUCCEEDED", payload, null);
           }
-          try (PreparedStatement wait = connection.prepareStatement(WAIT_EVENT_STEP_SQL)) {
-            wait.setObject(1, jobId);
-            wait.setString(2, stepName);
-            wait.setString(3, eventName);
-            wait.setString(4, eventKey);
-            wait.setObject(5, timeout == null ? null : timeout.toMillis(), Types.BIGINT);
-            try (ResultSet rs = wait.executeQuery()) {
-              rs.next();
-              return new EventWait(
-                  "WAITING", null, Database.toInstant(rs.getObject(1, OffsetDateTime.class)));
-            }
-          }
+          return db.one(
+                  WAIT_EVENT_STEP_SQL,
+                  row -> new EventWait("WAITING", null, row.instant(1)),
+                  jobId,
+                  stepName,
+                  eventName,
+                  eventKey,
+                  Sql.millis(timeout))
+              .orElseThrow();
         });
   }
 
@@ -234,21 +234,14 @@ final class EventStore {
       UUID jobId, UUID nodeId, String stepName, String eventName, String eventKey) {
     return database.inTransaction(
         "Suspending bikesched job " + jobId,
-        connection -> {
-          lockEvent(connection, eventName, eventKey);
-          try (PreparedStatement suspend = connection.prepareStatement(SUSPEND_JOB_SQL)) {
-            suspend.setObject(1, jobId);
-            suspend.setObject(2, nodeId);
-            suspend.setString(3, stepName);
-            try (ResultSet rs = suspend.executeQuery()) {
-              return rs.next()
-                  ? Optional.of(
-                      new SuspendedJob(
-                          "WAITING".equals(rs.getString(1)),
-                          Database.toInstant(rs.getObject(2, OffsetDateTime.class))))
-                  : Optional.empty();
-            }
-          }
+        db -> {
+          lockEvent(db, eventName, eventKey);
+          return db.one(
+              SUSPEND_JOB_SQL,
+              row -> new SuspendedJob("WAITING".equals(row.string(1)), row.instant(2)),
+              jobId,
+              nodeId,
+              stepName);
         });
   }
 
@@ -264,7 +257,7 @@ final class EventStore {
   List<Step> publishEvent(String eventName, String eventKey, String payload) {
     return database.inTransaction(
         "Publishing event " + eventName + "/" + eventKey,
-        connection -> publishEvent(connection, eventName, eventKey, payload));
+        db -> publishEvent(db, eventName, eventKey, payload));
   }
 
   /**
@@ -281,35 +274,29 @@ final class EventStore {
    */
   List<Step> publishEventInTransaction(
       Connection connection, String eventName, String eventKey, String payload) {
-    try {
-      if (connection.getAutoCommit()) {
-        throw new IllegalArgumentException(
-            "Publishing an event on the caller's connection requires a transaction:"
-                + " the connection must not be in auto-commit mode");
-      }
-      return publishEvent(connection, eventName, eventKey, payload);
-    } catch (SQLException e) {
-      throw new BikeschedException("Publishing event " + eventName + "/" + eventKey + " failed", e);
-    }
+    return Database.onCallerConnection(
+        connection,
+        "Publishing event " + eventName + "/" + eventKey,
+        db -> {
+          if (connection.getAutoCommit()) {
+            throw new IllegalArgumentException(
+                "Publishing an event on the caller's connection requires a transaction:"
+                    + " the connection must not be in auto-commit mode");
+          }
+          return publishEvent(db, eventName, eventKey, payload);
+        });
   }
 
-  private static List<Step> publishEvent(
-      Connection connection, String eventName, String eventKey, String payload)
+  private static List<Step> publishEvent(Sql db, String eventName, String eventKey, String payload)
       throws SQLException {
-    lockEvent(connection, eventName, eventKey);
-    Database.execute(connection, INSERT_EVENT_SQL, UUID.randomUUID(), eventName, eventKey, payload);
-    try (PreparedStatement resume = connection.prepareStatement(RESUME_WAITING_STEPS_SQL)) {
-      resume.setString(1, payload);
-      resume.setString(2, eventName);
-      resume.setString(3, eventKey);
-      List<Step> received = new ArrayList<>();
-      try (ResultSet rs = resume.executeQuery()) {
-        while (rs.next()) {
-          received.add(new Step(rs.getObject(1, UUID.class), rs.getString(2), rs.getInt(3)));
-        }
-      }
-      return received;
-    }
+    lockEvent(db, eventName, eventKey);
+    db.update(INSERT_EVENT_SQL, UUID.randomUUID(), eventName, eventKey, payload);
+    return db.list(
+        RESUME_WAITING_STEPS_SQL,
+        row -> new Step(row.uuid(1), row.string(2), row.integer(3)),
+        payload,
+        eventName,
+        eventKey);
   }
 
   /**
@@ -320,29 +307,22 @@ final class EventStore {
    */
   int deleteEvents(Duration retention) {
     return database.update(
-        DELETE_EVENTS_SQL, "Deleting old bikesched events", retention.toMillis() / 1000.0);
+        DELETE_EVENTS_SQL, "Deleting old bikesched events", Sql.seconds(retention));
   }
 
-  private static void lockEvent(Connection connection, String eventName, String eventKey)
-      throws SQLException {
-    try (PreparedStatement lock = connection.prepareStatement(LOCK_EVENT_SQL)) {
-      lock.setString(1, eventName);
-      lock.setString(2, eventKey);
-      lock.execute();
-    }
+  private static void lockEvent(Sql db, String eventName, String eventKey) throws SQLException {
+    db.execute(LOCK_EVENT_SQL, eventName, eventKey);
   }
 
   /** An event found in {@code bikesched_events}; its payload may be {@code null}. */
   private record PublishedEvent(String payload) {}
 
-  private static Optional<PublishedEvent> latestEvent(
-      Connection connection, String eventName, String eventKey) throws SQLException {
-    try (PreparedStatement find = connection.prepareStatement(LATEST_EVENT_SQL)) {
-      find.setString(1, eventName);
-      find.setString(2, eventKey);
-      try (ResultSet rs = find.executeQuery()) {
-        return rs.next() ? Optional.of(new PublishedEvent(rs.getString(1))) : Optional.empty();
-      }
-    }
-  }
+  /** A row of {@code FIND_EVENT_STEP_SQL}: a step (event step or regular step) of a job. */
+  private record EventStep(
+      String state,
+      String result,
+      String eventName,
+      String eventKey,
+      Instant waitUntil,
+      boolean deadlinePassed) {}
 }

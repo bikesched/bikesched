@@ -1,11 +1,13 @@
 <configuration>
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
-      <pattern>%d{HH:mm:ss.SSS} %-5level %logger{0} - %msg%n</pattern>
+      <!-- Job id and step name from bikesched's logging context, only when set. -->
+      <pattern>%d{HH:mm:ss.SSS} %-5level %logger{0}%replace( job=%X{bikesched.jobId}){' job=$', ''}%replace( step=%X{bikesched.stepName}){' step=$', ''} - %msg%n</pattern>
     </encoder>
   </appender>
 
   <!-- DEBUG shows every processed job and step. -->
+  <!-- bikesched and the examples (bikesched.examples) at INFO. -->
   <logger name="bikesched" level="INFO"/>
 
   <root level="WARN">

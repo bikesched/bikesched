@@ -4,7 +4,10 @@ import bikesched.core.event.EventBuilder;
 import bikesched.core.job.Job;
 import bikesched.core.job.JobBuilder;
 import bikesched.core.job.JobHandler;
+import bikesched.core.job.JobInfo;
 import bikesched.core.job.Schedule;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Entry point of bikesched: a database-backed job scheduler shared by all connected nodes.
@@ -122,6 +125,45 @@ public interface Bikesched extends AutoCloseable {
    * @throws IllegalArgumentException if the event name is blank
    */
   EventBuilder newEvent(String eventName, String eventKey);
+
+  /**
+   * Looks up a job by its id, in a read-only transaction.
+   *
+   * <pre>{@code
+   * bikesched.findJob(jobId).map(JobInfo::state).ifPresent(state -> ...);
+   * }</pre>
+   *
+   * @param jobId the job id
+   * @return the job's id, type and current state; empty if there is no such job (e.g. it never
+   *     existed, or its recurring job was removed before it ran)
+   * @throws BikeschedException if the database cannot be accessed
+   */
+  Optional<JobInfo> findJob(UUID jobId);
+
+  /**
+   * Cancels a job, e.g. because the customer withdrew the order. The job is cancelled by the node
+   * claiming it next instead of running its handler: right away if it is scheduled or waiting for
+   * an event, after its current attempt if it is running (unless that attempt ends it). Its steps
+   * that completed with a {@link bikesched.core.job.StepBuilder#compensateWith compensation} are
+   * compensated first; its unfinished steps, e.g. waiting for an event, are cancelled.
+   *
+   * @param jobId the job id
+   * @return {@code false} if the job does not exist, has ended or is being compensated
+   * @throws BikeschedException if the database cannot be accessed
+   */
+  default boolean cancel(UUID jobId) {
+    return cancel(jobId, null);
+  }
+
+  /**
+   * Cancels a job like {@link #cancel(UUID)}, storing the message as the job's {@code last_error}.
+   *
+   * @param jobId the job id
+   * @param message why the job is cancelled, may be {@code null}
+   * @return {@code false} if the job does not exist, has ended or is being compensated
+   * @throws BikeschedException if the database cannot be accessed
+   */
+  boolean cancel(UUID jobId, String message);
 
   /**
    * Registers this instance as a node of the cluster and starts its heartbeat, then starts polling

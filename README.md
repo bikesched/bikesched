@@ -25,7 +25,8 @@ It is inspired by libraries like [JobRunr](https://www.jobrunr.io) and
 - Schedule jobs inside your own database transaction
 - Automatic retries; failed attempts keep their error in `last_error`
 - Durable **steps**: results of completed steps are stored and reused when a job is retried
-- **Cancellation** from within a handler
+- **Cancellation** from within a handler or via `Bikesched.cancel(jobId)`
+- Optional **compensation** per step: completed steps are undone when a job is cancelled or fails
 - **Timeouts** per job or per node, extendable by long-running handlers
 - Concurrency limit per node; jobs are only claimed when they can start right away
 - Node heartbeats: jobs of crashed nodes are released and retried by others
@@ -70,6 +71,13 @@ UUID id = bikesched.newJob("report")
 
 A builder can be reused: every `schedule…` call stores a new job.
 
+To check on a job later, look it up by its id (a read-only transaction):
+
+```java
+Optional<JobInfo> job = bikesched.findJob(id);   // id(), type() and state(), e.g. JobState.SUCCEEDED
+boolean done = job.map(info -> info.state().ended()).orElse(false);
+```
+
 ### Transactional scheduling
 
 Pass your own connection to create the job atomically with your other changes. The job becomes
@@ -95,8 +103,9 @@ A handler receives the `Job` being executed:
 | `id()`, `type()` | identity, e.g. for idempotency keys and logging |
 | `attempts()`, `maxAttempts()` | the current attempt (starting at 1) and the limit |
 | `payload()`, `payload(Class)` | the payload as raw JSON or mapped by the `JsonMapper` |
-| `step(…)` | run a durable step |
+| `step(…)`, `newStep(…)` | run a durable step, optionally with a compensation |
 | `cancel()`, `cancel(message)` | cancel the job |
+| `isCompensating()` | whether the handler is replayed to compensate the job |
 | `updateTimeout(Duration)` | extend the deadline of the running attempt |
 
 bikesched guarantees **at-least-once** execution: a job may run again, e.g. after its node
@@ -135,6 +144,46 @@ bikesched.registerHandler("send-mail", job -> {
 
 A cancelled job ends in state `CANCELLED` and is not retried, even if the handler throws
 afterwards.
+
+Jobs can also be cancelled from outside, e.g. when the customer withdraws an order:
+
+```java
+boolean cancelled = bikesched.cancel(jobId, "order withdrawn");   // false if it already ended
+```
+
+The next node claiming the job cancels it instead of running its handler: right away if it is
+scheduled or waiting for an event, after its current attempt if it is running (unless that attempt
+completes it). Its unfinished steps, e.g. a wait for an event, become `CANCELLED` and no longer
+receive events; completed steps are kept.
+
+### Compensation
+
+Steps with side effects can declare a compensation that undoes them if the job is cancelled or
+fails permanently (a saga). Compensation is optional, per step:
+
+```java
+bikesched.registerHandler("order", job -> {
+    Order order = job.payload(Order.class);
+    PaymentReservation reservation =
+        job.newStep("reserve-payment", PaymentReservation.class)
+            .compensateWith(r -> payments.release(r))      // receives the stored step result
+            .run(step -> payments.reserve(order));
+    job.newStep("ship", Void.class)
+        .compensateWith(none -> shipping.recall(order))
+        .run(step -> { shipping.ship(order, reservation); return null; });
+});
+```
+
+- A job without completed compensable steps is cancelled or failed right away, as before.
+- Otherwise it becomes `COMPENSATING`. A node replays its handler in compensation mode: completed
+  steps return their stored results and register their compensations, and the replay ends at the
+  first step or event wait that has not completed. Then the compensations run, latest step first,
+  and each compensated step becomes `COMPENSATED`. The job then ends `CANCELLED` or `FAILED`.
+- A failing compensation is retried (up to `maxAttempts` compensation attempts, with the node's
+  retry backoff); compensations that already succeeded are not run again. After that the job is
+  `COMPENSATION_FAILED` and needs manual attention.
+- Compensations run at least once, so they must be idempotent. The handler's code outside of
+  steps runs again during the replay; `job.isCompensating()` tells it apart.
 
 ### Recurring jobs
 
@@ -284,11 +333,11 @@ serialized with a PostgreSQL advisory lock, applied migrations are tracked with 
 |---|---|
 | `bikesched_schema_migrations` | applied schema migrations with version, description, checksum, install time and duration; created by the migrator itself |
 | `bikesched_nodes` | registered nodes with their unique name and last heartbeat; dead nodes are removed by the others |
-| `bikesched_jobs` | jobs with state `SCHEDULED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED` or `CANCELLED`, their payload, priority, attempts, timeout, lock (`locked_by`) and `last_error`; occurrences of recurring jobs also carry their `schedule` description and, for fixed-rate schedules, their `planned_at` |
-| `bikesched_steps` | durable steps of each job with state `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED` or `TIMED_OUT`, their result and attempts; steps waiting for an event also carry `event_name`, `event_key` and their deadline (`wait_until`) |
+| `bikesched_jobs` | jobs with state `SCHEDULED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `COMPENSATING` or `COMPENSATION_FAILED`, their payload, priority, attempts, timeout, lock (`locked_by`) and `last_error`; compensating jobs also carry the state they end in (`compensated_state`) and their `compensation_attempts`, jobs cancelled via `Bikesched.cancel` their `cancel_requested_at` and `cancel_message`; occurrences of recurring jobs also carry their `schedule` description and, for fixed-rate schedules, their `planned_at` |
+| `bikesched_steps` | durable steps of each job with state `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `TIMED_OUT`, `COMPENSATED` or `CANCELLED`, their result, attempts and whether they have a compensation (`compensable`); steps waiting for an event also carry `event_name`, `event_key` and their deadline (`wait_until`) |
 | `bikesched_events` | published events (name, key, payload), kept for the event retention period |
 
-Besides primary keys, the indexes cover polling (due `SCHEDULED`/`WAITING` jobs in claim order),
+Besides primary keys, the indexes cover polling (due `SCHEDULED`/`WAITING`/`COMPENSATING` jobs in claim order),
 jobs per node, at most one pending occurrence per recurring job (partial unique index), steps
 waiting for an event, and event lookup and cleanup. Waiting for, suspending at and publishing
 events also take transaction-scoped advisory locks per event name and key; no table is involved.
@@ -302,8 +351,10 @@ PostgreSQL:
   a ride request is sent to a taxi broker, waits for a driver to accept it with a price and for the
   customer to accept that price, then reserves the payment, approves the ride at the broker and
   sends the customer a push notification with the estimated time of arrival. One job with durable
-  steps and event waits; without a driver or an answer in time, the ride is cancelled. Payloads and
-  events are records, mapped with Jackson via `JacksonJsonMapper`.
+  steps and event waits. Without a driver or an answer in time, if the customer declines the price
+  or cancels the ride (`Bikesched.cancel`), or if the broker cannot approve it, the ride is
+  cancelled resp. fails, and compensations release the payment and withdraw the ride at the
+  broker. Payloads and events are records, mapped with Jackson via `JacksonJsonMapper`.
 
 ```shell
 docker compose up -d
