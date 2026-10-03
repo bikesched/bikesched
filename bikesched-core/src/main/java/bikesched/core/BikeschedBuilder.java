@@ -89,9 +89,14 @@ public final class BikeschedBuilder {
 
   /**
    * Sets whether the node starts polling for jobs as soon as it is built (optional, default {@code
-   * true}). With {@code false} the node is registered and heartbeats, and jobs can be scheduled,
-   * but it executes no jobs until {@link Bikesched#startPolling()} is called, e.g. once all job
-   * handlers are registered, or never for a node that only schedules jobs.
+   * true}). With {@code false} jobs can be scheduled and events published, but the node is not
+   * registered, executes no jobs and sends no heartbeats until {@link Bikesched#startPolling()} is
+   * called, e.g. once all job handlers are registered, or never for an instance that only schedules
+   * jobs. Until then its {@link Node#id() id} is empty.
+   *
+   * <p>With {@code false}, {@link #build()} also does not access the database: the schema is
+   * migrated on first use, i.e. when polling starts or a job is scheduled or an event published, so
+   * the instance can be built while the database is not available yet.
    *
    * @param autoStartPolling whether to start polling on {@link #build()}
    * @return this builder
@@ -205,14 +210,15 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Creates the {@link Bikesched} instance: applies pending schema migrations, registers the node
-   * and starts its heartbeat and, unless disabled via {@link #autoStartPolling(boolean)}, its job
-   * poller.
+   * Creates the {@link Bikesched} instance: applies pending schema migrations and, unless disabled
+   * via {@link #autoStartPolling(boolean)}, {@linkplain Bikesched#startPolling() starts polling},
+   * which registers the node and starts its heartbeat. With polling disabled, this method does not
+   * access the database: the migration runs on first use instead.
    *
    * @return the new instance
    * @throws IllegalStateException if no data source was set
-   * @throws BikeschedException if the migration or the node registration fails, e.g. because a live
-   *     node with the same name is already registered
+   * @throws BikeschedException if polling is enabled and the migration or the node registration
+   *     fails, e.g. because a live node with the same name is already registered
    */
   public Bikesched build() {
     if (dataSource == null) {

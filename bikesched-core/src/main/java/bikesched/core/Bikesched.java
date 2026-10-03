@@ -5,7 +5,6 @@ import bikesched.core.job.Job;
 import bikesched.core.job.JobBuilder;
 import bikesched.core.job.JobHandler;
 import bikesched.core.job.Schedule;
-import java.util.UUID;
 
 /**
  * Entry point of bikesched: a database-backed job scheduler shared by all connected nodes.
@@ -125,34 +124,29 @@ public interface Bikesched extends AutoCloseable {
   EventBuilder newEvent(String eventName, String eventKey);
 
   /**
-   * Starts polling for jobs and executing them on this node. Only needed if the node was built with
-   * {@link BikeschedBuilder#autoStartPolling(boolean) autoStartPolling(false)}; calling it while
-   * already polling has no effect.
+   * Registers this instance as a node of the cluster and starts its heartbeat, then starts polling
+   * for jobs and executing them. Only needed if the instance was built with {@link
+   * BikeschedBuilder#autoStartPolling(boolean) autoStartPolling(false)}; calling it while already
+   * polling has no effect and returns the same node.
    *
+   * <p>A node taking over the name of a dead node takes over its id and releases the jobs that node
+   * left running.
+   *
+   * <p>Migrates the schema first, unless that already happened (e.g. when a job was scheduled).
+   *
+   * @return the node, with its {@link Node#id() id}
    * @throws IllegalStateException if this instance is closed
+   * @throws BikeschedException if the migration fails, e.g. because the database is not available,
+   *     or a live node with the same name is registered
    */
-  void startPolling();
+  Node startPolling();
 
   /**
-   * Returns whether this node polls for and executes jobs.
+   * Returns this instance's node; it has an id only once polling was started.
    *
-   * @return {@code true} once polling was started and until the instance is closed
+   * @return the node
    */
-  boolean isPolling();
-
-  /**
-   * Returns the id of the node this instance registered as.
-   *
-   * @return the node id
-   */
-  UUID nodeId();
-
-  /**
-   * Returns the unique name of the node this instance registered as.
-   *
-   * @return the node name
-   */
-  String nodeName();
+  Node node();
 
   /**
    * Stops polling and the heartbeat, releases unfinished jobs and removes this node from {@code

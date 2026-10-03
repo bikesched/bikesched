@@ -43,7 +43,7 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
                   .autoStartPolling(false)
                   .build();
           nodes.add(node);
-          String nodeName = node.nodeName();
+          String nodeName = node.node().name();
           node.registerHandler(
               type,
               job -> {

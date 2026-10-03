@@ -24,13 +24,84 @@ class NodeTest extends AbstractBikeschedTest {
             .node("node-heartbeat")
             .heartbeatInterval(Duration.ofMillis(100))
             .build()) {
-      OffsetDateTime registered = lastHeartbeat(bikesched.nodeId());
+      OffsetDateTime registered = lastHeartbeat(bikesched.node().id().orElseThrow());
       long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-      while (!lastHeartbeat(bikesched.nodeId()).isAfter(registered)
+      while (!lastHeartbeat(bikesched.node().id().orElseThrow()).isAfter(registered)
           && System.nanoTime() < deadline) {
         Thread.sleep(50);
       }
-      assertThat(lastHeartbeat(bikesched.nodeId())).isAfter(registered);
+      assertThat(lastHeartbeat(bikesched.node().id().orElseThrow())).isAfter(registered);
+    }
+  }
+
+  @Test
+  void nodeRegistersAndHeartbeatsOnlyOncePolling() throws Exception {
+    try (Bikesched bikesched =
+        Bikesched.builder()
+            .dataSource(dataSource)
+            .node("node-registers-later")
+            .heartbeatInterval(Duration.ofMillis(50))
+            .autoStartPolling(false)
+            .build()) {
+      // Scheduling needs no registration (the handler is never run: the node does not poll).
+      bikesched.newJob("not-polling").handler(job -> {}).schedule();
+      execute("delete from bikesched_jobs where job_type = 'not-polling'");
+
+      assertThat(bikesched.node().name()).isEqualTo("node-registers-later");
+      assertThat(bikesched.node().id()).isEmpty();
+      assertThat(bikesched.node().isPolling()).isFalse();
+      assertThat(countRows("bikesched_nodes", "name = 'node-registers-later'")).isZero();
+
+      Node node = bikesched.startPolling();
+
+      assertThat(node).isSameAs(bikesched.node());
+      assertThat(node.isPolling()).isTrue();
+      UUID id = node.id().orElseThrow();
+      assertThat(nodeName(id)).isEqualTo("node-registers-later");
+      OffsetDateTime registered = lastHeartbeat(id);
+      long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+      while (!lastHeartbeat(id).isAfter(registered) && System.nanoTime() < deadline) {
+        Thread.sleep(50);
+      }
+      assertThat(lastHeartbeat(id)).as("heartbeats while polling").isAfter(registered);
+    }
+  }
+
+  @Test
+  void closingANodeThatNeverPolledDeregistersNothing() {
+    var logs = LogCapture.of(bikesched.core.internal.DefaultBikesched.class);
+    try (logs) {
+      Bikesched.builder()
+          .dataSource(dataSource)
+          .node("node-never-polled")
+          .autoStartPolling(false)
+          .build()
+          .close();
+    }
+    assertThat(logs.messages())
+        .contains(
+            "bikesched node node-never-polled created; it registers, sends heartbeats and polls"
+                + " for jobs once startPolling() is called",
+            "bikesched node node-never-polled closed (it never polled, so it was not registered)");
+  }
+
+  @Test
+  void startPollingFailsIfALiveNodeHasTheName() {
+    try (Bikesched polling = Bikesched.builder().dataSource(dataSource).node("node-taken").build();
+        Bikesched idle =
+            Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-taken")
+                .autoStartPolling(false)
+                .build()) {
+      assertThatThrownBy(idle::startPolling)
+          .isInstanceOf(BikeschedException.class)
+          .hasMessage(
+              "A live bikesched node named 'node-taken' is already registered; node names must"
+                  + " be unique");
+      assertThat(idle.node().isPolling()).isFalse();
+      assertThat(idle.node().id()).isEmpty();
+      assertThat(polling.node().isPolling()).isTrue();
     }
   }
 
@@ -40,7 +111,7 @@ class NodeTest extends AbstractBikeschedTest {
       assertThatThrownBy(() -> Bikesched.builder().dataSource(dataSource).node("node-dup").build())
           .isInstanceOf(BikeschedException.class)
           .hasMessageContaining("live bikesched node named 'node-dup' is already registered");
-      assertThat(first.nodeName()).isEqualTo("node-dup");
+      assertThat(first.node().name()).isEqualTo("node-dup");
     }
   }
 
@@ -67,7 +138,7 @@ class NodeTest extends AbstractBikeschedTest {
 
     try (Bikesched bikesched =
         Bikesched.builder().dataSource(dataSource).node("node-restarted").build()) {
-      assertThat(bikesched.nodeId()).isEqualTo(staleId);
+      assertThat(bikesched.node().id().orElseThrow()).isEqualTo(staleId);
       assertThat(count("job_type = 'orphan-restart' and state = 'SCHEDULED' and locked_by is null"))
           .as("jobs left running by the previous instance are released on startup")
           .isEqualTo(1);

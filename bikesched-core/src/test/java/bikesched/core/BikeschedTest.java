@@ -3,7 +3,7 @@ package bikesched.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import bikesched.core.internal.DefaultBikesched;
+import bikesched.core.internal.DatabaseInitializer;
 import java.net.InetAddress;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -16,8 +16,8 @@ class BikeschedTest extends AbstractBikeschedTest {
   @Test
   void buildMigratesSchemaAndRegistersNode() throws SQLException {
     try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).node("node-a").build()) {
-      assertThat(bikesched.nodeName()).isEqualTo("node-a");
-      assertThat(nodeName(bikesched.nodeId())).isEqualTo("node-a");
+      assertThat(bikesched.node().name()).isEqualTo("node-a");
+      assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo("node-a");
     }
   }
 
@@ -25,8 +25,8 @@ class BikeschedTest extends AbstractBikeschedTest {
   void nodeNameDefaultsToHostName() throws Exception {
     try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).build()) {
       String hostName = InetAddress.getLocalHost().getHostName();
-      assertThat(bikesched.nodeName()).isEqualTo(hostName);
-      assertThat(nodeName(bikesched.nodeId())).isEqualTo(hostName);
+      assertThat(bikesched.node().name()).isEqualTo(hostName);
+      assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo(hostName);
     }
   }
 
@@ -79,21 +79,21 @@ class BikeschedTest extends AbstractBikeschedTest {
       UUID jobId = bikesched.newJob("manual").handler(job -> ran.countDown()).schedule();
       Thread.sleep(300); // several poll intervals
 
-      assertThat(bikesched.isPolling()).isFalse();
+      assertThat(bikesched.node().isPolling()).isFalse();
       assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0"))
           .as("not claimed while polling is off")
           .isEqualTo(1);
 
-      bikesched.startPolling();
-      bikesched.startPolling(); // no effect while already polling
+      Node node = bikesched.startPolling();
 
-      assertThat(bikesched.isPolling()).isTrue();
+      assertThat(bikesched.startPolling()).as("no effect while already polling").isSameAs(node);
+      assertThat(node.isPolling()).isTrue();
       assertThat(ran.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
     }
   }
 
   @Test
-  void startPollingAfterCloseFails() {
+  void startPollingAfterCloseFails() throws Exception {
     Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
@@ -102,8 +102,9 @@ class BikeschedTest extends AbstractBikeschedTest {
             .build();
     bikesched.close();
 
-    assertThat(bikesched.isPolling()).isFalse();
+    assertThat(bikesched.node().isPolling()).isFalse();
     assertThatThrownBy(bikesched::startPolling).isInstanceOf(IllegalStateException.class);
+    assertThat(bikesched.node().id()).as("never registered").isEmpty();
   }
 
   @Test
@@ -117,7 +118,7 @@ class BikeschedTest extends AbstractBikeschedTest {
     bikesched.close();
     bikesched.close(); // idempotent
 
-    assertThat(nodeName(bikesched.nodeId())).isNull();
+    assertThat(nodeName(bikesched.node().id().orElseThrow())).isNull();
     assertThat(Thread.getAllStackTraces().keySet())
         .noneMatch(
             t ->
@@ -133,20 +134,20 @@ class BikeschedTest extends AbstractBikeschedTest {
     execute(
         "insert into bikesched_jobs (id, job_type, state, locked_by) "
             + "values (gen_random_uuid(), 'stuck', 'RUNNING', '"
-            + bikesched.nodeId()
+            + bikesched.node().id().orElseThrow()
             + "')");
 
     bikesched.close();
 
     assertThat(count("job_type = 'stuck' and state = 'SCHEDULED' and locked_by is null"))
         .isEqualTo(1);
-    assertThat(nodeName(bikesched.nodeId())).isNull();
+    assertThat(nodeName(bikesched.node().id().orElseThrow())).isNull();
     execute("delete from bikesched_jobs where job_type = 'stuck'");
   }
 
   @Test
   void logsRedactedDatabaseUrlOnStartup() {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(DatabaseInitializer.class);
     try (logs;
         Bikesched _ = Bikesched.builder().dataSource(dataSource).node("node-db-url").build()) {
       assertThat(logs.events())

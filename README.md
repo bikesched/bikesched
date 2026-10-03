@@ -216,7 +216,7 @@ on virtual threads.
 | `dataSource(DataSource)` | required | PostgreSQL data source; tables are created in its default schema |
 | `node(String)` | host name | unique node name; a dead node's name is taken over |
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
-| `autoStartPolling(boolean)` | `true` | with `false`, call `startPolling()` once all handlers are registered |
+| `autoStartPolling(boolean)` | `true` | with `false`, call `startPolling()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated on first use (`startPolling()`, scheduling a job, publishing an event), and retried on the next one if that fails |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))`; a handler's `job.fail().retryAfter(…)` takes precedence |
 | `jsonMapper(JsonMapper)` | `JsonStringMapper` | maps payloads and step results to and from JSON |

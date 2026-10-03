@@ -17,7 +17,7 @@ public final class Starter {
 
   private Starter() {}
 
-  public static void main(String[] args) throws InterruptedException {
+  static void main(String[] args) throws InterruptedException {
     var dataSource = new PGSimpleDataSource();
     dataSource.setServerNames(new String[] {"localhost"});
     dataSource.setPortNumbers(
@@ -50,16 +50,42 @@ public final class Starter {
           int randomOneOrZero = (int) (Math.random() * 2);
           if (randomOneOrZero == 1) throw new RuntimeException("random failure");
         });
-    // Polling was not started on build(): start it now that all handlers are registered.
-    bikesched.startPolling();
 
-    System.out.println(
-        "bikesched node '"
-            + bikesched.nodeName()
-            + "' ("
-            + bikesched.nodeId()
-            + ") running, press Ctrl+C to stop");
+      Node node = bikesched.startPolling();
+      System.out.println(
+              "bikesched node '"
+                      + node.name()
+                      + "' ("
+                      + node.id().orElseThrow()
+                      + ") running, press Ctrl+C to stop");
 
+      bikesched
+              .newJob("event waiter")
+              .payload("{\"approval\": 1}")
+              .handler(
+                      job -> {
+                          JsonObject jobPayload = JsonParser.object().from(job.payload());
+                          Integer approvalId = (Integer) jobPayload.get("approval");
+
+                          var eventJson =
+                                  job.waitForEvent("wait for approval", "approval", approvalId.toString())
+                                          .receive(event -> "{\"approval\": " + event.key() + "}");
+                          JsonObject event = JsonParser.object().from(eventJson);
+                          Integer approval = (Integer) event.get("approval");
+                          System.out.println("Approval received: " + approval);
+                      })
+              .schedule();
+
+      try {
+          Thread.sleep(1000);
+      } catch (InterruptedException e) {
+          throw new RuntimeException(e);
+      }
+
+      bikesched.newEvent("approval", "1").publish();
+
+
+      // Polling was not started on build(): start it now that all handlers are registered.
     //    for (int i = 1; i <= 3; i++) {
     //      bikesched.newJob("print").payload("{\"n\": " + i + "}").schedule();
     //    }
@@ -98,26 +124,6 @@ public final class Starter {
     //        .maxAttempts(5)
     //        .schedule();
 
-    bikesched
-        .newJob("event waiter")
-        .payload("{\"approval\": 1}")
-        .handler(
-            job -> {
-              JsonObject jobPayload = JsonParser.object().from(job.payload());
-              Integer approvalId = (Integer) jobPayload.get("approval");
-
-              var eventJson =
-                  job.waitForEvent("wait for approval", "approval", approvalId.toString())
-                      .receive(event -> "{\"approval\": " + event.key() + "}");
-              JsonObject event = JsonParser.object().from(eventJson);
-              Integer approval = (Integer) event.get("approval");
-              System.out.println("Approval received: " + approval);
-            })
-        .schedule();
-
-    Thread.sleep(1000);
-
-    bikesched.newEvent("approval", "1").publish();
 
     Thread.currentThread().join();
   }

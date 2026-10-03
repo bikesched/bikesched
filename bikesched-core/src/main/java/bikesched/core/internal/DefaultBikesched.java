@@ -3,6 +3,7 @@ package bikesched.core.internal;
 import bikesched.core.Bikesched;
 import bikesched.core.BikeschedException;
 import bikesched.core.BikeschedLogContext;
+import bikesched.core.Node;
 import bikesched.core.event.EventBuilder;
 import bikesched.core.job.JobBuilder;
 import bikesched.core.job.JobHandler;
@@ -14,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,9 +37,10 @@ import org.slf4j.MDC;
  * <p>Threads:
  *
  * <ul>
- *   <li>{@code bikesched-heartbeat}: single scheduled thread running the {@link Heartbeat}: updates
- *       this node's heartbeat, releases the running jobs of dead nodes, removes dead nodes and
- *       deletes expired events
+ *   <li>{@code bikesched-heartbeat}: single scheduled thread running the {@link Heartbeat} while
+ *       the node polls: updates this node's heartbeat, releases the running jobs of dead nodes,
+ *       removes dead nodes and deletes expired events. A node that does not poll executes no jobs
+ *       and sends no heartbeats
  *   <li>{@code bikesched-poller}: single scheduled thread claiming due jobs (skip locked) and
  *       handing them to the job executor
  *   <li>{@code bikesched-job-N}: one virtual thread per claimed job, processed by the {@link
@@ -63,27 +66,36 @@ public final class DefaultBikesched implements Bikesched {
   private static final Logger LOG = LoggerFactory.getLogger(DefaultBikesched.class);
 
   private final Database database;
-  private final UUID nodeId;
+  private final Settings settings;
   private final String nodeName;
   private final Map<String, JobHandler> handlers = new ConcurrentHashMap<>();
   private final Map<String, RecurringJob> recurringJobs = new ConcurrentHashMap<>();
-  private final Duration pollInterval;
 
   private final Semaphore jobSlots;
   private final ScheduledExecutorService heartbeatExecutor;
   private final ScheduledExecutorService pollerExecutor;
   private final ScheduledThreadPoolExecutor timeoutExecutor;
   private final ExecutorService jobExecutor;
-  private final JobProcessor processor;
-  private final Heartbeat heartbeat;
-  private final AtomicBoolean polling = new AtomicBoolean();
+  private final Node node = new DefaultNode();
+
+  /** Guards starting to poll against closing, so a node never registers after it was closed. */
+  private final Object lifecycle = new Object();
+
   private final AtomicBoolean closed = new AtomicBoolean();
 
-  private DefaultBikesched(Database database, UUID nodeId, Settings settings) {
+  /** Set (once) when polling starts, together with the processor; {@code null} until then. */
+  private volatile UUID nodeId;
+
+  private volatile JobProcessor processor;
+
+  /** Called before every database access of the API (polling, scheduling, publishing events). */
+  private final DatabaseInitializer initializer;
+
+  private DefaultBikesched(Database database, Settings settings) {
     this.database = database;
-    this.nodeId = nodeId;
+    this.initializer = new DatabaseInitializer(database);
+    this.settings = settings;
     this.nodeName = settings.nodeName();
-    this.pollInterval = settings.pollInterval();
     this.jobSlots = new Semaphore(settings.maxConcurrentJobs());
     this.heartbeatExecutor =
         Executors.newSingleThreadScheduledExecutor(
@@ -97,100 +109,131 @@ public final class DefaultBikesched implements Bikesched {
     this.timeoutExecutor.setRemoveOnCancelPolicy(true); // timers of jobs that finished in time
     this.jobExecutor =
         Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("bikesched-job-", 0).factory());
-    this.heartbeat =
-        new Heartbeat(
-            database,
-            nodeId,
-            nodeName,
-            settings.nodeTimeout(),
-            settings.eventRetention(),
-            recurringJobs::values);
-    this.processor =
-        new JobProcessor(
-            database,
-            nodeId,
-            nodeName,
-            handlers::get,
-            recurringJobs::get,
-            timeoutExecutor,
-            settings.defaultJobTimeout(),
-            settings.defaultEventTimeout(),
-            settings.retryBackoff());
   }
 
   /**
-   * Migrates the schema, registers the node and starts its heartbeat and (optionally) job poller.
+   * Creates the instance. The database is not accessed until it is needed (see {@link
+   * DatabaseInitializer}): with polling enabled, that is right away, since polling starts (which
+   * registers the node and starts its heartbeat) before this method returns.
    *
    * @param database the database
    * @param settings the node's settings
-   * @return the running node
+   * @return the instance
    */
   public static DefaultBikesched create(Database database, Settings settings) {
-    if (LOG.isDebugEnabled()) {
-      // "Database: <jdbc url>" format, e.g. picked up by IntelliJ's Testcontainers Port Updater.
-      LOG.debug("Database: {}", database.describe());
-    }
-    database.migrate();
-    String nodeName = settings.nodeName();
-    UUID nodeId =
-        database
-            .nodes()
-            .registerNode(UUID.randomUUID(), nodeName, settings.nodeTimeout())
-            .orElseThrow(
-                () ->
-                    new BikeschedException(
-                        "A live bikesched node named '"
-                            + nodeName
-                            + "' is already registered; node names must be unique"));
-    // A freshly started node runs nothing yet: jobs still RUNNING under this id belong to a
-    // previous (crashed) instance with the same name whose row was taken over.
-    int orphaned = database.jobs().releaseJobs(nodeId);
-    if (orphaned > 0) {
-      LOG.warn(
-          "Released {} job(s) left running by a previous instance of bikesched node {} ({})",
-          orphaned,
-          nodeName,
-          nodeId);
-    }
-    var bikesched = new DefaultBikesched(database, nodeId, settings);
-    bikesched.scheduleWithFixedDelay(
-        bikesched.heartbeatExecutor, bikesched.heartbeat::run, settings.heartbeatInterval());
-    LOG.info(
-        "bikesched node {} ({}) registered, running up to {} job(s) concurrently",
-        nodeName,
-        nodeId,
-        settings.maxConcurrentJobs());
+    var bikesched = new DefaultBikesched(database, settings);
     if (settings.autoStartPolling()) {
-      bikesched.startPolling();
+      try {
+        bikesched.startPolling();
+      } catch (RuntimeException e) {
+        bikesched.close(); // its executors
+        throw e;
+      }
     } else {
       LOG.info(
-          "bikesched node {} ({}) does not poll for jobs until startPolling() is called",
-          nodeName,
-          nodeId);
+          "bikesched node {} created; it registers, sends heartbeats and polls for jobs once"
+              + " startPolling() is called",
+          bikesched.nodeName);
     }
     return bikesched;
   }
 
   @Override
-  public void startPolling() {
+  public Node startPolling() {
     if (closed.get()) {
       throw new IllegalStateException("bikesched node " + nodeName + " is closed");
     }
-    if (!polling.compareAndSet(false, true)) {
-      return;
+    initializer.ensureInitialized(); // not under the lifecycle lock: close() must not wait for it
+    synchronized (lifecycle) {
+      if (closed.get()) {
+        throw new IllegalStateException("bikesched node " + nodeName + " is closed");
+      }
+      if (nodeId != null) {
+        return node;
+      }
+      UUID id =
+          database
+              .nodes()
+              .registerNode(UUID.randomUUID(), nodeName, settings.nodeTimeout())
+              .orElseThrow(
+                  () ->
+                      new BikeschedException(
+                          "A live bikesched node named '"
+                              + nodeName
+                              + "' is already registered; node names must be unique"));
+      // This node runs nothing yet: jobs still RUNNING under this id belong to a previous
+      // (crashed) instance with the same name whose row was taken over.
+      int orphaned = database.jobs().releaseJobs(id);
+      if (orphaned > 0) {
+        LOG.warn(
+            "Released {} job(s) left running by a previous instance of bikesched node {} ({})",
+            orphaned,
+            nodeName,
+            id);
+      }
+      processor =
+          new JobProcessor(
+              database,
+              id,
+              nodeName,
+              handlers::get,
+              recurringJobs::get,
+              timeoutExecutor,
+              settings.defaultJobTimeout(),
+              settings.defaultEventTimeout(),
+              settings.retryBackoff());
+      var heartbeat =
+          new Heartbeat(
+              database,
+              id,
+              nodeName,
+              settings.nodeTimeout(),
+              settings.eventRetention(),
+              recurringJobs::values);
+      nodeId = id;
+      // A polling node claims jobs, so it must heartbeat: otherwise other nodes would consider it
+      // dead and release its running jobs.
+      scheduleWithFixedDelay(heartbeatExecutor, heartbeat::run, settings.heartbeatInterval());
+      scheduleWithFixedDelay(pollerExecutor, this::poll, settings.pollInterval());
+      LOG.info(
+          "bikesched node {} ({}) registered, polling for jobs every {} (running up to {}"
+              + " concurrently) and heartbeating every {}",
+          nodeName,
+          id,
+          settings.pollInterval(),
+          settings.maxConcurrentJobs(),
+          settings.heartbeatInterval());
+      return node;
     }
-    try {
-      scheduleWithFixedDelay(pollerExecutor, this::poll, pollInterval);
-    } catch (RejectedExecutionException e) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed", e);
-    }
-    LOG.info(
-        "bikesched node {} ({}) started polling for jobs every {}", nodeName, nodeId, pollInterval);
   }
 
   @Override
-  public boolean isPolling() {
-    return polling.get() && !closed.get();
+  public Node node() {
+    return node;
+  }
+
+  /** The {@link Node} view of this instance. */
+  private final class DefaultNode implements Node {
+
+    @Override
+    public String name() {
+      return nodeName;
+    }
+
+    @Override
+    public Optional<UUID> id() {
+      return Optional.ofNullable(nodeId);
+    }
+
+    @Override
+    public boolean isPolling() {
+      return nodeId != null && !closed.get();
+    }
+
+    @Override
+    public String toString() {
+      return "Node[name=" + nodeName + ", id=" + nodeId + "]";
+    }
   }
 
   @Override
@@ -201,7 +244,7 @@ public final class DefaultBikesched implements Bikesched {
       throw new IllegalArgumentException(
           "A handler for job type '" + type + "' is already registered");
     }
-    LOG.info("bikesched node {} ({}) registered handler for job type {}", nodeName, nodeId, type);
+    LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);
     return this;
   }
 
@@ -235,8 +278,7 @@ public final class DefaultBikesched implements Bikesched {
     }
     if (handler != null) {
       if (handlers.putIfAbsent(type, handler) == null) {
-        LOG.info(
-            "bikesched node {} ({}) registered handler for job type {}", nodeName, nodeId, type);
+        LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);
       } else {
         LOG.debug("Handler for job type {} already registered, keeping it", type);
       }
@@ -257,6 +299,7 @@ public final class DefaultBikesched implements Bikesched {
     requireHandler(type, handler);
     Instant now = Instant.now();
     Instant first = firstRun != null ? firstRun : job.nextRun(now, now);
+    initializer.ensureInitialized();
     var registration = database.jobs().registerRecurringJob(job.occurrence(first));
     recurringJobs.put(type, job);
     String schedule = job.schedule().description();
@@ -288,6 +331,7 @@ public final class DefaultBikesched implements Bikesched {
   public boolean removeRecurringJob(String type) {
     requireValidType(type);
     boolean registered = recurringJobs.remove(type) != null;
+    initializer.ensureInitialized();
     int deleted = database.jobs().deletePendingOccurrences(type);
     LOG.info(
         "Removed recurring job {}{}{}",
@@ -302,6 +346,7 @@ public final class DefaultBikesched implements Bikesched {
     String type = job.type();
     requireHandler(type, handler);
     UUID jobId = UUID.randomUUID();
+    initializer.ensureInitialized();
     if (connection == null) {
       database.jobs().insertJob(jobId, job);
     } else {
@@ -335,6 +380,7 @@ public final class DefaultBikesched implements Bikesched {
     if (closed.get()) {
       throw new IllegalStateException("bikesched node " + nodeName + " is closed");
     }
+    initializer.ensureInitialized();
     List<Step> received =
         connection == null
             ? database.events().publishEvent(eventName, eventKey, payload)
@@ -353,41 +399,38 @@ public final class DefaultBikesched implements Bikesched {
     return received;
   }
 
-  @Override
-  public UUID nodeId() {
-    return nodeId;
-  }
-
-  @Override
-  public String nodeName() {
-    return nodeName;
-  }
-
   /**
    * Stops polling, lets in-flight jobs finish (up to a timeout), releases jobs that are still
    * running back to {@code SCHEDULED}, stops the heartbeat and deregisters the node.
    */
   @Override
   public void close() {
-    if (!closed.compareAndSet(false, true)) {
-      return;
+    UUID id;
+    synchronized (lifecycle) {
+      if (!closed.compareAndSet(false, true)) {
+        return;
+      }
+      id = nodeId;
     }
     shutdownAndAwait(pollerExecutor, "poller");
     shutdownAndAwait(jobExecutor, "job executor");
     timeoutExecutor
         .shutdownNow(); // all jobs ended (or were abandoned): no timeouts left to enforce
     shutdownAndAwait(heartbeatExecutor, "heartbeat");
+    if (id == null) {
+      LOG.info("bikesched node {} closed (it never polled, so it was not registered)", nodeName);
+      return;
+    }
     try {
-      int released = database.jobs().releaseJobs(nodeId);
+      int released = database.jobs().releaseJobs(id);
       if (released > 0) {
-        LOG.info(
-            "Released {} unfinished job(s) of bikesched node {} ({})", released, nodeName, nodeId);
+        LOG.info("Released {} unfinished job(s) of bikesched node {} ({})", released, nodeName, id);
       }
-      database.nodes().deregisterNode(nodeId);
-      LOG.info("bikesched node {} ({}) deregistered", nodeName, nodeId);
+      database.nodes().deregisterNode(id);
+      LOG.info("bikesched node {} ({}) deregistered", nodeName, id);
     } catch (BikeschedException e) {
       // The row goes stale and can be taken over by a node with the same name later.
-      LOG.warn("Could not deregister bikesched node {} ({})", nodeName, nodeId, e);
+      LOG.warn("Could not deregister bikesched node {} ({})", nodeName, id, e);
     }
   }
 
@@ -396,7 +439,7 @@ public final class DefaultBikesched implements Bikesched {
     long millis = interval.toMillis();
     executor.scheduleWithFixedDelay(
         () -> {
-          try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString())) {
+          try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId))) {
             task.run();
           }
         },
@@ -457,7 +500,7 @@ public final class DefaultBikesched implements Bikesched {
     try {
       jobExecutor.execute(
           () -> {
-            try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString());
+            try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId));
                 var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
                 var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
               processor.process(job);
