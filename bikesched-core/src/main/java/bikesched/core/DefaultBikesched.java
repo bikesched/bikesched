@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 /**
  * Default {@link Bikesched} implementation. All database access goes through {@link Database}.
@@ -60,10 +61,12 @@ final class DefaultBikesched implements Bikesched {
     private final String nodeName;
     private final Map<String, JobHandler> handlers = new ConcurrentHashMap<>();
     private final Duration nodeTimeout;
+    private final Duration pollInterval;
     private final Semaphore jobSlots;
     private final ScheduledExecutorService heartbeatExecutor;
     private final ScheduledExecutorService pollerExecutor;
     private final ExecutorService jobExecutor;
+    private final AtomicBoolean polling = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
 
     private DefaultBikesched(Database database, UUID nodeId, Settings settings) {
@@ -71,6 +74,7 @@ final class DefaultBikesched implements Bikesched {
         this.nodeId = nodeId;
         this.nodeName = settings.nodeName();
         this.nodeTimeout = settings.nodeTimeout();
+        this.pollInterval = settings.pollInterval();
         this.jobSlots = new Semaphore(settings.maxConcurrentJobs());
         this.heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(
                 Thread.ofPlatform().name("bikesched-heartbeat").daemon().factory());
@@ -80,7 +84,7 @@ final class DefaultBikesched implements Bikesched {
                 Thread.ofVirtual().name("bikesched-job-", 0).factory());
     }
 
-    /** Migrates the schema, registers the node and starts its heartbeat and job poller. */
+    /** Migrates the schema, registers the node and starts its heartbeat and (optionally) job poller. */
     static DefaultBikesched create(Database database, Settings settings) {
         database.migrate();
         String nodeName = settings.nodeName();
@@ -97,10 +101,35 @@ final class DefaultBikesched implements Bikesched {
         }
         var bikesched = new DefaultBikesched(database, nodeId, settings);
         bikesched.scheduleWithFixedDelay(bikesched.heartbeatExecutor, bikesched::heartbeat, settings.heartbeatInterval());
-        bikesched.scheduleWithFixedDelay(bikesched.pollerExecutor, bikesched::poll, settings.pollInterval());
         LOG.info("bikesched node {} ({}) registered, running up to {} job(s) concurrently",
                 nodeName, nodeId, settings.maxConcurrentJobs());
+        if (settings.autoStartPolling()) {
+            bikesched.startPolling();
+        } else {
+            LOG.info("bikesched node {} ({}) does not poll for jobs until startPolling() is called", nodeName, nodeId);
+        }
         return bikesched;
+    }
+
+    @Override
+    public void startPolling() {
+        if (closed.get()) {
+            throw new IllegalStateException("bikesched node " + nodeName + " is closed");
+        }
+        if (!polling.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            scheduleWithFixedDelay(pollerExecutor, this::poll, pollInterval);
+        } catch (RejectedExecutionException e) {
+            throw new IllegalStateException("bikesched node " + nodeName + " is closed", e);
+        }
+        LOG.info("bikesched node {} ({}) started polling for jobs every {}", nodeName, nodeId, pollInterval);
+    }
+
+    @Override
+    public boolean isPolling() {
+        return polling.get() && !closed.get();
     }
 
     @Override
@@ -115,34 +144,32 @@ final class DefaultBikesched implements Bikesched {
     }
 
     @Override
-    public UUID schedule(String type, String payload, Instant scheduledAt, JobHandler handler) {
+    public JobBuilder newJob(String type) {
         requireValidType(type);
-        Objects.requireNonNull(handler, "handler");
-        if (closed.get()) {
-            throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-        }
-        if (handlers.putIfAbsent(type, handler) == null) {
-            LOG.info("bikesched node {} ({}) registered handler for job type {}", nodeName, nodeId, type);
-        } else {
-            LOG.debug("Handler for job type {} already registered, keeping it", type);
-        }
-        return schedule(type, payload, scheduledAt);
+        return new JobBuilder(type, this::scheduleJob);
     }
 
-    @Override
-    public UUID schedule(String type, String payload, Instant scheduledAt) {
-        requireValidType(type);
-        Objects.requireNonNull(scheduledAt, "scheduledAt");
+    /** Stores a job built by a {@link JobBuilder}; registers its handler first if given and new. */
+    private UUID scheduleJob(
+            String type, String payload, Instant scheduledAt, int priority, int maxAttempts, JobHandler handler) {
         if (closed.get()) {
             throw new IllegalStateException("bikesched node " + nodeName + " is closed");
+        }
+        if (handler != null) {
+            if (handlers.putIfAbsent(type, handler) == null) {
+                LOG.info("bikesched node {} ({}) registered handler for job type {}", nodeName, nodeId, type);
+            } else {
+                LOG.debug("Handler for job type {} already registered, keeping it", type);
+            }
         }
         if (!handlers.containsKey(type)) {
             throw new IllegalArgumentException("Unknown job type '" + type + "': no handler registered (known types: "
                     + new TreeSet<>(handlers.keySet()) + ")");
         }
         UUID jobId = UUID.randomUUID();
-        database.insertJob(jobId, type, payload, scheduledAt);
-        LOG.debug("Scheduled job {} of type {} at {}", jobId, type, scheduledAt);
+        database.insertJob(jobId, type, payload, scheduledAt, priority, maxAttempts);
+        LOG.debug("Scheduled job {} of type {} at {} (priority {}, max {} attempt(s))",
+                jobId, type, scheduledAt, priority, maxAttempts);
         return jobId;
     }
 
@@ -183,7 +210,11 @@ final class DefaultBikesched implements Bikesched {
 
     private void scheduleWithFixedDelay(ScheduledExecutorService executor, Runnable task, Duration interval) {
         long millis = interval.toMillis();
-        executor.scheduleWithFixedDelay(task, millis, millis, TimeUnit.MILLISECONDS);
+        executor.scheduleWithFixedDelay(() -> {
+            try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString())) {
+                task.run();
+            }
+        }, millis, millis, TimeUnit.MILLISECONDS);
     }
 
     private void heartbeat() {
@@ -275,7 +306,9 @@ final class DefaultBikesched implements Bikesched {
     private void dispatch(Job job) {
         try {
             jobExecutor.execute(() -> {
-                try {
+                try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString());
+                        var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
+                        var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
                     process(job);
                 } finally {
                     jobSlots.release();
@@ -298,12 +331,25 @@ final class DefaultBikesched implements Bikesched {
             return;
         }
         try {
+            LOG.debug("Executing job {} of type {} (attempt {} of {}) on bikesched node {} ({})",
+                    job.id(), job.type(), job.attempts(), job.maxAttempts(), nodeName, nodeId);
             handler.run(job);
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            recordFailure(job, e);
+            if (job.isCancelled()) {
+                // The handler's decision to cancel wins over the failure: no retry.
+                LOG.warn("Job {} of type {} was cancelled, ignoring the exception thrown by its handler afterwards",
+                        job.id(), job.type(), e);
+                recordCancellation(job);
+            } else {
+                recordFailure(job, e);
+            }
+            return;
+        }
+        if (job.isCancelled()) {
+            recordCancellation(job);
             return;
         }
         try {
@@ -312,6 +358,20 @@ final class DefaultBikesched implements Bikesched {
             }
         } catch (RuntimeException e) {
             LOG.warn("Completing job {} failed", job.id(), e);
+        }
+    }
+
+    private void recordCancellation(Job job) {
+        String message = job.cancelMessage();
+        try {
+            if (database.cancelJob(job.id(), nodeId, message)) {
+                LOG.info("Job {} of type {} cancelled by its handler (attempt {} of {}){}", job.id(), job.type(),
+                        job.attempts(), job.maxAttempts(), message == null ? "" : ": " + message);
+            } else {
+                LOG.warn("Job {} of type {} was cancelled but no longer running on this node", job.id(), job.type());
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("Recording cancellation of job {} failed", job.id(), e);
         }
     }
 

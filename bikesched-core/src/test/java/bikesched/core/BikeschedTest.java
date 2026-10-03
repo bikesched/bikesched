@@ -211,6 +211,13 @@ class BikeschedTest {
 
         assertThat(handled).hasSize(25).allSatisfy(entry -> assertThat(entry)
                 .matches("virtual bikesched-job-\\d+ print-batch \\{\"n\": \\d+}"));
+        assertThat(logs.list)
+                .filteredOn(e -> e.getLevel() == ch.qos.logback.classic.Level.DEBUG
+                        && e.getFormattedMessage().matches("Executing job .* of type print-batch \\(attempt 1 of 3\\) "
+                                + "on bikesched node node-worker \\(.*\\)"))
+                .as("debug log before each job execution, on the job's virtual thread")
+                .hasSize(25)
+                .allSatisfy(e -> assertThat(e.getThreadName()).startsWith("bikesched-job-"));
         var claimed = java.util.regex.Pattern.compile(
                 "bikesched node node-worker \\([0-9a-f-]{36}\\) claimed (\\d+) job\\(s\\)");
         assertThat(logs.list.stream()
@@ -246,7 +253,7 @@ class BikeschedTest {
                 .build()) {
             var received = new java.util.concurrent.CompletableFuture<Job>();
             bikesched.registerHandler("print", received::complete);
-            UUID jobId = bikesched.schedule("print", "{\"greeting\": \"hello\"}");
+            UUID jobId = bikesched.newJob("print").payload("{\"greeting\": \"hello\"}").schedule();
 
             Job job = received.get(10, java.util.concurrent.TimeUnit.SECONDS);
             assertThat(job.id()).isEqualTo(jobId);
@@ -269,7 +276,7 @@ class BikeschedTest {
                 .build()) {
             var ran = new java.util.concurrent.CountDownLatch(1);
             bikesched.registerHandler("ping", ran::countDown);
-            bikesched.schedule("ping", null);
+            bikesched.newJob("ping").schedule();
 
             assertThat(ran.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
         }
@@ -280,7 +287,7 @@ class BikeschedTest {
         try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).node("node-unknown").build()) {
             bikesched.registerHandler("known", () -> {});
 
-            assertThatThrownBy(() -> bikesched.schedule("unknown", null))
+            assertThatThrownBy(() -> bikesched.newJob("unknown").schedule())
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("Unknown job type 'unknown': no handler registered (known types: [known])");
         }
@@ -341,11 +348,11 @@ class BikeschedTest {
                 .pollInterval(Duration.ofMillis(50))
                 .build()) {
             var received = new java.util.concurrent.CompletableFuture<Job>();
-            UUID jobId = bikesched.schedule("inline", "{\"x\": 1}", received::complete);
+            UUID jobId = bikesched.newJob("inline").payload("{\"x\": 1}").handler(received::complete).schedule();
 
             assertThat(received.get(10, java.util.concurrent.TimeUnit.SECONDS).id()).isEqualTo(jobId);
             // The handler is registered under the job type now: scheduling by name works as well.
-            assertThat(bikesched.schedule("inline", null)).isNotNull();
+            assertThat(bikesched.newJob("inline").schedule()).isNotNull();
             assertThatThrownBy(() -> bikesched.registerHandler("inline", () -> {}))
                     .hasMessageContaining("already registered");
         }
@@ -361,12 +368,261 @@ class BikeschedTest {
             var first = new java.util.concurrent.CompletableFuture<UUID>();
             bikesched.registerHandler("keep", job -> first.complete(job.id()));
 
-            UUID jobId = bikesched.schedule("keep", null, job -> {
+            UUID jobId = bikesched.newJob("keep").handler(job -> {
                 throw new AssertionError("second handler must not be used");
-            });
+            }).schedule();
 
             assertThat(first.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(jobId);
         }
+    }
+
+    @Test
+    void pollingCanBeStartedLater() throws Exception {
+        try (Bikesched bikesched = Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-manual-polling")
+                .pollInterval(Duration.ofMillis(50))
+                .autoStartPolling(false)
+                .build()) {
+            var ran = new java.util.concurrent.CountDownLatch(1);
+            UUID jobId = bikesched.newJob("manual").handler(job -> ran.countDown()).schedule();
+            Thread.sleep(300); // several poll intervals
+
+            assertThat(bikesched.isPolling()).isFalse();
+            assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0"))
+                    .as("not claimed while polling is off")
+                    .isEqualTo(1);
+
+            bikesched.startPolling();
+            bikesched.startPolling(); // no effect while already polling
+
+            assertThat(bikesched.isPolling()).isTrue();
+            assertThat(ran.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void startPollingAfterCloseFails() {
+        Bikesched bikesched = Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-closed-polling")
+                .autoStartPolling(false)
+                .build();
+        bikesched.close();
+
+        assertThat(bikesched.isPolling()).isFalse();
+        assertThatThrownBy(bikesched::startPolling).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void newJobBuilderSchedulesJobWithHandlerPriorityAndMaxAttempts() throws Exception {
+        try (Bikesched bikesched = Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-job-builder")
+                .pollInterval(Duration.ofMillis(50))
+                .build()) {
+            var received = new java.util.concurrent.CompletableFuture<Job>();
+
+            UUID jobId = bikesched.newJob("built")
+                    .payload("{\"x\": 1}")
+                    .handler(received::complete)
+                    .priority(7)
+                    .maxAttempts(5)
+                    .schedule();
+
+            Job job = received.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(job.id()).isEqualTo(jobId);
+            assertThat(job.type()).isEqualTo("built");
+            assertThat(job.payload()).isEqualTo("{\"x\": 1}");
+            assertThat(job.priority()).isEqualTo(7);
+            assertThat(job.maxAttempts()).isEqualTo(5);
+        }
+    }
+
+    @Test
+    void newJobBuilderSchedulesAtInstantOrAfterDelay() throws Exception {
+        try (Bikesched bikesched = Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-job-builder-later")
+                .pollInterval(Duration.ofMillis(50))
+                .build()) {
+            Instant inOneHour = Instant.now().plus(Duration.ofHours(1)).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+            JobBuilder later = bikesched.newJob("later").handler(() -> {});
+
+            UUID atInstant = later.schedule(inOneHour);
+            UUID afterDelay = later.schedule(Duration.ofHours(2));
+            Thread.sleep(300); // several poll cycles
+
+            assertThat(atInstant).isNotEqualTo(afterDelay);
+            assertThat(count("id = '" + atInstant + "' and state = 'SCHEDULED' "
+                    + "and scheduled_at = '" + inOneHour + "'::timestamptz")).isEqualTo(1);
+            assertThat(count("id = '" + afterDelay + "' and state = 'SCHEDULED' "
+                    + "and scheduled_at between now() + interval '119 minutes' and now() + interval '121 minutes'"))
+                    .isEqualTo(1);
+            execute("delete from bikesched_jobs where job_type = 'later'");
+        }
+    }
+
+    @Test
+    void newJobBuilderValidatesInput() {
+        try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).node("node-job-builder-invalid").build()) {
+            assertThatThrownBy(() -> bikesched.newJob(" ")).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> bikesched.newJob("x").maxAttempts(0)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> bikesched.newJob("x").handler(() -> {}).schedule(Duration.ofSeconds(-1)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("delay must not be negative");
+            assertThatThrownBy(() -> bikesched.newJob("no-handler").schedule())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageStartingWith("Unknown job type 'no-handler'");
+        }
+    }
+
+    @Test
+    void logContextContainsNodeIdAndJobId() throws Exception {
+        var logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(DefaultBikesched.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start();
+        logger.addAppender(logs);
+        UUID nodeId;
+        UUID jobId;
+        var seenByHandler = new java.util.concurrent.CompletableFuture<java.util.Map<String, String>>();
+        try (Bikesched bikesched = Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-mdc")
+                .heartbeatInterval(Duration.ofMillis(50))
+                .pollInterval(Duration.ofMillis(50))
+                .build()) {
+            nodeId = bikesched.nodeId();
+            jobId = bikesched.newJob("mdc")
+                    .handler(() -> seenByHandler.complete(org.slf4j.MDC.getCopyOfContextMap()))
+                    .schedule();
+
+            assertThat(seenByHandler.get(10, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("visible inside the job handler")
+                    .containsEntry(BikeschedLogContext.NODE_ID, nodeId.toString())
+                    .containsEntry(BikeschedLogContext.JOB_ID, jobId.toString())
+                    .containsEntry(BikeschedLogContext.JOB_TYPE, "mdc");
+        } finally {
+            logger.detachAppender(logs);
+        }
+
+        assertThat(logs.list)
+                .filteredOn(e -> e.getFormattedMessage().startsWith("Executing job " + jobId))
+                .singleElement()
+                .satisfies(e -> assertThat(e.getMDCPropertyMap())
+                        .containsEntry(BikeschedLogContext.NODE_ID, nodeId.toString())
+                        .containsEntry(BikeschedLogContext.JOB_ID, jobId.toString())
+                        .containsEntry(BikeschedLogContext.JOB_TYPE, "mdc"));
+        assertThat(logs.list)
+                .filteredOn(e -> e.getThreadName().equals("bikesched-poller"))
+                .as("poller logs carry the node id but no job")
+                .isNotEmpty()
+                .allSatisfy(e -> assertThat(e.getMDCPropertyMap())
+                        .containsEntry(BikeschedLogContext.NODE_ID, nodeId.toString())
+                        .doesNotContainKeys(BikeschedLogContext.JOB_ID, BikeschedLogContext.JOB_TYPE));
+    }
+
+    @Test
+    void handlerCanCancelJobWithMessageAndItIsNotRetried() throws Exception {
+        var logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(DefaultBikesched.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start();
+        logger.addAppender(logs);
+        try (Bikesched bikesched = Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-cancel")
+                .pollInterval(Duration.ofMillis(50))
+                .build()) {
+            var calls = new java.util.concurrent.atomic.AtomicInteger();
+            var continuedAfterCancel = new java.util.concurrent.atomic.AtomicBoolean();
+            UUID jobId = bikesched.newJob("cancel-me").maxAttempts(5).handler(job -> {
+                if (calls.incrementAndGet() == 1) {
+                    throw new IllegalStateException("first attempt fails");
+                }
+                job.cancel("customer deleted");
+                assertThat(job.isCancelled()).isTrue();
+                assertThat(job.cancelMessage()).isEqualTo("customer deleted");
+                continuedAfterCancel.set(true); // cancel() does not stop the handler
+            }).schedule();
+
+            awaitState(jobId, "CANCELLED");
+            Thread.sleep(300); // several poll cycles: a cancelled job is not picked up again
+
+            assertThat(calls).hasValue(2);
+            assertThat(continuedAfterCancel).isTrue();
+            assertThat(count("id = '" + jobId + "' and state = 'CANCELLED' and attempts = 2 and locked_by is null "
+                    + "and locked_at is null and finished_at is not null and last_error = 'customer deleted'"))
+                    .isEqualTo(1);
+        } finally {
+            logger.detachAppender(logs);
+        }
+        assertThat(logs.list)
+                .filteredOn(e -> e.getLevel() == ch.qos.logback.classic.Level.INFO
+                        && e.getFormattedMessage().matches("Job .* of type cancel-me cancelled by its handler "
+                                + "\\(attempt 2 of 5\\): customer deleted"))
+                .hasSize(1);
+    }
+
+    @Test
+    void handlerCanCancelJobWithoutMessage() throws Exception {
+        try (Bikesched bikesched = Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-cancel-silent")
+                .pollInterval(Duration.ofMillis(50))
+                .build()) {
+            var calls = new java.util.concurrent.atomic.AtomicInteger();
+            UUID jobId = bikesched.newJob("cancel-silent").handler(job -> {
+                if (calls.incrementAndGet() == 1) {
+                    throw new IllegalStateException("first attempt fails");
+                }
+                job.cancel();
+            }).schedule();
+
+            awaitState(jobId, "CANCELLED");
+
+            assertThat(count("id = '" + jobId + "' and state = 'CANCELLED' and last_error is null"))
+                    .as("the earlier failure is cleared")
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
+    void cancelledJobStaysCancelledWhenHandlerThrowsAfterwards() throws Exception {
+        var logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(DefaultBikesched.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start();
+        logger.addAppender(logs);
+        UUID jobId;
+        try (Bikesched bikesched = Bikesched.builder()
+                .dataSource(dataSource)
+                .node("node-cancel-throw")
+                .pollInterval(Duration.ofMillis(50))
+                .build()) {
+            jobId = bikesched.newJob("cancel-throw").handler(job -> {
+                job.cancel("nope");
+                throw new java.io.IOException("cleanup failed");
+            }).schedule();
+
+            awaitState(jobId, "CANCELLED");
+
+            assertThat(count("id = '" + jobId + "' and attempts = 1 and last_error = 'nope'")).isEqualTo(1);
+        } finally {
+            logger.detachAppender(logs);
+        }
+        assertThat(logs.list)
+                .filteredOn(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN
+                        && e.getFormattedMessage().equals("Job " + jobId + " of type cancel-throw was cancelled, "
+                                + "ignoring the exception thrown by its handler afterwards"))
+                .singleElement()
+                .satisfies(e -> assertThat(e.getThrowableProxy().getMessage()).isEqualTo("cleanup failed"));
+    }
+
+    private void awaitState(UUID jobId, String state) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (count("id = '" + jobId + "' and state = '" + state + "'") == 0 && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+        }
+        assertThat(count("id = '" + jobId + "' and state = '" + state + "'")).as("job in state " + state).isEqualTo(1);
     }
 
     @Test
@@ -381,7 +637,7 @@ class BikeschedTest {
                 calls.incrementAndGet();
                 throw new java.io.IOException("attempt " + job.attempts() + " exploded");
             });
-            UUID jobId = bikesched.schedule("explode", null);
+            UUID jobId = bikesched.newJob("explode").schedule();
 
             long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
             while (count("id = '" + jobId + "' and state = 'FAILED'") == 0 && System.nanoTime() < deadline) {
@@ -402,7 +658,7 @@ class BikeschedTest {
                 .build()) {
             Instant inOneHour = Instant.now().plus(Duration.ofHours(1)).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
             bikesched.registerHandler("print-later", () -> {});
-            UUID jobId = bikesched.schedule("print-later", null, inOneHour);
+            UUID jobId = bikesched.newJob("print-later").schedule(inOneHour);
             Thread.sleep(300); // several poll cycles
 
             assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and payload is null "
@@ -415,10 +671,10 @@ class BikeschedTest {
     void scheduleRejectsInvalidInput() {
         try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).node("node-invalid").build()) {
             bikesched.registerHandler("print", () -> {});
-            assertThatThrownBy(() -> bikesched.schedule("print", "not json"))
+            assertThatThrownBy(() -> bikesched.newJob("print").payload("not json").schedule())
                     .isInstanceOf(BikeschedException.class)
                     .hasMessageContaining("Scheduling bikesched job of type 'print' failed");
-            assertThatThrownBy(() -> bikesched.schedule(" ", null)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> bikesched.newJob(" ")).isInstanceOf(IllegalArgumentException.class);
         }
     }
 
@@ -427,7 +683,7 @@ class BikeschedTest {
         Bikesched bikesched = Bikesched.builder().dataSource(dataSource).node("node-closed").build();
         bikesched.close();
 
-        assertThatThrownBy(() -> bikesched.schedule("print", null)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> bikesched.newJob("print").schedule()).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -503,8 +759,9 @@ class BikeschedTest {
                     running.decrementAndGet();
                 }
             });
+            JobBuilder slowJob = bikesched.newJob(jobType);
             for (int i = 0; i < count; i++) {
-                bikesched.schedule(jobType, null);
+                slowJob.schedule();
             }
             long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
             while (count("job_type = '" + jobType + "' and state = 'SUCCEEDED'") < count && System.nanoTime() < deadline) {

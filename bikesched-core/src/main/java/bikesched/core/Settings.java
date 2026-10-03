@@ -12,13 +12,16 @@ import java.util.Objects;
  *     are released and its name may be taken over
  * @param pollInterval interval between job polls
  * @param maxConcurrentJobs maximum number of jobs executed at the same time on this node
+ * @param autoStartPolling whether job polling starts when the node is built; otherwise it starts
+ *     with {@link Bikesched#startPolling()}
  */
 record Settings(
         String nodeName,
         Duration heartbeatInterval,
         Duration nodeTimeout,
         Duration pollInterval,
-        int maxConcurrentJobs) {
+        int maxConcurrentJobs,
+        boolean autoStartPolling) {
 
     Settings {
         Objects.requireNonNull(nodeName, "nodeName");

@@ -104,7 +104,7 @@ class DatabaseTest {
         UUID jobId = UUID.randomUUID();
         Instant scheduledAt = Instant.now().minusSeconds(1).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
-        database.insertJob(jobId, "mail", "{\"to\": \"alice\"}", scheduledAt);
+        database.insertJob(jobId, "mail", "{\"to\": \"alice\"}", scheduledAt, 7, 5);
 
         assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0 and locked_by is null"))
                 .isEqualTo(1);
@@ -113,6 +113,8 @@ class DatabaseTest {
             assertThat(job.type()).isEqualTo("mail");
             assertThat(job.payload()).isEqualTo("{\"to\": \"alice\"}");
             assertThat(job.scheduledAt()).isEqualTo(scheduledAt);
+            assertThat(job.priority()).isEqualTo(7);
+            assertThat(job.maxAttempts()).isEqualTo(5);
         });
     }
 
@@ -189,6 +191,23 @@ class DatabaseTest {
         assertThat(database.completeJob(job.id(), node)).isTrue();
         assertThat(database.completeJob(job.id(), node)).isFalse();
         assertThat(count("state = 'SUCCEEDED' and locked_by is null and finished_at is not null")).isEqualTo(1);
+    }
+
+    @Test
+    void cancelJobMarksItCancelledWithMessage() throws SQLException {
+        UUID node = registerNode("node-1");
+        UUID otherNode = registerNode("node-2");
+        insertJobs(2, 0, "now()");
+        List<Job> jobs = database.claimJobs(node, 10);
+
+        assertThat(database.cancelJob(jobs.get(0).id(), otherNode, "nope")).isFalse();
+        assertThat(database.cancelJob(jobs.get(0).id(), node, "no longer needed")).isTrue();
+        assertThat(database.cancelJob(jobs.get(0).id(), node, "again")).isFalse();
+        assertThat(database.cancelJob(jobs.get(1).id(), node, null)).isTrue();
+
+        assertThat(count("state = 'CANCELLED' and locked_by is null and finished_at is not null "
+                + "and last_error = 'no longer needed'")).isEqualTo(1);
+        assertThat(count("state = 'CANCELLED' and last_error is null")).isEqualTo(1);
     }
 
     @Test

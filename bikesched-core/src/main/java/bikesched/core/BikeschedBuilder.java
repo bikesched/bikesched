@@ -16,6 +16,7 @@ public final class BikeschedBuilder {
     private Duration heartbeatInterval = DefaultBikesched.DEFAULT_HEARTBEAT_INTERVAL;
     private Duration nodeTimeout = DefaultBikesched.DEFAULT_NODE_TIMEOUT;
     private Duration pollInterval = DefaultBikesched.DEFAULT_POLL_INTERVAL;
+    private boolean autoStartPolling = true;
 
     BikeschedBuilder() {}
 
@@ -64,6 +65,20 @@ public final class BikeschedBuilder {
         return this;
     }
 
+    /**
+     * Sets whether the node starts polling for jobs as soon as it is built (optional, default
+     * {@code true}). With {@code false} the node is registered and heartbeats, and jobs can be
+     * scheduled, but it executes no jobs until {@link Bikesched#startPolling()} is called, e.g.
+     * once all job handlers are registered, or never for a node that only schedules jobs.
+     *
+     * @param autoStartPolling whether to start polling on {@link #build()}
+     * @return this builder
+     */
+    public BikeschedBuilder autoStartPolling(boolean autoStartPolling) {
+        this.autoStartPolling = autoStartPolling;
+        return this;
+    }
+
     /** Heartbeat interval; package-private so tests can speed it up. */
     BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
         this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -94,7 +109,8 @@ public final class BikeschedBuilder {
 
     /**
      * Creates the {@link Bikesched} instance: applies pending schema migrations, registers the
-     * node and starts its heartbeat and job poller.
+     * node and starts its heartbeat and, unless disabled via {@link #autoStartPolling(boolean)},
+     * its job poller.
      *
      * @return the new instance
      * @throws IllegalStateException if no data source was set
@@ -106,7 +122,8 @@ public final class BikeschedBuilder {
             throw new IllegalStateException("dataSource is required");
         }
         String name = nodeName != null ? nodeName : DefaultBikesched.localHostName();
-        var settings = new Settings(name, heartbeatInterval, nodeTimeout, pollInterval, maxConcurrentJobs);
+        var settings = new Settings(
+                name, heartbeatInterval, nodeTimeout, pollInterval, maxConcurrentJobs, autoStartPolling);
         return DefaultBikesched.create(new Database(dataSource), settings);
     }
 }

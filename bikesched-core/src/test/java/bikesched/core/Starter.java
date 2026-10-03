@@ -1,7 +1,6 @@
 package bikesched.core;
 
 import java.time.Duration;
-import java.time.Instant;
 import org.postgresql.ds.PGSimpleDataSource;
 
 /**
@@ -25,7 +24,7 @@ public final class Starter {
         dataSource.setUser("bikesched");
         dataSource.setPassword("bikesched");
 
-        var builder = Bikesched.builder().dataSource(dataSource);
+        var builder = Bikesched.builder().dataSource(dataSource).autoStartPolling(false);
         if (args.length > 0) {
             builder.node(args[0]);
         }
@@ -40,14 +39,19 @@ public final class Starter {
             if (randomOneOrZero == 1)
                 throw new RuntimeException("random failure");
         });
+        // Polling was not started on build(): start it now that all handlers are registered.
+        bikesched.startPolling();
 
         System.out.println("bikesched node '" + bikesched.nodeName() + "' (" + bikesched.nodeId()
                 + ") running, press Ctrl+C to stop");
 
         for (int i = 1; i <= 3; i++) {
-            bikesched.schedule("print", "{\"n\": " + i + "}");
+            bikesched.newJob("print").payload("{\"n\": " + i + "}").schedule();
         }
-        bikesched.schedule("print", "{\"delayed\": true}", Instant.now().plus(Duration.ofSeconds(15)));
+
+        bikesched.newJob("print").payload("{\"delayed\": true}").schedule(Duration.ofSeconds(15));
+
+        bikesched.newJob("cancel").handler(job -> job.cancel("I canceled it myself!")).schedule();
 
         Thread.currentThread().join();
     }

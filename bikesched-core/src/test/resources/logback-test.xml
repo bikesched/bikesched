@@ -1,7 +1,7 @@
 <configuration>
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] [node=%X{bikesched.nodeId:-} job=%X{bikesched.jobId:-} type=%X{bikesched.jobType:-}] %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 

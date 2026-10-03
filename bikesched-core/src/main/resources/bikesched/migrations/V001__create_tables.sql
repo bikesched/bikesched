@@ -32,7 +32,7 @@ create table bikesched_jobs (
     updated_at   timestamptz not null default now(),
     finished_at  timestamptz,
     constraint bikesched_jobs_state_check
-        check (state in ('SCHEDULED', 'RUNNING', 'SUCCEEDED', 'FAILED')),
+        check (state in ('SCHEDULED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')),
     constraint bikesched_jobs_attempts_check
         check (attempts >= 0 and max_attempts >= 1),
     constraint bikesched_jobs_lock_check

@@ -40,8 +40,8 @@ final class Database {
     private static final String DEREGISTER_NODE_SQL = "delete from bikesched_nodes where id = ?";
 
     private static final String INSERT_JOB_SQL = """
-            insert into bikesched_jobs (id, job_type, payload, scheduled_at)
-            values (?, ?, ?::jsonb, ?)""";
+            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts)
+            values (?, ?, ?::jsonb, ?, ?, ?)""";
 
     // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
     // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
@@ -59,6 +59,12 @@ final class Database {
     private static final String COMPLETE_JOB_SQL = """
             update bikesched_jobs
                set state = 'SUCCEEDED', locked_by = null, locked_at = null, finished_at = now(), updated_at = now()
+             where id = ? and locked_by = ? and state = 'RUNNING'""";
+
+    private static final String CANCEL_JOB_SQL = """
+            update bikesched_jobs
+               set state = 'CANCELLED', locked_by = null, locked_at = null, last_error = ?,
+                   finished_at = now(), updated_at = now()
              where id = ? and locked_by = ? and state = 'RUNNING'""";
 
     // A failed attempt: retried (back to SCHEDULED) while attempts remain, otherwise FAILED.
@@ -193,10 +199,12 @@ final class Database {
      * @param type the job type
      * @param payload the payload as JSON text, may be {@code null}
      * @param scheduledAt the earliest time the job may run
+     * @param priority higher priorities are claimed first
+     * @param maxAttempts number of attempts before the job is marked {@code FAILED}
      */
-    void insertJob(UUID jobId, String type, String payload, Instant scheduledAt) {
+    void insertJob(UUID jobId, String type, String payload, Instant scheduledAt, int priority, int maxAttempts) {
         update(INSERT_JOB_SQL, "Scheduling bikesched job of type '" + type + "'",
-                jobId, type, payload, OffsetDateTime.ofInstant(scheduledAt, ZoneOffset.UTC));
+                jobId, type, payload, OffsetDateTime.ofInstant(scheduledAt, ZoneOffset.UTC), priority, maxAttempts);
     }
 
     /**
@@ -242,6 +250,18 @@ final class Database {
      */
     boolean completeJob(UUID jobId, UUID nodeId) {
         return update(COMPLETE_JOB_SQL, "Completing bikesched job " + jobId, jobId, nodeId) > 0;
+    }
+
+    /**
+     * Marks a job claimed by the node as {@code CANCELLED}; it is not retried.
+     *
+     * @param jobId the job id
+     * @param nodeId the node that claimed the job
+     * @param message why the job was cancelled, stored as {@code last_error}; may be {@code null}
+     * @return {@code false} if the job is not running on this node (anymore)
+     */
+    boolean cancelJob(UUID jobId, UUID nodeId, String message) {
+        return update(CANCEL_JOB_SQL, "Cancelling bikesched job " + jobId, message, jobId, nodeId) > 0;
     }
 
     /**
