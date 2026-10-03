@@ -86,7 +86,7 @@ public final class TaxiBooking {
       Duration priceTimeout) {
     var booking =
         new TaxiBooking(bikesched, broker, payments, notifications, driverTimeout, priceTimeout);
-    bikesched.registerHandler(JOB_TYPE, booking::book);
+    bikesched.registerJobHandler(JOB_TYPE, booking::book);
     return booking;
   }
 

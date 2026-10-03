@@ -18,7 +18,7 @@ import java.util.UUID;
  * Cancelling does not stop the handler, so return right after it:
  *
  * <pre>{@code
- * bikesched.registerHandler("send-mail", job -> {
+ * bikesched.registerJobHandler("send-mail", job -> {
  *     if (customerDeleted(job)) {
  *         job.cancel("customer deleted");
  *         return;
@@ -93,7 +93,7 @@ public interface Job {
    * {@link JsonMapper}.
    *
    * <pre>{@code
-   * bikesched.registerHandler("order", job -> {
+   * bikesched.registerJobHandler("order", job -> {
    *     Order order = job.payload(Order.class);
    *     Payment payment = job.step("charge-card", Payment.class, step -> payments.charge(order));
    *     job.step("send-confirmation", Void.class, step -> {
@@ -127,7 +127,7 @@ public interface Job {
    * permanently, after the step completed, the compensation undoes it before the job ends.
    *
    * <pre>{@code
-   * bikesched.registerHandler("order", job -> {
+   * bikesched.registerJobHandler("order", job -> {
    *     Order order = job.payload(Order.class);
    *     PaymentReservation reservation =
    *         job.newStep("reserve-payment", PaymentReservation.class)
@@ -178,7 +178,7 @@ public interface Job {
    * passes the event to the event handler and returns its result.
    *
    * <pre>{@code
-   * bikesched.registerHandler("order", job -> {
+   * bikesched.registerJobHandler("order", job -> {
    *     Order order = job.payload(Order.class);
    *     job.step("create-invoice", Invoice.class, step -> billing.createInvoice(order));
    *     Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())

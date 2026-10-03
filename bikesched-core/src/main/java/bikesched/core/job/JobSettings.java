@@ -43,7 +43,7 @@ public interface JobSettings<B extends JobSettings<B>> {
    *
    * @param handler executes jobs of this type
    * @return this builder
-   * @see bikesched.core.Bikesched#registerHandler(String, JobHandler)
+   * @see bikesched.core.Bikesched#registerJobHandler(String, JobHandler)
    */
   B handler(JobHandler handler);
 

@@ -21,7 +21,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
   void scheduledJobIsProcessed() throws Exception {
     try (Bikesched bikesched = testNode("node-scheduling").build()) {
       var received = new java.util.concurrent.CompletableFuture<Job>();
-      bikesched.registerHandler("print", received::complete);
+      bikesched.registerJobHandler("print", received::complete);
       UUID jobId = bikesched.newJob("print").payload("{\"greeting\": \"hello\"}").schedule();
 
       Job job = received.get(10, java.util.concurrent.TimeUnit.SECONDS);
@@ -41,7 +41,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
   @Test
   void schedulingUnknownJobTypeFails() {
     try (Bikesched bikesched = testNode("node-unknown").build()) {
-      bikesched.registerHandler("known", () -> {});
+      bikesched.registerJobHandler("known", () -> {});
 
       assertThatThrownBy(() -> bikesched.newJob("unknown").schedule())
           .isInstanceOf(IllegalArgumentException.class)
@@ -52,12 +52,12 @@ class JobSchedulingTest extends AbstractBikeschedTest {
   @Test
   void handlerCanOnlyBeRegisteredOncePerType() {
     try (Bikesched bikesched = testNode("node-duplicate").build()) {
-      bikesched.registerHandler("once", () -> {});
+      bikesched.registerJobHandler("once", () -> {});
 
-      assertThatThrownBy(() -> bikesched.registerHandler("once", () -> {}))
+      assertThatThrownBy(() -> bikesched.registerJobHandler("once", () -> {}))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("already registered");
-      assertThatThrownBy(() -> bikesched.registerHandler(" ", () -> {}))
+      assertThatThrownBy(() -> bikesched.registerJobHandler(" ", () -> {}))
           .isInstanceOf(IllegalArgumentException.class);
     }
   }
@@ -72,7 +72,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
       assertThat(received.get(10, java.util.concurrent.TimeUnit.SECONDS).id()).isEqualTo(jobId);
       // The handler is registered under the job type now: scheduling by name works as well.
       assertThat(bikesched.newJob("inline").schedule()).isNotNull();
-      assertThatThrownBy(() -> bikesched.registerHandler("inline", () -> {}))
+      assertThatThrownBy(() -> bikesched.registerJobHandler("inline", () -> {}))
           .hasMessageContaining("already registered");
     }
   }
@@ -81,7 +81,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
   void scheduleWithHandlerKeepsAlreadyRegisteredHandler() throws Exception {
     try (Bikesched bikesched = testNode("node-keep-handler").build()) {
       var first = new java.util.concurrent.CompletableFuture<UUID>();
-      bikesched.registerHandler("keep", job -> first.complete(job.id()));
+      bikesched.registerJobHandler("keep", job -> first.complete(job.id()));
 
       UUID jobId =
           bikesched
@@ -174,7 +174,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-future").build()) {
       Instant inOneHour =
           Instant.now().plus(Duration.ofHours(1)).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-      bikesched.registerHandler("print-later", () -> {});
+      bikesched.registerJobHandler("print-later", () -> {});
       UUID jobId = bikesched.newJob("print-later").schedule(inOneHour);
       Thread.sleep(300); // several poll cycles
 
@@ -194,7 +194,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
   @Test
   void scheduleRejectsInvalidInput() {
     try (Bikesched bikesched = testNode("node-invalid").build()) {
-      bikesched.registerHandler("print", () -> {});
+      bikesched.registerJobHandler("print", () -> {});
       assertThatThrownBy(() -> bikesched.newJob("print").payload("not json").schedule())
           .isInstanceOf(BikeschedException.class)
           .hasMessageContaining("Scheduling bikesched job of type 'print' failed");
@@ -216,7 +216,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-tx").build();
         java.sql.Connection connection = dataSource.getConnection()) {
       var ran = new java.util.concurrent.CompletableFuture<UUID>();
-      bikesched.registerHandler("tx", job -> ran.complete(job.id()));
+      bikesched.registerJobHandler("tx", job -> ran.complete(job.id()));
       connection.setAutoCommit(false);
       UUID otherNodeId = UUID.randomUUID();
 
@@ -258,7 +258,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-tx-rollback").build();
         java.sql.Connection connection = dataSource.getConnection()) {
       var calls = new java.util.concurrent.atomic.AtomicInteger();
-      bikesched.registerHandler("tx-rollback", calls::incrementAndGet);
+      bikesched.registerJobHandler("tx-rollback", calls::incrementAndGet);
       connection.setAutoCommit(false);
 
       UUID jobId = bikesched.newJob("tx-rollback").connection(connection).schedule(Duration.ZERO);
@@ -281,7 +281,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
   void failingInsertWithCallerConnectionLeavesTransactionToCaller() throws Exception {
     try (Bikesched bikesched = testNode("node-tx-invalid").build();
         java.sql.Connection connection = dataSource.getConnection()) {
-      bikesched.registerHandler("tx-invalid", () -> {});
+      bikesched.registerJobHandler("tx-invalid", () -> {});
       connection.setAutoCommit(false);
 
       assertThatThrownBy(

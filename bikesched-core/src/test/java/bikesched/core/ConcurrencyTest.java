@@ -73,7 +73,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
       builder.maxConcurrentJobs(maxConcurrentJobs);
     }
     try (Bikesched bikesched = builder.build()) {
-      bikesched.registerHandler(
+      bikesched.registerJobHandler(
           jobType,
           () -> {
             peak.accumulateAndGet(running.incrementAndGet(), Math::max);

@@ -23,7 +23,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
     var handled = new java.util.concurrent.ConcurrentLinkedQueue<String>();
     try (logs;
         Bikesched bikesched = testNode("node-worker").build()) {
-      bikesched.registerHandler(
+      bikesched.registerJobHandler(
           "print-batch",
           job ->
               handled.add(
@@ -79,7 +79,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
   void runnableHandlerIsSupported() throws Exception {
     try (Bikesched bikesched = testNode("node-runnable").build()) {
       var ran = new java.util.concurrent.CountDownLatch(1);
-      bikesched.registerHandler("ping", ran::countDown);
+      bikesched.registerJobHandler("ping", ran::countDown);
       bikesched.newJob("ping").schedule();
 
       assertThat(ran.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
@@ -91,7 +91,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
     var logs = LogCapture.of(JobProcessor.class);
     try (logs;
         Bikesched bikesched = testNode("node-missing-handler").build()) {
-      bikesched.registerHandler("handled-here", () -> {});
+      bikesched.registerJobHandler("handled-here", () -> {});
       // Scheduled by some other node that has a handler this node lacks; single attempt.
       execute(
           "insert into bikesched_jobs (id, job_type, max_attempts) "
@@ -124,7 +124,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
   void failingHandlerIsRetriedUntilMaxAttemptsThenMarkedFailed() throws Exception {
     try (Bikesched bikesched = testNode("node-failing").build()) {
       var calls = new java.util.concurrent.atomic.AtomicInteger();
-      bikesched.registerHandler(
+      bikesched.registerJobHandler(
           "explode",
           job -> {
             calls.incrementAndGet();

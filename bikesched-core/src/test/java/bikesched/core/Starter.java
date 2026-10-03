@@ -33,7 +33,7 @@ public final class Starter {
     Bikesched bikesched = builder.build();
     Runtime.getRuntime().addShutdownHook(new Thread(bikesched::close));
 
-    bikesched.registerHandler(
+    bikesched.registerJobHandler(
         "print",
         job -> {
           System.out.println(

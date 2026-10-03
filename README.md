@@ -28,6 +28,8 @@ It is inspired by libraries like [JobRunr](https://www.jobrunr.io) and
 - **Cancellation** from within a handler or via `Bikesched.cancel(jobId)`
 - Optional **compensation** per step: completed steps are undone when a job is cancelled or fails
 - **Timeouts** per job or per node, extendable by long-running handlers
+- **Kotlin helpers** (`bikesched-kotlin`): configuration DSL, typed handlers and payloads via
+  reified generics, `kotlin.time` durations
 - Concurrency limit per node; jobs are only claimed when they can start right away
 - Node heartbeats: jobs of crashed nodes are released and retried by others
 - Typed payloads and step results through a pluggable `JsonMapper`
@@ -44,7 +46,7 @@ try (Bikesched bikesched = Bikesched.builder()
         .build()) {                    // migrates the schema, registers the node, starts polling
 
     // Register a handler for a job type ...
-    bikesched.registerHandler("send-mail", job -> mailer.send(job.payload()));
+    bikesched.registerJobHandler("send-mail", job -> mailer.send(job.payload()));
 
     // ... and schedule jobs of that type
     bikesched.newJob("send-mail").payload("{\"to\": \"alice@example.com\"}").schedule();
@@ -117,7 +119,7 @@ Steps work like durable functions. A step that completed in an earlier attempt i
 again; its stored result is returned instead:
 
 ```java
-bikesched.registerHandler("order", job -> {
+bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
     Payment payment = job.step("charge-card", Payment.class, step -> payments.charge(order));
     job.step("send-confirmation", Void.class, step -> {
@@ -133,7 +135,7 @@ deterministic way. Results are stored in `bikesched_steps` right after the step 
 ### Cancellation
 
 ```java
-bikesched.registerHandler("send-mail", job -> {
+bikesched.registerJobHandler("send-mail", job -> {
     if (customerDeleted(job)) {
         job.cancel("customer deleted");   // stored as last_error
         return;                           // cancel() only marks the job, it does not stop the handler
@@ -162,7 +164,7 @@ Steps with side effects can declare a compensation that undoes them if the job i
 fails permanently (a saga). Compensation is optional, per step:
 
 ```java
-bikesched.registerHandler("order", job -> {
+bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
     PaymentReservation reservation =
         job.newStep("reserve-payment", PaymentReservation.class)
@@ -221,7 +223,7 @@ concurrency slot. Publishing the event resumes it, and the handler runs again fr
 completed steps are skipped, and the wait now returns the event.
 
 ```java
-bikesched.registerHandler("order", job -> {
+bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
     job.step("create-invoice", Invoice.class, step -> billing.createInvoice(order));
     Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
@@ -322,6 +324,73 @@ logging context with the keys from `BikeschedLogContext`: `bikesched.nodeId`, `b
 On startup bikesched logs the database URL (without credentials) at `DEBUG` as
 `Database: jdbc:postgresql://…`, which IDE plugins such as the
 [Testcontainers Port Updater](https://github.com/yusufugurozbek/testcontainers-port-updater) pick up.
+
+## Kotlin
+
+The `bikesched-kotlin` module adds Kotlin extensions on top of the Java API; it depends on
+`bikesched-core` and the Kotlin standard library only.
+
+```kotlin
+val bikesched = bikesched {                       // instead of Bikesched.builder()…build()
+    dataSource = ds
+    nodeName = "worker-1"
+    defaultJobTimeout = 5.minutes                 // kotlin.time.Duration everywhere
+    retryBackoff = exponentialBackoff(1.seconds, 10.minutes)
+    jsonMapper = myJsonMapper                     // e.g. Jackson with its Kotlin module
+}
+
+data class SendMail(val to: String, val subject: String)
+
+bikesched.handleJobs<SendMail>("send-mail") { mail ->           // this: Job, mail: SendMail
+    val receipt = step<Receipt>("send") { mailer.send(mail) }
+    step<Unit>("log") { audit.log(receipt) }                      // Unit steps store no result
+    val hold = step<Hold>("hold-slot", compensation = { _, hold -> slots.release(hold) }) {
+        slots.hold(mail.to)                                       // undone if the job is cancelled
+    }
+    val bounce = waitForEvent<Bounce?>(
+        step = "await-bounce", name = "mail-bounced", key = receipt.id, timeout = 1.hours,
+    ) { null }                                                    // no bounce in time
+    if (bounce != null) fail("bounced").retryAfter(10.minutes)
+}
+
+bikesched.createJob(type = "send-mail", payload = SendMail("a@b.de", "Hi"), delay = 5.minutes)
+bikesched.createJob(type = "cleanup", priority = 10) { cleanup.run() }  // handler registered on the way
+bikesched.createRecurringJob(type = "report", schedule = every(1.days), payload = Report("sales")) {
+    report -> reports.send(report)
+}
+bikesched.publishEvent(name = "mail-bounced", key = receiptId, payload = bounce)
+```
+
+`createJob`, `createRecurringJob`, `publishEvent` and `waitForEvent` take named arguments; everything but the type
+(resp. step, name and key) and the schedule is optional, and the builder defaults apply to omitted
+options:
+
+| Function | Arguments |
+|---|---|
+| `handleJobs<T>(type) { payload -> }`, `handleJobs(type) { }` | registers the handler; the `Job` is the receiver |
+| `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id |
+| `createRecurringJob(type, schedule, payload, firstRun, delay, priority, maxAttempts, timeout) { … }` | registers a recurring job and returns the id of its pending occurrence |
+| `publishEvent(name, key, payload, connection)` | publishes an event and returns the steps that received it |
+| `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result, or without fallback the job fails permanently like with the default event timeout |
+
+The optional trailing handler of `createJob` and `createRecurringJob` is registered for the type unless it
+already has one; with a `payload` it gets the payload as its type, otherwise only the `Job`.
+
+Further helpers for the Java API:
+
+| Helper | Instead of |
+|---|---|
+| `bikesched { … }` | `Bikesched.builder()…build()` |
+| `job.payload<T>()`, `event.payload<T>()` | `Class<T>` arguments |
+| `step<T>(name, compensation = { step, result -> … }) { … }` (compensation optional) | `step(name, T.class, handler)`, `newStep(name, T.class).compensateWith(…).run(…)` |
+| `receive<T>()`, `receive<T>(timeout) { fallback }`, `receiveOrNull<T>(timeout)` on the Java `waitForEvent(step, name, key)` | `receive(T.class)`, `timeout(…, handler).receive(T.class)` |
+| `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `every(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
+| `findJobOrNull(id)`, `node.idOrNull` | `Optional` |
+
+Reified helpers check nullability: `payload<Order>()` throws for a job without payload,
+`payload<Order?>()` returns `null`. Likewise, a `handleJobs<Order>` handler is not called for a
+job without payload (the attempt fails with an `IllegalStateException`), a `handleJobs<Order?>`
+handler gets `null`.
 
 ## Database
 

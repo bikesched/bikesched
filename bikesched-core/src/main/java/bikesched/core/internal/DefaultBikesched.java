@@ -238,7 +238,7 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public Bikesched registerHandler(String type, JobHandler handler) {
+  public Bikesched registerJobHandler(String type, JobHandler handler) {
     requireValidType(type);
     Objects.requireNonNull(handler, "handler");
     if (handlers.putIfAbsent(type, handler) != null) {

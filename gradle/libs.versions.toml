@@ -6,9 +6,12 @@ java = "26"
 # Gradle plugins
 foojay-resolver = "1.0.0"
 spotless = "8.10.3"
+kotlin = "2.4.20"
+dokka = "2.2.0"
 
 # Code formatting
 google-java-format = "1.36.1"
+ktfmt = "0.64"
 
 # Libraries
 postgresql = "42.7.13"
@@ -21,7 +24,7 @@ nanojson = "1.10"
 hikaricp = "7.1.0"
 awaitility = "4.3.0"
 
-# Examples only
+# Examples and bikesched-kotlin tests only
 jackson = "3.2.3"
 
 [libraries]
@@ -42,6 +45,7 @@ hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
 
 jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
 
 [bundles]
 testing = ["junit-jupiter", "assertj-core", "logback-classic", "testcontainers-junit-jupiter", "testcontainers-postgresql", "nanojson", "hikaricp", "awaitility"]
@@ -49,3 +53,5 @@ testing = ["junit-jupiter", "assertj-core", "logback-classic", "testcontainers-j
 [plugins]
 foojay-resolver = { id = "org.gradle.toolchains.foojay-resolver-convention", version.ref = "foojay-resolver" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }

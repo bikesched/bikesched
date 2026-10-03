@@ -3,8 +3,8 @@ package bikesched.core.job;
 import bikesched.core.Bikesched;
 
 /**
- * Executes jobs of one type, registered via {@link Bikesched#registerHandler(String, JobHandler)}.
- * Like a {@link Runnable}, but it receives the job being executed.
+ * Executes jobs of one type, registered via {@link Bikesched#registerJobHandler(String,
+ * JobHandler)}. Like a {@link Runnable}, but it receives the job being executed.
  *
  * <p>Returning normally marks the job {@code SUCCEEDED}. Throwing marks it {@code FAILED} once its
  * maximum number of attempts is used up and otherwise schedules it again for another attempt. Since

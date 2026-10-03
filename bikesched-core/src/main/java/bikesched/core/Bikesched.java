@@ -25,7 +25,7 @@ import java.util.UUID;
  *         .nodeName("worker-1")          // optional, defaults to the host name
  *         .build()) {
  *     // register the handler once, schedule jobs by type ...
- *     bikesched.registerHandler("send-mail", job -> mailer.send(job.payload()));
+ *     bikesched.registerJobHandler("send-mail", job -> mailer.send(job.payload()));
  *     bikesched.newJob("send-mail").payload("{\"to\": \"alice@example.com\"}").schedule();
  *
  *     // ... or pass the handler along when scheduling
@@ -63,7 +63,7 @@ public interface Bikesched extends AutoCloseable {
    * @return this instance
    * @throws IllegalArgumentException if the type is blank or already has a handler
    */
-  Bikesched registerHandler(String type, JobHandler handler);
+  Bikesched registerJobHandler(String type, JobHandler handler);
 
   /**
    * Registers a handler for jobs of the given type that does not need the job itself (e.g. no
@@ -73,10 +73,10 @@ public interface Bikesched extends AutoCloseable {
    * @param handler executes the jobs
    * @return this instance
    * @throws IllegalArgumentException if the type is blank or already has a handler
-   * @see #registerHandler(String, JobHandler)
+   * @see #registerJobHandler(String, JobHandler)
    */
-  default Bikesched registerHandler(String type, Runnable handler) {
-    return registerHandler(type, _ -> handler.run());
+  default Bikesched registerJobHandler(String type, Runnable handler) {
+    return registerJobHandler(type, _ -> handler.run());
   }
 
   /**

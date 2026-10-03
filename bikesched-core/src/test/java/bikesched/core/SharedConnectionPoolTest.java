@@ -45,7 +45,7 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
                   .build();
           nodes.add(node);
           String nodeName = node.node().name();
-          node.registerHandler(
+          node.registerJobHandler(
               type,
               job -> {
                 // A durable step: job threads use pool connections too.

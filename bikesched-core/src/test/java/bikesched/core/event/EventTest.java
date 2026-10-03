@@ -315,7 +315,7 @@ class EventTest extends AbstractBikeschedTest {
         nodes.add(node("node-event-race-" + i));
       }
       for (Bikesched node : nodes) {
-        node.registerHandler(
+        node.registerJobHandler(
             "event-race",
             job -> {
               Thread.sleep(ThreadLocalRandom.current().nextInt(20));

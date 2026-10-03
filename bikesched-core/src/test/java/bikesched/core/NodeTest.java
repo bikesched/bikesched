@@ -162,7 +162,7 @@ class NodeTest extends AbstractBikeschedTest {
                 .nodeTimeout(Duration.ofSeconds(1))
                 .pollInterval(Duration.ofMillis(50))
                 .build()) {
-      bikesched.registerHandler("orphan", () -> {});
+      bikesched.registerJobHandler("orphan", () -> {});
       execute(
           "insert into bikesched_nodes (id, name, last_heartbeat_at) "
               + "values ('"
