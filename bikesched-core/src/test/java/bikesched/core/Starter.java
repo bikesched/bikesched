@@ -53,6 +53,13 @@ public final class Starter {
 
         bikesched.newJob("cancel").handler(job -> job.cancel("I canceled it myself!")).schedule();
 
+        bikesched.newJob("with-steps").payload("{\"steps\": true}").handler(job -> {
+            System.out.println("Job payload: " + job.payload());
+            var step1 = job.step("Step 1", String.class, step -> "{\"step\": 1}");
+            System.out.println("Step 1 result: " + step1);
+            var step2 = job.step("Step 2", String.class, step -> "{\"step\": 2}");
+            System.out.println("Step 2 result: " + step2);
+        }).schedule();
         Thread.currentThread().join();
     }
 }

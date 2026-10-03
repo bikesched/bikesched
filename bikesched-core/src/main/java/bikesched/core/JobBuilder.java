@@ -1,5 +1,6 @@
 package bikesched.core;
 
+import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -27,30 +28,39 @@ public final class JobBuilder {
     /** Stores a job built by a {@link JobBuilder}; implemented by the owning {@link Bikesched}. */
     @FunctionalInterface
     interface Scheduler {
-        UUID schedule(
-                String type, String payload, Instant scheduledAt, int priority, int maxAttempts, JobHandler handler);
+        /** {@code connection} is the caller's connection, or {@code null} to use bikesched's own. */
+        UUID schedule(String type, String payload, Instant scheduledAt, int priority, int maxAttempts,
+                JobHandler handler, Connection connection);
     }
 
     private final String type;
+    private final JsonMapper jsonMapper;
     private final Scheduler scheduler;
     private String payload;
     private JobHandler handler;
     private int priority = DEFAULT_PRIORITY;
     private int maxAttempts = DEFAULT_MAX_ATTEMPTS;
+    private Connection connection;
 
-    JobBuilder(String type, Scheduler scheduler) {
+    JobBuilder(String type, JsonMapper jsonMapper, Scheduler scheduler) {
         this.type = Objects.requireNonNull(type, "type");
+        this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
     }
 
     /**
-     * Sets the job payload (optional, default none).
+     * Sets the job payload (optional, default none), converted to JSON right away by the
+     * configured {@link JsonMapper}. With the default {@link JsonStringMapper} the payload must be
+     * a {@link String} that already contains JSON.
      *
-     * @param payload the payload as JSON text, may be {@code null}
+     * @param payload the payload, may be {@code null}
      * @return this builder
+     * @throws RuntimeException any exception of the mapper, e.g. {@link IllegalArgumentException}
+     *     from the default {@link JsonStringMapper} for types other than {@link String}
+     * @see Job#payload(Class)
      */
-    public JobBuilder payload(String payload) {
-        this.payload = payload;
+    public JobBuilder payload(Object payload) {
+        this.payload = payload == null ? null : jsonMapper.toJson(payload);
         return this;
     }
 
@@ -108,6 +118,34 @@ public final class JobBuilder {
     }
 
     /**
+     * Stores the job using the given connection, as part of the caller's transaction (optional,
+     * default: bikesched's own data source, committed immediately). The job is then created
+     * atomically with the caller's other changes: it becomes visible to the pollers only once the
+     * caller commits, and disappears if the caller rolls back.
+     *
+     * <p>bikesched only executes the insert on the connection: it does not commit, roll back,
+     * close it or change its auto-commit mode. The connection must point to the database (and
+     * schema) bikesched uses. If scheduling fails with a {@link BikeschedException}, PostgreSQL
+     * aborts the caller's transaction, which then has to be rolled back.
+     *
+     * <pre>{@code
+     * try (Connection connection = dataSource.getConnection()) {
+     *     connection.setAutoCommit(false);
+     *     insertOrder(connection, order);
+     *     bikesched.newJob("send-confirmation").payload(json).connection(connection).schedule();
+     *     connection.commit();   // order and job are stored together, or not at all
+     * }
+     * }</pre>
+     *
+     * @param connection the caller's connection, or {@code null} to use bikesched's own
+     * @return this builder
+     */
+    public JobBuilder connection(Connection connection) {
+        this.connection = connection;
+        return this;
+    }
+
+    /**
      * Schedules the job to run as soon as possible.
      *
      * @return the id of the scheduled job
@@ -130,7 +168,7 @@ public final class JobBuilder {
      */
     public UUID schedule(Instant at) {
         Objects.requireNonNull(at, "at");
-        return scheduler.schedule(type, payload, at, priority, maxAttempts, handler);
+        return scheduler.schedule(type, payload, at, priority, maxAttempts, handler, connection);
     }
 
     /**

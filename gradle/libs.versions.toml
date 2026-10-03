@@ -13,6 +13,7 @@ logback = "1.6.5"
 junit = "6.1.3"
 assertj = "3.27.7"
 testcontainers = "2.0.5"
+nanojson = "1.10"
 
 [libraries]
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
@@ -27,9 +28,10 @@ assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+nanojson = { module = "com.grack:nanojson", version.ref = "nanojson" }
 
 [bundles]
-testing = ["junit-jupiter", "assertj-core", "logback-classic", "testcontainers-junit-jupiter", "testcontainers-postgresql"]
+testing = ["junit-jupiter", "assertj-core", "logback-classic", "testcontainers-junit-jupiter", "testcontainers-postgresql", "nanojson"]
 
 [plugins]
 foojay-resolver = { id = "org.gradle.toolchains.foojay-resolver-convention", version.ref = "foojay-resolver" }

@@ -76,6 +76,29 @@ final class Database {
              where id = ? and locked_by = ? and state = 'RUNNING'
             returning state""";
 
+    private static final String FIND_STEP_SQL = """
+            select state, result::text from bikesched_steps where job_id = ? and name = ?""";
+
+    // Starts an attempt of a step that has not succeeded yet; returns its attempt number.
+    // Returns no row if the step already succeeded (e.g. concurrently).
+    private static final String START_STEP_SQL = """
+            insert into bikesched_steps (job_id, name, state, attempts, started_at)
+            values (?, ?, 'RUNNING', 1, now())
+            on conflict (job_id, name) do update
+               set state = 'RUNNING', attempts = bikesched_steps.attempts + 1, started_at = now(), finished_at = null
+             where bikesched_steps.state <> 'SUCCEEDED'
+            returning attempts""";
+
+    private static final String COMPLETE_STEP_SQL = """
+            update bikesched_steps
+               set state = 'SUCCEEDED', result = ?::jsonb, finished_at = now()
+             where job_id = ? and name = ? and state = 'RUNNING'""";
+
+    private static final String FAIL_STEP_SQL = """
+            update bikesched_steps
+               set state = 'FAILED', last_error = ?, finished_at = now()
+             where job_id = ? and name = ? and state = 'RUNNING'""";
+
     private static final String RELEASE_JOBS_SQL = """
             update bikesched_jobs
                set state = 'SCHEDULED', locked_by = null, locked_at = null, updated_at = now()
@@ -126,13 +149,31 @@ final class Database {
      */
     record DeletedNode(UUID nodeId, String nodeName, Instant lastHeartbeatAt) {}
 
+    /**
+     * A step that completed in an earlier attempt.
+     *
+     * @param result its stored result as JSON text, may be {@code null}
+     */
+    record CompletedStep(String result) {}
+
     private static final Comparator<Job> CLAIM_ORDER =
             Comparator.comparingInt(Job::priority).reversed().thenComparing(Job::scheduledAt);
 
     private final DataSource dataSource;
+    private final JsonMapper jsonMapper;
 
-    Database(DataSource dataSource) {
+    /**
+     * @param dataSource the PostgreSQL data source
+     * @param jsonMapper maps payloads and step results of the {@link Job}s this instance claims
+     */
+    Database(DataSource dataSource, JsonMapper jsonMapper) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+        this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
+    }
+
+    /** The mapper for payloads and step results; handed to the claimed {@link Job}s. */
+    JsonMapper jsonMapper() {
+        return jsonMapper;
     }
 
     /**
@@ -142,6 +183,45 @@ final class Database {
      */
     List<Integer> migrate() {
         return new SchemaMigrator(dataSource).migrate();
+    }
+
+    /**
+     * Describes the database for logging, e.g.
+     * {@code jdbc:postgresql://localhost:5432/bikesched (PostgreSQL 18.0)}. The URL is
+     * {@link #redactUrl(String) redacted}, so it contains no credentials.
+     *
+     * @return the redacted JDBC URL and the database product and version
+     */
+    String describe() {
+        try (Connection connection = dataSource.getConnection()) {
+            var metaData = connection.getMetaData();
+            return redactUrl(metaData.getURL()) + " (" + metaData.getDatabaseProductName() + " "
+                    + metaData.getDatabaseProductVersion() + ")";
+        } catch (SQLException e) {
+            throw new BikeschedException("Reading database metadata failed", e);
+        }
+    }
+
+    /**
+     * Removes everything from a JDBC URL that may carry credentials: user info before the host
+     * ({@code //user:password@host}) and all properties ({@code ?user=...&password=...}, and
+     * {@code ;key=value} style properties of other drivers).
+     *
+     * @param url the JDBC URL, may be {@code null}
+     * @return the URL without credentials, e.g. {@code jdbc:postgresql://localhost:5432/bikesched}
+     */
+    static String redactUrl(String url) {
+        if (url == null) {
+            return "<unknown>";
+        }
+        int properties = url.length();
+        for (char separator : new char[] {'?', ';'}) {
+            int index = url.indexOf(separator);
+            if (index >= 0) {
+                properties = Math.min(properties, index);
+            }
+        }
+        return url.substring(0, properties).replaceFirst("//[^/]*@", "//");
     }
 
     /**
@@ -208,6 +288,28 @@ final class Database {
     }
 
     /**
+     * Inserts a new scheduled job using the caller's connection, as part of the caller's
+     * transaction: the connection is neither committed nor closed.
+     *
+     * @param connection the caller's connection
+     * @param jobId the new job's id
+     * @param type the job type
+     * @param payload the payload as JSON text, may be {@code null}
+     * @param scheduledAt the earliest time the job may run
+     * @param priority higher priorities are claimed first
+     * @param maxAttempts number of attempts before the job is marked {@code FAILED}
+     */
+    void insertJob(Connection connection, UUID jobId, String type, String payload, Instant scheduledAt, int priority,
+            int maxAttempts) {
+        try {
+            execute(connection, INSERT_JOB_SQL,
+                    jobId, type, payload, OffsetDateTime.ofInstant(scheduledAt, ZoneOffset.UTC), priority, maxAttempts);
+        } catch (SQLException e) {
+            throw new BikeschedException("Scheduling bikesched job of type '" + type + "' failed", e);
+        }
+    }
+
+    /**
      * Claims up to {@code limit} due, scheduled jobs for a node using {@code FOR UPDATE SKIP LOCKED}
      * and marks them {@code RUNNING}.
      *
@@ -224,6 +326,7 @@ final class Database {
             try (ResultSet rs = claim.executeQuery()) {
                 while (rs.next()) {
                     jobs.add(new Job(
+                            this,
                             rs.getObject(1, UUID.class),
                             rs.getString(2),
                             rs.getString(3),
@@ -262,6 +365,78 @@ final class Database {
      */
     boolean cancelJob(UUID jobId, UUID nodeId, String message) {
         return update(CANCEL_JOB_SQL, "Cancelling bikesched job " + jobId, message, jobId, nodeId) > 0;
+    }
+
+    /**
+     * Looks up a step that succeeded in an earlier attempt of the job.
+     *
+     * @param jobId the job id
+     * @param name the step name
+     * @return the completed step with its result, or empty if the step has not succeeded yet
+     */
+    Optional<CompletedStep> findCompletedStep(UUID jobId, String name) {
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement find = connection.prepareStatement(FIND_STEP_SQL)) {
+            find.setObject(1, jobId);
+            find.setString(2, name);
+            try (ResultSet rs = find.executeQuery()) {
+                return rs.next() && "SUCCEEDED".equals(rs.getString(1))
+                        ? Optional.of(new CompletedStep(rs.getString(2)))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new BikeschedException("Reading step '" + name + "' of bikesched job " + jobId + " failed", e);
+        }
+    }
+
+    /**
+     * Starts an attempt of a step: creates it as {@code RUNNING} or, if an earlier attempt did not
+     * succeed, sets it back to {@code RUNNING} and counts the attempt.
+     *
+     * @param jobId the job id
+     * @param name the step name
+     * @return the attempt number of the step, or empty if the step has already succeeded
+     */
+    Optional<Integer> startStep(UUID jobId, String name) {
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement start = connection.prepareStatement(START_STEP_SQL)) {
+            start.setObject(1, jobId);
+            start.setString(2, name);
+            Integer attempts = null;
+            try (ResultSet rs = start.executeQuery()) {
+                if (rs.next()) {
+                    attempts = rs.getInt(1);
+                }
+            }
+            commitIfNeeded(connection);
+            return Optional.ofNullable(attempts);
+        } catch (SQLException e) {
+            throw new BikeschedException("Starting step '" + name + "' of bikesched job " + jobId + " failed", e);
+        }
+    }
+
+    /**
+     * Marks a running step {@code SUCCEEDED} and stores its result.
+     *
+     * @param jobId the job id
+     * @param name the step name
+     * @param result the result as JSON text, may be {@code null}
+     */
+    void completeStep(UUID jobId, String name, String result) {
+        update(COMPLETE_STEP_SQL, "Storing the result of step '" + name + "' of bikesched job " + jobId,
+                result, jobId, name);
+    }
+
+    /**
+     * Marks a running step {@code FAILED}.
+     *
+     * @param jobId the job id
+     * @param name the step name
+     * @param error description of the failure, stored as {@code last_error}
+     */
+    void failStep(UUID jobId, String name, String error) {
+        update(FAIL_STEP_SQL, "Recording the failure of step '" + name + "' of bikesched job " + jobId,
+                error, jobId, name);
     }
 
     /**
@@ -359,16 +534,22 @@ final class Database {
     }
 
     private int update(String sql, String action, Object... parameters) {
-        try (Connection connection = dataSource.getConnection();
-                PreparedStatement statement = connection.prepareStatement(sql)) {
-            for (int i = 0; i < parameters.length; i++) {
-                statement.setObject(i + 1, parameters[i]);
-            }
-            int updated = statement.executeUpdate();
+        try (Connection connection = dataSource.getConnection()) {
+            int updated = execute(connection, sql, parameters);
             commitIfNeeded(connection);
             return updated;
         } catch (SQLException e) {
             throw new BikeschedException(action + " failed", e);
+        }
+    }
+
+    /** Executes an update on the given connection without committing or closing it. */
+    private static int execute(Connection connection, String sql, Object... parameters) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < parameters.length; i++) {
+                statement.setObject(i + 1, parameters[i]);
+            }
+            return statement.executeUpdate();
         }
     }
 

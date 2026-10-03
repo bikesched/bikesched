@@ -4,9 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
+import bikesched.core.LogCapture;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -21,7 +20,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -33,7 +31,7 @@ class SchemaMigratorTest {
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
 
     private PGSimpleDataSource dataSource;
-    private ListAppender<ILoggingEvent> logs;
+    private LogCapture logs;
 
     @BeforeEach
     void setUp() throws SQLException {
@@ -44,15 +42,12 @@ class SchemaMigratorTest {
         execute("drop table if exists bikesched_steps, bikesched_jobs, bikesched_nodes, "
                 + SchemaMigrator.HISTORY_TABLE + " cascade");
 
-        logs = new ListAppender<>();
-        logs.start();
-        migratorLogger().addAppender(logs);
+        logs = LogCapture.of(SchemaMigrator.class);
     }
 
     @AfterEach
     void stopCapturingLogs() {
-        migratorLogger().detachAppender(logs);
-        logs.stop();
+        logs.close();
     }
 
     @Test
@@ -80,7 +75,7 @@ class SchemaMigratorTest {
     void secondRunIsNoOp() {
         var migrator = new SchemaMigrator(dataSource);
         migrator.migrate();
-        logs.list.clear();
+        logs.clear();
 
         assertThat(migrator.migrate()).isEmpty();
 
@@ -117,7 +112,7 @@ class SchemaMigratorTest {
     void failsWhenAppliedMigrationWasModified() throws SQLException {
         new SchemaMigrator(dataSource).migrate();
         execute("update " + SchemaMigrator.HISTORY_TABLE + " set checksum = 'tampered' where version = 1");
-        logs.list.clear();
+        logs.clear();
 
         assertThatThrownBy(() -> new SchemaMigrator(dataSource).migrate())
                 .isInstanceOf(SchemaMigrationException.class)
@@ -148,7 +143,7 @@ class SchemaMigratorTest {
                 "INFO Applied bikesched migration V1 (create nodes, jobs and steps tables) in <n> ms",
                 "INFO Applying bikesched migration V2 (broken)",
                 "ERROR bikesched migration V2 (bikesched/test-migrations/V002__broken.sql) failed and was rolled back");
-        ILoggingEvent error = logs.list.stream().filter(e -> e.getLevel() == Level.ERROR).findFirst().orElseThrow();
+        ILoggingEvent error = logs.events().stream().filter(e -> e.getLevel() == Level.ERROR).findFirst().orElseThrow();
         assertThat(error.getThrowableProxy()).as("error is logged with its cause").isNotNull();
         assertThat(error.getThrowableProxy().getClassName()).isEqualTo("org.postgresql.util.PSQLException");
     }
@@ -158,7 +153,7 @@ class SchemaMigratorTest {
         new SchemaMigrator(dataSource).migrate();
         execute("insert into " + SchemaMigrator.HISTORY_TABLE
                 + " (version, description, checksum, execution_time_ms) values (99, 'from the future', 'x', 0)");
-        logs.list.clear();
+        logs.clear();
 
         assertThat(new SchemaMigrator(dataSource).migrate()).isEmpty();
 
@@ -214,13 +209,10 @@ class SchemaMigratorTest {
                 .containsExactly("2");
     }
 
-    private static Logger migratorLogger() {
-        return (Logger) LoggerFactory.getLogger(SchemaMigrator.class);
-    }
 
     /** Captured events at or above {@code minLevel} as "LEVEL message"; durations normalized to "<n> ms". */
     private List<String> logEvents(Level minLevel) {
-        return logs.list.stream()
+        return logs.events().stream()
                 .filter(e -> e.getLevel().isGreaterOrEqual(minLevel))
                 .map(e -> e.getLevel() + " " + e.getFormattedMessage().replaceAll("in \\d+ ms", "in <n> ms"))
                 .toList();

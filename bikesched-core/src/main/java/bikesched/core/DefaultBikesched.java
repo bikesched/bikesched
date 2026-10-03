@@ -2,6 +2,7 @@ package bikesched.core;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -86,6 +87,10 @@ final class DefaultBikesched implements Bikesched {
 
     /** Migrates the schema, registers the node and starts its heartbeat and (optionally) job poller. */
     static DefaultBikesched create(Database database, Settings settings) {
+        if (LOG.isDebugEnabled()) {
+            // "Database: <jdbc url>" format, e.g. picked up by IntelliJ's Testcontainers Port Updater.
+            LOG.debug("Database: {}", database.describe());
+        }
         database.migrate();
         String nodeName = settings.nodeName();
         UUID nodeId = database
@@ -146,12 +151,12 @@ final class DefaultBikesched implements Bikesched {
     @Override
     public JobBuilder newJob(String type) {
         requireValidType(type);
-        return new JobBuilder(type, this::scheduleJob);
+        return new JobBuilder(type, database.jsonMapper(), this::scheduleJob);
     }
 
     /** Stores a job built by a {@link JobBuilder}; registers its handler first if given and new. */
-    private UUID scheduleJob(
-            String type, String payload, Instant scheduledAt, int priority, int maxAttempts, JobHandler handler) {
+    private UUID scheduleJob(String type, String payload, Instant scheduledAt, int priority, int maxAttempts,
+            JobHandler handler, Connection connection) {
         if (closed.get()) {
             throw new IllegalStateException("bikesched node " + nodeName + " is closed");
         }
@@ -167,9 +172,15 @@ final class DefaultBikesched implements Bikesched {
                     + new TreeSet<>(handlers.keySet()) + ")");
         }
         UUID jobId = UUID.randomUUID();
-        database.insertJob(jobId, type, payload, scheduledAt, priority, maxAttempts);
-        LOG.debug("Scheduled job {} of type {} at {} (priority {}, max {} attempt(s))",
-                jobId, type, scheduledAt, priority, maxAttempts);
+        if (connection == null) {
+            database.insertJob(jobId, type, payload, scheduledAt, priority, maxAttempts);
+            LOG.debug("Scheduled job {} of type {} at {} (priority {}, max {} attempt(s))",
+                    jobId, type, scheduledAt, priority, maxAttempts);
+        } else {
+            database.insertJob(connection, jobId, type, payload, scheduledAt, priority, maxAttempts);
+            LOG.debug("Scheduled job {} of type {} at {} (priority {}, max {} attempt(s)) in the caller's transaction",
+                    jobId, type, scheduledAt, priority, maxAttempts);
+        }
         return jobId;
     }
 

@@ -17,6 +17,7 @@ public final class BikeschedBuilder {
     private Duration nodeTimeout = DefaultBikesched.DEFAULT_NODE_TIMEOUT;
     private Duration pollInterval = DefaultBikesched.DEFAULT_POLL_INTERVAL;
     private boolean autoStartPolling = true;
+    private JsonMapper jsonMapper = new JsonStringMapper();
 
     BikeschedBuilder() {}
 
@@ -79,6 +80,21 @@ public final class BikeschedBuilder {
         return this;
     }
 
+    /**
+     * Sets the mapper converting job payloads and step results to and from JSON (optional,
+     * default {@link JsonStringMapper}, which only supports strings already containing JSON).
+     *
+     * @param jsonMapper the mapper
+     * @return this builder
+     * @see JobBuilder#payload(Object)
+     * @see Job#payload(Class)
+     * @see Job#step(String, Class, StepHandler)
+     */
+    public BikeschedBuilder jsonMapper(JsonMapper jsonMapper) {
+        this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
+        return this;
+    }
+
     /** Heartbeat interval; package-private so tests can speed it up. */
     BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
         this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -124,6 +140,6 @@ public final class BikeschedBuilder {
         String name = nodeName != null ? nodeName : DefaultBikesched.localHostName();
         var settings = new Settings(
                 name, heartbeatInterval, nodeTimeout, pollInterval, maxConcurrentJobs, autoStartPolling);
-        return DefaultBikesched.create(new Database(dataSource), settings);
+        return DefaultBikesched.create(new Database(dataSource, jsonMapper), settings);
     }
 }

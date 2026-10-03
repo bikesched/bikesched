@@ -1,6 +1,7 @@
 package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.SQLException;
 import java.time.Duration;
@@ -33,7 +34,7 @@ class DatabaseTest {
         dataSource.setUrl(POSTGRES.getJdbcUrl());
         dataSource.setUser(POSTGRES.getUsername());
         dataSource.setPassword(POSTGRES.getPassword());
-        database = new Database(dataSource);
+        database = new Database(dataSource, new JsonStringMapper());
         assertThat(database.migrate()).containsExactly(1);
     }
 
@@ -181,6 +182,68 @@ class DatabaseTest {
     }
 
     @Test
+    void redactUrlRemovesCredentials() {
+        assertThat(Database.redactUrl("jdbc:postgresql://localhost:5432/bikesched"))
+                .isEqualTo("jdbc:postgresql://localhost:5432/bikesched");
+        assertThat(Database.redactUrl("jdbc:postgresql://localhost:5432/bikesched?user=bob&password=secret&ssl=true"))
+                .isEqualTo("jdbc:postgresql://localhost:5432/bikesched");
+        assertThat(Database.redactUrl("jdbc:postgresql://bob:secret@db.example.com:5432/bikesched?sslmode=require"))
+                .isEqualTo("jdbc:postgresql://db.example.com:5432/bikesched");
+        assertThat(Database.redactUrl("jdbc:postgresql://host1:5432,host2:5433/bikesched?password=secret"))
+                .isEqualTo("jdbc:postgresql://host1:5432,host2:5433/bikesched");
+        assertThat(Database.redactUrl("jdbc:sqlserver://localhost:1433;user=bob;password=secret"))
+                .isEqualTo("jdbc:sqlserver://localhost:1433");
+        assertThat(Database.redactUrl(null)).isEqualTo("<unknown>");
+    }
+
+    @Test
+    void describeReturnsRedactedUrlAndVersion() {
+        assertThat(database.describe())
+                .matches("jdbc:postgresql://[^/@?]+:\\d+/\\w+ \\(PostgreSQL 18\\..*\\)")
+                .doesNotContain("password");
+    }
+
+    @Test
+    void stepLifecycleStoresResultAndCountsAttempts() throws SQLException {
+        UUID node = registerNode("node-1");
+        insertJobs(1, 0, "now()");
+        UUID jobId = database.claimJobs(node, 1).getFirst().id();
+
+        assertThat(database.findCompletedStep(jobId, "a")).isEmpty();
+        assertThat(database.startStep(jobId, "a")).contains(1);
+        database.failStep(jobId, "a", "boom");
+        assertThat(database.findCompletedStep(jobId, "a")).as("failed is not completed").isEmpty();
+        assertThat(countSteps("name = 'a' and state = 'FAILED' and last_error = 'boom' and finished_at is not null"))
+                .isEqualTo(1);
+
+        assertThat(database.startStep(jobId, "a")).as("second attempt").contains(2);
+        assertThat(countSteps("name = 'a' and state = 'RUNNING' and finished_at is null")).isEqualTo(1);
+        database.completeStep(jobId, "a", "{\"x\": 1}");
+
+        assertThat(database.findCompletedStep(jobId, "a")).contains(new Database.CompletedStep("{\"x\": 1}"));
+        assertThat(database.startStep(jobId, "a")).as("no restart once succeeded").isEmpty();
+        assertThat(countSteps("name = 'a' and state = 'SUCCEEDED' and attempts = 2 and finished_at is not null"))
+                .isEqualTo(1);
+
+        assertThat(database.startStep(jobId, "b")).contains(1);
+        database.completeStep(jobId, "b", null);
+        assertThat(database.findCompletedStep(jobId, "b")).contains(new Database.CompletedStep(null));
+    }
+
+    @Test
+    void completeStepRejectsInvalidJson() throws SQLException {
+        UUID node = registerNode("node-1");
+        insertJobs(1, 0, "now()");
+        UUID jobId = database.claimJobs(node, 1).getFirst().id();
+        database.startStep(jobId, "a");
+
+        assertThatThrownBy(() -> database.completeStep(jobId, "a", "not json"))
+                .isInstanceOf(BikeschedException.class)
+                .hasMessage("Storing the result of step 'a' of bikesched job " + jobId + " failed");
+        assertThat(countSteps("name = 'a' and state = 'RUNNING'")).isEqualTo(1);
+    }
+
+    @Test
     void completeJobMarksItSucceeded() throws SQLException {
         UUID node = registerNode("node-1");
         UUID otherNode = registerNode("node-2");
@@ -292,9 +355,17 @@ class DatabaseTest {
     }
 
     private static long count(String where) throws SQLException {
+        return countRows("bikesched_jobs", where);
+    }
+
+    private static long countSteps(String where) throws SQLException {
+        return countRows("bikesched_steps", where);
+    }
+
+    private static long countRows(String table, String where) throws SQLException {
         try (var connection = dataSource.getConnection();
                 var statement = connection.createStatement();
-                var rs = statement.executeQuery("select count(*) from bikesched_jobs where " + where)) {
+                var rs = statement.executeQuery("select count(*) from " + table + " where " + where)) {
             rs.next();
             return rs.getLong(1);
         }
