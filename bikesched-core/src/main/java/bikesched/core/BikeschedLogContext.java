@@ -1,5 +1,8 @@
 package bikesched.core;
 
+import bikesched.core.job.Job;
+import bikesched.core.job.StepHandler;
+
 /**
  * Keys of the logging context ({@link org.slf4j.MDC}) that bikesched fills on its own threads, for
  * use in log patterns (e.g. {@code %X{bikesched.jobId}} with Logback) or via {@link

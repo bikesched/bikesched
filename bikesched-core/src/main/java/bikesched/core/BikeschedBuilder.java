@@ -1,5 +1,17 @@
 package bikesched.core;
 
+import bikesched.core.event.EventTimeoutException;
+import bikesched.core.event.EventWait;
+import bikesched.core.event.TimeoutHandler;
+import bikesched.core.internal.Database;
+import bikesched.core.internal.DefaultBikesched;
+import bikesched.core.internal.Settings;
+import bikesched.core.job.Job;
+import bikesched.core.job.JobBuilder;
+import bikesched.core.job.JobFailure;
+import bikesched.core.job.StepHandler;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.Objects;
 import javax.sql.DataSource;
@@ -10,18 +22,24 @@ import javax.sql.DataSource;
  */
 public final class BikeschedBuilder {
 
+  static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(5);
+  static final Duration DEFAULT_NODE_TIMEOUT = Duration.ofSeconds(30);
+  static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(1);
+  static final Duration DEFAULT_EVENT_RETENTION = Duration.ofDays(7);
+  static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
+
   private DataSource dataSource;
   private String nodeName;
-  private int maxConcurrentJobs = DefaultBikesched.DEFAULT_MAX_CONCURRENT_JOBS;
-  private Duration heartbeatInterval = DefaultBikesched.DEFAULT_HEARTBEAT_INTERVAL;
-  private Duration nodeTimeout = DefaultBikesched.DEFAULT_NODE_TIMEOUT;
-  private Duration pollInterval = DefaultBikesched.DEFAULT_POLL_INTERVAL;
+  private int maxConcurrentJobs = DEFAULT_MAX_CONCURRENT_JOBS;
+  private Duration heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL;
+  private Duration nodeTimeout = DEFAULT_NODE_TIMEOUT;
+  private Duration pollInterval = DEFAULT_POLL_INTERVAL;
   private boolean autoStartPolling = true;
   private JsonMapper jsonMapper = new JsonStringMapper();
   private Duration defaultJobTimeout;
   private Duration defaultEventTimeout;
   private RetryBackoff retryBackoff = RetryBackoff.none();
-  private Duration eventRetention = DefaultBikesched.DEFAULT_EVENT_RETENTION;
+  private Duration eventRetention = DEFAULT_EVENT_RETENTION;
 
   BikeschedBuilder() {}
 
@@ -200,7 +218,7 @@ public final class BikeschedBuilder {
     if (dataSource == null) {
       throw new IllegalStateException("dataSource is required");
     }
-    String name = nodeName != null ? nodeName : DefaultBikesched.localHostName();
+    String name = nodeName != null ? nodeName : localHostName();
     var settings =
         new Settings(
             name,
@@ -214,5 +232,18 @@ public final class BikeschedBuilder {
             eventRetention,
             defaultEventTimeout);
     return DefaultBikesched.create(new Database(dataSource, jsonMapper), settings);
+  }
+
+  private static String localHostName() {
+    try {
+      return InetAddress.getLocalHost().getHostName();
+    } catch (UnknownHostException e) {
+      String fromEnv = System.getenv("HOSTNAME");
+      if (fromEnv != null && !fromEnv.isBlank()) {
+        return fromEnv;
+      }
+      throw new BikeschedException(
+          "Cannot determine host name; set a node name via Bikesched.builder().node(...)", e);
+    }
   }
 }

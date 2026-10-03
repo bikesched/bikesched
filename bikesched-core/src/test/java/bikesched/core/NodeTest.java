@@ -3,6 +3,7 @@ package bikesched.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import bikesched.core.internal.Heartbeat;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;

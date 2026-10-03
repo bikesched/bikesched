@@ -280,9 +280,16 @@ serialized with a PostgreSQL advisory lock, applied migrations are tracked with 
 
 | Table | Content |
 |---|---|
-| `bikesched_nodes` | registered nodes and their last heartbeat |
-| `bikesched_jobs` | jobs with state `SCHEDULED`, `RUNNING`, `SUCCEEDED`, `FAILED` or `CANCELLED` |
-| `bikesched_steps` | state and result of each job's steps |
+| `bikesched_schema_migrations` | applied schema migrations with version, description, checksum, install time and duration; created by the migrator itself |
+| `bikesched_nodes` | registered nodes with their unique name and last heartbeat; dead nodes are removed by the others |
+| `bikesched_jobs` | jobs with state `SCHEDULED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED` or `CANCELLED`, their payload, priority, attempts, timeout, lock (`locked_by`) and `last_error`; occurrences of recurring jobs also carry their `schedule` description and, for fixed-rate schedules, their `planned_at` |
+| `bikesched_steps` | durable steps of each job with state `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED` or `TIMED_OUT`, their result and attempts; steps waiting for an event also carry `event_name`, `event_key` and their deadline (`wait_until`) |
+| `bikesched_events` | published events (name, key, payload), kept for the event retention period |
+
+Besides primary keys, the indexes cover polling (due `SCHEDULED`/`WAITING` jobs in claim order),
+jobs per node, at most one pending occurrence per recurring job (partial unique index), steps
+waiting for an event, and event lookup and cleanup. Waiting for, suspending at and publishing
+events also take transaction-scoped advisory locks per event name and key; no table is involved.
 
 ## Building
 

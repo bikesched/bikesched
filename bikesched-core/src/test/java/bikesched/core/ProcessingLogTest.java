@@ -2,6 +2,8 @@ package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import bikesched.core.internal.JobProcessor;
+import bikesched.core.job.Job;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import java.time.Duration;

@@ -1,5 +1,7 @@
 package bikesched.core;
 
+import bikesched.core.job.Job;
+import bikesched.core.job.JobFailure;
 import java.time.Duration;
 import java.util.Objects;
 

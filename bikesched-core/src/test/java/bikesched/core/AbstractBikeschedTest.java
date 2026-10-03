@@ -10,15 +10,18 @@ import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Base class of the {@link Bikesched} integration tests: one PostgreSQL container shared by all
- * test classes of the JVM (started once, stopped by Testcontainers on JVM exit) plus SQL helpers.
- * Tests isolate themselves by unique node names and job types; test classes run sequentially.
+ * Base class of the {@link Bikesched} integration tests of all packages: one PostgreSQL container
+ * shared by all test classes of the JVM (started once, stopped by Testcontainers on JVM exit) plus
+ * SQL helpers. Tests isolate themselves by unique node names and job types; test classes run
+ * sequentially.
  */
-abstract class AbstractBikeschedTest {
+public abstract class AbstractBikeschedTest {
 
-  static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
+  /** The shared database container. */
+  public static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
 
-  static final PGSimpleDataSource dataSource;
+  /** A data source for the shared database. */
+  public static final PGSimpleDataSource dataSource;
 
   static {
     POSTGRES.start();
@@ -28,7 +31,23 @@ abstract class AbstractBikeschedTest {
     dataSource.setPassword(POSTGRES.getPassword());
   }
 
-  static void awaitState(UUID jobId, String state) throws Exception {
+  /**
+   * A builder for a test node on the shared database polling every 50 ms; also gives tests of other
+   * packages access to the package-private test hooks of {@link BikeschedBuilder}.
+   */
+  public static BikeschedBuilder testNode(String nodeName) {
+    return Bikesched.builder()
+        .dataSource(dataSource)
+        .node(nodeName)
+        .pollInterval(Duration.ofMillis(50));
+  }
+
+  /** Like {@link #testNode(String)}, with the given heartbeat interval. */
+  public static BikeschedBuilder testNode(String nodeName, Duration heartbeatInterval) {
+    return testNode(nodeName).heartbeatInterval(heartbeatInterval);
+  }
+
+  public static void awaitState(UUID jobId, String state) throws Exception {
     long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
     while (count("id = '" + jobId + "' and state = '" + state + "'") == 0
         && System.nanoTime() < deadline) {
@@ -39,18 +58,18 @@ abstract class AbstractBikeschedTest {
         .isEqualTo(1);
   }
 
-  static void execute(String sql) throws SQLException {
+  public static void execute(String sql) throws SQLException {
     try (var connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
       statement.execute(sql);
     }
   }
 
-  static long count(String where) throws SQLException {
+  public static long count(String where) throws SQLException {
     return countRows("bikesched_jobs", where);
   }
 
-  static long countRows(String table, String where) throws SQLException {
+  public static long countRows(String table, String where) throws SQLException {
     try (var connection = dataSource.getConnection();
         var statement = connection.createStatement();
         var rs = statement.executeQuery("select count(*) from " + table + " where " + where)) {
@@ -59,7 +78,7 @@ abstract class AbstractBikeschedTest {
     }
   }
 
-  static String nodeName(UUID nodeId) throws SQLException {
+  public static String nodeName(UUID nodeId) throws SQLException {
     try (var connection = dataSource.getConnection();
         var select = connection.prepareStatement("select name from bikesched_nodes where id = ?")) {
       select.setObject(1, nodeId);
@@ -69,7 +88,7 @@ abstract class AbstractBikeschedTest {
     }
   }
 
-  static OffsetDateTime lastHeartbeat(UUID nodeId) throws SQLException {
+  public static OffsetDateTime lastHeartbeat(UUID nodeId) throws SQLException {
     try (var connection = dataSource.getConnection();
         var select =
             connection.prepareStatement(

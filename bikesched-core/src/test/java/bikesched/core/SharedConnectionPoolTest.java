@@ -2,6 +2,7 @@ package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import bikesched.core.job.JobBuilder;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.time.Duration;

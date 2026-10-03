@@ -2,6 +2,8 @@ package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import bikesched.core.internal.DefaultBikesched;
+import bikesched.core.job.JobBuilder;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -12,7 +14,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
   @Test
   void neverRunsMoreThanMaxConcurrentJobs() throws Exception {
     assertThat(runSlowJobs("slow-default", 30, null))
-        .isEqualTo(DefaultBikesched.DEFAULT_MAX_CONCURRENT_JOBS);
+        .isEqualTo(BikeschedBuilder.DEFAULT_MAX_CONCURRENT_JOBS);
   }
 
   @Test

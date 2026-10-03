@@ -2,6 +2,7 @@ package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import bikesched.core.internal.JobProcessor;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;

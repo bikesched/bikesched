@@ -1,0 +1,47 @@
+package bikesched.core.internal;
+
+import bikesched.core.JsonMapper;
+import bikesched.core.event.Event;
+import java.util.Objects;
+
+/** The {@link Event} implementation: an event a waiting step received, with its stored payload. */
+final class DefaultEvent implements Event {
+
+  private final String name;
+  private final String key;
+  private final String payload;
+  private final JsonMapper jsonMapper;
+
+  DefaultEvent(String name, String key, String payload, JsonMapper jsonMapper) {
+    this.name = Objects.requireNonNull(name, "name");
+    this.key = Objects.requireNonNull(key, "key");
+    this.payload = payload;
+    this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
+  }
+
+  @Override
+  public String name() {
+    return name;
+  }
+
+  @Override
+  public String key() {
+    return key;
+  }
+
+  @Override
+  public String payload() {
+    return payload;
+  }
+
+  @Override
+  public <T> T payload(Class<T> type) {
+    Objects.requireNonNull(type, "type");
+    return payload == null ? null : jsonMapper.fromJson(payload, type);
+  }
+
+  @Override
+  public String toString() {
+    return "Event[name=" + name + ", key=" + key + ", payload=" + payload + "]";
+  }
+}
