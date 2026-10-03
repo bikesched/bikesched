@@ -244,7 +244,7 @@ public final class DefaultBikesched implements Bikesched {
       throw new IllegalArgumentException(
           "A handler for job type '" + type + "' is already registered");
     }
-    LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);
+    LOG.debug("bikesched node {} registered handler for job type {}", nodeName, type);
     return this;
   }
 
