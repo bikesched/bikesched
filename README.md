@@ -134,6 +134,37 @@ bikesched.registerHandler("send-mail", job -> {
 A cancelled job ends in state `CANCELLED` and is not retried, even if the handler throws
 afterwards.
 
+### Waiting for events
+
+A handler can wait for an event as a durable step. If the event hasn't been published yet, the
+attempt ends and the job is suspended in state `WAITING`, without holding a thread or a
+concurrency slot. Publishing the event resumes it, and the handler runs again from the top:
+completed steps are skipped, and the wait now returns the event.
+
+```java
+bikesched.registerHandler("order", job -> {
+    Order order = job.payload(Order.class);
+    job.step("create-invoice", Invoice.class, step -> billing.createInvoice(order));
+    Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
+            .timeout(Duration.ofDays(3), () -> Payment.missing())   // optional
+            .receive(event -> event.payload(Payment.class));        // or .receive(Payment.class)
+    job.step("ship", Void.class, step -> { shipping.ship(order, payment); return null; });
+});
+
+// e.g. in a payment webhook, optionally in your own transaction via .connection(connection)
+List<Step> received = bikesched.newEvent("payment-received", orderId).payload(payment).publish();
+```
+
+- Events are stored in `bikesched_events` for the `eventRetention` period (default 7 days).
+  A step that starts waiting after the event was published receives the latest one right away.
+- An event goes to every step waiting for it.
+- With `.timeout(duration, timeoutHandler)`, `receive` returns the timeout handler's result once the
+  deadline has passed.
+- Waiting does not use up an attempt.
+- Code outside steps runs again on every resume, so it must be cheap and deterministic.
+- Waiting, suspending and publishing lock the event's name and key for the length of their
+  transaction, so an event published while a job starts waiting is never missed.
+
 ### Timeouts
 
 When an attempt exceeds its timeout, bikesched logs a warning and interrupts the handler's
@@ -161,6 +192,8 @@ on virtual threads.
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))`; a handler's `job.fail().retryAfter(…)` takes precedence |
 | `jsonMapper(JsonMapper)` | `JsonStringMapper` | maps payloads and step results to and from JSON |
+| `eventRetention(Duration)` | 7 days | how long published events are kept for steps that start waiting later |
+| `defaultEventTimeout(Duration)` | none | maximum wait for events without a `.timeout(...)` of their own; afterwards the job fails with an `EventTimeoutException` |
 
 Nodes send a heartbeat every 5 seconds and poll for due jobs every second, claiming at most 10
 jobs per poll and never more than they have free slots. A node without heartbeat for 30 seconds is

@@ -21,18 +21,24 @@ import org.slf4j.LoggerFactory;
  */
 public final class LogCapture implements AutoCloseable {
 
-  private final Logger logger;
+  private final List<Logger> loggers;
   private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 
-  private LogCapture(Logger logger) {
-    this.logger = logger;
+  private LogCapture(List<Logger> loggers) {
+    this.loggers = loggers;
     appender.start();
-    logger.addAppender(appender);
+    loggers.forEach(logger -> logger.addAppender(appender));
   }
 
-  /** Starts capturing the events of the logger named after the given class. */
-  public static LogCapture of(Class<?> type) {
-    return new LogCapture((Logger) LoggerFactory.getLogger(type));
+  /**
+   * Starts capturing the events of the loggers named after the given classes, interleaved in
+   * logging order.
+   */
+  public static LogCapture of(Class<?>... types) {
+    return new LogCapture(
+        java.util.Arrays.stream(types)
+            .map(type -> (Logger) LoggerFactory.getLogger(type))
+            .toList());
   }
 
   /** The captured events, in logging order. */
@@ -53,7 +59,7 @@ public final class LogCapture implements AutoCloseable {
   /** Stops capturing; idempotent. */
   @Override
   public void close() {
-    logger.detachAppender(appender);
+    loggers.forEach(logger -> logger.detachAppender(appender));
     appender.stop();
   }
 }

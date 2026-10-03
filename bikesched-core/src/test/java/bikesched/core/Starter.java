@@ -1,7 +1,7 @@
 package bikesched.core;
 
-import java.time.Duration;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonParser;
 import org.postgresql.ds.PGSimpleDataSource;
 
 /**
@@ -60,45 +60,64 @@ public final class Starter {
             + bikesched.nodeId()
             + ") running, press Ctrl+C to stop");
 
-    for (int i = 1; i <= 3; i++) {
-      bikesched.newJob("print").payload("{\"n\": " + i + "}").schedule();
-    }
-
-    bikesched.newJob("print").payload("{\"delayed\": true}").schedule(Duration.ofSeconds(15));
-
-    bikesched.newJob("cancel").handler(job -> job.cancel("I canceled it myself!")).schedule();
+    //    for (int i = 1; i <= 3; i++) {
+    //      bikesched.newJob("print").payload("{\"n\": " + i + "}").schedule();
+    //    }
+    //
+    //    bikesched.newJob("print").payload("{\"delayed\": true}").schedule(Duration.ofSeconds(15));
+    //
+    //    bikesched.newJob("cancel").handler(job -> job.cancel("I canceled it myself!")).schedule();
+    //
+    //    bikesched
+    //        .newJob("with-steps")
+    //        .payload("{\"steps\": true}")
+    //        .handler(
+    //            job -> {
+    //              System.out.println("Job payload: " + job.payload());
+    //              var step1 = job.step("Step 1", String.class, step -> "{\"step\": 1}");
+    //              System.out.println("Step 1 result: " + step1);
+    //              var step2 = job.step("Step 2", String.class, step -> "{\"step\": 2}");
+    //              System.out.println("Step 2 result: " + step2);
+    //            })
+    //        .schedule();
+    //
+    //    var retries = new AtomicInteger(0);
+    //    bikesched
+    //        .newJob("with retry")
+    //        .handler(
+    //            job -> {
+    //              var retry = retries.getAndIncrement();
+    //              System.out.println("Job with retry: " + retry);
+    //              if (retry == 0) {
+    //                job.fail().retries(10);
+    //              } else if (retry == 10) {
+    //              } else {
+    //                job.fail().retryAfter(Duration.ofMillis(retry * 250));
+    //              }
+    //            })
+    //        .maxAttempts(5)
+    //        .schedule();
 
     bikesched
-        .newJob("with-steps")
-        .payload("{\"steps\": true}")
+        .newJob("event waiter")
+        .payload("{\"approval\": 1}")
         .handler(
             job -> {
-              System.out.println("Job payload: " + job.payload());
-              var step1 = job.step("Step 1", String.class, step -> "{\"step\": 1}");
-              System.out.println("Step 1 result: " + step1);
-              var step2 = job.step("Step 2", String.class, step -> "{\"step\": 2}");
-              System.out.println("Step 2 result: " + step2);
+              JsonObject jobPayload = JsonParser.object().from(job.payload());
+              Integer approvalId = (Integer) jobPayload.get("approval");
+
+              var eventJson =
+                  job.waitForEvent("wait for approval", "approval", approvalId.toString())
+                      .receive(event -> "{\"approval\": " + event.key() + "}");
+              JsonObject event = JsonParser.object().from(eventJson);
+              Integer approval = (Integer) event.get("approval");
+              System.out.println("Approval received: " + approval);
             })
         .schedule();
 
-    var retries = new AtomicInteger(0);
-    bikesched
-        .newJob("with retry")
-        .handler(
-            job -> {
-              var retry = retries.getAndIncrement();
-              System.out.println("Job with retry: " + retry);
-              if (retry == 0) {
-                job.fail().retries(10);
-              } else if(retry == 10) {
-                  return;
-              }
-              else {
-                job.fail().retryAfter(Duration.ofMillis(retry * 250));
-              }
-            })
-        .maxAttempts(5)
-        .schedule();
+    Thread.sleep(1000);
+
+    bikesched.newEvent("approval", "1").publish();
 
     Thread.currentThread().join();
   }

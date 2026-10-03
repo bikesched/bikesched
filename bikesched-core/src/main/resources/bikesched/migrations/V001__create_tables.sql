@@ -1,4 +1,4 @@
--- bikesched schema v1: nodes, jobs and steps.
+-- bikesched schema v1: nodes, jobs, steps and events.
 -- States are text + CHECK constraints (not Postgres enums) so adding states later is a cheap migration.
 
 -- Every application instance (node) registers itself here and heartbeats periodically.
@@ -14,8 +14,10 @@ create table bikesched_nodes (
 
 create index bikesched_nodes_last_heartbeat_at_idx on bikesched_nodes (last_heartbeat_at);
 
--- Jobs are claimed by nodes with:  ... where state = 'SCHEDULED' and scheduled_at <= now()
+-- Jobs are claimed by nodes with:  ... where state in ('SCHEDULED', 'WAITING') and scheduled_at <= now()
 --                                  order by priority desc, scheduled_at for update skip locked
+-- A WAITING job waits for an event (see bikesched_events); its scheduled_at is the deadline of the
+-- wait, or 'infinity' if it waits without one.
 create table bikesched_jobs (
     id           uuid        primary key,
     job_type     text        not null,          -- identifies the handler that executes the job
@@ -33,7 +35,7 @@ create table bikesched_jobs (
     updated_at   timestamptz not null default now(),
     finished_at  timestamptz,
     constraint bikesched_jobs_state_check
-        check (state in ('SCHEDULED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')),
+        check (state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'CANCELLED')),
     constraint bikesched_jobs_attempts_check
         check (attempts >= 0 and max_attempts >= 1),
     constraint bikesched_jobs_timeout_check
@@ -44,13 +46,14 @@ create table bikesched_jobs (
 
 -- Polling index: only due-able jobs, in claim order.
 create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at)
-    where state = 'SCHEDULED';
+    where state in ('SCHEDULED', 'WAITING');
 
 -- Finding/releasing jobs of a (dead) node; also backs the foreign key.
 create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
--- job can skip steps that already succeeded.
+-- job can skip steps that already succeeded. Event steps (event_name/event_key set) wait for an
+-- event instead: WAITING until it is published (result = its payload) or wait_until has passed.
 create table bikesched_steps (
     job_id      uuid        not null references bikesched_jobs (id) on delete cascade,
     name        text        not null,
@@ -58,9 +61,35 @@ create table bikesched_steps (
     result      jsonb,
     attempts    integer     not null default 0,
     last_error  text,
+    event_name  text,
+    event_key   text,
+    wait_until  timestamptz,
     started_at  timestamptz not null default now(),
     finished_at timestamptz,
     primary key (job_id, name),
     constraint bikesched_steps_state_check
-        check (state in ('RUNNING', 'SUCCEEDED', 'FAILED'))
+        check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'TIMED_OUT')),
+    constraint bikesched_steps_event_check
+        check ((event_name is null) = (event_key is null)
+               and (event_name is not null or (wait_until is null and state not in ('WAITING', 'TIMED_OUT'))))
 );
+
+-- Matching published events to the steps waiting for them.
+create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_key)
+    where state = 'WAITING';
+
+-- Published events, kept for a retention period: a step that starts waiting for an event that was
+-- already published receives the latest one right away, so events published before anyone waits
+-- for them are not lost.
+create table bikesched_events (
+    id           uuid        primary key,
+    event_name   text        not null,
+    event_key    text        not null,
+    payload      jsonb,
+    published_at timestamptz not null default now()
+);
+
+create index bikesched_events_name_key_idx on bikesched_events (event_name, event_key, published_at desc);
+
+-- Deleting events after their retention period.
+create index bikesched_events_published_at_idx on bikesched_events (published_at);

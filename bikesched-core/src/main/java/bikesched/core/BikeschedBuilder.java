@@ -19,7 +19,9 @@ public final class BikeschedBuilder {
   private boolean autoStartPolling = true;
   private JsonMapper jsonMapper = new JsonStringMapper();
   private Duration defaultJobTimeout;
+  private Duration defaultEventTimeout;
   private RetryBackoff retryBackoff = RetryBackoff.none();
+  private Duration eventRetention = DefaultBikesched.DEFAULT_EVENT_RETENTION;
 
   BikeschedBuilder() {}
 
@@ -124,6 +126,38 @@ public final class BikeschedBuilder {
     return this;
   }
 
+  /**
+   * Sets the default timeout of waits for events (optional, default none: jobs wait until the event
+   * is published). Applies to {@link Job#waitForEvent(String, String, String) waits} without a
+   * {@link EventWait#timeout(Duration, TimeoutHandler) timeout} of their own, counted from when the
+   * step first started waiting. Once it passed, the wait throws an {@link EventTimeoutException}
+   * and the job fails without further attempts.
+   *
+   * @param timeout the default timeout, positive
+   * @return this builder
+   */
+  public BikeschedBuilder defaultEventTimeout(Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout");
+    this.defaultEventTimeout = requirePositive(timeout, "defaultEventTimeout");
+    return this;
+  }
+
+  /**
+   * Sets how long published events are kept (optional, default 7 days). A step that starts waiting
+   * for an event receives the latest one published within this period, so events published before a
+   * job waits for them are not lost. Older events are deleted by the nodes; steps that already
+   * received an event keep its payload.
+   *
+   * @param retention how long events are kept, positive
+   * @return this builder
+   * @see Job#waitForEvent(String, String, String)
+   */
+  public BikeschedBuilder eventRetention(Duration retention) {
+    Objects.requireNonNull(retention, "retention");
+    this.eventRetention = requirePositive(retention, "eventRetention");
+    return this;
+  }
+
   /** Heartbeat interval; package-private so tests can speed it up. */
   BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
     this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -176,7 +210,9 @@ public final class BikeschedBuilder {
             maxConcurrentJobs,
             autoStartPolling,
             defaultJobTimeout,
-            retryBackoff);
+            retryBackoff,
+            eventRetention,
+            defaultEventTimeout);
     return DefaultBikesched.create(new Database(dataSource, jsonMapper), settings);
   }
 }

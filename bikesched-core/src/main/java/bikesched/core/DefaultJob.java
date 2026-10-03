@@ -34,7 +34,9 @@ final class DefaultJob implements Job {
   private volatile boolean cancelled;
   private volatile String cancelMessage;
   private volatile JobFailure failure;
+  private volatile JobSuspended.Suspension suspension;
   private volatile JobAttempt attempt;
+  private volatile Duration defaultEventTimeout;
 
   DefaultJob(
       Database database,
@@ -145,6 +147,16 @@ final class DefaultJob implements Job {
     LOG.debug("Timeout of job {} updated to {} from now", id, timeout);
   }
 
+  /** Sets the node's default timeout of waits for events without their own timeout. */
+  void defaultEventTimeout(Duration timeout) {
+    this.defaultEventTimeout = timeout;
+  }
+
+  /** The node's default timeout of waits for events, {@code null} for none. */
+  Duration defaultEventTimeout() {
+    return defaultEventTimeout;
+  }
+
   /** Connects the job to its running attempt, enabling {@link #updateTimeout(Duration)}. */
   void attach(JobAttempt attempt) {
     this.attempt = attempt;
@@ -173,8 +185,7 @@ final class DefaultJob implements Job {
     if (name.isBlank()) {
       throw new IllegalArgumentException("step name must not be blank");
     }
-    String outerStep = MDC.get(BikeschedLogContext.STEP_NAME);
-    MDC.put(BikeschedLogContext.STEP_NAME, name);
+    Runnable restoreStepName = putStepName(name);
     try {
       var completed = database.findCompletedStep(id, name);
       if (completed.isEmpty()) {
@@ -188,11 +199,102 @@ final class DefaultJob implements Job {
       String json = completed.map(Database.CompletedStep::result).orElse(null);
       return json == null ? null : fromJson.apply(json);
     } finally {
+      restoreStepName.run();
+    }
+  }
+
+  /**
+   * Puts the step name into the logging context.
+   *
+   * @return restores the previous step name (of an enclosing step), or removes it if there was none
+   */
+  private static Runnable putStepName(String name) {
+    String outerStep = MDC.get(BikeschedLogContext.STEP_NAME);
+    MDC.put(BikeschedLogContext.STEP_NAME, name);
+    return () -> {
       if (outerStep == null) {
         MDC.remove(BikeschedLogContext.STEP_NAME);
       } else {
         MDC.put(BikeschedLogContext.STEP_NAME, outerStep);
       }
+    };
+  }
+
+  @Override
+  public EventWait waitForEvent(String stepName, String eventName, String eventKey) {
+    requireName(stepName, "step name");
+    requireName(eventName, "event name");
+    Objects.requireNonNull(eventKey, "eventKey");
+    return new EventWait(this, stepName, eventName, eventKey);
+  }
+
+  /** A call run with the step name in the logging context. */
+  @FunctionalInterface
+  interface StepCall<R> {
+    R call() throws Exception;
+  }
+
+  /** Runs the call with the step name in the logging context (event and timeout handlers). */
+  <R> R inStep(String stepName, StepCall<R> call) throws Exception {
+    Runnable restoreStepName = putStepName(stepName);
+    try {
+      return call.call();
+    } finally {
+      restoreStepName.run();
+    }
+  }
+
+  /** The step the handler suspended the job at, {@code null} if it did not wait for an event. */
+  JobSuspended.Suspension suspension() {
+    return suspension;
+  }
+
+  /**
+   * Waits for an event as a step: returns it if received (now or in an earlier run), {@code null}
+   * if the wait timed out, or suspends the job by throwing {@link JobSuspended}. The names were
+   * validated by {@link #waitForEvent(String, String, String)}.
+   */
+  Event receiveEvent(String stepName, String eventName, String eventKey, Duration timeout) {
+    Runnable restoreStepName = putStepName(stepName);
+    try {
+      var wait = database.awaitEvent(id, stepName, eventName, eventKey, timeout);
+      switch (wait.state()) {
+        case "SUCCEEDED" -> {
+          LOG.debug("Step {} of job {} received event {}/{}", stepName, id, eventName, eventKey);
+          return new DefaultEvent(eventName, eventKey, wait.payload(), database.jsonMapper());
+        }
+        case "TIMED_OUT" -> {
+          LOG.debug(
+              "Step {} of job {} timed out waiting for event {}/{}",
+              stepName,
+              id,
+              eventName,
+              eventKey);
+          return null;
+        }
+        default -> {
+          var waiting =
+              new JobSuspended.Suspension(stepName, eventName, eventKey, wait.waitUntil());
+          suspension = waiting;
+          LOG.debug(
+              "Step {} of job {} waiting for event {}/{}{}, suspending the job",
+              stepName,
+              id,
+              eventName,
+              eventKey,
+              wait.waitUntil() == null ? "" : " until " + wait.waitUntil());
+          throw new JobSuspended(waiting);
+        }
+      }
+    } finally {
+      restoreStepName.run();
+    }
+  }
+
+  private static void requireName(String name, String what) {
+    Objects.requireNonNull(name, what);
+    if (name.isBlank()) {
+      throw new IllegalArgumentException(what + " must not be blank");
     }
   }
 

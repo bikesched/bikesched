@@ -76,7 +76,7 @@ class NodeTest extends AbstractBikeschedTest {
 
   @Test
   void heartbeatReleasesJobsOfDeadNodesAndThenRemovesThem() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(Heartbeat.class);
     UUID deadNode = UUID.randomUUID();
     try (logs;
         Bikesched bikesched =

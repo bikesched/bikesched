@@ -18,6 +18,9 @@ import java.util.Objects;
  * @param defaultJobTimeout maximum duration of a job attempt for jobs without a timeout of their
  *     own; {@code null} for none
  * @param retryBackoff delay of the retry after a failed attempt
+ * @param eventRetention how long published events are kept for steps that start waiting later
+ * @param defaultEventTimeout maximum wait for an event for waits without a timeout of their own;
+ *     {@code null} for none
  */
 record Settings(
     String nodeName,
@@ -27,7 +30,9 @@ record Settings(
     int maxConcurrentJobs,
     boolean autoStartPolling,
     Duration defaultJobTimeout,
-    RetryBackoff retryBackoff) {
+    RetryBackoff retryBackoff,
+    Duration eventRetention,
+    Duration defaultEventTimeout) {
 
   Settings {
     Objects.requireNonNull(nodeName, "nodeName");
@@ -35,6 +40,7 @@ record Settings(
     Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     Objects.requireNonNull(pollInterval, "pollInterval");
     Objects.requireNonNull(retryBackoff, "retryBackoff");
+    Objects.requireNonNull(eventRetention, "eventRetention");
     if (maxConcurrentJobs < 1) {
       throw new IllegalArgumentException("maxConcurrentJobs must be >= 1: " + maxConcurrentJobs);
     }

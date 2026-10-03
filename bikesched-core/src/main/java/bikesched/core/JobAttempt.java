@@ -17,7 +17,7 @@ import org.slf4j.MDC;
  */
 final class JobAttempt {
 
-  private static final Logger LOG = LoggerFactory.getLogger(DefaultBikesched.class);
+  private static final Logger LOG = LoggerFactory.getLogger(JobProcessor.class);
 
   private final Job job;
   private final Thread thread;

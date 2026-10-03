@@ -20,7 +20,7 @@ class JobTimeoutTest extends AbstractBikeschedTest {
 
   @Test
   void attemptExceedingItsTimeoutIsInterruptedAndRetried() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     var calls = new AtomicInteger();
     var interrupted = new CompletableFuture<Boolean>();
     UUID jobId;

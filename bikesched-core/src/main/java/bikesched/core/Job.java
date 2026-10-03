@@ -129,6 +129,53 @@ public interface Job {
   String step(String name, StepHandler<String> handler) throws Exception;
 
   /**
+   * Starts waiting for an event, as a durable step; {@link EventWait#receive(EventHandler)} returns
+   * it once the event published with the given name and key was received. If it has not been
+   * published yet, the job's attempt ends in {@code receive} (it does not return) and the job is
+   * suspended in state {@code WAITING}, using no thread and no concurrency slot. Once someone
+   * {@link Bikesched#newEvent(String, String) publishes} the event, the job is scheduled again and
+   * its handler runs again from the start: completed steps are skipped, and {@code receive} now
+   * passes the event to the event handler and returns its result.
+   *
+   * <pre>{@code
+   * bikesched.registerHandler("order", job -> {
+   *     Order order = job.payload(Order.class);
+   *     job.step("create-invoice", Invoice.class, step -> billing.createInvoice(order));
+   *     Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
+   *             .timeout(Duration.ofDays(3), () -> Payment.missing())   // optional
+   *             .receive(event -> event.payload(Payment.class));
+   *     job.step("ship", Void.class, step -> {
+   *         shipping.ship(order, payment);
+   *         return null;
+   *     });
+   * });
+   *
+   * // elsewhere, e.g. in a payment webhook
+   * bikesched.newEvent("payment-received", orderId).payload(payment).publish();
+   * }</pre>
+   *
+   * <p>Events published before the job starts waiting are not lost: they are kept for the {@link
+   * BikeschedBuilder#eventRetention(Duration) retention period}, and the step receives the latest
+   * one right away. An event is delivered to every step waiting for it. The received event is
+   * stored with the step; the event handler runs whenever {@code receive} returns (see {@link
+   * EventHandler#handle(Event)}), and if it throws, the job's attempt fails.
+   *
+   * <p>Because the job's handler runs again after the wait, code outside of steps must be cheap and
+   * deterministic, and steps and waits must be called with the same names in the same order on
+   * every run. Waiting does not use up an attempt. Do not catch the {@link Error} {@code receive}
+   * throws to suspend the job; if the handler does anyway, the job is still suspended once the
+   * handler returns ({@link #cancel() cancelling} or {@link #fail() failing} the attempt takes
+   * precedence).
+   *
+   * @param stepName the step name, unique within the job
+   * @param eventName the name of the event, e.g. {@code payment-received}
+   * @param eventKey identifies the event instance waited for, e.g. an order id
+   * @return the wait, to set an optional timeout and receive the event
+   * @throws IllegalArgumentException if the step or event name is blank
+   */
+  EventWait waitForEvent(String stepName, String eventName, String eventKey);
+
+  /**
    * Marks this job as cancelled. Once the handler returns, bikesched sets the job to {@code
    * CANCELLED} (it is not retried) and clears {@code last_error}. The handler keeps running until
    * it returns; a cancelled job stays cancelled even if the handler then throws or its attempt

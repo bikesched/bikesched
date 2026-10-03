@@ -12,7 +12,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
 
   @Test
   void pollerClaimsJobsInBatchesAndRunsHandlersOnVirtualThreads() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(DefaultBikesched.class, JobProcessor.class);
     var handled = new java.util.concurrent.ConcurrentLinkedQueue<String>();
     try (logs;
         Bikesched bikesched =
@@ -92,7 +92,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
 
   @Test
   void jobWithoutHandlerOnClaimingNodeLogsErrorAndFails() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     try (logs;
         Bikesched bikesched =
             Bikesched.builder()
@@ -164,7 +164,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
 
   @Test
   void handlerCanCancelJobWithMessageAndItIsNotRetried() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     try (logs;
         Bikesched bikesched =
             Bikesched.builder()
@@ -245,7 +245,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
 
   @Test
   void cancelledJobStaysCancelledWhenHandlerThrowsAfterwards() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     UUID jobId;
     try (logs;
         Bikesched bikesched =
@@ -285,7 +285,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
 
   @Test
   void logContextContainsNodeIdAndJobId() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(DefaultBikesched.class, JobProcessor.class);
     UUID nodeId;
     UUID jobId;
     var seenByHandler = new java.util.concurrent.CompletableFuture<java.util.Map<String, String>>();

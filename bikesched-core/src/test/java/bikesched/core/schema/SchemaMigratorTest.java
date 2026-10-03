@@ -39,7 +39,7 @@ class SchemaMigratorTest {
     dataSource.setUser(POSTGRES.getUsername());
     dataSource.setPassword(POSTGRES.getPassword());
     execute(
-        "drop table if exists bikesched_steps, bikesched_jobs, bikesched_nodes, "
+        "drop table if exists bikesched_events, bikesched_steps, bikesched_jobs, bikesched_nodes, "
             + SchemaMigrator.HISTORY_TABLE
             + " cascade");
 
@@ -61,19 +61,23 @@ class SchemaMigratorTest {
                 select table_name from information_schema.tables
                 where table_schema = current_schema() and table_name like 'bikesched\\_%' order by table_name"""))
         .containsExactly(
-            "bikesched_jobs", "bikesched_nodes", "bikesched_schema_migrations", "bikesched_steps");
+            "bikesched_events",
+            "bikesched_jobs",
+            "bikesched_nodes",
+            "bikesched_schema_migrations",
+            "bikesched_steps");
     assertThat(
             queryStrings(
                 "select version || ':' || description from " + SchemaMigrator.HISTORY_TABLE))
-        .containsExactly("1:create nodes, jobs and steps tables");
+        .containsExactly("1:create nodes, jobs, steps and events tables");
 
     assertThat(logEvents(Level.DEBUG))
         .containsExactly(
             "DEBUG Acquiring bikesched schema migration lock",
             "DEBUG Acquired bikesched schema migration lock",
             "INFO Migrating bikesched schema from version V0: 1 pending migration(s)",
-            "INFO Applying bikesched migration V1 (create nodes, jobs and steps tables)",
-            "INFO Applied bikesched migration V1 (create nodes, jobs and steps tables) in <n> ms",
+            "INFO Applying bikesched migration V1 (create nodes, jobs, steps and events tables)",
+            "INFO Applied bikesched migration V1 (create nodes, jobs, steps and events tables) in <n> ms",
             "INFO bikesched schema migrated to version V1",
             "DEBUG Released bikesched schema migration lock");
   }
@@ -111,7 +115,7 @@ class SchemaMigratorTest {
     assertThat(events)
         .filteredOn(e -> e.startsWith("INFO Applying bikesched migration"))
         .containsExactly(
-            "INFO Applying bikesched migration V1 (create nodes, jobs and steps tables)");
+            "INFO Applying bikesched migration V1 (create nodes, jobs, steps and events tables)");
     assertThat(events)
         .filteredOn(e -> e.equals("INFO bikesched schema is up to date at version V1"))
         .hasSize(nodes - 1);
@@ -154,8 +158,8 @@ class SchemaMigratorTest {
     assertThat(logEvents(Level.INFO))
         .containsExactly(
             "INFO Migrating bikesched schema from version V0: 2 pending migration(s)",
-            "INFO Applying bikesched migration V1 (create nodes, jobs and steps tables)",
-            "INFO Applied bikesched migration V1 (create nodes, jobs and steps tables) in <n> ms",
+            "INFO Applying bikesched migration V1 (create nodes, jobs, steps and events tables)",
+            "INFO Applied bikesched migration V1 (create nodes, jobs, steps and events tables) in <n> ms",
             "INFO Applying bikesched migration V2 (broken)",
             "ERROR bikesched migration V2 (bikesched/test-migrations/V002__broken.sql) failed and was rolled back");
     ILoggingEvent error =

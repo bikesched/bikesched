@@ -14,7 +14,7 @@ class ProcessingLogTest extends AbstractBikeschedTest {
 
   @Test
   void processedJobIsLoggedWithItsOutcome() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     UUID succeeded;
     UUID rescheduled;
     UUID failed;
@@ -56,7 +56,7 @@ class ProcessingLogTest extends AbstractBikeschedTest {
 
   @Test
   void retryAsSoonAsPossibleIsLogged() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     UUID jobId;
     try (logs;
         Bikesched bikesched = node("node-outcome-asap")) {

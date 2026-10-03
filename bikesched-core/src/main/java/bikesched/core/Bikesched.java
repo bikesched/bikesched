@@ -90,6 +90,23 @@ public interface Bikesched extends AutoCloseable {
   JobBuilder newJob(String type);
 
   /**
+   * Starts building an event; {@link EventBuilder#publish()} publishes it to the steps waiting for
+   * it (see {@link Job#waitForEvent(String, String, String)}), whose jobs then continue:
+   *
+   * <pre>{@code
+   * List<Step> received = bikesched.newEvent("payment-received", orderId)
+   *         .payload(payment)
+   *         .publish();
+   * }</pre>
+   *
+   * @param eventName the name of the event, e.g. {@code payment-received}
+   * @param eventKey identifies the event instance, e.g. an order id
+   * @return a builder for the event
+   * @throws IllegalArgumentException if the event name is blank
+   */
+  EventBuilder newEvent(String eventName, String eventKey);
+
+  /**
    * Starts polling for jobs and executing them on this node. Only needed if the node was built with
    * {@link BikeschedBuilder#autoStartPolling(boolean) autoStartPolling(false)}; calling it while
    * already polling has no effect.

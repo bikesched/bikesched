@@ -37,7 +37,7 @@ public final class SchemaMigrator {
       List.of(
           new Migration(
               1,
-              "create nodes, jobs and steps tables",
+              "create nodes, jobs, steps and events tables",
               "bikesched/migrations/V001__create_tables.sql"));
 
   /** Advisory lock key; arbitrary constant ("bikeschd" in ASCII) shared by all bikesched nodes. */

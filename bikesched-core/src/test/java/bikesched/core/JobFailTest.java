@@ -44,7 +44,7 @@ class JobFailTest extends AbstractBikeschedTest {
 
   @Test
   void retryAfterDelaysTheNextAttempt() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     List<Instant> attemptStarts = new CopyOnWriteArrayList<>();
     UUID jobId;
     try (logs;
@@ -142,7 +142,7 @@ class JobFailTest extends AbstractBikeschedTest {
 
   @Test
   void explicitFailureWinsOverExceptionAndTimeout() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     UUID thrown;
     UUID timedOut;
     try (logs;

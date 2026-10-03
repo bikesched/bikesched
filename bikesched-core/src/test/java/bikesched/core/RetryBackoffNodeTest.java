@@ -106,7 +106,7 @@ class RetryBackoffNodeTest extends AbstractBikeschedTest {
 
   @Test
   void failingBackoffRetriesAsSoonAsPossible() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobProcessor.class);
     UUID jobId;
     try (logs;
         Bikesched bikesched =
