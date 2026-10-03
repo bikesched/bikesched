@@ -1,6 +1,7 @@
 package bikesched.core.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import bikesched.core.AbstractBikeschedTest;
 import bikesched.core.Bikesched;
@@ -292,12 +293,9 @@ class RecurringJobTest extends AbstractBikeschedTest {
     }
   }
 
-  private static void awaitCount(String where, long expected) throws Exception {
-    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-    while (count(where) < expected && System.nanoTime() < deadline) {
-      Thread.sleep(50);
-    }
-    assertThat(count(where)).as(where).isGreaterThanOrEqualTo(expected);
+  private static void awaitCount(String where, long expected) {
+    await()
+        .untilAsserted(() -> assertThat(count(where)).as(where).isGreaterThanOrEqualTo(expected));
   }
 
   private static Bikesched node(String name) {

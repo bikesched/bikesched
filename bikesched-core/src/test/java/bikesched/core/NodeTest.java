@@ -2,6 +2,7 @@ package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
 import bikesched.core.internal.Heartbeat;
 import java.sql.SQLException;
@@ -24,13 +25,9 @@ class NodeTest extends AbstractBikeschedTest {
             .node("node-heartbeat")
             .heartbeatInterval(Duration.ofMillis(100))
             .build()) {
-      OffsetDateTime registered = lastHeartbeat(bikesched.node().id().orElseThrow());
-      long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-      while (!lastHeartbeat(bikesched.node().id().orElseThrow()).isAfter(registered)
-          && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
-      assertThat(lastHeartbeat(bikesched.node().id().orElseThrow())).isAfter(registered);
+      UUID id = bikesched.node().id().orElseThrow();
+      OffsetDateTime registered = lastHeartbeat(id);
+      await().untilAsserted(() -> assertThat(lastHeartbeat(id)).isAfter(registered));
     }
   }
 
@@ -59,11 +56,10 @@ class NodeTest extends AbstractBikeschedTest {
       UUID id = node.id().orElseThrow();
       assertThat(nodeName(id)).isEqualTo("node-registers-later");
       OffsetDateTime registered = lastHeartbeat(id);
-      long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-      while (!lastHeartbeat(id).isAfter(registered) && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
-      assertThat(lastHeartbeat(id)).as("heartbeats while polling").isAfter(registered);
+      await()
+          .untilAsserted(
+              () ->
+                  assertThat(lastHeartbeat(id)).as("heartbeats while polling").isAfter(registered));
     }
   }
 
@@ -173,14 +169,12 @@ class NodeTest extends AbstractBikeschedTest {
 
       // Released by the heartbeat, then claimed and executed by this node's poller; the dead
       // node itself is removed once its jobs no longer reference it.
-      long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-      while ((count("job_type = 'orphan' and state = 'SUCCEEDED'") < 2
-              || nodeName(deadNode) != null)
-          && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
-      assertThat(count("job_type = 'orphan' and state = 'SUCCEEDED'")).isEqualTo(2);
-      assertThat(nodeName(deadNode)).isNull();
+      await()
+          .untilAsserted(
+              () -> {
+                assertThat(count("job_type = 'orphan' and state = 'SUCCEEDED'")).isEqualTo(2);
+                assertThat(nodeName(deadNode)).isNull();
+              });
     }
 
     List<String> messages = logs.messages();

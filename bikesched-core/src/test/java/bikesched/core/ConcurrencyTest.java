@@ -1,6 +1,7 @@
 package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import bikesched.core.internal.DefaultBikesched;
 import bikesched.core.job.JobBuilder;
@@ -88,12 +89,12 @@ class ConcurrencyTest extends AbstractBikeschedTest {
       for (int i = 0; i < count; i++) {
         slowJob.schedule();
       }
-      long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
-      while (count("job_type = '" + jobType + "' and state = 'SUCCEEDED'") < count
-          && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
-      assertThat(count("job_type = '" + jobType + "' and state = 'SUCCEEDED'")).isEqualTo(count);
+      await()
+          .atMost(Duration.ofSeconds(20))
+          .untilAsserted(
+              () ->
+                  assertThat(count("job_type = '" + jobType + "' and state = 'SUCCEEDED'"))
+                      .isEqualTo(count));
     }
     return peak.get();
   }

@@ -1,6 +1,7 @@
 package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import bikesched.core.internal.JobProcessor;
 import bikesched.core.job.Job;
@@ -136,12 +137,13 @@ class ProcessingLogTest extends AbstractBikeschedTest {
         .orElseThrow(() -> new AssertionError("no processed log for job " + jobId));
   }
 
-  private static void awaitLog(LogCapture logs, UUID jobId) throws InterruptedException {
-    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-    while (logs.messages().stream().noneMatch(m -> m.startsWith("Processed job " + jobId))) {
-      assertThat(System.nanoTime()).as("job processed in time").isLessThan(deadline);
-      Thread.sleep(20);
-    }
+  private static void awaitLog(LogCapture logs, UUID jobId) {
+    await()
+        .untilAsserted(
+            () ->
+                assertThat(logs.messages())
+                    .as("processed log of job " + jobId)
+                    .anyMatch(m -> m.startsWith("Processed job " + jobId)));
   }
 
   private static Bikesched node(String name) {

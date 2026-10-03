@@ -1,11 +1,13 @@
 package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.awaitility.Awaitility;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -29,6 +31,10 @@ public abstract class AbstractBikeschedTest {
     dataSource.setUrl(POSTGRES.getJdbcUrl());
     dataSource.setUser(POSTGRES.getUsername());
     dataSource.setPassword(POSTGRES.getPassword());
+    // Defaults of await(): the nodes of the tests poll every 50 ms.
+    Awaitility.setDefaultTimeout(Duration.ofSeconds(10));
+    Awaitility.setDefaultPollInterval(Duration.ofMillis(50));
+    Awaitility.setDefaultPollDelay(Duration.ZERO);
   }
 
   /**
@@ -47,15 +53,14 @@ public abstract class AbstractBikeschedTest {
     return testNode(nodeName).heartbeatInterval(heartbeatInterval);
   }
 
-  public static void awaitState(UUID jobId, String state) throws Exception {
-    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-    while (count("id = '" + jobId + "' and state = '" + state + "'") == 0
-        && System.nanoTime() < deadline) {
-      Thread.sleep(50);
-    }
-    assertThat(count("id = '" + jobId + "' and state = '" + state + "'"))
-        .as("job in state " + state)
-        .isEqualTo(1);
+  /** Waits until the job is in the given state. */
+  public static void awaitState(UUID jobId, String state) {
+    await()
+        .untilAsserted(
+            () ->
+                assertThat(count("id = '" + jobId + "' and state = '" + state + "'"))
+                    .as("job in state " + state)
+                    .isEqualTo(1));
   }
 
   public static void execute(String sql) throws SQLException {

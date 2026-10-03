@@ -27,11 +27,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
       Job job = received.get(10, java.util.concurrent.TimeUnit.SECONDS);
       assertThat(job.id()).isEqualTo(jobId);
       assertThat(job.payload()).isEqualTo("{\"greeting\": \"hello\"}");
-      long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-      while (count("id = '" + jobId + "' and state = 'SUCCEEDED'") == 0
-          && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
+      awaitState(jobId, "SUCCEEDED");
       assertThat(
               count(
                   "id = '"

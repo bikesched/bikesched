@@ -1,6 +1,7 @@
 package bikesched.core.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import bikesched.core.AbstractBikeschedTest;
 import bikesched.core.Bikesched;
@@ -36,12 +37,11 @@ class JobExecutionTest extends AbstractBikeschedTest {
           "insert into bikesched_jobs (id, job_type, payload) "
               + "select gen_random_uuid(), 'print-batch', jsonb_build_object('n', n) from generate_series(1, 25) n");
 
-      long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-      while (count("job_type = 'print-batch' and state = 'SUCCEEDED'") < 25
-          && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
-      assertThat(count("job_type = 'print-batch' and state = 'SUCCEEDED'")).isEqualTo(25);
+      await()
+          .untilAsserted(
+              () ->
+                  assertThat(count("job_type = 'print-batch' and state = 'SUCCEEDED'"))
+                      .isEqualTo(25));
     }
 
     assertThat(handled)
@@ -97,11 +97,11 @@ class JobExecutionTest extends AbstractBikeschedTest {
           "insert into bikesched_jobs (id, job_type, max_attempts) "
               + "values (gen_random_uuid(), 'handled-elsewhere', 1)");
 
-      long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-      while (count("job_type = 'handled-elsewhere' and state = 'FAILED'") == 0
-          && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
+      await()
+          .untilAsserted(
+              () ->
+                  assertThat(count("job_type = 'handled-elsewhere' and state = 'FAILED'"))
+                      .isEqualTo(1));
       assertThat(
               count(
                   "job_type = 'handled-elsewhere' and state = 'FAILED' and last_error like "
@@ -132,11 +132,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
           });
       UUID jobId = bikesched.newJob("explode").schedule();
 
-      long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-      while (count("id = '" + jobId + "' and state = 'FAILED'") == 0
-          && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
+      awaitState(jobId, "FAILED");
       assertThat(
               count(
                   "id = '"

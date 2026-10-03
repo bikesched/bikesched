@@ -1,4 +1,6 @@
-# bikesched, a Java based, PostgreSQL first job scheduler with minimal dependencies
+# bikesched
+
+**A Java based, PostgreSQL first job scheduler with minimal dependencies**
 
 bikesched stores jobs in PostgreSQL and lets every connected application instance (*node*) work on
 them. Nodes claim due jobs with `SELECT … FOR UPDATE SKIP LOCKED`, so many nodes can share one

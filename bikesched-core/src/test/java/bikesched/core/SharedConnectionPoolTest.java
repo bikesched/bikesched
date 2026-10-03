@@ -1,6 +1,7 @@
 package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import bikesched.core.job.JobBuilder;
 import com.zaxxer.hikari.HikariConfig;
@@ -65,11 +66,12 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
         }
         nodes.forEach(Bikesched::startPolling);
 
-        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-        while (count("job_type = '" + type + "' and state = 'SUCCEEDED'") < JOBS
-            && System.nanoTime() < deadline) {
-          Thread.sleep(50);
-        }
+        await()
+            .atMost(Duration.ofSeconds(30))
+            .untilAsserted(
+                () ->
+                    assertThat(count("job_type = '" + type + "' and state = 'SUCCEEDED'"))
+                        .isEqualTo(JOBS));
       } finally {
         nodes.forEach(Bikesched::close);
       }

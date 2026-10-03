@@ -1,6 +1,7 @@
 package bikesched.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import bikesched.core.internal.JobProcessor;
 import java.time.Duration;
@@ -134,12 +135,13 @@ class RetryBackoffNodeTest extends AbstractBikeschedTest {
   }
 
   /** Waits until the job's first attempt failed and it is scheduled again. */
-  private static void awaitFailedAttempt(UUID jobId) throws Exception {
-    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-    while (count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 1") == 0) {
-      assertThat(System.nanoTime()).as("job failed in time").isLessThan(deadline);
-      Thread.sleep(20);
-    }
+  private static void awaitFailedAttempt(UUID jobId) {
+    await()
+        .untilAsserted(
+            () ->
+                assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 1"))
+                    .as("first attempt failed and the job is scheduled again")
+                    .isEqualTo(1));
   }
 
   private static Bikesched node(String name, RetryBackoff backoff) {

@@ -1,6 +1,7 @@
 package bikesched.core.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import bikesched.core.AbstractBikeschedTest;
 import bikesched.core.Bikesched;
@@ -329,12 +330,12 @@ class EventTest extends AbstractBikeschedTest {
         nodes.get(i % nodes.size()).newEvent("race", "\"race-" + i + "\"").publish();
       }
 
-      long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
-      while (count("job_type = 'event-race' and state = 'SUCCEEDED'") < jobs
-          && System.nanoTime() < deadline) {
-        Thread.sleep(50);
-      }
-      assertThat(count("job_type = 'event-race' and state = 'SUCCEEDED'")).isEqualTo(jobs);
+      await()
+          .atMost(Duration.ofSeconds(20))
+          .untilAsserted(
+              () ->
+                  assertThat(count("job_type = 'event-race' and state = 'SUCCEEDED'"))
+                      .isEqualTo(jobs));
     } finally {
       nodes.forEach(Bikesched::close);
     }
