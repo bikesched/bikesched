@@ -33,7 +33,7 @@ create table bikesched_jobs (
     max_attempts integer     not null default 3,
     timeout_millis bigint,                      -- max. duration of an attempt; null: node default / none
     schedule     text,                          -- occurrence of a recurring job: its schedule's description
-    planned_at   timestamptz,                   -- its planned run (only if the schedule uses planned times);
+    fixed_rate_at timestamptz,                  -- its planned run (only for fixed-rate schedules);
                                                 -- unlike scheduled_at not moved by retries or event waits
     compensated_state     text,                 -- CANCELLED or FAILED: the state a compensating job ends in
     compensation_attempts integer not null default 0,

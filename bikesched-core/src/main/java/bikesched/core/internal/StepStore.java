@@ -18,7 +18,7 @@ final class StepStore {
 
   private static final String FIND_STEP_SQL =
       """
-            select state, result::text from bikesched_steps where job_id = ? and name = ?""";
+            select state, result::text, attempts from bikesched_steps where job_id = ? and name = ?""";
 
   // Starts an attempt of a step that has not succeeded yet; returns its attempt number.
   // Returns no row if the step already succeeded (e.g. concurrently), or was compensated since.
@@ -59,8 +59,9 @@ final class StepStore {
    *
    * @param state its state, e.g. {@code SUCCEEDED}, {@code WAITING} or {@code TIMED_OUT}
    * @param result its stored result (an event step: the received event's payload) as JSON text
+   * @param attempts its number of attempts
    */
-  record StoredStep(String state, String result) {}
+  record StoredStep(String state, String result, int attempts) {}
 
   /**
    * Looks up a step of a job.
@@ -74,7 +75,10 @@ final class StepStore {
         "Reading step '" + name + "' of bikesched job " + jobId,
         db ->
             db.one(
-                FIND_STEP_SQL, row -> new StoredStep(row.string(1), row.string(2)), jobId, name));
+                FIND_STEP_SQL,
+                row -> new StoredStep(row.string(1), row.string(2), row.integer(3)),
+                jobId,
+                name));
   }
 
   /**
@@ -82,8 +86,9 @@ final class StepStore {
    *
    * @param result its stored result as JSON text, may be {@code null}
    * @param compensated whether its compensation ran already
+   * @param attempts the number of attempts it took
    */
-  record CompletedStep(String result, boolean compensated) {}
+  record CompletedStep(String result, boolean compensated, int attempts) {}
 
   /**
    * Looks up a step that succeeded in an earlier attempt of the job (and may have been compensated
@@ -98,8 +103,10 @@ final class StepStore {
         .flatMap(
             step ->
                 switch (step.state()) {
-                  case "SUCCEEDED" -> Optional.of(new CompletedStep(step.result(), false));
-                  case "COMPENSATED" -> Optional.of(new CompletedStep(step.result(), true));
+                  case "SUCCEEDED" ->
+                      Optional.of(new CompletedStep(step.result(), false, step.attempts()));
+                  case "COMPENSATED" ->
+                      Optional.of(new CompletedStep(step.result(), true, step.attempts()));
                   default -> Optional.empty();
                 });
   }

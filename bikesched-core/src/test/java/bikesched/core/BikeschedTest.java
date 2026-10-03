@@ -15,7 +15,8 @@ class BikeschedTest extends AbstractBikeschedTest {
 
   @Test
   void buildMigratesSchemaAndRegistersNode() throws SQLException {
-    try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).node("node-a").build()) {
+    try (Bikesched bikesched =
+        Bikesched.builder().dataSource(dataSource).nodeName("node-a").build()) {
       assertThat(bikesched.node().name()).isEqualTo("node-a");
       assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo("node-a");
     }
@@ -39,7 +40,7 @@ class BikeschedTest extends AbstractBikeschedTest {
 
   @Test
   void nodeNameMustNotBeBlank() {
-    assertThatThrownBy(() -> Bikesched.builder().node(" "))
+    assertThatThrownBy(() -> Bikesched.builder().nodeName(" "))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -71,7 +72,7 @@ class BikeschedTest extends AbstractBikeschedTest {
     try (Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
-            .node("node-manual-polling")
+            .nodeName("node-manual-polling")
             .pollInterval(Duration.ofMillis(50))
             .autoStartPolling(false)
             .build()) {
@@ -97,7 +98,7 @@ class BikeschedTest extends AbstractBikeschedTest {
     Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
-            .node("node-closed-polling")
+            .nodeName("node-closed-polling")
             .autoStartPolling(false)
             .build();
     bikesched.close();
@@ -112,7 +113,7 @@ class BikeschedTest extends AbstractBikeschedTest {
     Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
-            .node("node-closing")
+            .nodeName("node-closing")
             .heartbeatInterval(Duration.ofMillis(50))
             .build();
     bikesched.close();
@@ -129,7 +130,8 @@ class BikeschedTest extends AbstractBikeschedTest {
 
   @Test
   void closeReleasesJobsThatAreStillRunning() throws Exception {
-    Bikesched bikesched = Bikesched.builder().dataSource(dataSource).node("node-releasing").build();
+    Bikesched bikesched =
+        Bikesched.builder().dataSource(dataSource).nodeName("node-releasing").build();
     // Simulate a job claimed by this node whose processing never finished.
     execute(
         "insert into bikesched_jobs (id, job_type, state, locked_by) "
@@ -149,7 +151,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   void logsRedactedDatabaseUrlOnStartup() {
     var logs = LogCapture.of(DatabaseInitializer.class);
     try (logs;
-        Bikesched _ = Bikesched.builder().dataSource(dataSource).node("node-db-url").build()) {
+        Bikesched _ = Bikesched.builder().dataSource(dataSource).nodeName("node-db-url").build()) {
       assertThat(logs.events())
           .filteredOn(e -> e.getFormattedMessage().startsWith("Database: "))
           .singleElement()

@@ -18,8 +18,8 @@ import java.util.Objects;
  * @param timeout maximum duration of an attempt, {@code null} for the executing node's default
  * @param schedule the description of the recurring job's schedule this job is an occurrence of;
  *     {@code null} for a one-off job
- * @param plannedAt the planned run of an occurrence whose schedule {@link Schedule#usePlannedTime()
- *     uses planned times}; {@code null} otherwise
+ * @param fixedRateAt the planned run of an occurrence whose schedule {@link Schedule#isFixedRate()
+ *     is fixed-rate}; {@code null} otherwise
  */
 record NewJob(
     String type,
@@ -29,7 +29,7 @@ record NewJob(
     int maxAttempts,
     Duration timeout,
     String schedule,
-    Instant plannedAt) {
+    Instant fixedRateAt) {
 
   NewJob {
     Objects.requireNonNull(type, "type");

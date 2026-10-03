@@ -20,5 +20,5 @@ public interface JobHandler {
    * @param job the job to execute
    * @throws Exception if the job failed
    */
-  void run(Job job) throws Exception;
+  void handle(Job job) throws Exception;
 }

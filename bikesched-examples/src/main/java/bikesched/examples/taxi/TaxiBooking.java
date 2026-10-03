@@ -146,7 +146,7 @@ public final class TaxiBooking {
     // 1. Hand the request to the broker, which forwards it to its drivers.
     job.newStep("send-to-broker", Void.class)
         .compensateWith(
-            _ -> {
+            (_, _) -> {
               LOG.info("Compensating: withdrawing {}", describe(ride));
               broker.cancelRide(ride.rideId());
             })
@@ -207,7 +207,7 @@ public final class TaxiBooking {
     PaymentReservation reservation =
         job.newStep("reserve-payment", PaymentReservation.class)
             .compensateWith(
-                stored -> {
+                (_, stored) -> {
                   LOG.info("Compensating: releasing {}", describe(stored));
                   payments.release(stored);
                 })

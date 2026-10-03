@@ -149,7 +149,7 @@ public final class JobProcessor {
           job.maxAttempts(),
           nodeName,
           nodeId);
-      handler.run(job);
+      handler.handle(job);
     } catch (JobSuspended e) {
       // Control flow: the job waits for an event (job.suspension() is set), handled below.
     } catch (Exception e) {
@@ -180,12 +180,12 @@ public final class JobProcessor {
             failure);
       }
       DefaultJobFailure explicit = job.failure();
-      Integer retries = explicit.additionalAttempts();
+      Integer remainingAttempts = explicit.remainingAttempts();
       return recordFailure(
           job,
           explicit.message() == null ? "Job failed by its handler" : explicit.message(),
           null,
-          retries == null ? null : job.attempts() + retries,
+          remainingAttempts == null ? null : job.attempts() + remainingAttempts,
           explicit.retryDelay());
     } else if (job.suspension() != null) {
       if (failure != null) {
@@ -337,7 +337,7 @@ public final class JobProcessor {
           nodeName,
           nodeId);
       try {
-        handler.run(job);
+        handler.handle(job);
       } catch (CompensationReplayEnded e) {
         // The replay reached a step that has not completed: nothing to compensate after it.
       } catch (Exception e) {

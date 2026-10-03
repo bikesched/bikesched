@@ -1,7 +1,7 @@
 package bikesched.core.internal;
 
 import bikesched.core.event.EventWait;
-import bikesched.core.job.Step;
+import bikesched.core.event.ReceivedEvent;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -95,13 +95,13 @@ final class EventStore {
                 update bikesched_steps
                    set state = 'SUCCEEDED', result = ?::jsonb, finished_at = now()
                  where event_name = ? and event_key = ? and state = 'WAITING'
-                returning job_id, name, attempts),
+                returning job_id, name),
             resumed as (
                 update bikesched_jobs j
                    set state = 'SCHEDULED', scheduled_at = now(), updated_at = now()
                   from received r
                  where j.id = r.job_id and j.state = 'WAITING')
-            select job_id, name, attempts from received""";
+            select job_id, name from received""";
 
   private static final String DELETE_EVENTS_SQL =
       """
@@ -254,7 +254,7 @@ final class EventStore {
    * @param payload the payload as JSON text, may be {@code null}
    * @return the steps that received the event
    */
-  List<Step> publishEvent(String eventName, String eventKey, String payload) {
+  List<ReceivedEvent> publishEvent(String eventName, String eventKey, String payload) {
     return database.inTransaction(
         "Publishing event " + eventName + "/" + eventKey,
         db -> publishEvent(db, eventName, eventKey, payload));
@@ -272,7 +272,7 @@ final class EventStore {
    * @return the steps that received the event (visible to others once the caller commits)
    * @throws IllegalArgumentException if the connection is in auto-commit mode
    */
-  List<Step> publishEventInTransaction(
+  List<ReceivedEvent> publishEventInTransaction(
       Connection connection, String eventName, String eventKey, String payload) {
     return Database.onCallerConnection(
         connection,
@@ -287,13 +287,13 @@ final class EventStore {
         });
   }
 
-  private static List<Step> publishEvent(Sql db, String eventName, String eventKey, String payload)
-      throws SQLException {
+  private static List<ReceivedEvent> publishEvent(
+      Sql db, String eventName, String eventKey, String payload) throws SQLException {
     lockEvent(db, eventName, eventKey);
     db.update(INSERT_EVENT_SQL, UUID.randomUUID(), eventName, eventKey, payload);
     return db.list(
         RESUME_WAITING_STEPS_SQL,
-        row -> new Step(row.uuid(1), row.string(2), row.integer(3)),
+        row -> new ReceivedEvent(row.uuid(1), row.string(2)),
         payload,
         eventName,
         eventKey);

@@ -16,5 +16,5 @@ public interface StepHandler<T> {
    *     instead of executing the step again; may be {@code null}
    * @throws Exception if the step failed; it is executed again in the job's next attempt
    */
-  T run(Step step) throws Exception;
+  T handle(Step step) throws Exception;
 }

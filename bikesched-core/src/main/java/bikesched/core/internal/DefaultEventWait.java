@@ -49,7 +49,7 @@ final class DefaultEventWait implements EventWait {
               + (defaultTimeout == null
                   ? ""
                   : " after " + defaultTimeout + " (default event timeout)");
-      job.fail(message).retries(0); // waiting again would time out again
+      job.fail(message).remainingAttempts(0); // waiting again would time out again
       throw new EventTimeoutException(message);
     }
     return job.inStep(stepName, () -> handler.handle(event));

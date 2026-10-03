@@ -72,12 +72,10 @@ class ScheduleTest {
 
   @Test
   void onlyFixedRateSchedulesUsePlannedTimes() {
-    assertThat(Schedule.every(Duration.ofMinutes(1)).usePlannedTime()).isTrue();
-    assertThat(Schedule.daily(LocalTime.NOON, BERLIN).usePlannedTime()).isFalse();
-    assertThat(Schedule.weekly(DayOfWeek.MONDAY, LocalTime.NOON, BERLIN).usePlannedTime())
-        .isFalse();
-    assertThat(Schedule.of("custom", previous -> previous.plusSeconds(1)).usePlannedTime())
-        .isFalse();
+    assertThat(Schedule.every(Duration.ofMinutes(1)).isFixedRate()).isTrue();
+    assertThat(Schedule.daily(LocalTime.NOON, BERLIN).isFixedRate()).isFalse();
+    assertThat(Schedule.weekly(DayOfWeek.MONDAY, LocalTime.NOON, BERLIN).isFixedRate()).isFalse();
+    assertThat(Schedule.of("custom", previous -> previous.plusSeconds(1)).isFixedRate()).isFalse();
   }
 
   @Test

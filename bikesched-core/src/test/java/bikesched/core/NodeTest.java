@@ -22,7 +22,7 @@ class NodeTest extends AbstractBikeschedTest {
     try (Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
-            .node("node-heartbeat")
+            .nodeName("node-heartbeat")
             .heartbeatInterval(Duration.ofMillis(100))
             .build()) {
       UUID id = bikesched.node().id().orElseThrow();
@@ -36,7 +36,7 @@ class NodeTest extends AbstractBikeschedTest {
     try (Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
-            .node("node-registers-later")
+            .nodeName("node-registers-later")
             .heartbeatInterval(Duration.ofMillis(50))
             .autoStartPolling(false)
             .build()) {
@@ -69,7 +69,7 @@ class NodeTest extends AbstractBikeschedTest {
     try (logs) {
       Bikesched.builder()
           .dataSource(dataSource)
-          .node("node-never-polled")
+          .nodeName("node-never-polled")
           .autoStartPolling(false)
           .build()
           .close();
@@ -83,11 +83,12 @@ class NodeTest extends AbstractBikeschedTest {
 
   @Test
   void startPollingFailsIfALiveNodeHasTheName() {
-    try (Bikesched polling = Bikesched.builder().dataSource(dataSource).node("node-taken").build();
+    try (Bikesched polling =
+            Bikesched.builder().dataSource(dataSource).nodeName("node-taken").build();
         Bikesched idle =
             Bikesched.builder()
                 .dataSource(dataSource)
-                .node("node-taken")
+                .nodeName("node-taken")
                 .autoStartPolling(false)
                 .build()) {
       assertThatThrownBy(idle::startPolling)
@@ -103,8 +104,10 @@ class NodeTest extends AbstractBikeschedTest {
 
   @Test
   void rejectsSecondLiveNodeWithSameName() {
-    try (Bikesched first = Bikesched.builder().dataSource(dataSource).node("node-dup").build()) {
-      assertThatThrownBy(() -> Bikesched.builder().dataSource(dataSource).node("node-dup").build())
+    try (Bikesched first =
+        Bikesched.builder().dataSource(dataSource).nodeName("node-dup").build()) {
+      assertThatThrownBy(
+              () -> Bikesched.builder().dataSource(dataSource).nodeName("node-dup").build())
           .isInstanceOf(BikeschedException.class)
           .hasMessageContaining("live bikesched node named 'node-dup' is already registered");
       assertThat(first.node().name()).isEqualTo("node-dup");
@@ -113,7 +116,11 @@ class NodeTest extends AbstractBikeschedTest {
 
   @Test
   void takesOverStaleNodeWithSameName() throws SQLException {
-    Bikesched.builder().dataSource(dataSource).node("bootstrap").build().close(); // ensure schema
+    Bikesched.builder()
+        .dataSource(dataSource)
+        .nodeName("bootstrap")
+        .build()
+        .close(); // ensure schema
     UUID staleId = UUID.randomUUID();
     try (var connection = dataSource.getConnection();
         var insert =
@@ -133,7 +140,7 @@ class NodeTest extends AbstractBikeschedTest {
             + "', now() + interval '1 hour')");
 
     try (Bikesched bikesched =
-        Bikesched.builder().dataSource(dataSource).node("node-restarted").build()) {
+        Bikesched.builder().dataSource(dataSource).nodeName("node-restarted").build()) {
       assertThat(bikesched.node().id().orElseThrow()).isEqualTo(staleId);
       assertThat(count("job_type = 'orphan-restart' and state = 'SCHEDULED' and locked_by is null"))
           .as("jobs left running by the previous instance are released on startup")
@@ -150,7 +157,7 @@ class NodeTest extends AbstractBikeschedTest {
         Bikesched bikesched =
             Bikesched.builder()
                 .dataSource(dataSource)
-                .node("node-reaper")
+                .nodeName("node-reaper")
                 .heartbeatInterval(Duration.ofMillis(50))
                 .nodeTimeout(Duration.ofSeconds(1))
                 .pollInterval(Duration.ofMillis(50))

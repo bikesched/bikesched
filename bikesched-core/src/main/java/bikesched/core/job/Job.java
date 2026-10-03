@@ -4,7 +4,6 @@ import bikesched.core.Bikesched;
 import bikesched.core.BikeschedBuilder;
 import bikesched.core.BikeschedException;
 import bikesched.core.JsonMapper;
-import bikesched.core.JsonStringMapper;
 import bikesched.core.event.Event;
 import bikesched.core.event.EventHandler;
 import bikesched.core.event.EventWait;
@@ -82,7 +81,7 @@ public interface Job {
    * @param <T> the type to convert the payload to
    * @return the payload, or {@code null} if the job has none
    * @throws RuntimeException any exception of the mapper, e.g. {@link IllegalArgumentException}
-   *     from the default {@link JsonStringMapper} for types other than {@link String}
+   *     from the default {@link JsonMapper#rawJson()} for types other than {@link String}
    */
   <T> T payload(Class<T> type);
 
@@ -124,20 +123,6 @@ public interface Job {
   <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception;
 
   /**
-   * Executes a durable step whose result is raw JSON text, stored as is (without the {@link
-   * JsonMapper}), like {@link #payload()}. See {@link #step(String, Class, StepHandler)}.
-   *
-   * @param name the step name, unique within the job
-   * @param handler executes the step and returns its result as JSON text (may be {@code null})
-   * @return the step result as JSON text, may be {@code null}
-   * @throws Exception the exception thrown by the handler
-   * @throws BikeschedException if the step cannot be read or stored, e.g. because the result is not
-   *     valid JSON
-   * @throws IllegalArgumentException if the name is blank
-   */
-  String step(String name, StepHandler<String> handler) throws Exception;
-
-  /**
    * Builds a durable step that can have a compensation (a saga): if the job is cancelled, or fails
    * permanently, after the step completed, the compensation undoes it before the job ends.
    *
@@ -146,7 +131,7 @@ public interface Job {
    *     Order order = job.payload(Order.class);
    *     PaymentReservation reservation =
    *         job.newStep("reserve-payment", PaymentReservation.class)
-   *             .compensateWith(r -> payments.release(r))
+   *             .compensateWith((step, r) -> payments.release(r))
    *             .run(step -> payments.reserve(order));
    *     job.newStep("ship", Void.class).run(step -> {   // no compensation: same as job.step(...)
    *         shipping.ship(order, reservation);
@@ -233,8 +218,8 @@ public interface Job {
   /**
    * Marks this job as cancelled. Once the handler returns, bikesched sets the job to {@code
    * CANCELLED} (it is not retried) and clears {@code last_error}; if completed steps have a {@link
-   * StepBuilder#compensateWith(Compensation) compensation}, the job is compensated first. The
-   * handler keeps running until it returns; a cancelled job stays cancelled even if the handler
+   * StepBuilder#compensateWith(CompensationHandler) compensation}, the job is compensated first.
+   * The handler keeps running until it returns; a cancelled job stays cancelled even if the handler
    * then throws or its attempt times out. Ignored while {@link #isCompensating() compensating}.
    */
   default void cancel() {
@@ -269,7 +254,7 @@ public interface Job {
    *
    * <pre>{@code
    * if (provider.isBusy()) {
-   *     job.fail("provider busy").retries(5).retryAfter(Duration.ofMinutes(1));
+   *     job.fail("provider busy").remainingAttempts(5).retryAfter(Duration.ofMinutes(1));
    *     return;
    * }
    * }</pre>

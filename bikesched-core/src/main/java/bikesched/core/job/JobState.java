@@ -36,7 +36,7 @@ public enum JobState {
    * @return {@code true} for {@link #SUCCEEDED}, {@link #FAILED}, {@link #CANCELLED} and {@link
    *     #COMPENSATION_FAILED}
    */
-  public boolean ended() {
+  public boolean isEnded() {
     return this == SUCCEEDED || this == FAILED || this == CANCELLED || this == COMPENSATION_FAILED;
   }
 }

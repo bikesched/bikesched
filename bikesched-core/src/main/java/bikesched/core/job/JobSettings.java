@@ -2,7 +2,6 @@ package bikesched.core.job;
 
 import bikesched.core.BikeschedBuilder;
 import bikesched.core.JsonMapper;
-import bikesched.core.JsonStringMapper;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.Objects;
@@ -24,13 +23,13 @@ public interface JobSettings<B extends JobSettings<B>> {
 
   /**
    * Sets the job payload (optional, default none), converted to JSON right away by the configured
-   * {@link JsonMapper}. With the default {@link JsonStringMapper} the payload must be a {@link
+   * {@link JsonMapper}. With the default {@link JsonMapper#rawJson()} the payload must be a {@link
    * String} that already contains JSON.
    *
    * @param payload the payload, may be {@code null}
    * @return this builder
    * @throws RuntimeException any exception of the mapper, e.g. {@link IllegalArgumentException}
-   *     from the default {@link JsonStringMapper} for types other than {@link String}
+   *     from the default {@link JsonMapper#rawJson()} for types other than {@link String}
    * @see Job#payload(Class)
    */
   B payload(Object payload);

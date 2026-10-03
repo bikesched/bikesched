@@ -8,7 +8,7 @@ import java.time.Duration;
  * An attempt a handler marked as failed via {@link Job#fail(String)}, with optional retry settings:
  *
  * <pre>{@code
- * job.fail("provider busy").retries(2).retryAfter(Duration.ofMinutes(5));
+ * job.fail("provider busy").remainingAttempts(2).retryAfter(Duration.ofMinutes(5));
  * return;
  * }</pre>
  *
@@ -19,14 +19,14 @@ public interface JobFailure {
 
   /**
    * Sets how many more attempts the job gets after this one, regardless of its maximum number of
-   * attempts so far: the job's new maximum is its current attempt number plus {@code retries}. With
-   * {@code 0}, the job is marked {@code FAILED} without further attempts. Without calling this, the
-   * job's maximum number of attempts applies.
+   * attempts so far: the job's new maximum is its current attempt number plus {@code
+   * remainingAttempts}. With {@code 0}, the job is marked {@code FAILED} without further attempts.
+   * Without calling this, the job's maximum number of attempts applies.
    *
-   * @param retries the number of further attempts, at least 0
+   * @param remainingAttempts the number of further attempts, at least 0
    * @return this failure
    */
-  JobFailure retries(int retries);
+  JobFailure remainingAttempts(int remainingAttempts);
 
   /**
    * Delays the next attempt: the job is due again once the given time has passed from now (its

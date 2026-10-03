@@ -28,7 +28,7 @@ public final class Starter {
 
     var builder = Bikesched.builder().dataSource(dataSource).autoStartPolling(false);
     if (args.length > 0) {
-      builder.node(args[0]);
+      builder.nodeName(args[0]);
     }
     Bikesched bikesched = builder.build();
     Runtime.getRuntime().addShutdownHook(new Thread(bikesched::close));
@@ -114,7 +114,7 @@ public final class Starter {
     //              var retry = retries.getAndIncrement();
     //              System.out.println("Job with retry: " + retry);
     //              if (retry == 0) {
-    //                job.fail().retries(10);
+    //                job.fail().remainingAttempts(10);
     //              } else if (retry == 10) {
     //              } else {
     //                job.fail().retryAfter(Duration.ofMillis(retry * 250));

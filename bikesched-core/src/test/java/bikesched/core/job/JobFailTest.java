@@ -97,7 +97,7 @@ class JobFailTest extends AbstractBikeschedTest {
                   job -> {
                     calls.incrementAndGet();
                     if (job.attempts() == 1) {
-                      job.fail().retries(2); // 1 + 2 = 3 attempts in total
+                      job.fail().remainingAttempts(2); // 1 + 2 = 3 attempts in total
                     } else {
                       job.fail();
                     }
@@ -128,7 +128,9 @@ class JobFailTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     calls.incrementAndGet();
-                    job.fail("invalid input").retries(0).retryAfter(Duration.ofMinutes(1));
+                    job.fail("invalid input")
+                        .remainingAttempts(0)
+                        .retryAfter(Duration.ofMinutes(1));
                   })
               .schedule();
 
@@ -157,7 +159,7 @@ class JobFailTest extends AbstractBikeschedTest {
               .newJob("fail-then-throw")
               .handler(
                   job -> {
-                    job.fail("explicit").retries(0);
+                    job.fail("explicit").remainingAttempts(0);
                     throw new IllegalStateException("thrown afterwards");
                   })
               .schedule();
@@ -167,7 +169,7 @@ class JobFailTest extends AbstractBikeschedTest {
               .timeout(Duration.ofMillis(100))
               .handler(
                   job -> {
-                    job.fail("explicit").retries(0);
+                    job.fail("explicit").remainingAttempts(0);
                     Thread.sleep(Duration.ofMinutes(5));
                   })
               .schedule();
@@ -193,7 +195,7 @@ class JobFailTest extends AbstractBikeschedTest {
               .newJob("fail-then-cancel")
               .handler(
                   job -> {
-                    job.fail("failed").retries(5);
+                    job.fail("failed").remainingAttempts(5);
                     job.cancel("cancelled");
                   })
               .schedule();
@@ -208,13 +210,13 @@ class JobFailTest extends AbstractBikeschedTest {
   @Test
   void retrySettingsAreValidated() {
     var failure = new DefaultJobFailure("x");
-    assertThatThrownBy(() -> failure.retries(-1))
+    assertThatThrownBy(() -> failure.remainingAttempts(-1))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("retries must be >= 0: -1");
+        .hasMessage("remainingAttempts must be >= 0: -1");
     assertThatThrownBy(() -> failure.retryAfter(Duration.ofSeconds(-1)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("retryAfter must not be negative: PT-1S");
-    assertThat(failure.retryAfter(Duration.ZERO).retries(0)).isSameAs(failure);
+    assertThat(failure.retryAfter(Duration.ZERO).remainingAttempts(0)).isSameAs(failure);
   }
 
   private static Bikesched node(String name) {

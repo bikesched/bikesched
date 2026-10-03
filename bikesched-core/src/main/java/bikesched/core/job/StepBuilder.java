@@ -7,7 +7,7 @@ package bikesched.core.job;
  * <pre>{@code
  * PaymentReservation reservation =
  *     job.newStep("reserve-payment", PaymentReservation.class)
- *         .compensateWith(r -> payments.release(r))
+ *         .compensateWith((step, r) -> payments.release(r))
  *         .run(step -> payments.reserve(order));
  * }</pre>
  *
@@ -25,7 +25,7 @@ public interface StepBuilder<T> {
    * @param compensation undoes the step
    * @return this builder
    */
-  StepBuilder<T> compensateWith(Compensation<? super T> compensation);
+  StepBuilder<T> compensateWith(CompensationHandler<? super T> compensation);
 
   /**
    * Runs the step like {@link Job#step(String, Class, StepHandler)}: executes it unless it

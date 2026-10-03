@@ -96,9 +96,10 @@ class ProcessingLogTest extends AbstractBikeschedTest {
               .newJob("step-log")
               .handler(
                   job -> {
-                    job.step("charge", step -> "{}");
+                    job.step("charge", String.class, step -> "{}");
                     job.step(
                         "mail",
+                        String.class,
                         step -> {
                           if (job.attempts() == 1) {
                             throw new IllegalStateException("mail down");
@@ -149,7 +150,7 @@ class ProcessingLogTest extends AbstractBikeschedTest {
   private static Bikesched node(String name) {
     return Bikesched.builder()
         .dataSource(dataSource)
-        .node(name)
+        .nodeName(name)
         .pollInterval(Duration.ofMillis(50))
         .build();
   }

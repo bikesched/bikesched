@@ -25,12 +25,14 @@ class StepTest extends AbstractBikeschedTest {
                     String payment =
                         job.step(
                             "charge",
+                            String.class,
                             step -> {
                               chargeCalls.incrementAndGet();
                               return "{\"payment\": " + chargeCalls.get() + "}";
                             });
                     job.step(
                         "mail",
+                        String.class,
                         step -> {
                           if (mailCalls.incrementAndGet() == 1) {
                             throw new java.io.IOException("mail server down");
@@ -81,6 +83,7 @@ class StepTest extends AbstractBikeschedTest {
                   job -> {
                     job.step(
                         "outer",
+                        String.class,
                         step -> {
                           String outer =
                               step.jobId()
@@ -93,6 +96,7 @@ class StepTest extends AbstractBikeschedTest {
                           String inner =
                               job.step(
                                   "inner",
+                                  String.class,
                                   s ->
                                       "\""
                                           + org.slf4j.MDC.get(BikeschedLogContext.STEP_NAME)
@@ -121,7 +125,7 @@ class StepTest extends AbstractBikeschedTest {
           bikesched
               .newJob("step-invalid")
               .maxAttempts(1)
-              .handler(job -> job.step("broken", step -> "not json"))
+              .handler(job -> job.step("broken", String.class, step -> "not json"))
               .schedule();
 
       awaitState(jobId, "FAILED");
@@ -153,7 +157,7 @@ class StepTest extends AbstractBikeschedTest {
           .handler(
               job -> {
                 try {
-                  job.step(" ", step -> null);
+                  job.step(" ", String.class, step -> null);
                 } catch (IllegalArgumentException e) {
                   failure.complete(e);
                 }
@@ -183,7 +187,7 @@ class StepTest extends AbstractBikeschedTest {
                   "job_id = '"
                       + jobId
                       + "' and name = 'unmappable' "
-                      + "and state = 'FAILED' and last_error like 'java.lang.IllegalArgumentException: JsonStringMapper%'"))
+                      + "and state = 'FAILED' and last_error like 'java.lang.IllegalArgumentException: JsonMapper.rawJson()%'"))
           .isEqualTo(1);
     }
   }

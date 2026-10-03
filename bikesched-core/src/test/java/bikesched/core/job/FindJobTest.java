@@ -24,7 +24,7 @@ class FindJobTest extends AbstractBikeschedTest {
                 assertThat(job.id()).isEqualTo(later);
                 assertThat(job.type()).isEqualTo("find-later");
                 assertThat(job.state()).isEqualTo(JobState.SCHEDULED);
-                assertThat(job.state().ended()).isFalse();
+                assertThat(job.state().isEnded()).isFalse();
               });
       await()
           .untilAsserted(
@@ -40,7 +40,7 @@ class FindJobTest extends AbstractBikeschedTest {
                   assertThat(bikesched.findJob(later))
                       .map(JobInfo::state)
                       .contains(JobState.CANCELLED));
-      assertThat(JobState.CANCELLED.ended()).isTrue();
+      assertThat(JobState.CANCELLED.isEnded()).isTrue();
     }
   }
 

@@ -8,7 +8,7 @@ import java.util.Objects;
 public final class DefaultJobFailure implements JobFailure {
 
   private final String message;
-  private volatile Integer retries;
+  private volatile Integer remainingAttempts;
   private volatile Duration retryAfter;
 
   /**
@@ -21,11 +21,11 @@ public final class DefaultJobFailure implements JobFailure {
   }
 
   @Override
-  public JobFailure retries(int retries) {
-    if (retries < 0) {
-      throw new IllegalArgumentException("retries must be >= 0: " + retries);
+  public JobFailure remainingAttempts(int remainingAttempts) {
+    if (remainingAttempts < 0) {
+      throw new IllegalArgumentException("remainingAttempts must be >= 0: " + remainingAttempts);
     }
-    this.retries = retries;
+    this.remainingAttempts = remainingAttempts;
     return this;
   }
 
@@ -45,8 +45,8 @@ public final class DefaultJobFailure implements JobFailure {
   }
 
   /** The number of further attempts, {@code null} if not set. */
-  Integer additionalAttempts() {
-    return retries;
+  Integer remainingAttempts() {
+    return remainingAttempts;
   }
 
   /** The delay of the next attempt, {@code null} if not set. */

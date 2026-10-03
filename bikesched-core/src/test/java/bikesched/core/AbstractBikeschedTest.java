@@ -44,7 +44,7 @@ public abstract class AbstractBikeschedTest {
   public static BikeschedBuilder testNode(String nodeName) {
     return Bikesched.builder()
         .dataSource(dataSource)
-        .node(nodeName)
+        .nodeName(nodeName)
         .pollInterval(Duration.ofMillis(50));
   }
 

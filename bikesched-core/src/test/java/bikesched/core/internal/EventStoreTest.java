@@ -3,7 +3,7 @@ package bikesched.core.internal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import bikesched.core.job.Step;
+import bikesched.core.event.ReceivedEvent;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.List;
@@ -36,8 +36,9 @@ class EventStoreTest extends AbstractStoreTest {
 
     // The event arrives after the step started waiting, but before the job is suspended (still
     // RUNNING): the step receives it, the job is left alone ...
-    List<Step> received = database.events().publishEvent("paid", "race-1", "{\"amount\": 1}");
-    assertThat(received).containsExactly(new Step(job.id(), "wait", 1));
+    List<ReceivedEvent> received =
+        database.events().publishEvent("paid", "race-1", "{\"amount\": 1}");
+    assertThat(received).containsExactly(new ReceivedEvent(job.id(), "wait"));
     assertThat(count("id = '" + job.id() + "' and state = 'RUNNING'")).isEqualTo(1);
 
     // ... and suspending sees the received step and schedules the job instead of letting it wait.
@@ -71,7 +72,7 @@ class EventStoreTest extends AbstractStoreTest {
         .doesNotContain(job.id());
 
     assertThat(database.events().publishEvent("paid", "suspend-1", null))
-        .containsExactly(new Step(job.id(), "wait", 1));
+        .containsExactly(new ReceivedEvent(job.id(), "wait"));
     assertThat(stateAndSchedule(job.id())).startsWith("SCHEDULED ");
   }
 

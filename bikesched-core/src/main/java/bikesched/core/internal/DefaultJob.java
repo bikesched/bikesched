@@ -4,7 +4,7 @@ import bikesched.core.BikeschedLogContext;
 import bikesched.core.JsonMapper;
 import bikesched.core.event.Event;
 import bikesched.core.event.EventWait;
-import bikesched.core.job.Compensation;
+import bikesched.core.job.CompensationHandler;
 import bikesched.core.job.Job;
 import bikesched.core.job.JobFailure;
 import bikesched.core.job.Schedule;
@@ -47,7 +47,7 @@ final class DefaultJob implements Job {
   private final int maxAttempts;
   private final Duration timeout;
   private final String schedule;
-  private final Instant plannedAt;
+  private final Instant fixedRateAt;
   private final boolean compensating;
   private final int compensationAttempts;
   private final boolean cancelRequested;
@@ -77,7 +77,7 @@ final class DefaultJob implements Job {
     this.maxAttempts = claimed.maxAttempts();
     this.timeout = claimed.timeout();
     this.schedule = claimed.schedule();
-    this.plannedAt = claimed.plannedAt();
+    this.fixedRateAt = claimed.fixedRateAt();
     this.compensating = claimed.compensatedState() != null;
     this.compensationAttempts = claimed.compensationAttempts();
     this.cancelRequested = claimed.cancelRequested();
@@ -124,11 +124,11 @@ final class DefaultJob implements Job {
   }
 
   /**
-   * The planned run of an occurrence whose schedule {@link Schedule#usePlannedTime() uses planned
-   * times}, {@code null} otherwise.
+   * The planned run of an occurrence whose schedule {@link Schedule#isFixedRate() is fixed-rate},
+   * {@code null} otherwise.
    */
-  Instant plannedAt() {
-    return plannedAt;
+  Instant fixedRateAt() {
+    return fixedRateAt;
   }
 
   @Override
@@ -280,17 +280,12 @@ final class DefaultJob implements Job {
       String name,
       Class<T> resultType,
       StepHandler<T> handler,
-      Compensation<? super T> compensation)
+      CompensationHandler<? super T> compensation)
       throws Exception {
     Objects.requireNonNull(resultType, "resultType");
     JsonMapper mapper = database.jsonMapper();
     return runStep(
         name, handler, mapper::toJson, json -> mapper.fromJson(json, resultType), compensation);
-  }
-
-  @Override
-  public String step(String name, StepHandler<String> handler) throws Exception {
-    return runStep(name, handler, json -> json, json -> json, null);
   }
 
   @Override
@@ -305,7 +300,7 @@ final class DefaultJob implements Job {
       StepHandler<T> handler,
       Function<? super T, String> toJson,
       Function<String, T> fromJson,
-      Compensation<? super T> compensation)
+      CompensationHandler<? super T> compensation)
       throws Exception {
     Objects.requireNonNull(name, "name");
     Objects.requireNonNull(handler, "handler");
@@ -321,11 +316,12 @@ final class DefaultJob implements Job {
         }
         T result = read(completed.get(), fromJson);
         if (compensation != null && !completed.get().compensated()) {
+          Step step = new Step(id, name, completed.get().attempts());
           compensations.push(
               new PendingCompensation(
                   name,
                   () -> {
-                    compensation.compensate(result);
+                    compensation.handle(step, result);
                     return null;
                   }));
         }
@@ -466,7 +462,7 @@ final class DefaultJob implements Job {
     long start = System.nanoTime();
     T result;
     try {
-      result = handler.run(new Step(id, name, stepAttempt));
+      result = handler.handle(new Step(id, name, stepAttempt));
       database
           .steps()
           .completeStep(id, name, result == null ? null : toJson.apply(result), compensable);

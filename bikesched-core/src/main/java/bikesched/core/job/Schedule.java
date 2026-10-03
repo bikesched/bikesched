@@ -39,24 +39,26 @@ public interface Schedule {
   String description();
 
   /**
-   * Returns whether the next run is computed from the previous occurrence's planned run time rather
-   * than from its scheduled time, which retries ({@link JobFailure#retryAfter(Duration)}, {@link
-   * RetryBackoff}) and event waits move. Schedules that only add to the previous run, like {@link
-   * #every(Duration)}, would otherwise drift; schedules that snap to the wall clock, like {@link
-   * #daily(LocalTime, ZoneId)}, are not affected and need no planned time.
+   * Returns whether this is a fixed-rate schedule: the next run is computed from the previous
+   * occurrence's planned run time rather than from its scheduled time, which retries ({@link
+   * JobFailure#retryAfter(Duration)}, {@link RetryBackoff}) and event waits move. Schedules that
+   * only add to the previous run, like {@link #every(Duration)}, would otherwise drift; schedules
+   * that snap to the wall clock, like {@link #daily(LocalTime, ZoneId)}, are not affected and need
+   * no planned time.
    *
-   * <p>If {@code true}, each occurrence additionally stores its planned run time.
+   * <p>If {@code true}, each occurrence additionally stores its planned run time (column {@code
+   * fixed_rate_at}).
    *
    * @return {@code true} to compute the next run from the planned run time; {@code false} by
-   *     default
+   *     default ({@link #every(Duration)} returns {@code true})
    */
-  default boolean usePlannedTime() {
+  default boolean isFixedRate() {
     return false;
   }
 
   /**
    * Runs at a fixed rate: every {@code interval} after the previous planned run (see {@link
-   * #usePlannedTime()}), regardless of retries or event waits of the previous occurrence.
+   * #isFixedRate()}), regardless of retries or event waits of the previous occurrence.
    *
    * @param interval the time between runs, positive
    * @return the schedule
@@ -79,7 +81,7 @@ public interface Schedule {
       }
 
       @Override
-      public boolean usePlannedTime() {
+      public boolean isFixedRate() {
         return true; // a fixed rate must not drift when an occurrence is retried or waits
       }
 

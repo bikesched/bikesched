@@ -40,7 +40,7 @@ public final class TaxiBookingExample {
     try (Bikesched bikesched =
         Bikesched.builder()
             .dataSource(composeDatabase())
-            .node("taxi-example")
+            .nodeName("taxi-example")
             .jsonMapper(new JacksonJsonMapper())
             .build()) {
 

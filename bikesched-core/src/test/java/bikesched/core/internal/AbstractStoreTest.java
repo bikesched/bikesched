@@ -2,7 +2,7 @@ package bikesched.core.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import bikesched.core.JsonStringMapper;
+import bikesched.core.JsonMapper;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -30,7 +30,7 @@ abstract class AbstractStoreTest {
     dataSource.setUrl(POSTGRES.getJdbcUrl());
     dataSource.setUser(POSTGRES.getUsername());
     dataSource.setPassword(POSTGRES.getPassword());
-    database = new Database(dataSource, new JsonStringMapper());
+    database = new Database(dataSource, JsonMapper.rawJson());
     assertThat(database.migrate()).containsExactly(1);
   }
 

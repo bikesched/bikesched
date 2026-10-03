@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
-class JsonStringMapperTest {
+class RawJsonMapperTest {
 
-  private final JsonStringMapper mapper = new JsonStringMapper();
+  private final JsonMapper mapper = JsonMapper.rawJson();
 
   @Test
   void passesJsonStringsThrough() {
@@ -22,7 +22,7 @@ class JsonStringMapperTest {
     assertThatThrownBy(() -> mapper.toJson(42))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(
-            "JsonStringMapper only supports JSON strings, not java.lang.Integer; "
+            "JsonMapper.rawJson() only supports JSON strings, not java.lang.Integer; "
                 + "configure a JsonMapper for other types via Bikesched.builder().jsonMapper(...)");
     assertThatThrownBy(() -> mapper.fromJson("{}", PaymentJsonMapper.Payment.class))
         .isInstanceOf(IllegalArgumentException.class)

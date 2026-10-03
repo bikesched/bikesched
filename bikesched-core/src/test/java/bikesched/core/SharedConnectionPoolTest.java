@@ -37,7 +37,7 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
           Bikesched node =
               Bikesched.builder()
                   .dataSource(pool)
-                  .node("pool-node-" + autoCommit + "-" + i)
+                  .nodeName("pool-node-" + autoCommit + "-" + i)
                   .maxConcurrentJobs(3)
                   .heartbeatInterval(Duration.ofMillis(100))
                   .pollInterval(Duration.ofMillis(50))
@@ -51,6 +51,7 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
                 // A durable step: job threads use pool connections too.
                 job.step(
                     "work",
+                    String.class,
                     step -> {
                       Thread.sleep(20);
                       return "{\"node\": \"" + nodeName + "\"}";

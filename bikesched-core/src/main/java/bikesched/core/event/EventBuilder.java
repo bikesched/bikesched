@@ -3,8 +3,6 @@ package bikesched.core.event;
 import bikesched.core.BikeschedBuilder;
 import bikesched.core.BikeschedException;
 import bikesched.core.JsonMapper;
-import bikesched.core.JsonStringMapper;
-import bikesched.core.job.Step;
 import java.sql.Connection;
 import java.util.List;
 
@@ -13,7 +11,7 @@ import java.util.List;
  * String)}:
  *
  * <pre>{@code
- * List<Step> received = bikesched.newEvent("payment-received", orderId)
+ * List<ReceivedEvent> received = bikesched.newEvent("payment-received", orderId)
  *         .payload(payment)
  *         .publish();
  * }</pre>
@@ -33,7 +31,7 @@ public interface EventBuilder {
    * @param payload the payload, may be {@code null}
    * @return this builder
    * @throws RuntimeException any exception of the mapper, e.g. {@link IllegalArgumentException}
-   *     from the default {@link JsonStringMapper} for types other than {@link String}
+   *     from the default {@link JsonMapper#rawJson()} for types other than {@link String}
    */
   EventBuilder payload(Object payload);
 
@@ -60,5 +58,5 @@ public interface EventBuilder {
    *     JSON
    * @throws IllegalStateException if the {@link bikesched.core.Bikesched} is closed
    */
-  List<Step> publish();
+  List<ReceivedEvent> publish();
 }

@@ -5,11 +5,11 @@ import bikesched.core.BikeschedException;
 import bikesched.core.BikeschedLogContext;
 import bikesched.core.Node;
 import bikesched.core.event.EventBuilder;
+import bikesched.core.event.ReceivedEvent;
 import bikesched.core.job.JobBuilder;
 import bikesched.core.job.JobHandler;
 import bikesched.core.job.JobInfo;
 import bikesched.core.job.RecurringJobBuilder;
-import bikesched.core.job.Step;
 import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
@@ -403,13 +403,13 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   /** Publishes an event built by an {@link EventBuilder}. */
-  private List<Step> publish(
+  private List<ReceivedEvent> publish(
       String eventName, String eventKey, String payload, Connection connection) {
     if (closed.get()) {
       throw new IllegalStateException("bikesched node " + nodeName + " is closed");
     }
     initializer.ensureInitialized();
-    List<Step> received =
+    List<ReceivedEvent> received =
         connection == null
             ? database.events().publishEvent(eventName, eventKey, payload)
             : database.events().publishEventInTransaction(connection, eventName, eventKey, payload);
@@ -422,7 +422,7 @@ public final class DefaultBikesched implements Bikesched {
         received.isEmpty()
             ? ""
             : received.stream()
-                .map(step -> step.name() + " of job " + step.jobId())
+                .map(r -> r.stepName() + " of job " + r.jobId())
                 .collect(java.util.stream.Collectors.joining(", ", ": ", "")));
     return received;
   }

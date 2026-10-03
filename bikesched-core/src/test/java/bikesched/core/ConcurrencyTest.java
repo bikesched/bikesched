@@ -67,7 +67,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
     var builder =
         Bikesched.builder()
             .dataSource(dataSource)
-            .node("node-" + jobType)
+            .nodeName("node-" + jobType)
             .pollInterval(Duration.ofMillis(20));
     if (maxConcurrentJobs != null) {
       builder.maxConcurrentJobs(maxConcurrentJobs);

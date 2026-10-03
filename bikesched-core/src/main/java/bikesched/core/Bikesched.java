@@ -22,7 +22,7 @@ import java.util.UUID;
  * <pre>{@code
  * try (Bikesched bikesched = Bikesched.builder()
  *         .dataSource(dataSource)
- *         .node("worker-1")          // optional, defaults to the host name
+ *         .nodeName("worker-1")          // optional, defaults to the host name
  *         .build()) {
  *     // register the handler once, schedule jobs by type ...
  *     bikesched.registerHandler("send-mail", job -> mailer.send(job.payload()));
@@ -114,7 +114,7 @@ public interface Bikesched extends AutoCloseable {
    * it (see {@link Job#waitForEvent(String, String, String)}), whose jobs then continue:
    *
    * <pre>{@code
-   * List<Step> received = bikesched.newEvent("payment-received", orderId)
+   * List<ReceivedEvent> received = bikesched.newEvent("payment-received", orderId)
    *         .payload(payment)
    *         .publish();
    * }</pre>

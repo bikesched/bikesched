@@ -35,7 +35,7 @@ public final class BikeschedBuilder {
   private Duration nodeTimeout = DEFAULT_NODE_TIMEOUT;
   private Duration pollInterval = DEFAULT_POLL_INTERVAL;
   private boolean autoStartPolling = true;
-  private JsonMapper jsonMapper = new JsonStringMapper();
+  private JsonMapper jsonMapper = JsonMapper.rawJson();
   private Duration defaultJobTimeout;
   private Duration defaultEventTimeout;
   private RetryBackoff retryBackoff = RetryBackoff.none();
@@ -59,15 +59,15 @@ public final class BikeschedBuilder {
    * name). Only one live node per name is allowed; the name of a dead node (no heartbeat for 30
    * seconds) is taken over.
    *
-   * @param name the node name
+   * @param nodeName the node name
    * @return this builder
    */
-  public BikeschedBuilder node(String name) {
-    Objects.requireNonNull(name, "name");
-    if (name.isBlank()) {
+  public BikeschedBuilder nodeName(String nodeName) {
+    Objects.requireNonNull(nodeName, "nodeName");
+    if (nodeName.isBlank()) {
       throw new IllegalArgumentException("node name must not be blank");
     }
-    this.nodeName = name;
+    this.nodeName = nodeName;
     return this;
   }
 
@@ -108,7 +108,7 @@ public final class BikeschedBuilder {
 
   /**
    * Sets the mapper converting job payloads and step results to and from JSON (optional, default
-   * {@link JsonStringMapper}, which only supports strings already containing JSON).
+   * {@link JsonMapper#rawJson()}, which only supports strings already containing JSON).
    *
    * @param jsonMapper the mapper
    * @return this builder
@@ -249,7 +249,7 @@ public final class BikeschedBuilder {
         return fromEnv;
       }
       throw new BikeschedException(
-          "Cannot determine host name; set a node name via Bikesched.builder().node(...)", e);
+          "Cannot determine host name; set a node name via Bikesched.builder().nodeName(...)", e);
     }
   }
 }

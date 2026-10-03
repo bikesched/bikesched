@@ -2,7 +2,7 @@ package bikesched.core.internal;
 
 import bikesched.core.JsonMapper;
 import bikesched.core.event.EventBuilder;
-import bikesched.core.job.Step;
+import bikesched.core.event.ReceivedEvent;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;
@@ -14,7 +14,8 @@ final class DefaultEventBuilder implements EventBuilder {
   @FunctionalInterface
   interface Publisher {
     /** {@code connection} is the caller's connection, or {@code null} to use bikesched's own. */
-    List<Step> publish(String eventName, String eventKey, String payload, Connection connection);
+    List<ReceivedEvent> publish(
+        String eventName, String eventKey, String payload, Connection connection);
   }
 
   private final String eventName;
@@ -45,7 +46,7 @@ final class DefaultEventBuilder implements EventBuilder {
   }
 
   @Override
-  public List<Step> publish() {
+  public List<ReceivedEvent> publish() {
     return publisher.publish(eventName, eventKey, payload, connection);
   }
 }

@@ -70,7 +70,10 @@ class RetryBackoffNodeTest extends AbstractBikeschedTest {
     try (Bikesched bikesched =
         node("node-backoff-fail", RetryBackoff.fixed(Duration.ofMinutes(10)))) {
       UUID jobId =
-          bikesched.newJob("backoff-fail").handler(job -> job.fail("busy").retries(3)).schedule();
+          bikesched
+              .newJob("backoff-fail")
+              .handler(job -> job.fail("busy").remainingAttempts(3))
+              .schedule();
 
       awaitFailedAttempt(jobId);
 
@@ -147,7 +150,7 @@ class RetryBackoffNodeTest extends AbstractBikeschedTest {
   private static Bikesched node(String name, RetryBackoff backoff) {
     return Bikesched.builder()
         .dataSource(dataSource)
-        .node(name)
+        .nodeName(name)
         .pollInterval(Duration.ofMillis(50))
         .retryBackoff(backoff)
         .build();

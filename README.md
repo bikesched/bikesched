@@ -40,7 +40,7 @@ DataSource dataSource = ...; // any PostgreSQL DataSource, e.g. a HikariCP pool
 
 try (Bikesched bikesched = Bikesched.builder()
         .dataSource(dataSource)
-        .node("worker-1")              // optional, defaults to the host name
+        .nodeName("worker-1")              // optional, defaults to the host name
         .build()) {                    // migrates the schema, registers the node, starts polling
 
     // Register a handler for a job type ...
@@ -75,7 +75,7 @@ To check on a job later, look it up by its id (a read-only transaction):
 
 ```java
 Optional<JobInfo> job = bikesched.findJob(id);   // id(), type() and state(), e.g. JobState.SUCCEEDED
-boolean done = job.map(info -> info.state().ended()).orElse(false);
+boolean done = job.map(info -> info.state().isEnded()).orElse(false);
 ```
 
 ### Transactional scheduling
@@ -166,10 +166,10 @@ bikesched.registerHandler("order", job -> {
     Order order = job.payload(Order.class);
     PaymentReservation reservation =
         job.newStep("reserve-payment", PaymentReservation.class)
-            .compensateWith(r -> payments.release(r))      // receives the stored step result
+            .compensateWith((step, r) -> payments.release(r))  // receives the step and its stored result
             .run(step -> payments.reserve(order));
     job.newStep("ship", Void.class)
-        .compensateWith(none -> shipping.recall(order))
+        .compensateWith((step, _) -> shipping.recall(order))
         .run(step -> { shipping.ship(order, reservation); return null; });
 });
 ```
@@ -203,9 +203,9 @@ bikesched.newJob("cleanup")
 - Schedules: `Schedule.every(Duration)`, `daily(LocalTime, ZoneId)`,
   `weekly(DayOfWeek, LocalTime, ZoneId)`, or `Schedule.of(description, previous -> next)`.
 - The next run is computed from the previous occurrence's scheduled time. Schedules whose
-  `usePlannedTime()` returns `true` (by default only `every`) also store each occurrence's planned
-  time (`planned_at`) and compute from that instead, so retries and event waits don't shift a fixed
-  rate.
+  `isFixedRate()` returns `true` (by default only `every`) also store each occurrence's planned
+  time (`fixed_rate_at`) and compute from that instead, so retries and event waits don't shift a
+  fixed rate.
 - Each occurrence stores the schedule's description. Registering a schedule with a different
   description (e.g. after a deploy) moves the pending occurrence to the new schedule.
 - Nodes recreate a missing occurrence of their recurring jobs on every heartbeat.
@@ -231,7 +231,7 @@ bikesched.registerHandler("order", job -> {
 });
 
 // e.g. in a payment webhook, optionally in your own transaction via .connection(connection)
-List<Step> received = bikesched.newEvent("payment-received", orderId).payload(payment).publish();
+List<ReceivedEvent> received = bikesched.newEvent("payment-received", orderId).payload(payment).publish();
 ```
 
 - Events are stored in `bikesched_events` for the `eventRetention` period (default 7 days).
@@ -265,12 +265,12 @@ on virtual threads.
 | Builder option | Default | Description |
 |---|---|---|
 | `dataSource(DataSource)` | required | PostgreSQL data source; tables are created in its default schema |
-| `node(String)` | host name | unique node name; a dead node's name is taken over |
+| `nodeName(String)` | host name | unique node name; a dead node's name is taken over |
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
 | `autoStartPolling(boolean)` | `true` | with `false`, call `startPolling()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated on first use (`startPolling()`, scheduling a job, publishing an event), and retried on the next one if that fails |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))`; a handler's `job.fail().retryAfter(…)` takes precedence |
-| `jsonMapper(JsonMapper)` | `JsonStringMapper` | maps payloads and step results to and from JSON |
+| `jsonMapper(JsonMapper)` | `JsonMapper.rawJson()` | maps payloads and step results to and from JSON |
 | `eventRetention(Duration)` | 7 days | how long published events are kept for steps that start waiting later |
 | `defaultEventTimeout(Duration)` | none | maximum wait for events without a `.timeout(...)` of their own; afterwards the job fails with an `EventTimeoutException` |
 
@@ -281,7 +281,7 @@ considered dead: other nodes release its running jobs for retry and remove the n
 
 ### JSON mapping
 
-bikesched ships without a JSON library. The default `JsonStringMapper` only accepts strings that
+bikesched ships without a JSON library. The default `JsonMapper.rawJson()` only accepts strings that
 already contain JSON. Plug in the library of your choice to use typed payloads and step results,
 e.g. Jackson:
 
@@ -333,7 +333,7 @@ serialized with a PostgreSQL advisory lock, applied migrations are tracked with 
 |---|---|
 | `bikesched_schema_migrations` | applied schema migrations with version, description, checksum, install time and duration; created by the migrator itself |
 | `bikesched_nodes` | registered nodes with their unique name and last heartbeat; dead nodes are removed by the others |
-| `bikesched_jobs` | jobs with state `SCHEDULED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `COMPENSATING` or `COMPENSATION_FAILED`, their payload, priority, attempts, timeout, lock (`locked_by`) and `last_error`; compensating jobs also carry the state they end in (`compensated_state`) and their `compensation_attempts`, jobs cancelled via `Bikesched.cancel` their `cancel_requested_at` and `cancel_message`; occurrences of recurring jobs also carry their `schedule` description and, for fixed-rate schedules, their `planned_at` |
+| `bikesched_jobs` | jobs with state `SCHEDULED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `COMPENSATING` or `COMPENSATION_FAILED`, their payload, priority, attempts, timeout, lock (`locked_by`) and `last_error`; compensating jobs also carry the state they end in (`compensated_state`) and their `compensation_attempts`, jobs cancelled via `Bikesched.cancel` their `cancel_requested_at` and `cancel_message`; occurrences of recurring jobs also carry their `schedule` description and, for fixed-rate schedules, their `fixed_rate_at` |
 | `bikesched_steps` | durable steps of each job with state `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `TIMED_OUT`, `COMPENSATED` or `CANCELLED`, their result, attempts and whether they have a compensation (`compensable`); steps waiting for an event also carry `event_name`, `event_key` and their deadline (`wait_until`) |
 | `bikesched_events` | published events (name, key, payload), kept for the event retention period |
 

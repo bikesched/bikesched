@@ -129,7 +129,7 @@ class TaxiBookingTest {
     bikesched =
         Bikesched.builder()
             .dataSource(DATA_SOURCE)
-            .node("taxi-" + UUID.randomUUID())
+            .nodeName("taxi-" + UUID.randomUUID())
             .jsonMapper(new JacksonJsonMapper())
             .autoStartPolling(false)
             .build();

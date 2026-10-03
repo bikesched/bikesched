@@ -43,18 +43,18 @@ record RecurringJob(
         maxAttempts,
         timeout,
         schedule.description(),
-        schedule.usePlannedTime() ? at : null);
+        schedule.isFixedRate() ? at : null);
   }
 
   /**
    * The next run after an ended occurrence: computed from its planned run if the schedule {@link
-   * Schedule#usePlannedTime() uses planned times} and it has one, otherwise from its scheduled time
-   * (which retries and event waits may have moved).
+   * Schedule#isFixedRate() is fixed-rate} and it has one, otherwise from its scheduled time (which
+   * retries and event waits may have moved).
    */
   Instant nextRun(DefaultJob ended, Instant now) {
     Instant previous =
-        schedule.usePlannedTime() && ended.plannedAt() != null
-            ? ended.plannedAt()
+        schedule.isFixedRate() && ended.fixedRateAt() != null
+            ? ended.fixedRateAt()
             : ended.scheduledAt();
     return nextRun(previous, now);
   }

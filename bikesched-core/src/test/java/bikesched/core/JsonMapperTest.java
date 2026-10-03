@@ -15,7 +15,7 @@ class JsonMapperTest extends AbstractBikeschedTest {
     try (Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
-            .node("node-json-mapper")
+            .nodeName("node-json-mapper")
             .jsonMapper(new PaymentJsonMapper())
             .pollInterval(Duration.ofMillis(50))
             .build()) {
@@ -82,7 +82,7 @@ class JsonMapperTest extends AbstractBikeschedTest {
     try (Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
-            .node("node-default-mapper")
+            .nodeName("node-default-mapper")
             .pollInterval(Duration.ofMillis(50))
             .build()) {
       assertThatThrownBy(
@@ -91,7 +91,7 @@ class JsonMapperTest extends AbstractBikeschedTest {
                       .newJob("default-mapper")
                       .payload(new PaymentJsonMapper.Payment("order-1", 100)))
           .isInstanceOf(IllegalArgumentException.class)
-          .hasMessageStartingWith("JsonStringMapper only supports JSON strings");
+          .hasMessageStartingWith("JsonMapper.rawJson() only supports JSON strings");
 
       var seen = new java.util.concurrent.CompletableFuture<String>();
       UUID jobId =

@@ -12,8 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /**
- * Compensating steps ({@link StepBuilder#compensateWith(Compensation)}) when a job is cancelled or
- * fails permanently, and cancelling jobs via {@link Bikesched#cancel(UUID)}.
+ * Compensating steps ({@link StepBuilder#compensateWith(CompensationHandler)}) when a job is
+ * cancelled or fails permanently, and cancelling jobs via {@link Bikesched#cancel(UUID)}.
  */
 class CompensationTest extends AbstractBikeschedTest {
 
@@ -28,12 +28,12 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     String a =
                         job.newStep("a", String.class)
-                            .compensateWith(result -> calls.add("undo " + result))
+                            .compensateWith((_, result) -> calls.add("undo " + result))
                             .run(_ -> "1");
                     job.step("no-compensation", String.class, _ -> "0");
                     String b =
                         job.newStep("b", String.class)
-                            .compensateWith(result -> calls.add("undo " + result))
+                            .compensateWith((_, result) -> calls.add("undo " + result))
                             .run(_ -> "2");
                     calls.add((job.isCompensating() ? "replayed " : "did ") + a + ", " + b);
                     if (!job.isCompensating()) {
@@ -84,6 +84,7 @@ class CompensationTest extends AbstractBikeschedTest {
   void permanentFailureCompensatesUntilTheFailedStep() throws Exception {
     try (Bikesched bikesched = node("node-compensate-fail")) {
       List<String> compensated = new CopyOnWriteArrayList<>();
+      List<Step> compensatedSteps = new CopyOnWriteArrayList<>();
       UUID jobId =
           bikesched
               .newJob("compensate-fail")
@@ -91,10 +92,14 @@ class CompensationTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     job.newStep("reserve", String.class)
-                        .compensateWith(compensated::add)
+                        .compensateWith(
+                            (step, result) -> {
+                              compensatedSteps.add(step);
+                              compensated.add(result);
+                            })
                         .run(_ -> "42");
                     job.newStep("charge", String.class)
-                        .compensateWith(compensated::add)
+                        .compensateWith((_, result) -> compensated.add(result))
                         .run(
                             _ -> {
                               throw new IllegalStateException("card declined");
@@ -105,6 +110,9 @@ class CompensationTest extends AbstractBikeschedTest {
       awaitState(jobId, "FAILED");
 
       assertThat(compensated).as("the failed step is not compensated").containsExactly("42");
+      assertThat(compensatedSteps)
+          .as("the compensation receives the step with the attempts it took")
+          .containsExactly(new Step(jobId, "reserve", 1));
       assertThat(
               count(
                   "id = '"
@@ -126,7 +134,7 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("a", String.class)
                         .compensateWith(
-                            _ -> {
+                            (_, _) -> {
                               if (attempts.incrementAndGet() == 1) {
                                 throw new IllegalStateException("provider down");
                               }
@@ -147,7 +155,7 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("a", String.class)
                         .compensateWith(
-                            _ -> {
+                            (_, _) -> {
                               throw new IllegalStateException("provider down");
                             })
                         .run(_ -> "1");
@@ -186,7 +194,7 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     handlerRuns.incrementAndGet();
                     job.newStep("reserve", String.class)
-                        .compensateWith(compensated::add)
+                        .compensateWith((_, result) -> compensated.add(result))
                         .run(_ -> "42");
                     job.waitForEvent("await-driver", "driver-accepted", job.id().toString())
                         .receive(String.class);
@@ -243,7 +251,9 @@ class CompensationTest extends AbstractBikeschedTest {
               .newJob("cancel-running")
               .handler(
                   job -> {
-                    job.newStep("a", String.class).compensateWith(compensated::add).run(_ -> "1");
+                    job.newStep("a", String.class)
+                        .compensateWith((_, result) -> compensated.add(result))
+                        .run(_ -> "1");
                     if (!job.isCompensating()) {
                       started.countDown();
                       proceed.await();

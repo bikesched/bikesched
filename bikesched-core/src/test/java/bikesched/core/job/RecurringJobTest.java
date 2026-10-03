@@ -154,11 +154,11 @@ class RecurringJobTest extends AbstractBikeschedTest {
                     }
                   })
               .schedule(firstRun);
-      assertThat(count("id = '" + first + "' and planned_at = scheduled_at")).isEqualTo(1);
+      assertThat(count("id = '" + first + "' and fixed_rate_at = scheduled_at")).isEqualTo(1);
 
       awaitState(first, "SUCCEEDED");
 
-      assertThat(count("id = '" + first + "' and scheduled_at > planned_at"))
+      assertThat(count("id = '" + first + "' and scheduled_at > fixed_rate_at"))
           .as("the retry moved the scheduled time, not the planned one")
           .isEqualTo(1);
       assertThat(
@@ -167,8 +167,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
                   "ended.id = '"
                       + first
                       + "' and next.job_type = 'recurring-planned' and next.state = 'SCHEDULED'"
-                      + " and next.planned_at = ended.planned_at + interval '1 hour'"
-                      + " and next.scheduled_at = next.planned_at"))
+                      + " and next.fixed_rate_at = ended.fixed_rate_at + interval '1 hour'"
+                      + " and next.scheduled_at = next.fixed_rate_at"))
           .as("next run = planned run + 1 hour")
           .isEqualTo(1);
     }
@@ -184,7 +184,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
               .handler(() -> {})
               .schedule();
 
-      assertThat(count("id = '" + occurrence + "' and planned_at is null")).isEqualTo(1);
+      assertThat(count("id = '" + occurrence + "' and fixed_rate_at is null")).isEqualTo(1);
     }
   }
 

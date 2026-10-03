@@ -25,7 +25,7 @@ class DatabaseUnavailableTest extends AbstractBikeschedTest {
     try (Bikesched bikesched =
         Bikesched.builder()
             .dataSource(database)
-            .node("node-database-down")
+            .nodeName("node-database-down")
             .autoStartPolling(false)
             .build()) {
       assertThatThrownBy(bikesched::startPolling)
@@ -50,7 +50,7 @@ class DatabaseUnavailableTest extends AbstractBikeschedTest {
     var database = new SwitchableDataSource(false);
 
     assertThatThrownBy(
-            () -> Bikesched.builder().dataSource(database).node("node-polling-down").build())
+            () -> Bikesched.builder().dataSource(database).nodeName("node-polling-down").build())
         .isInstanceOf(BikeschedException.class);
   }
 
@@ -62,7 +62,7 @@ class DatabaseUnavailableTest extends AbstractBikeschedTest {
         Bikesched bikesched =
             Bikesched.builder()
                 .dataSource(database)
-                .node("node-lazy-initialization")
+                .nodeName("node-lazy-initialization")
                 .autoStartPolling(false)
                 .build()) {
       assertThat(database.connections.get()).as("build() does not access the database").isZero();

@@ -27,7 +27,7 @@ final class JobStore {
 
   private static final String INSERT_JOB_SQL =
       """
-            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts, timeout_millis, schedule, planned_at)
+            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts, timeout_millis, schedule, fixed_rate_at)
             values (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)""";
 
   // Inserts an occurrence of a recurring job unless one is pending already (partial unique index).
@@ -42,7 +42,7 @@ final class JobStore {
   private static final String RESCHEDULE_OCCURRENCE_SQL =
       """
             update bikesched_jobs j
-               set schedule = ?, scheduled_at = ?, planned_at = ?, updated_at = now()
+               set schedule = ?, scheduled_at = ?, fixed_rate_at = ?, updated_at = now()
               from (select id, schedule from bikesched_jobs
                      where job_type = ? and schedule is not null and state = 'SCHEDULED'
                        and schedule <> ?
@@ -78,7 +78,7 @@ final class JobStore {
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
-            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, schedule, planned_at,
+            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, schedule, fixed_rate_at,
                       compensated_state, compensation_attempts, cancel_requested_at is not null, cancel_message""";
 
   private static final String FIND_JOB_SQL =
@@ -268,7 +268,7 @@ final class JobStore {
       job.maxAttempts(),
       Sql.millis(job.timeout()),
       job.schedule(),
-      Sql.timestamp(job.plannedAt())
+      Sql.timestamp(job.fixedRateAt())
     };
   }
 
@@ -519,7 +519,7 @@ final class JobStore {
                           row -> row.string(1),
                           first.schedule(),
                           first.scheduledAt(),
-                          Sql.timestamp(first.plannedAt()),
+                          Sql.timestamp(first.fixedRateAt()),
                           first.type(),
                           first.schedule())
                       .orElse(null);
@@ -688,7 +688,7 @@ final class JobStore {
    * @param maxAttempts the maximum number of attempts
    * @param timeout its timeout, {@code null} for the node default
    * @param schedule the description of its recurring job's schedule, {@code null} for a one-off job
-   * @param plannedAt its planned run if its schedule uses planned times, {@code null} otherwise
+   * @param fixedRateAt its planned run if its schedule is fixed-rate, {@code null} otherwise
    * @param compensatedState {@code CANCELLED} or {@code FAILED} if the job was claimed to
    *     compensate its steps, {@code null} if it was claimed to run
    * @param compensationAttempts the number of compensation attempts including the claimed one
@@ -705,7 +705,7 @@ final class JobStore {
       int maxAttempts,
       Duration timeout,
       String schedule,
-      Instant plannedAt,
+      Instant fixedRateAt,
       String compensatedState,
       int compensationAttempts,
       boolean cancelRequested,

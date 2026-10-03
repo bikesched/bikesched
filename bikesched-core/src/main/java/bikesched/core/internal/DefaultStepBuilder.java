@@ -1,6 +1,6 @@
 package bikesched.core.internal;
 
-import bikesched.core.job.Compensation;
+import bikesched.core.job.CompensationHandler;
 import bikesched.core.job.StepBuilder;
 import bikesched.core.job.StepHandler;
 import java.util.Objects;
@@ -11,7 +11,7 @@ final class DefaultStepBuilder<T> implements StepBuilder<T> {
   private final DefaultJob job;
   private final String name;
   private final Class<T> resultType;
-  private Compensation<? super T> compensation;
+  private CompensationHandler<? super T> compensation;
 
   DefaultStepBuilder(DefaultJob job, String name, Class<T> resultType) {
     this.job = job;
@@ -20,7 +20,7 @@ final class DefaultStepBuilder<T> implements StepBuilder<T> {
   }
 
   @Override
-  public StepBuilder<T> compensateWith(Compensation<? super T> compensation) {
+  public StepBuilder<T> compensateWith(CompensationHandler<? super T> compensation) {
     this.compensation = Objects.requireNonNull(compensation, "compensation");
     return this;
   }

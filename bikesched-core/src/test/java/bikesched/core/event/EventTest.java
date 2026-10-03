@@ -7,7 +7,6 @@ import bikesched.core.AbstractBikeschedTest;
 import bikesched.core.Bikesched;
 import bikesched.core.job.Job;
 import bikesched.core.job.JobBuilder;
-import bikesched.core.job.Step;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -34,7 +33,9 @@ class EventTest extends AbstractBikeschedTest {
                   job -> {
                     runs.incrementAndGet();
                     job.step(
-                        "invoice", step -> "{\"invoice\": " + invoices.incrementAndGet() + "}");
+                        "invoice",
+                        String.class,
+                        step -> "{\"invoice\": " + invoices.incrementAndGet() + "}");
                     String payment =
                         job.waitForEvent("await-payment", "payment-received", "order-1")
                             .receive(
@@ -53,10 +54,10 @@ class EventTest extends AbstractBikeschedTest {
                   "job_id = '" + jobId + "' and name = 'await-payment' and state = 'WAITING'"))
           .isOne();
 
-      List<Step> steps =
+      List<ReceivedEvent> steps =
           bikesched.newEvent("payment-received", "order-1").payload("{\"amount\": 42}").publish();
 
-      assertThat(steps).containsExactly(new Step(jobId, "await-payment", 1));
+      assertThat(steps).containsExactly(new ReceivedEvent(jobId, "await-payment"));
       awaitState(jobId, "SUCCEEDED");
       assertThat(count("id = '" + jobId + "' and attempts = 1")).isEqualTo(1);
     }
@@ -104,9 +105,9 @@ class EventTest extends AbstractBikeschedTest {
       awaitState(first, "WAITING");
       awaitState(second, "WAITING");
 
-      List<Step> steps = bikesched.newEvent("released", "batch-1").publish();
+      List<ReceivedEvent> steps = bikesched.newEvent("released", "batch-1").publish();
 
-      assertThat(steps).extracting(Step::jobId).containsExactlyInAnyOrder(first, second);
+      assertThat(steps).extracting(ReceivedEvent::jobId).containsExactlyInAnyOrder(first, second);
       awaitState(first, "SUCCEEDED");
       awaitState(second, "SUCCEEDED");
       assertThat(bikesched.newEvent("released", "batch-1").publish())
