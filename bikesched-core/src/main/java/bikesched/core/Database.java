@@ -40,8 +40,8 @@ final class Database {
     private static final String DEREGISTER_NODE_SQL = "delete from bikesched_nodes where id = ?";
 
     private static final String INSERT_JOB_SQL = """
-            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts)
-            values (?, ?, ?::jsonb, ?, ?, ?)""";
+            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts, timeout_millis)
+            values (?, ?, ?::jsonb, ?, ?, ?, ?)""";
 
     // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
     // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
@@ -54,7 +54,7 @@ final class Database {
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
-            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts""";
+            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis""";
 
     private static final String COMPLETE_JOB_SQL = """
             update bikesched_jobs
@@ -156,8 +156,8 @@ final class Database {
      */
     record CompletedStep(String result) {}
 
-    private static final Comparator<Job> CLAIM_ORDER =
-            Comparator.comparingInt(Job::priority).reversed().thenComparing(Job::scheduledAt);
+    private static final Comparator<DefaultJob> CLAIM_ORDER =
+            Comparator.comparingInt(DefaultJob::priority).reversed().thenComparing(DefaultJob::scheduledAt);
 
     private final DataSource dataSource;
     private final JsonMapper jsonMapper;
@@ -276,15 +276,10 @@ final class Database {
      * Inserts a new {@code SCHEDULED} job.
      *
      * @param jobId the job id
-     * @param type the job type
-     * @param payload the payload as JSON text, may be {@code null}
-     * @param scheduledAt the earliest time the job may run
-     * @param priority higher priorities are claimed first
-     * @param maxAttempts number of attempts before the job is marked {@code FAILED}
+     * @param job the job's attributes
      */
-    void insertJob(UUID jobId, String type, String payload, Instant scheduledAt, int priority, int maxAttempts) {
-        update(INSERT_JOB_SQL, "Scheduling bikesched job of type '" + type + "'",
-                jobId, type, payload, OffsetDateTime.ofInstant(scheduledAt, ZoneOffset.UTC), priority, maxAttempts);
+    void insertJob(UUID jobId, NewJob job) {
+        update(INSERT_JOB_SQL, "Scheduling bikesched job of type '" + job.type() + "'", insertParameters(jobId, job));
     }
 
     /**
@@ -293,20 +288,25 @@ final class Database {
      *
      * @param connection the caller's connection
      * @param jobId the new job's id
-     * @param type the job type
-     * @param payload the payload as JSON text, may be {@code null}
-     * @param scheduledAt the earliest time the job may run
-     * @param priority higher priorities are claimed first
-     * @param maxAttempts number of attempts before the job is marked {@code FAILED}
+     * @param job the job's attributes
      */
-    void insertJob(Connection connection, UUID jobId, String type, String payload, Instant scheduledAt, int priority,
-            int maxAttempts) {
+    void insertJob(Connection connection, UUID jobId, NewJob job) {
         try {
-            execute(connection, INSERT_JOB_SQL,
-                    jobId, type, payload, OffsetDateTime.ofInstant(scheduledAt, ZoneOffset.UTC), priority, maxAttempts);
+            execute(connection, INSERT_JOB_SQL, insertParameters(jobId, job));
         } catch (SQLException e) {
-            throw new BikeschedException("Scheduling bikesched job of type '" + type + "' failed", e);
+            throw new BikeschedException("Scheduling bikesched job of type '" + job.type() + "' failed", e);
         }
+    }
+
+    private static Object[] insertParameters(UUID jobId, NewJob job) {
+        return new Object[] {
+            jobId, job.type(), job.payload(), OffsetDateTime.ofInstant(job.scheduledAt(), ZoneOffset.UTC),
+            job.priority(), job.maxAttempts(), job.timeout() == null ? null : job.timeout().toMillis()
+        };
+    }
+
+    private static Duration toDuration(Long millis) {
+        return millis == null ? null : Duration.ofMillis(millis);
     }
 
     /**
@@ -317,15 +317,15 @@ final class Database {
      * @param limit maximum number of jobs to claim
      * @return the claimed jobs, highest priority and earliest scheduled first
      */
-    List<Job> claimJobs(UUID nodeId, int limit) {
+    List<DefaultJob> claimJobs(UUID nodeId, int limit) {
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement claim = connection.prepareStatement(CLAIM_JOBS_SQL)) {
             claim.setObject(1, nodeId);
             claim.setInt(2, limit);
-            List<Job> jobs = new ArrayList<>();
+            List<DefaultJob> jobs = new ArrayList<>();
             try (ResultSet rs = claim.executeQuery()) {
                 while (rs.next()) {
-                    jobs.add(new Job(
+                    jobs.add(new DefaultJob(
                             this,
                             rs.getObject(1, UUID.class),
                             rs.getString(2),
@@ -333,7 +333,8 @@ final class Database {
                             rs.getInt(4),
                             rs.getObject(5, OffsetDateTime.class).toInstant(),
                             rs.getInt(6),
-                            rs.getInt(7)));
+                            rs.getInt(7),
+                            toDuration(rs.getObject(8, Long.class))));
                 }
             }
             commitIfNeeded(connection);

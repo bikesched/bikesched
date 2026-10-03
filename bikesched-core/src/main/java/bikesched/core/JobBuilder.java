@@ -29,8 +29,7 @@ public final class JobBuilder {
     @FunctionalInterface
     interface Scheduler {
         /** {@code connection} is the caller's connection, or {@code null} to use bikesched's own. */
-        UUID schedule(String type, String payload, Instant scheduledAt, int priority, int maxAttempts,
-                JobHandler handler, Connection connection);
+        UUID schedule(NewJob job, JobHandler handler, Connection connection);
     }
 
     private final String type;
@@ -40,6 +39,7 @@ public final class JobBuilder {
     private JobHandler handler;
     private int priority = DEFAULT_PRIORITY;
     private int maxAttempts = DEFAULT_MAX_ATTEMPTS;
+    private Duration timeout;
     private Connection connection;
 
     JobBuilder(String type, JsonMapper jsonMapper, Scheduler scheduler) {
@@ -118,6 +118,31 @@ public final class JobBuilder {
     }
 
     /**
+     * Sets the maximum duration of each attempt of the job (optional, default: the executing
+     * node's {@link BikeschedBuilder#defaultJobTimeout(Duration) default timeout}, if any). When an
+     * attempt exceeds it, bikesched logs a warning and interrupts the handler's thread; once the
+     * handler then returns or throws, the attempt counts as failed ("timed out") and is retried
+     * while attempts remain.
+     *
+     * <p>Interrupting only stops handlers that react to it, e.g. by blocking in interruptible
+     * calls ({@link Thread#sleep(long)}, most I/O on virtual threads) or by checking
+     * {@link Thread#isInterrupted()}. A handler that ignores the interrupt keeps running (and keeps
+     * its job slot) until it ends by itself. A handler that needs more time can extend its
+     * deadline with {@link Job#updateTimeout(Duration)}.
+     *
+     * @param timeout the timeout, positive
+     * @return this builder
+     */
+    public JobBuilder timeout(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isNegative() || timeout.isZero()) {
+            throw new IllegalArgumentException("timeout must be positive: " + timeout);
+        }
+        this.timeout = timeout;
+        return this;
+    }
+
+    /**
      * Stores the job using the given connection, as part of the caller's transaction (optional,
      * default: bikesched's own data source, committed immediately). The job is then created
      * atomically with the caller's other changes: it becomes visible to the pollers only once the
@@ -168,7 +193,7 @@ public final class JobBuilder {
      */
     public UUID schedule(Instant at) {
         Objects.requireNonNull(at, "at");
-        return scheduler.schedule(type, payload, at, priority, maxAttempts, handler, connection);
+        return scheduler.schedule(new NewJob(type, payload, at, priority, maxAttempts, timeout), handler, connection);
     }
 
     /**

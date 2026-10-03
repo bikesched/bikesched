@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -35,6 +36,8 @@ import org.slf4j.MDC;
  *       handing them to the job executor
  *   <li>{@code bikesched-job-N}: one virtual thread per claimed job, running the {@link
  *       JobHandler} registered for its type (or failing the attempt if there is none)
+ *   <li>{@code bikesched-timeouts}: single scheduled thread interrupting job attempts that exceed
+ *       their timeout ({@link JobBuilder#timeout(Duration)}, {@link Settings#defaultJobTimeout()})
  * </ul>
  *
  * <p>Concurrency limit: a semaphore holds one permit per job slot ({@link
@@ -63,9 +66,11 @@ final class DefaultBikesched implements Bikesched {
     private final Map<String, JobHandler> handlers = new ConcurrentHashMap<>();
     private final Duration nodeTimeout;
     private final Duration pollInterval;
+    private final Duration defaultJobTimeout;
     private final Semaphore jobSlots;
     private final ScheduledExecutorService heartbeatExecutor;
     private final ScheduledExecutorService pollerExecutor;
+    private final ScheduledThreadPoolExecutor timeoutExecutor;
     private final ExecutorService jobExecutor;
     private final AtomicBoolean polling = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -76,11 +81,15 @@ final class DefaultBikesched implements Bikesched {
         this.nodeName = settings.nodeName();
         this.nodeTimeout = settings.nodeTimeout();
         this.pollInterval = settings.pollInterval();
+        this.defaultJobTimeout = settings.defaultJobTimeout();
         this.jobSlots = new Semaphore(settings.maxConcurrentJobs());
         this.heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(
                 Thread.ofPlatform().name("bikesched-heartbeat").daemon().factory());
         this.pollerExecutor = Executors.newSingleThreadScheduledExecutor(
                 Thread.ofPlatform().name("bikesched-poller").daemon().factory());
+        this.timeoutExecutor = new ScheduledThreadPoolExecutor(
+                1, Thread.ofPlatform().name("bikesched-timeouts").daemon().factory());
+        this.timeoutExecutor.setRemoveOnCancelPolicy(true); // timers of jobs that finished in time
         this.jobExecutor = Executors.newThreadPerTaskExecutor(
                 Thread.ofVirtual().name("bikesched-job-", 0).factory());
     }
@@ -155,8 +164,8 @@ final class DefaultBikesched implements Bikesched {
     }
 
     /** Stores a job built by a {@link JobBuilder}; registers its handler first if given and new. */
-    private UUID scheduleJob(String type, String payload, Instant scheduledAt, int priority, int maxAttempts,
-            JobHandler handler, Connection connection) {
+    private UUID scheduleJob(NewJob job, JobHandler handler, Connection connection) {
+        String type = job.type();
         if (closed.get()) {
             throw new IllegalStateException("bikesched node " + nodeName + " is closed");
         }
@@ -173,14 +182,14 @@ final class DefaultBikesched implements Bikesched {
         }
         UUID jobId = UUID.randomUUID();
         if (connection == null) {
-            database.insertJob(jobId, type, payload, scheduledAt, priority, maxAttempts);
-            LOG.debug("Scheduled job {} of type {} at {} (priority {}, max {} attempt(s))",
-                    jobId, type, scheduledAt, priority, maxAttempts);
+            database.insertJob(jobId, job);
         } else {
-            database.insertJob(connection, jobId, type, payload, scheduledAt, priority, maxAttempts);
-            LOG.debug("Scheduled job {} of type {} at {} (priority {}, max {} attempt(s)) in the caller's transaction",
-                    jobId, type, scheduledAt, priority, maxAttempts);
+            database.insertJob(connection, jobId, job);
         }
+        LOG.debug("Scheduled job {} of type {} at {} (priority {}, max {} attempt(s), timeout {}){}",
+                jobId, type, job.scheduledAt(), job.priority(), job.maxAttempts(),
+                job.timeout() == null ? "node default" : job.timeout(),
+                connection == null ? "" : " in the caller's transaction");
         return jobId;
     }
 
@@ -205,6 +214,7 @@ final class DefaultBikesched implements Bikesched {
         }
         shutdownAndAwait(pollerExecutor, "poller");
         shutdownAndAwait(jobExecutor, "job executor");
+        timeoutExecutor.shutdownNow(); // all jobs ended (or were abandoned): no timeouts left to enforce
         shutdownAndAwait(heartbeatExecutor, "heartbeat");
         try {
             int released = database.releaseJobs(nodeId);
@@ -296,7 +306,7 @@ final class DefaultBikesched implements Bikesched {
             // Never blocks: only this (single) poller thread acquires, job threads only release,
             // so the available permits can only have grown since they were read.
             jobSlots.acquireUninterruptibly(limit);
-            List<Job> jobs = List.of();
+            List<DefaultJob> jobs = List.of();
             try {
                 jobs = database.claimJobs(nodeId, limit);
             } finally {
@@ -305,7 +315,7 @@ final class DefaultBikesched implements Bikesched {
             if (!jobs.isEmpty()) {
                 LOG.debug("bikesched node {} ({}) claimed {} job(s)", nodeName, nodeId, jobs.size());
             }
-            for (Job job : jobs) {
+            for (DefaultJob job : jobs) {
                 dispatch(job);
             }
         } catch (RuntimeException e) {
@@ -314,7 +324,7 @@ final class DefaultBikesched implements Bikesched {
     }
 
     /** Runs a claimed job on its own virtual thread; the job's slot is held until it ends. */
-    private void dispatch(Job job) {
+    private void dispatch(DefaultJob job) {
         try {
             jobExecutor.execute(() -> {
                 try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString());
@@ -332,7 +342,7 @@ final class DefaultBikesched implements Bikesched {
     }
 
     /** Runs the job's handler; verified here because claiming is not filtered by job type. */
-    private void process(Job job) {
+    private void process(DefaultJob job) {
         JobHandler handler = handlers.get(job.type());
         if (handler == null) {
             LOG.error("No handler registered for job type {} on bikesched node {} ({}), cannot run job {}",
@@ -341,38 +351,48 @@ final class DefaultBikesched implements Bikesched {
                     + "' on bikesched node " + nodeName));
             return;
         }
+        Duration timeout = job.timeout().orElse(defaultJobTimeout);
+        var attempt = new JobAttempt(job, Thread.currentThread(), timeoutExecutor, nodeId.toString());
+        if (timeout != null) {
+            attempt.startTimeout(timeout);
+        }
+        job.attach(attempt);
+        Exception failure = null;
         try {
             LOG.debug("Executing job {} of type {} (attempt {} of {}) on bikesched node {} ({})",
                     job.id(), job.type(), job.attempts(), job.maxAttempts(), nodeName, nodeId);
             handler.run(job);
         } catch (Exception e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            if (job.isCancelled()) {
+            failure = e;
+        }
+        boolean timedOut = attempt.finish(); // no interrupt can arrive after this
+        // Clear a pending interrupt (timeout, shutdown or the handler's own): this thread still has
+        // to record the outcome, and blocking I/O of an interrupted virtual thread fails.
+        Thread.interrupted();
+
+        if (job.isCancelled()) {
+            if (failure != null) {
                 // The handler's decision to cancel wins over the failure: no retry.
                 LOG.warn("Job {} of type {} was cancelled, ignoring the exception thrown by its handler afterwards",
-                        job.id(), job.type(), e);
-                recordCancellation(job);
-            } else {
-                recordFailure(job, e);
+                        job.id(), job.type(), failure);
             }
-            return;
-        }
-        if (job.isCancelled()) {
             recordCancellation(job);
-            return;
-        }
-        try {
-            if (!database.completeJob(job.id(), nodeId)) {
-                LOG.warn("Job {} was no longer running on this node when completing it", job.id());
+        } else if (timedOut) {
+            recordFailure(job, new BikeschedException("Job timed out after " + attempt.timeout(), failure));
+        } else if (failure != null) {
+            recordFailure(job, failure);
+        } else {
+            try {
+                if (!database.completeJob(job.id(), nodeId)) {
+                    LOG.warn("Job {} was no longer running on this node when completing it", job.id());
+                }
+            } catch (RuntimeException e) {
+                LOG.warn("Completing job {} failed", job.id(), e);
             }
-        } catch (RuntimeException e) {
-            LOG.warn("Completing job {} failed", job.id(), e);
         }
     }
 
-    private void recordCancellation(Job job) {
+    private void recordCancellation(DefaultJob job) {
         String message = job.cancelMessage();
         try {
             if (database.cancelJob(job.id(), nodeId, message)) {

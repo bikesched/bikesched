@@ -25,6 +25,7 @@ create table bikesched_jobs (
     scheduled_at timestamptz not null default now(),
     attempts     integer     not null default 0,
     max_attempts integer     not null default 3,
+    timeout_millis bigint,                      -- max. duration of an attempt; null: node default / none
     locked_by    uuid        references bikesched_nodes (id),
     locked_at    timestamptz,
     last_error   text,
@@ -35,6 +36,8 @@ create table bikesched_jobs (
         check (state in ('SCHEDULED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')),
     constraint bikesched_jobs_attempts_check
         check (attempts >= 0 and max_attempts >= 1),
+    constraint bikesched_jobs_timeout_check
+        check (timeout_millis > 0),
     constraint bikesched_jobs_lock_check
         check ((state = 'RUNNING') = (locked_by is not null))
 );

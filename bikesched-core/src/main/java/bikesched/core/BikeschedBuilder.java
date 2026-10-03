@@ -18,6 +18,7 @@ public final class BikeschedBuilder {
     private Duration pollInterval = DefaultBikesched.DEFAULT_POLL_INTERVAL;
     private boolean autoStartPolling = true;
     private JsonMapper jsonMapper = new JsonStringMapper();
+    private Duration defaultJobTimeout;
 
     BikeschedBuilder() {}
 
@@ -95,6 +96,20 @@ public final class BikeschedBuilder {
         return this;
     }
 
+    /**
+     * Sets the maximum duration of a job attempt on this node for jobs scheduled without a timeout
+     * of their own (optional, default: no timeout). See {@link JobBuilder#timeout(Duration)} for
+     * what happens when an attempt exceeds it.
+     *
+     * @param timeout the timeout, positive
+     * @return this builder
+     */
+    public BikeschedBuilder defaultJobTimeout(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        this.defaultJobTimeout = requirePositive(timeout, "defaultJobTimeout");
+        return this;
+    }
+
     /** Heartbeat interval; package-private so tests can speed it up. */
     BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
         this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -138,8 +153,8 @@ public final class BikeschedBuilder {
             throw new IllegalStateException("dataSource is required");
         }
         String name = nodeName != null ? nodeName : DefaultBikesched.localHostName();
-        var settings = new Settings(
-                name, heartbeatInterval, nodeTimeout, pollInterval, maxConcurrentJobs, autoStartPolling);
+        var settings = new Settings(name, heartbeatInterval, nodeTimeout, pollInterval, maxConcurrentJobs,
+                autoStartPolling, defaultJobTimeout);
         return DefaultBikesched.create(new Database(dataSource, jsonMapper), settings);
     }
 }

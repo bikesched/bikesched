@@ -105,9 +105,11 @@ class DatabaseTest {
         UUID jobId = UUID.randomUUID();
         Instant scheduledAt = Instant.now().minusSeconds(1).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
-        database.insertJob(jobId, "mail", "{\"to\": \"alice\"}", scheduledAt, 7, 5);
+        database.insertJob(jobId,
+                new NewJob("mail", "{\"to\": \"alice\"}", scheduledAt, 7, 5, Duration.ofSeconds(90)));
 
-        assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0 and locked_by is null"))
+        assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0 and locked_by is null "
+                + "and timeout_millis = 90000"))
                 .isEqualTo(1);
         assertThat(database.claimJobs(node, 10)).singleElement().satisfies(job -> {
             assertThat(job.id()).isEqualTo(jobId);
@@ -116,7 +118,19 @@ class DatabaseTest {
             assertThat(job.scheduledAt()).isEqualTo(scheduledAt);
             assertThat(job.priority()).isEqualTo(7);
             assertThat(job.maxAttempts()).isEqualTo(5);
+            assertThat(job.timeout()).contains(Duration.ofSeconds(90));
         });
+    }
+
+    @Test
+    void jobWithoutTimeoutHasNone() throws SQLException {
+        UUID node = registerNode("node-1");
+        insertJobs(1, 0, "now()");
+
+        assertThat(database.claimJobs(node, 10)).singleElement().satisfies(job -> assertThat(job.timeout()).isEmpty());
+        assertThatThrownBy(() -> execute("update bikesched_jobs set timeout_millis = 0"))
+                .as("timeouts must be positive")
+                .hasMessageContaining("bikesched_jobs_timeout_check");
     }
 
     @Test
@@ -156,8 +170,8 @@ class DatabaseTest {
         execute("insert into bikesched_jobs (id, job_type, state, locked_by) values "
                 + "(gen_random_uuid(), 'test', 'RUNNING', '" + node + "')"); // already running
 
-        List<Job> first = database.claimJobs(node, 10);
-        List<Job> second = database.claimJobs(node, 10);
+        List<DefaultJob> first = database.claimJobs(node, 10);
+        List<DefaultJob> second = database.claimJobs(node, 10);
 
         assertThat(first).hasSize(10);
         assertThat(second).hasSize(2).doesNotContainAnyElementsOf(first);
@@ -177,8 +191,8 @@ class DatabaseTest {
         insertJobs(3, 0, "now()");
         insertJobs(2, 5, "now()");
 
-        assertThat(database.claimJobs(node, 2)).extracting(Job::priority).containsExactly(5, 5);
-        assertThat(database.claimJobs(node, 10)).extracting(Job::priority).containsExactly(0, 0, 0);
+        assertThat(database.claimJobs(node, 2)).extracting(DefaultJob::priority).containsExactly(5, 5);
+        assertThat(database.claimJobs(node, 10)).extracting(DefaultJob::priority).containsExactly(0, 0, 0);
     }
 
     @Test
@@ -261,7 +275,7 @@ class DatabaseTest {
         UUID node = registerNode("node-1");
         UUID otherNode = registerNode("node-2");
         insertJobs(2, 0, "now()");
-        List<Job> jobs = database.claimJobs(node, 10);
+        List<DefaultJob> jobs = database.claimJobs(node, 10);
 
         assertThat(database.cancelJob(jobs.get(0).id(), otherNode, "nope")).isFalse();
         assertThat(database.cancelJob(jobs.get(0).id(), node, "no longer needed")).isTrue();

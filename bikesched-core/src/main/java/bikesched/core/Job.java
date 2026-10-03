@@ -1,15 +1,10 @@
 package bikesched.core;
 
-import java.time.Instant;
-import java.util.Objects;
+import java.time.Duration;
 import java.util.UUID;
-import java.util.function.Function;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 
 /**
- * A job claimed from {@code bikesched_jobs} for execution on this node.
+ * A job being executed, as seen by its {@link JobHandler}.
  *
  * <p>A handler can {@link #cancel() cancel} the job it executes: once the handler returns, the
  * job ends in state {@code CANCELLED} and is not retried, regardless of the remaining attempts.
@@ -29,52 +24,35 @@ import org.slf4j.MDC;
  * step that completed is not executed again when the job is retried, its stored result is
  * returned instead.
  */
-public final class Job {
-
-    private static final Logger LOG = LoggerFactory.getLogger(Job.class);
-
-    private final Database database;
-    private final UUID id;
-    private final String type;
-    private final String payload;
-    private final int priority;
-    private final Instant scheduledAt;
-    private final int attempts;
-    private final int maxAttempts;
-
-    // Set by the handler, read by bikesched after the handler returned (the handler may use other threads).
-    private volatile boolean cancelled;
-    private volatile String cancelMessage;
-
-    Job(Database database, UUID id, String type, String payload, int priority, Instant scheduledAt, int attempts,
-            int maxAttempts) {
-        this.database = Objects.requireNonNull(database, "database");
-        this.id = Objects.requireNonNull(id, "id");
-        this.type = Objects.requireNonNull(type, "type");
-        this.payload = payload;
-        this.priority = priority;
-        this.scheduledAt = Objects.requireNonNull(scheduledAt, "scheduledAt");
-        this.attempts = attempts;
-        this.maxAttempts = maxAttempts;
-    }
+public interface Job {
 
     /**
      * Returns the job id.
      *
      * @return the job id
      */
-    public UUID id() {
-        return id;
-    }
+    UUID id();
 
     /**
      * Returns the job type, which identifies the handler that executes the job.
      *
      * @return the job type
      */
-    public String type() {
-        return type;
-    }
+    String type();
+
+    /**
+     * Returns the number of attempts including the current one.
+     *
+     * @return the attempt number, starting at 1
+     */
+    int attempts();
+
+    /**
+     * Returns the maximum number of attempts.
+     *
+     * @return the maximum number of attempts
+     */
+    int maxAttempts();
 
     /**
      * Returns the raw job payload.
@@ -82,9 +60,7 @@ public final class Job {
      * @return the payload as JSON text, may be {@code null}
      * @see #payload(Class)
      */
-    public String payload() {
-        return payload;
-    }
+    String payload();
 
     /**
      * Returns the job payload converted by the configured {@link JsonMapper}:
@@ -99,85 +75,7 @@ public final class Job {
      * @throws RuntimeException any exception of the mapper, e.g. {@link IllegalArgumentException}
      *     from the default {@link JsonStringMapper} for types other than {@link String}
      */
-    public <T> T payload(Class<T> type) {
-        Objects.requireNonNull(type, "type");
-        return payload == null ? null : database.jsonMapper().fromJson(payload, type);
-    }
-
-    /**
-     * Returns the priority; higher priorities are claimed first.
-     *
-     * @return the priority
-     */
-    public int priority() {
-        return priority;
-    }
-
-    /**
-     * Returns the earliest time the job may run.
-     *
-     * @return the scheduled time
-     */
-    public Instant scheduledAt() {
-        return scheduledAt;
-    }
-
-    /**
-     * Returns the number of attempts including the current one.
-     *
-     * @return the attempt number, starting at 1
-     */
-    public int attempts() {
-        return attempts;
-    }
-
-    /**
-     * Returns the maximum number of attempts.
-     *
-     * @return the maximum number of attempts
-     */
-    public int maxAttempts() {
-        return maxAttempts;
-    }
-
-    /**
-     * Marks this job as cancelled. Once the handler returns, bikesched sets the job to
-     * {@code CANCELLED} (it is not retried) and clears {@code last_error}. The handler keeps
-     * running until it returns; a cancelled job stays cancelled even if the handler then throws.
-     */
-    public void cancel() {
-        cancel(null);
-    }
-
-    /**
-     * Marks this job as cancelled, storing the message as the job's {@code last_error}. If called
-     * repeatedly, the last message wins.
-     *
-     * @param message why the job was cancelled, may be {@code null}
-     * @see #cancel()
-     */
-    public void cancel(String message) {
-        this.cancelMessage = message;
-        this.cancelled = true;
-    }
-
-    /**
-     * Returns whether the handler cancelled this job.
-     *
-     * @return {@code true} after {@link #cancel()} or {@link #cancel(String)}
-     */
-    public boolean isCancelled() {
-        return cancelled;
-    }
-
-    /**
-     * Returns the message passed to {@link #cancel(String)}.
-     *
-     * @return the message, or {@code null} if the job was not cancelled or cancelled without one
-     */
-    public String cancelMessage() {
-        return cancelMessage;
-    }
+    <T> T payload(Class<T> type);
 
     /**
      * Executes a durable step of this job, like a durable function: if the step already completed
@@ -214,11 +112,7 @@ public final class Job {
      *     result is not valid JSON
      * @throws IllegalArgumentException if the name is blank
      */
-    public <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception {
-        Objects.requireNonNull(resultType, "resultType");
-        JsonMapper mapper = database.jsonMapper();
-        return runStep(name, handler, mapper::toJson, json -> mapper.fromJson(json, resultType));
-    }
+    <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception;
 
     /**
      * Executes a durable step whose result is raw JSON text, stored as is (without the
@@ -232,68 +126,44 @@ public final class Job {
      *     is not valid JSON
      * @throws IllegalArgumentException if the name is blank
      */
-    public String step(String name, StepHandler<String> handler) throws Exception {
-        return runStep(name, handler, json -> json, json -> json);
+    String step(String name, StepHandler<String> handler) throws Exception;
+
+    /**
+     * Marks this job as cancelled. Once the handler returns, bikesched sets the job to
+     * {@code CANCELLED} (it is not retried) and clears {@code last_error}. The handler keeps
+     * running until it returns; a cancelled job stays cancelled even if the handler then throws
+     * or its attempt times out.
+     */
+    default void cancel() {
+        cancel(null);
     }
 
-    private <T> T runStep(String name, StepHandler<T> handler, Function<? super T, String> toJson,
-            Function<String, T> fromJson) throws Exception {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(handler, "handler");
-        if (name.isBlank()) {
-            throw new IllegalArgumentException("step name must not be blank");
-        }
-        String outerStep = MDC.get(BikeschedLogContext.STEP_NAME);
-        MDC.put(BikeschedLogContext.STEP_NAME, name);
-        try {
-            var completed = database.findCompletedStep(id, name);
-            if (completed.isEmpty()) {
-                var attempt = database.startStep(id, name);
-                if (attempt.isPresent()) {
-                    return executeStep(name, attempt.get(), handler, toJson);
-                }
-                completed = database.findCompletedStep(id, name); // completed in the meantime
-            }
-            LOG.debug("Step {} of job {} already completed, reusing its result", name, id);
-            String json = completed.map(Database.CompletedStep::result).orElse(null);
-            return json == null ? null : fromJson.apply(json);
-        } finally {
-            if (outerStep == null) {
-                MDC.remove(BikeschedLogContext.STEP_NAME);
-            } else {
-                MDC.put(BikeschedLogContext.STEP_NAME, outerStep);
-            }
-        }
-    }
+    /**
+     * Marks this job as cancelled, storing the message as the job's {@code last_error}. If called
+     * repeatedly, the last message wins.
+     *
+     * @param message why the job was cancelled, may be {@code null}
+     * @see #cancel()
+     */
+    void cancel(String message);
 
-    private <T> T executeStep(String name, int attempt, StepHandler<T> handler, Function<? super T, String> toJson)
-            throws Exception {
-        LOG.debug("Executing step {} of job {} (attempt {})", name, id, attempt);
-        T result;
-        try {
-            result = handler.run(new Step(id, name, attempt));
-            database.completeStep(id, name, result == null ? null : toJson.apply(result));
-        } catch (Exception e) {
-            recordStepFailure(name, attempt, e);
-            throw e;
-        }
-        LOG.debug("Step {} of job {} completed", name, id);
-        return result;
-    }
-
-    private void recordStepFailure(String name, int attempt, Exception failure) {
-        LOG.debug("Step {} of job {} failed (attempt {}): {}", name, id, attempt, failure.toString());
-        try {
-            database.failStep(id, name, failure.toString());
-        } catch (RuntimeException e) {
-            failure.addSuppressed(e);
-        }
-    }
-
-    @Override
-    public String toString() {
-        return "Job[id=" + id + ", type=" + type + ", payload=" + payload + ", priority=" + priority
-                + ", scheduledAt=" + scheduledAt + ", attempts=" + attempts + ", maxAttempts=" + maxAttempts
-                + (cancelled ? ", cancelled" + (cancelMessage == null ? "" : "=" + cancelMessage) : "") + "]";
-    }
+    /**
+     * Sets a new timeout for the running attempt, counted from now, replacing the current deadline
+     * (or starting one if the attempt had none). Useful when the work turns out to take longer than
+     * expected, e.g. for a large video to encode or while polling an external system for a result:
+     *
+     * <pre>{@code
+     * while (!encoder.isDone(task)) {
+     *     job.updateTimeout(Duration.ofMinutes(2)); // still making progress: two more minutes
+     *     Thread.sleep(Duration.ofSeconds(10));
+     * }
+     * }</pre>
+     *
+     * <p>Applies to the current attempt only; a retry starts with the job's original timeout (see
+     * {@link JobBuilder#timeout(Duration)}). May be called from other threads than the handler's.
+     *
+     * @param timeout the new timeout from now, positive
+     * @throws IllegalStateException if the attempt is not running (anymore) or already timed out
+     */
+    void updateTimeout(Duration timeout);
 }

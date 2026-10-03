@@ -14,6 +14,8 @@ import java.util.Objects;
  * @param maxConcurrentJobs maximum number of jobs executed at the same time on this node
  * @param autoStartPolling whether job polling starts when the node is built; otherwise it starts
  *     with {@link Bikesched#startPolling()}
+ * @param defaultJobTimeout maximum duration of a job attempt for jobs without a timeout of their
+ *     own; {@code null} for none
  */
 record Settings(
         String nodeName,
@@ -21,7 +23,8 @@ record Settings(
         Duration nodeTimeout,
         Duration pollInterval,
         int maxConcurrentJobs,
-        boolean autoStartPolling) {
+        boolean autoStartPolling,
+        Duration defaultJobTimeout) {
 
     Settings {
         Objects.requireNonNull(nodeName, "nodeName");

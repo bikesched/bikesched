@@ -114,7 +114,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
             assertThat(job.id()).isEqualTo(jobId);
             assertThat(job.type()).isEqualTo("built");
             assertThat(job.payload()).isEqualTo("{\"x\": 1}");
-            assertThat(job.priority()).isEqualTo(7);
+            assertThat(((DefaultJob) job).priority()).as("not exposed to handlers").isEqualTo(7);
             assertThat(job.maxAttempts()).isEqualTo(5);
         }
     }

@@ -136,8 +136,8 @@ class JobExecutionTest extends AbstractBikeschedTest {
                     throw new IllegalStateException("first attempt fails");
                 }
                 job.cancel("customer deleted");
-                assertThat(job.isCancelled()).isTrue();
-                assertThat(job.cancelMessage()).isEqualTo("customer deleted");
+                assertThat(((DefaultJob) job).isCancelled()).isTrue();
+                assertThat(((DefaultJob) job).cancelMessage()).isEqualTo("customer deleted");
                 continuedAfterCancel.set(true); // cancel() does not stop the handler
             }).schedule();
 
