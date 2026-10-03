@@ -1,9 +1,9 @@
 package bikesched.core;
 
 /**
- * Keys of the logging context ({@link org.slf4j.MDC}) that bikesched fills on its own threads,
- * for use in log patterns (e.g. {@code %X{bikesched.jobId}} with Logback) or via
- * {@link org.slf4j.MDC#get(String)} inside job handlers.
+ * Keys of the logging context ({@link org.slf4j.MDC}) that bikesched fills on its own threads, for
+ * use in log patterns (e.g. {@code %X{bikesched.jobId}} with Logback) or via {@link
+ * org.slf4j.MDC#get(String)} inside job handlers.
  *
  * <table>
  *   <caption>Keys set per thread</caption>
@@ -20,17 +20,17 @@ package bikesched.core;
  */
 public final class BikeschedLogContext {
 
-    /** Id of the bikesched node. */
-    public static final String NODE_ID = "bikesched.nodeId";
+  /** Id of the bikesched node. */
+  public static final String NODE_ID = "bikesched.nodeId";
 
-    /** Id of the job being executed. */
-    public static final String JOB_ID = "bikesched.jobId";
+  /** Id of the job being executed. */
+  public static final String JOB_ID = "bikesched.jobId";
 
-    /** Type of the job being executed. */
-    public static final String JOB_TYPE = "bikesched.jobType";
+  /** Type of the job being executed. */
+  public static final String JOB_TYPE = "bikesched.jobType";
 
-    /** Name of the {@link Job#step(String, Class, StepHandler) step} being executed. */
-    public static final String STEP_NAME = "bikesched.stepName";
+  /** Name of the {@link Job#step(String, Class, StepHandler) step} being executed. */
+  public static final String STEP_NAME = "bikesched.stepName";
 
-    private BikeschedLogContext() {}
+  private BikeschedLogContext() {}
 }

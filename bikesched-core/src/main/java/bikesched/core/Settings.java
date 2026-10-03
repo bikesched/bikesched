@@ -4,7 +4,8 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * Validated configuration of a {@link DefaultBikesched} node, assembled by {@link BikeschedBuilder}.
+ * Validated configuration of a {@link DefaultBikesched} node, assembled by {@link
+ * BikeschedBuilder}.
  *
  * @param nodeName unique node name
  * @param heartbeatInterval interval between heartbeats
@@ -16,27 +17,34 @@ import java.util.Objects;
  *     with {@link Bikesched#startPolling()}
  * @param defaultJobTimeout maximum duration of a job attempt for jobs without a timeout of their
  *     own; {@code null} for none
+ * @param retryBackoff delay of the retry after a failed attempt
  */
 record Settings(
-        String nodeName,
-        Duration heartbeatInterval,
-        Duration nodeTimeout,
-        Duration pollInterval,
-        int maxConcurrentJobs,
-        boolean autoStartPolling,
-        Duration defaultJobTimeout) {
+    String nodeName,
+    Duration heartbeatInterval,
+    Duration nodeTimeout,
+    Duration pollInterval,
+    int maxConcurrentJobs,
+    boolean autoStartPolling,
+    Duration defaultJobTimeout,
+    RetryBackoff retryBackoff) {
 
-    Settings {
-        Objects.requireNonNull(nodeName, "nodeName");
-        Objects.requireNonNull(heartbeatInterval, "heartbeatInterval");
-        Objects.requireNonNull(nodeTimeout, "nodeTimeout");
-        Objects.requireNonNull(pollInterval, "pollInterval");
-        if (maxConcurrentJobs < 1) {
-            throw new IllegalArgumentException("maxConcurrentJobs must be >= 1: " + maxConcurrentJobs);
-        }
-        if (nodeTimeout.compareTo(heartbeatInterval.multipliedBy(2)) < 0) {
-            throw new IllegalArgumentException("nodeTimeout (" + nodeTimeout
-                    + ") must be at least twice the heartbeatInterval (" + heartbeatInterval + ")");
-        }
+  Settings {
+    Objects.requireNonNull(nodeName, "nodeName");
+    Objects.requireNonNull(heartbeatInterval, "heartbeatInterval");
+    Objects.requireNonNull(nodeTimeout, "nodeTimeout");
+    Objects.requireNonNull(pollInterval, "pollInterval");
+    Objects.requireNonNull(retryBackoff, "retryBackoff");
+    if (maxConcurrentJobs < 1) {
+      throw new IllegalArgumentException("maxConcurrentJobs must be >= 1: " + maxConcurrentJobs);
     }
+    if (nodeTimeout.compareTo(heartbeatInterval.multipliedBy(2)) < 0) {
+      throw new IllegalArgumentException(
+          "nodeTimeout ("
+              + nodeTimeout
+              + ") must be at least twice the heartbeatInterval ("
+              + heartbeatInterval
+              + ")");
+    }
+  }
 }

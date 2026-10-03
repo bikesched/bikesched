@@ -8,8 +8,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Captures the log events of one logger for assertions (test-only; public for the tests in
- * sub-packages). Capturing stops on {@link #close()}; the
- * captured events stay available afterwards:
+ * sub-packages). Capturing stops on {@link #close()}; the captured events stay available
+ * afterwards:
  *
  * <pre>{@code
  * var logs = LogCapture.of(DefaultBikesched.class);
@@ -21,39 +21,39 @@ import org.slf4j.LoggerFactory;
  */
 public final class LogCapture implements AutoCloseable {
 
-    private final Logger logger;
-    private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+  private final Logger logger;
+  private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 
-    private LogCapture(Logger logger) {
-        this.logger = logger;
-        appender.start();
-        logger.addAppender(appender);
-    }
+  private LogCapture(Logger logger) {
+    this.logger = logger;
+    appender.start();
+    logger.addAppender(appender);
+  }
 
-    /** Starts capturing the events of the logger named after the given class. */
-    public static LogCapture of(Class<?> type) {
-        return new LogCapture((Logger) LoggerFactory.getLogger(type));
-    }
+  /** Starts capturing the events of the logger named after the given class. */
+  public static LogCapture of(Class<?> type) {
+    return new LogCapture((Logger) LoggerFactory.getLogger(type));
+  }
 
-    /** The captured events, in logging order. */
-    public List<ILoggingEvent> events() {
-        return appender.list;
-    }
+  /** The captured events, in logging order. */
+  public List<ILoggingEvent> events() {
+    return appender.list;
+  }
 
-    /** The formatted messages of the captured events, in logging order. */
-    public List<String> messages() {
-        return events().stream().map(ILoggingEvent::getFormattedMessage).toList();
-    }
+  /** The formatted messages of the captured events, in logging order. */
+  public List<String> messages() {
+    return events().stream().map(ILoggingEvent::getFormattedMessage).toList();
+  }
 
-    /** Discards the events captured so far. */
-    public void clear() {
-        appender.list.clear();
-    }
+  /** Discards the events captured so far. */
+  public void clear() {
+    appender.list.clear();
+  }
 
-    /** Stops capturing; idempotent. */
-    @Override
-    public void close() {
-        logger.detachAppender(appender);
-        appender.stop();
-    }
+  /** Stops capturing; idempotent. */
+  @Override
+  public void close() {
+    logger.detachAppender(appender);
+    appender.stop();
+  }
 }

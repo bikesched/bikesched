@@ -5,6 +5,7 @@ plugins {
 dependencies {
     // Gradle plugins applied by the convention plugins; versions come from libs.versions.toml.
     implementation(plugin(libs.plugins.foojay.resolver))
+    implementation(plugin(libs.plugins.spotless))
 }
 
 // Maps a catalog plugin alias to its plugin marker artifact so it can be used as a dependency.

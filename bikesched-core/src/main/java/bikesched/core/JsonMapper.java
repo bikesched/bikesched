@@ -28,26 +28,25 @@ package bikesched.core;
  * }</pre>
  *
  * <p>{@code null} never reaches the mapper: it is stored as SQL {@code NULL} and read back as
- * {@code null}. Implementations must be thread-safe and report failures with unchecked
- * exceptions.
+ * {@code null}. Implementations must be thread-safe and report failures with unchecked exceptions.
  */
 public interface JsonMapper {
 
-    /**
-     * Converts a value to JSON text.
-     *
-     * @param value the value, never {@code null}
-     * @return the value as JSON text
-     */
-    String toJson(Object value);
+  /**
+   * Converts a value to JSON text.
+   *
+   * @param value the value, never {@code null}
+   * @return the value as JSON text
+   */
+  String toJson(Object value);
 
-    /**
-     * Converts JSON text to a value of the given type.
-     *
-     * @param json the JSON text, never {@code null}
-     * @param type the type to convert to
-     * @param <T> the type to convert to
-     * @return the value
-     */
-    <T> T fromJson(String json, Class<T> type);
+  /**
+   * Converts JSON text to a value of the given type.
+   *
+   * @param json the JSON text, never {@code null}
+   * @param type the type to convert to
+   * @param <T> the type to convert to
+   * @return the value
+   */
+  <T> T fromJson(String json, Class<T> type);
 }

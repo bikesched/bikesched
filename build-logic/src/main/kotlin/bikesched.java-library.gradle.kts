@@ -2,6 +2,7 @@
 
 plugins {
     `java-library`
+    id("com.diffplug.spotless")
 }
 
 // Version catalog access from a precompiled script plugin.
@@ -18,6 +19,15 @@ java {
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+}
+
+// Formatting: `spotlessCheck` runs as part of `check`, `spotlessApply` fixes violations.
+// Use the google-java-format IntelliJ plugin with the same version for identical IDE formatting.
+spotless {
+    java {
+        googleJavaFormat(libs.findVersion("google-java-format").get().requiredVersion)
+        formatAnnotations()
+    }
 }
 
 dependencies {

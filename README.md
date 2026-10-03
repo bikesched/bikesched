@@ -159,6 +159,7 @@ on virtual threads.
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
 | `autoStartPolling(boolean)` | `true` | with `false`, call `startPolling()` once all handlers are registered |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
+| `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))`; a handler's `job.fail().retryAfter(…)` takes precedence |
 | `jsonMapper(JsonMapper)` | `JsonStringMapper` | maps payloads and step results to and from JSON |
 
 Nodes send a heartbeat every 5 seconds and poll for due jobs every second, claiming at most 10
