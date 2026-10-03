@@ -11,15 +11,10 @@ import java.util.Objects;
 import javax.sql.DataSource;
 
 /**
- * Entry point to bikesched's database access: schema migration, the shared connection and
- * transaction helpers, and one store per table ({@link #nodes()}, {@link #jobs()}, {@link
- * #steps()}, {@link #events()}). Thread-safe; every call borrows its own connection from the data
- * source.
- *
- * <p>Stores run their statements through {@link Sql}, obtained from {@link #withConnection}, {@link
- * #inTransaction} or {@link #onCallerConnection}. {@link SQLException}s are wrapped in {@link
- * BikeschedException}. Writes are committed explicitly if the data source hands out connections
- * with auto-commit disabled.
+ * Entry point to bikesched's database: schema migration and one store per table ({@link #nodes()},
+ * {@link #jobs()}, {@link #steps()}, {@link #events()}). The stores run their statements through a
+ * shared {@link DatabaseAccess}; they do not know this class. Thread-safe; every call borrows its
+ * own connection from the data source.
  */
 public final class Database {
 
@@ -27,13 +22,13 @@ public final class Database {
 
   private final JsonMapper jsonMapper;
 
-  private final NodeStore nodes = new NodeStore(this);
+  private final NodeStore nodes;
 
-  private final JobStore jobs = new JobStore(this);
+  private final JobStore jobs;
 
-  private final StepStore steps = new StepStore(this);
+  private final StepStore steps;
 
-  private final EventStore events = new EventStore(this);
+  private final EventStore events;
 
   /**
    * Creates the database access.
@@ -44,6 +39,11 @@ public final class Database {
   public Database(DataSource dataSource, JsonMapper jsonMapper) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
     this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
+    var access = new DatabaseAccess(dataSource);
+    this.nodes = new NodeStore(access);
+    this.jobs = new JobStore(access);
+    this.steps = new StepStore(access);
+    this.events = new EventStore(access);
   }
 
   /** The {@code bikesched_nodes} table. */
@@ -121,113 +121,5 @@ public final class Database {
       }
     }
     return url.substring(0, properties).replaceFirst("//[^/]*@", "//");
-  }
-
-  /**
-   * Runs the work on one of bikesched's own connections, committing afterwards if the connection is
-   * not in auto-commit mode (rolling back if the work fails). For single statements; work whose
-   * statements must share a transaction uses {@link #inTransaction}.
-   *
-   * @param action describes the work for the exception message, e.g. {@code "Claiming jobs"}
-   * @throws BikeschedException wrapping an {@link SQLException}, with message {@code "<action>
-   *     failed"}
-   */
-  <T> T withConnection(String action, Sql.Work<T> work) {
-    try (Connection connection = dataSource.getConnection()) {
-      if (connection.getAutoCommit()) {
-        return work.run(new Sql(connection));
-      }
-      try {
-        T result = work.run(new Sql(connection));
-        connection.commit();
-        return result;
-      } catch (SQLException | RuntimeException e) {
-        rollback(connection, e);
-        throw e;
-      }
-    } catch (SQLException e) {
-      throw new BikeschedException(action + " failed", e);
-    }
-  }
-
-  /**
-   * Runs a single insert, update or delete on one of bikesched's own connections, see {@link
-   * #withConnection}.
-   *
-   * @return the number of affected rows
-   */
-  int update(String sql, String action, Object... parameters) {
-    return withConnection(action, db -> db.update(sql, parameters));
-  }
-
-  /**
-   * Runs the work on a caller-supplied connection, as part of the caller's transaction: the
-   * connection is neither committed nor closed.
-   *
-   * @throws BikeschedException wrapping an {@link SQLException}, with message {@code "<action>
-   *     failed"}
-   */
-  static <T> T onCallerConnection(Connection connection, String action, Sql.Work<T> work) {
-    try {
-      return work.run(new Sql(connection));
-    } catch (SQLException e) {
-      throw new BikeschedException(action + " failed", e);
-    }
-  }
-
-  /**
-   * Runs the work in a transaction on one of bikesched's own connections: committed if it
-   * completes, rolled back if it throws. Needed whenever statements must share a transaction (e.g.
-   * an advisory lock held across them), also with auto-commit connections.
-   */
-  <T> T inTransaction(String action, Sql.Work<T> work) {
-    return inTransaction(action, false, work);
-  }
-
-  /**
-   * Runs the work in a read-only transaction on one of bikesched's own connections: PostgreSQL
-   * rejects any write in it. The connection's read-only setting is restored afterwards (pooled
-   * connections are reused).
-   */
-  <T> T inReadOnlyTransaction(String action, Sql.Work<T> work) {
-    return inTransaction(action, true, work);
-  }
-
-  private <T> T inTransaction(String action, boolean readOnly, Sql.Work<T> work) {
-    try (Connection connection = dataSource.getConnection()) {
-      boolean autoCommit = connection.getAutoCommit();
-      boolean wasReadOnly = connection.isReadOnly();
-      if (autoCommit) {
-        connection.setAutoCommit(false);
-      }
-      if (readOnly != wasReadOnly) {
-        connection.setReadOnly(readOnly); // before the transaction starts (BEGIN READ ONLY)
-      }
-      try {
-        T result = work.run(new Sql(connection));
-        connection.commit();
-        return result;
-      } catch (SQLException | RuntimeException e) {
-        rollback(connection, e);
-        throw e;
-      } finally {
-        if (readOnly != wasReadOnly) {
-          connection.setReadOnly(wasReadOnly);
-        }
-        if (autoCommit) {
-          connection.setAutoCommit(true);
-        }
-      }
-    } catch (SQLException e) {
-      throw new BikeschedException(action + " failed", e);
-    }
-  }
-
-  private static void rollback(Connection connection, Exception failure) {
-    try {
-      connection.rollback();
-    } catch (SQLException rollbackFailure) {
-      failure.addSuppressed(rollbackFailure);
-    }
   }
 }

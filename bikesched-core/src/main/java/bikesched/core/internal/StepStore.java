@@ -1,19 +1,20 @@
 package bikesched.core.internal;
 
+import bikesched.core.BikeschedException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
  * The {@code bikesched_steps} table: durable steps of jobs (event steps are handled by {@link
- * EventStore}). Thread-safe; every call borrows its own connection from the {@link Database}.
+ * EventStore}). Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  */
 final class StepStore {
 
-  private final Database database;
+  private final DatabaseAccess access;
 
-  StepStore(Database database) {
-    this.database = Objects.requireNonNull(database, "database");
+  StepStore(DatabaseAccess access) {
+    this.access = Objects.requireNonNull(access, "access");
   }
 
   private static final String FIND_STEP_SQL =
@@ -71,14 +72,16 @@ final class StepStore {
    * @return the step, or empty if it has not started yet
    */
   Optional<StoredStep> findStep(UUID jobId, String name) {
-    return database.withConnection(
-        "Reading step '" + name + "' of bikesched job " + jobId,
+    return access.withConnection(
         db ->
             db.one(
                 FIND_STEP_SQL,
                 row -> new StoredStep(row.string(1), row.string(2), row.integer(3)),
                 jobId,
-                name));
+                name),
+        e ->
+            new BikeschedException(
+                "Reading step '" + name + "' of bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -120,9 +123,11 @@ final class StepStore {
    * @return the attempt number of the step, or empty if the step has already succeeded
    */
   Optional<Integer> startStep(UUID jobId, String name) {
-    return database.withConnection(
-        "Starting step '" + name + "' of bikesched job " + jobId,
-        db -> db.one(START_STEP_SQL, row -> row.integer(1), jobId, name));
+    return access.withConnection(
+        db -> db.one(START_STEP_SQL, row -> row.integer(1), jobId, name),
+        e ->
+            new BikeschedException(
+                "Starting step '" + name + "' of bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -146,13 +151,12 @@ final class StepStore {
    *     with such a step is compensated before it ends
    */
   void completeStep(UUID jobId, String name, String result, boolean compensable) {
-    database.update(
-        COMPLETE_STEP_SQL,
-        "Storing the result of step '" + name + "' of bikesched job " + jobId,
-        result,
-        compensable,
-        jobId,
-        name);
+    access.withConnection(
+        db -> db.update(COMPLETE_STEP_SQL, result, compensable, jobId, name),
+        e ->
+            new BikeschedException(
+                "Storing the result of step '" + name + "' of bikesched job " + jobId + " failed",
+                e));
   }
 
   /**
@@ -162,11 +166,16 @@ final class StepStore {
    * @param name the step name
    */
   void compensateStep(UUID jobId, String name) {
-    database.update(
-        COMPENSATE_STEP_SQL,
-        "Recording the compensation of step '" + name + "' of bikesched job " + jobId,
-        jobId,
-        name);
+    access.withConnection(
+        db -> db.update(COMPENSATE_STEP_SQL, jobId, name),
+        e ->
+            new BikeschedException(
+                "Recording the compensation of step '"
+                    + name
+                    + "' of bikesched job "
+                    + jobId
+                    + " failed",
+                e));
   }
 
   /**
@@ -177,12 +186,16 @@ final class StepStore {
    * @param error description of the failure, stored as the step's {@code last_error}
    */
   void failCompensation(UUID jobId, String name, String error) {
-    database.update(
-        FAIL_COMPENSATION_SQL,
-        "Recording the failed compensation of step '" + name + "' of bikesched job " + jobId,
-        error,
-        jobId,
-        name);
+    access.withConnection(
+        db -> db.update(FAIL_COMPENSATION_SQL, error, jobId, name),
+        e ->
+            new BikeschedException(
+                "Recording the failed compensation of step '"
+                    + name
+                    + "' of bikesched job "
+                    + jobId
+                    + " failed",
+                e));
   }
 
   /**
@@ -193,11 +206,15 @@ final class StepStore {
    * @param error description of the failure, stored as {@code last_error}
    */
   void failStep(UUID jobId, String name, String error) {
-    database.update(
-        FAIL_STEP_SQL,
-        "Recording the failure of step '" + name + "' of bikesched job " + jobId,
-        error,
-        jobId,
-        name);
+    access.withConnection(
+        db -> db.update(FAIL_STEP_SQL, error, jobId, name),
+        e ->
+            new BikeschedException(
+                "Recording the failure of step '"
+                    + name
+                    + "' of bikesched job "
+                    + jobId
+                    + " failed",
+                e));
   }
 }

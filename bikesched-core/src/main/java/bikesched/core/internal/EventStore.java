@@ -1,5 +1,6 @@
 package bikesched.core.internal;
 
+import bikesched.core.BikeschedException;
 import bikesched.core.event.EventWait;
 import bikesched.core.event.ReceivedEvent;
 import java.sql.Connection;
@@ -14,14 +15,14 @@ import java.util.UUID;
 /**
  * The {@code bikesched_events} table and steps waiting for events: waiting for, suspending at and
  * publishing events, each in one transaction holding a transaction-scoped advisory lock per event
- * name and key. Thread-safe; every call borrows its own connection from the {@link Database}.
+ * name and key. Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  */
 final class EventStore {
 
-  private final Database database;
+  private final DatabaseAccess access;
 
-  EventStore(Database database) {
-    this.database = Objects.requireNonNull(database, "database");
+  EventStore(DatabaseAccess access) {
+    this.access = Objects.requireNonNull(access, "access");
   }
 
   // ---- Events ----
@@ -142,15 +143,7 @@ final class EventStore {
    */
   EventWait awaitEvent(
       UUID jobId, String stepName, String eventName, String eventKey, Duration timeout) {
-    return database.inTransaction(
-        "Waiting for event "
-            + eventName
-            + "/"
-            + eventKey
-            + " in step '"
-            + stepName
-            + "' of job "
-            + jobId,
+    return access.inTransaction(
         db -> {
           lockEvent(db, eventName, eventKey);
           Optional<EventStep> step =
@@ -216,7 +209,19 @@ final class EventStore {
                   eventKey,
                   Sql.millis(timeout))
               .orElseThrow();
-        });
+        },
+        e ->
+            new BikeschedException(
+                "Waiting for event "
+                    + eventName
+                    + "/"
+                    + eventKey
+                    + " in step '"
+                    + stepName
+                    + "' of job "
+                    + jobId
+                    + " failed",
+                e));
   }
 
   /**
@@ -232,8 +237,7 @@ final class EventStore {
    */
   Optional<SuspendedJob> suspendJob(
       UUID jobId, UUID nodeId, String stepName, String eventName, String eventKey) {
-    return database.inTransaction(
-        "Suspending bikesched job " + jobId,
+    return access.inTransaction(
         db -> {
           lockEvent(db, eventName, eventKey);
           return db.one(
@@ -242,7 +246,8 @@ final class EventStore {
               jobId,
               nodeId,
               stepName);
-        });
+        },
+        e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -255,9 +260,11 @@ final class EventStore {
    * @return the steps that received the event
    */
   List<ReceivedEvent> publishEvent(String eventName, String eventKey, String payload) {
-    return database.inTransaction(
-        "Publishing event " + eventName + "/" + eventKey,
-        db -> publishEvent(db, eventName, eventKey, payload));
+    return access.inTransaction(
+        db -> publishEvent(db, eventName, eventKey, payload),
+        e ->
+            new BikeschedException(
+                "Publishing event " + eventName + "/" + eventKey + " failed", e));
   }
 
   /**
@@ -274,9 +281,8 @@ final class EventStore {
    */
   List<ReceivedEvent> publishEventInTransaction(
       Connection connection, String eventName, String eventKey, String payload) {
-    return Database.onCallerConnection(
+    return access.onCallerConnection(
         connection,
-        "Publishing event " + eventName + "/" + eventKey,
         db -> {
           if (connection.getAutoCommit()) {
             throw new IllegalArgumentException(
@@ -284,7 +290,10 @@ final class EventStore {
                     + " the connection must not be in auto-commit mode");
           }
           return publishEvent(db, eventName, eventKey, payload);
-        });
+        },
+        e ->
+            new BikeschedException(
+                "Publishing event " + eventName + "/" + eventKey + " failed", e));
   }
 
   private static List<ReceivedEvent> publishEvent(
@@ -306,8 +315,9 @@ final class EventStore {
    * @return the number of deleted events
    */
   int deleteEvents(Duration retention) {
-    return database.update(
-        DELETE_EVENTS_SQL, "Deleting old bikesched events", Sql.seconds(retention));
+    return access.withConnection(
+        db -> db.update(DELETE_EVENTS_SQL, Sql.seconds(retention)),
+        e -> new BikeschedException("Deleting old bikesched events failed", e));
   }
 
   private static void lockEvent(Sql db, String eventName, String eventKey) throws SQLException {

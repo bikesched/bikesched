@@ -1,5 +1,6 @@
 package bikesched.core.internal;
 
+import bikesched.core.BikeschedException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -9,14 +10,14 @@ import java.util.UUID;
 
 /**
  * The {@code bikesched_nodes} table: registering nodes, their heartbeats and removing dead nodes.
- * Thread-safe; every call borrows its own connection from the {@link Database}.
+ * Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  */
 final class NodeStore {
 
-  private final Database database;
+  private final DatabaseAccess access;
 
-  NodeStore(Database database) {
-    this.database = Objects.requireNonNull(database, "database");
+  NodeStore(DatabaseAccess access) {
+    this.access = Objects.requireNonNull(access, "access");
   }
 
   // Inserts the node. If the name is taken by a dead node (stale heartbeat), the restarted node
@@ -65,10 +66,10 @@ final class NodeStore {
    *     if a live node already holds the name
    */
   Optional<UUID> registerNode(UUID newNodeId, String name, Duration deadAfter) {
-    return database.withConnection(
-        "Registering bikesched node '" + name + "'",
+    return access.withConnection(
         db ->
-            db.one(REGISTER_NODE_SQL, row -> row.uuid(1), newNodeId, name, Sql.seconds(deadAfter)));
+            db.one(REGISTER_NODE_SQL, row -> row.uuid(1), newNodeId, name, Sql.seconds(deadAfter)),
+        e -> new BikeschedException("Registering bikesched node '" + name + "' failed", e));
   }
 
   /**
@@ -78,7 +79,10 @@ final class NodeStore {
    * @return {@code false} if the node is no longer registered
    */
   boolean heartbeat(UUID nodeId) {
-    return database.update(HEARTBEAT_SQL, "Heartbeat of bikesched node " + nodeId, nodeId) > 0;
+    return access.withConnection(
+            db -> db.update(HEARTBEAT_SQL, nodeId),
+            e -> new BikeschedException("Heartbeat of bikesched node " + nodeId + " failed", e))
+        > 0;
   }
 
   /**
@@ -88,8 +92,10 @@ final class NodeStore {
    * @return {@code false} if the node was not registered
    */
   boolean deregisterNode(UUID nodeId) {
-    return database.update(
-            DEREGISTER_NODE_SQL, "Deregistration of bikesched node " + nodeId, nodeId)
+    return access.withConnection(
+            db -> db.update(DEREGISTER_NODE_SQL, nodeId),
+            e ->
+                new BikeschedException("Deregistration of bikesched node " + nodeId + " failed", e))
         > 0;
   }
 
@@ -102,13 +108,13 @@ final class NodeStore {
    * @return the deleted nodes
    */
   List<DeletedNode> deleteDeadNodes(UUID callingNodeId, Duration olderThan) {
-    return database.withConnection(
-        "Deleting dead bikesched nodes",
+    return access.withConnection(
         db ->
             db.list(
                 DELETE_DEAD_NODES_SQL,
                 row -> new DeletedNode(row.uuid(1), row.string(2), row.instant(3)),
                 callingNodeId,
-                Sql.seconds(olderThan)));
+                Sql.seconds(olderThan)),
+        e -> new BikeschedException("Deleting dead bikesched nodes failed", e));
   }
 }

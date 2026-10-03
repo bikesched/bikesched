@@ -1,5 +1,6 @@
 package bikesched.core.internal;
 
+import bikesched.core.BikeschedException;
 import bikesched.core.job.JobState;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -15,14 +16,14 @@ import java.util.UUID;
 /**
  * The {@code bikesched_jobs} table: inserting, claiming and finishing jobs, releasing the jobs of
  * stopped or dead nodes, and the occurrences of recurring jobs. Thread-safe; every call borrows its
- * own connection from the {@link Database}.
+ * own connection from the {@link DatabaseAccess}.
  */
 final class JobStore {
 
-  private final Database database;
+  private final DatabaseAccess access;
 
-  JobStore(Database database) {
-    this.database = Objects.requireNonNull(database, "database");
+  JobStore(DatabaseAccess access) {
+    this.access = Objects.requireNonNull(access, "access");
   }
 
   private static final String INSERT_JOB_SQL =
@@ -237,10 +238,11 @@ final class JobStore {
    * @param job the job's attributes
    */
   void insertJob(UUID jobId, NewJob job) {
-    database.update(
-        INSERT_JOB_SQL,
-        "Scheduling bikesched job of type '" + job.type() + "'",
-        insertParameters(jobId, job));
+    access.withConnection(
+        db -> db.update(INSERT_JOB_SQL, insertParameters(jobId, job)),
+        e ->
+            new BikeschedException(
+                "Scheduling bikesched job of type '" + job.type() + "' failed", e));
   }
 
   /**
@@ -252,10 +254,12 @@ final class JobStore {
    * @param job the job's attributes
    */
   void insertJob(Connection connection, UUID jobId, NewJob job) {
-    Database.onCallerConnection(
+    access.onCallerConnection(
         connection,
-        "Scheduling bikesched job of type '" + job.type() + "'",
-        db -> db.update(INSERT_JOB_SQL, insertParameters(jobId, job)));
+        db -> db.update(INSERT_JOB_SQL, insertParameters(jobId, job)),
+        e ->
+            new BikeschedException(
+                "Scheduling bikesched job of type '" + job.type() + "' failed", e));
   }
 
   private static Object[] insertParameters(UUID jobId, NewJob job) {
@@ -279,13 +283,13 @@ final class JobStore {
    * @return the job's id, type and state; empty if there is no such job
    */
   Optional<DefaultJobInfo> findJob(UUID jobId) {
-    return database.inReadOnlyTransaction(
-        "Reading bikesched job " + jobId,
+    return access.inReadOnlyTransaction(
         db ->
             db.one(
                 FIND_JOB_SQL,
                 row -> new DefaultJobInfo(jobId, row.string(1), JobState.valueOf(row.string(2))),
-                jobId));
+                jobId),
+        e -> new BikeschedException("Reading bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -298,9 +302,11 @@ final class JobStore {
    */
   List<ClaimedJob> claimJobs(UUID nodeId, int limit) {
     List<ClaimedJob> jobs =
-        database.withConnection(
-            "Claiming jobs for bikesched node " + nodeId,
-            db -> db.list(CLAIM_JOBS_SQL, ClaimedJob::from, nodeId, limit));
+        access.withConnection(
+            db -> db.list(CLAIM_JOBS_SQL, ClaimedJob::from, nodeId, limit),
+            e ->
+                new BikeschedException(
+                    "Claiming jobs for bikesched node " + nodeId + " failed", e));
     jobs.sort(CLAIM_ORDER);
     return jobs;
   }
@@ -313,7 +319,9 @@ final class JobStore {
    * @return {@code false} if the job is not running on this node (anymore)
    */
   boolean completeJob(UUID jobId, UUID nodeId) {
-    return database.update(COMPLETE_JOB_SQL, "Completing bikesched job " + jobId, jobId, nodeId)
+    return access.withConnection(
+            db -> db.update(COMPLETE_JOB_SQL, jobId, nodeId),
+            e -> new BikeschedException("Completing bikesched job " + jobId + " failed", e))
         > 0;
   }
 
@@ -328,7 +336,17 @@ final class JobStore {
    *     occurrence was inserted (not if one is pending already)
    */
   Optional<Boolean> completeJob(UUID jobId, UUID nodeId, NewJob next) {
-    return finishJob("Completing bikesched job " + jobId, next, COMPLETE_JOB_SQL, jobId, nodeId);
+    if (next == null) {
+      return completeJob(jobId, nodeId) ? Optional.of(false) : Optional.empty();
+    }
+    return access.inTransaction(
+        db -> {
+          if (db.update(COMPLETE_JOB_SQL, jobId, nodeId) == 0) {
+            return Optional.empty();
+          }
+          return Optional.of(insertOccurrence(db, next));
+        },
+        e -> new BikeschedException("Completing bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -359,8 +377,7 @@ final class JobStore {
    */
   Optional<EndedJob> cancelJob(
       UUID jobId, UUID nodeId, String message, boolean attemptRan, NewJob next) {
-    return database.inTransaction(
-        "Cancelling bikesched job " + jobId,
+    return access.inTransaction(
         db -> {
           db.update(CANCEL_STEPS_SQL, jobId, jobId, nodeId);
           Optional<String> state =
@@ -378,7 +395,8 @@ final class JobStore {
           boolean scheduled =
               next != null && state.get().equals("CANCELLED") && insertOccurrence(db, next);
           return Optional.of(new EndedJob(state.get(), scheduled));
-        });
+        },
+        e -> new BikeschedException("Cancelling bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -404,7 +422,9 @@ final class JobStore {
    * @return {@code false} if the job does not exist, has ended or is compensating
    */
   boolean requestCancel(UUID jobId, String message) {
-    return database.update(REQUEST_CANCEL_SQL, "Cancelling bikesched job " + jobId, message, jobId)
+    return access.withConnection(
+            db -> db.update(REQUEST_CANCEL_SQL, message, jobId),
+            e -> new BikeschedException("Cancelling bikesched job " + jobId + " failed", e))
         > 0;
   }
 
@@ -419,8 +439,7 @@ final class JobStore {
    * @return the job's new state; empty if the job is not compensating on this node (anymore)
    */
   Optional<EndedJob> completeCompensation(UUID jobId, UUID nodeId, NewJob next) {
-    return database.inTransaction(
-        "Completing the compensation of bikesched job " + jobId,
+    return access.inTransaction(
         db -> {
           Optional<String> state =
               db.one(COMPLETE_COMPENSATION_SQL, row -> row.string(1), jobId, nodeId);
@@ -429,7 +448,10 @@ final class JobStore {
           }
           boolean scheduled = next != null && insertOccurrence(db, next);
           return Optional.of(new EndedJob(state.get(), scheduled));
-        });
+        },
+        e ->
+            new BikeschedException(
+                "Completing the compensation of bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -446,8 +468,7 @@ final class JobStore {
    */
   Optional<FailedJob> failCompensation(
       UUID jobId, UUID nodeId, String error, Duration retryAfter, NewJob next) {
-    return database.inTransaction(
-        "Recording the failed compensation of bikesched job " + jobId,
+    return access.inTransaction(
         db -> {
           Optional<FailedJob> failed =
               db.one(
@@ -461,25 +482,10 @@ final class JobStore {
             return Optional.of(failed.get().withNextOccurrence(insertOccurrence(db, next)));
           }
           return failed;
-        });
-  }
-
-  /** Runs the update finishing a job and inserts the next occurrence in the same transaction. */
-  private Optional<Boolean> finishJob(
-      String action, NewJob next, String statement, Object... parameters) {
-    if (next == null) {
-      return database.update(statement, action, parameters) > 0
-          ? Optional.of(false)
-          : Optional.empty();
-    }
-    return database.inTransaction(
-        action,
-        db -> {
-          if (db.update(statement, parameters) == 0) {
-            return Optional.empty();
-          }
-          return Optional.of(insertOccurrence(db, next));
-        });
+        },
+        e ->
+            new BikeschedException(
+                "Recording the failed compensation of bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -489,9 +495,11 @@ final class JobStore {
    * @return whether it was inserted
    */
   boolean insertOccurrence(NewJob occurrence) {
-    return database.inTransaction(
-        "Scheduling an occurrence of recurring job " + occurrence.type(),
-        db -> insertOccurrence(db, occurrence));
+    return access.inTransaction(
+        db -> insertOccurrence(db, occurrence),
+        e ->
+            new BikeschedException(
+                "Scheduling an occurrence of recurring job " + occurrence.type() + " failed", e));
   }
 
   private static boolean insertOccurrence(Sql db, NewJob occurrence) throws SQLException {
@@ -507,8 +515,7 @@ final class JobStore {
    * @return the pending occurrence after registering
    */
   RecurringRegistration registerRecurringJob(NewJob first) {
-    return database.inTransaction(
-        "Registering recurring job " + first.type(),
+    return access.inTransaction(
         db -> {
           boolean created = insertOccurrence(db, first);
           String previousSchedule =
@@ -534,7 +541,8 @@ final class JobStore {
                   () ->
                       new IllegalStateException(
                           "No pending occurrence of recurring job " + first.type()));
-        });
+        },
+        e -> new BikeschedException("Registering recurring job " + first.type() + " failed", e));
   }
 
   /**
@@ -557,7 +565,9 @@ final class JobStore {
    * @return the number of deleted occurrences
    */
   int deletePendingOccurrences(String type) {
-    return database.update(DELETE_PENDING_OCCURRENCES_SQL, "Removing recurring job " + type, type);
+    return access.withConnection(
+        db -> db.update(DELETE_PENDING_OCCURRENCES_SQL, type),
+        e -> new BikeschedException("Removing recurring job " + type + " failed", e));
   }
 
   /**
@@ -591,8 +601,7 @@ final class JobStore {
       Integer maxAttempts,
       Duration retryAfter,
       NewJob next) {
-    return database.inTransaction(
-        "Recording failure of bikesched job " + jobId,
+    return access.inTransaction(
         db -> {
           Optional<FailedJob> failed =
               db.one(
@@ -609,7 +618,8 @@ final class JobStore {
             return Optional.of(failed.get().withNextOccurrence(scheduled));
           }
           return failed;
-        });
+        },
+        e -> new BikeschedException("Recording failure of bikesched job " + jobId + " failed", e));
   }
 
   /**
@@ -654,7 +664,9 @@ final class JobStore {
    * @return the number of released jobs
    */
   int releaseJobs(UUID nodeId) {
-    return database.update(RELEASE_JOBS_SQL, "Releasing jobs of bikesched node " + nodeId, nodeId);
+    return access.withConnection(
+        db -> db.update(RELEASE_JOBS_SQL, nodeId),
+        e -> new BikeschedException("Releasing jobs of bikesched node " + nodeId + " failed", e));
   }
 
   /**
@@ -666,14 +678,14 @@ final class JobStore {
    * @return the dead nodes that had running jobs, with the number of released jobs
    */
   List<DeadNodeJobs> releaseJobsOfDeadNodes(UUID callingNodeId, Duration nodeTimeout) {
-    return database.withConnection(
-        "Releasing jobs of dead bikesched nodes",
+    return access.withConnection(
         db ->
             db.list(
                 RELEASE_JOBS_OF_DEAD_NODES_SQL,
                 row -> new DeadNodeJobs(row.uuid(1), row.string(2), row.integer(3)),
                 callingNodeId,
-                Sql.seconds(nodeTimeout)));
+                Sql.seconds(nodeTimeout)),
+        e -> new BikeschedException("Releasing jobs of dead bikesched nodes failed", e));
   }
 
   /**

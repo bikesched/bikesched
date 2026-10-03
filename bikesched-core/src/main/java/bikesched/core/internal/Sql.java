@@ -17,9 +17,9 @@ import java.util.UUID;
 
 /**
  * Statement helpers on a connection: the only place in the stores that prepares statements and
- * reads result sets. Obtained from {@link Database#withConnection}, {@link Database#inTransaction}
- * or {@link Database#onCallerConnection}, which own the connection, commit and exception wrapping;
- * an {@code Sql} never commits or closes its connection.
+ * reads result sets. Obtained from {@link DatabaseAccess#withConnection}, {@link
+ * DatabaseAccess#inTransaction} or {@link DatabaseAccess#onCallerConnection}, which own the
+ * connection, commit and exception handling; an {@code Sql} never commits or closes its connection.
  *
  * <p>Parameters are bound positionally with {@link PreparedStatement#setObject(int, Object)}; an
  * {@link Instant} is bound as {@code timestamptz}. Nullable parameters whose SQL type PostgreSQL
