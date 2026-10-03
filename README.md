@@ -73,7 +73,7 @@ UUID id = bikesched.newJob("report")
 
 A builder can be reused: every `schedule…` call stores a new job.
 
-To check on a job later, look it up by its id (a read-only transaction):
+To check on a job later, look it up by its id:
 
 ```java
 Optional<JobInfo> job = bikesched.findJob(id);   // id(), type() and state(), e.g. JobState.SUCCEEDED
@@ -105,8 +105,11 @@ A handler receives the `Job` being executed:
 | `id()`, `type()` | identity, e.g. for idempotency keys and logging |
 | `attempts()`, `maxAttempts()` | the current attempt (starting at 1) and the limit |
 | `payload()`, `payload(Class)` | the payload as raw JSON or mapped by the `JsonMapper` |
-| `step(…)`, `newStep(…)` | run a durable step, optionally with a compensation |
-| `cancel()`, `cancel(message)` | cancel the job |
+| `step(name, Class, handler)` | run a durable step, see [Durable steps](#durable-steps) |
+| `newStep(name, Class)` | build a step with a compensation, see [Compensation](#compensation) |
+| `waitForEvent(step, name, key)` | wait for an event, see [Waiting for events](#waiting-for-events) |
+| `cancel()`, `cancel(message)` | cancel the job, see [Cancellation](#cancellation) |
+| `fail()`, `fail(message)` | fail the attempt without throwing; `.remainingAttempts(n)` and `.retryAfter(Duration)` adjust the retry |
 | `isCompensating()` | whether the handler is replayed to compensate the job |
 | `updateTimeout(Duration)` | extend the deadline of the running attempt |
 
@@ -121,16 +124,18 @@ again; its stored result is returned instead:
 ```java
 bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
-    Payment payment = job.step("charge-card", Payment.class, step -> payments.charge(order));
-    job.step("send-confirmation", Void.class, step -> {
+    Payment payment = job.step("charge-card", Payment.class, _ -> payments.charge(order));
+    job.step("send-confirmation", Void.class, _ -> {
         mailer.send(order, payment);   // if this fails, the retry does not charge the card again
-        return null;
+        return null;                   // Void steps store no result
     });
 });
 ```
 
-Step names identify steps across attempts, so they must be unique within a job and called in a
-deterministic way. Results are stored in `bikesched_steps` right after the step completes.
+The result is mapped by the `JsonMapper` and stored in `bikesched_steps` right after the step
+completes. Step names identify steps across attempts, so they must be unique within a job and
+called in a deterministic way. The handler receives the `Step` (job id, name and attempt number),
+e.g. for idempotency keys.
 
 ### Cancellation
 
@@ -166,15 +171,16 @@ fails permanently (a saga). Compensation is optional, per step:
 ```java
 bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
-    PaymentReservation reservation =
-        job.newStep("reserve-payment", PaymentReservation.class)
-            .compensateWith((step, r) -> payments.release(r))  // receives the step and its stored result
-            .run(step -> payments.reserve(order));
-    job.newStep("ship", Void.class)
-        .compensateWith((step, _) -> shipping.recall(order))
-        .run(step -> { shipping.ship(order, reservation); return null; });
+    Reservation reservation = job.newStep("reserve-payment", Reservation.class)
+            .compensateWith((step, r) -> payments.release(r))   // gets the step and its stored result
+            .run(_ -> payments.reserve(order));
+    job.step("ship", Void.class, _ -> { shipping.ship(order, reservation); return null; });
 });
+
+bikesched.cancel(orderJobId, "order withdrawn");   // releases the reservation if it was made
 ```
+
+`newStep(name, Class).run(handler)` without `compensateWith` is the same as `step(...)`.
 
 - A job without completed compensable steps is cancelled or failed right away, as before.
 - Otherwise it becomes `COMPENSATING`. A node replays its handler in compensation mode: completed
@@ -225,22 +231,32 @@ completed steps are skipped, and the wait now returns the event.
 ```java
 bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
-    job.step("create-invoice", Invoice.class, step -> billing.createInvoice(order));
     Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
-            .timeout(Duration.ofDays(3), () -> Payment.missing())   // optional
-            .receive(event -> event.payload(Payment.class));        // or .receive(Payment.class)
-    job.step("ship", Void.class, step -> { shipping.ship(order, payment); return null; });
+            .receive(Payment.class);
+    job.step("ship", Void.class, _ -> { shipping.ship(order, payment); return null; });
 });
 
-// e.g. in a payment webhook, optionally in your own transaction via .connection(connection)
-List<ReceivedEvent> received = bikesched.newEvent("payment-received", orderId).payload(payment).publish();
+// e.g. in a payment webhook; .connection(connection) publishes in your own transaction
+List<ReceivedEvent> received = bikesched.newEvent("payment-received", order.id())
+        .payload(payment)
+        .publish();   // the steps that received the event, with their job ids
+```
+
+To stop waiting after a while, add a timeout; its handler's result is returned instead of the
+event:
+
+```java
+Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
+        .<Payment>timeout(Duration.ofDays(3), () -> null)   // the type is needed for a null result
+        .receive(Payment.class);
 ```
 
 - Events are stored in `bikesched_events` for the `eventRetention` period (default 7 days).
   A step that starts waiting after the event was published receives the latest one right away.
-- An event goes to every step waiting for it.
-- With `.timeout(duration, timeoutHandler)`, `receive` returns the timeout handler's result once the
-  deadline has passed.
+- An event goes to every step waiting for it. `receive(event -> …)` gets the whole `Event` (name,
+  key, payload) instead of the mapped payload.
+- Without a timeout of its own, a wait uses the node's `defaultEventTimeout`, if set: once it
+  passes, the job fails permanently with an `EventTimeoutException`.
 - Waiting does not use up an attempt.
 - Code outside steps runs again on every resume, so it must be cheap and deterministic.
 - Waiting, suspending and publishing lock the event's name and key for the length of their
@@ -331,39 +347,30 @@ The `bikesched-kotlin` module adds Kotlin extensions on top of the Java API; it 
 `bikesched-core` and the Kotlin standard library only.
 
 ```kotlin
-val bikesched = bikesched {                       // instead of Bikesched.builder()…build()
+val bikesched = bikesched {                         // instead of Bikesched.builder()…build()
     dataSource = ds
-    nodeName = "worker-1"
-    defaultJobTimeout = 5.minutes                 // kotlin.time.Duration everywhere
-    retryBackoff = exponentialBackoff(1.seconds, 10.minutes)
-    jsonMapper = myJsonMapper                     // e.g. Jackson with its Kotlin module
+    jsonMapper = myJsonMapper                       // e.g. Jackson with its Kotlin module
+    defaultJobTimeout = 5.minutes                   // kotlin.time.Duration everywhere
 }
 
-data class SendMail(val to: String, val subject: String)
+data class Order(val id: String, val amount: Int)
 
-bikesched.handleJobs<SendMail>("send-mail") { mail ->           // this: Job, mail: SendMail
-    val receipt = step<Receipt>("send") { mailer.send(mail) }
-    step<Unit>("log") { audit.log(receipt) }                      // Unit steps store no result
-    val hold = step<Hold>("hold-slot", compensation = { _, hold -> slots.release(hold) }) {
-        slots.hold(mail.to)                                       // undone if the job is cancelled
+bikesched.handleJobs<Order>("order") { order ->    // this: Job, order: the mapped payload
+    val reservation = step<Reservation>("reserve-payment", compensation = { _, r -> payments.release(r) }) {
+        payments.reserve(order)
     }
-    val bounce = waitForEvent<Bounce?>(
-        step = "await-bounce", name = "mail-bounced", key = receipt.id, timeout = 1.hours,
-    ) { null }                                                    // no bounce in time
-    if (bounce != null) fail("bounced").retryAfter(10.minutes)
+    val payment = waitForEvent<Payment>(step = "await-payment", name = "payment-received", key = order.id)
+    step<Unit>("ship") { shipping.ship(order, reservation, payment) }   // Unit steps store no result
 }
 
-bikesched.createJob(type = "send-mail", payload = SendMail("a@b.de", "Hi"), delay = 5.minutes)
-bikesched.createJob(type = "cleanup", priority = 10) { cleanup.run() }  // handler registered on the way
-bikesched.createRecurringJob(type = "report", schedule = every(1.days), payload = Report("sales")) {
-    report -> reports.send(report)
-}
-bikesched.publishEvent(name = "mail-bounced", key = receiptId, payload = bounce)
+bikesched.createJob(type = "order", payload = Order("o-1", 100))
+bikesched.publishEvent(name = "payment-received", key = "o-1", payload = payment)
+bikesched.createRecurringJob(type = "cleanup", schedule = every(1.hours)) { cleanup.run() }
 ```
 
-`createJob`, `createRecurringJob`, `publishEvent` and `waitForEvent` take named arguments; everything but the type
-(resp. step, name and key) and the schedule is optional, and the builder defaults apply to omitted
-options:
+`createJob`, `createRecurringJob`, `publishEvent` and `waitForEvent` take named arguments. Only the
+type (resp. step, name and key) and the schedule are required; omitted options keep the builder
+defaults:
 
 | Function | Arguments |
 |---|---|
@@ -371,7 +378,8 @@ options:
 | `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id |
 | `createRecurringJob(type, schedule, payload, firstRun, delay, priority, maxAttempts, timeout) { … }` | registers a recurring job and returns the id of its pending occurrence |
 | `publishEvent(name, key, payload, connection)` | publishes an event and returns the steps that received it |
-| `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result, or without fallback the job fails permanently like with the default event timeout |
+| `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result (e.g. `waitForEvent<Payment?>(…, timeout = 3.days) { null }`), without fallback the job fails permanently like with the default event timeout |
+| `step<T>(name, compensation) { … }` (in a handler) | runs a durable step; the optional `compensation = { step, result -> … }` undoes it if the job is cancelled or fails permanently |
 
 The optional trailing handler of `createJob` and `createRecurringJob` is registered for the type unless it
 already has one; with a `payload` it gets the payload as its type, otherwise only the `Job`.
@@ -381,8 +389,7 @@ Further helpers for the Java API:
 | Helper | Instead of |
 |---|---|
 | `bikesched { … }` | `Bikesched.builder()…build()` |
-| `job.payload<T>()`, `event.payload<T>()` | `Class<T>` arguments |
-| `step<T>(name, compensation = { step, result -> … }) { … }` (compensation optional) | `step(name, T.class, handler)`, `newStep(name, T.class).compensateWith(…).run(…)` |
+| `job.payload<T>()`, `event.payload<T>()` | `payload(T.class)` |
 | `receive<T>()`, `receive<T>(timeout) { fallback }`, `receiveOrNull<T>(timeout)` on the Java `waitForEvent(step, name, key)` | `receive(T.class)`, `timeout(…, handler).receive(T.class)` |
 | `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `every(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
 | `findJobOrNull(id)`, `node.idOrNull` | `Optional` |
