@@ -1,9 +1,12 @@
 package bikesched.core;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +20,8 @@ import org.slf4j.LoggerFactory;
  *       retry by other nodes
  *   <li>removes nodes without heartbeat for twice the node timeout
  *   <li>deletes events older than the event retention
+ *   <li>recreates a missing pending occurrence of the recurring jobs registered on this node (e.g.
+ *       if the last one ended on a node that does not know the recurring job)
  * </ol>
  *
  * <p>Every node does all of it; the statements are safe to run concurrently on several nodes.
@@ -30,6 +35,7 @@ final class Heartbeat {
   private final String nodeName;
   private final Duration nodeTimeout;
   private final Duration eventRetention;
+  private final Supplier<Collection<RecurringJob>> recurringJobs;
 
   /**
    * @param database the database
@@ -37,18 +43,21 @@ final class Heartbeat {
    * @param nodeName its name, for logging
    * @param nodeTimeout a node without heartbeat for this long is considered dead
    * @param eventRetention how long published events are kept
+   * @param recurringJobs the recurring jobs registered on this node
    */
   Heartbeat(
       Database database,
       UUID nodeId,
       String nodeName,
       Duration nodeTimeout,
-      Duration eventRetention) {
+      Duration eventRetention,
+      Supplier<Collection<RecurringJob>> recurringJobs) {
     this.database = Objects.requireNonNull(database, "database");
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
     this.nodeTimeout = Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     this.eventRetention = Objects.requireNonNull(eventRetention, "eventRetention");
+    this.recurringJobs = Objects.requireNonNull(recurringJobs, "recurringJobs");
   }
 
   /**
@@ -68,6 +77,28 @@ final class Heartbeat {
     releaseJobsOfDeadNodes();
     deleteDeadNodes();
     deleteOldEvents();
+    repairRecurringJobs();
+  }
+
+  /**
+   * Inserts the next occurrence of each recurring job registered on this node that has none
+   * pending; a no-op (conflict on the unique index) for all others.
+   */
+  private void repairRecurringJobs() {
+    for (RecurringJob recurring : recurringJobs.get()) {
+      try {
+        Instant now = Instant.now();
+        NewJob occurrence = recurring.occurrence(recurring.nextRun(now, now));
+        if (database.insertOccurrence(occurrence)) {
+          LOG.info(
+              "Recurring job {} had no pending occurrence, scheduled one at {}",
+              recurring.type(),
+              occurrence.scheduledAt());
+        }
+      } catch (RuntimeException e) {
+        LOG.warn("Checking recurring job {} failed", recurring.type(), e);
+      }
+    }
   }
 
   /** Deletes events published longer ago than the event retention. */

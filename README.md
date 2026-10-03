@@ -134,6 +134,34 @@ bikesched.registerHandler("send-mail", job -> {
 A cancelled job ends in state `CANCELLED` and is not retried, even if the handler throws
 afterwards.
 
+### Recurring jobs
+
+```java
+bikesched.newJob("cleanup")
+        .recurring(Schedule.daily(LocalTime.of(3, 0), ZoneId.of("Europe/Berlin")))
+        .handler(job -> cleanup())
+        .schedule();   // idempotent: every node registers it on startup
+```
+
+- The job type identifies the recurring job. Each run is an *occurrence*, a regular job with its
+  own retries, timeout, steps and events. At most one occurrence is pending at a time, enforced by
+  a partial unique index.
+- When an occurrence ends (succeeded, permanently failed, or cancelled, which cancels only that
+  occurrence), the next one is inserted in the same transaction. Runs missed while no node was up
+  are skipped.
+- Schedules: `Schedule.every(Duration)`, `daily(LocalTime, ZoneId)`,
+  `weekly(DayOfWeek, LocalTime, ZoneId)`, or `Schedule.of(description, previous -> next)`.
+- The next run is computed from the previous occurrence's scheduled time. Schedules whose
+  `usePlannedTime()` returns `true` (by default only `every`) also store each occurrence's planned
+  time (`planned_at`) and compute from that instead, so retries and event waits don't shift a fixed
+  rate.
+- Each occurrence stores the schedule's description. Registering a schedule with a different
+  description (e.g. after a deploy) moves the pending occurrence to the new schedule.
+- Nodes recreate a missing occurrence of their recurring jobs on every heartbeat.
+  `bikesched.removeRecurringJob(type)` stops a recurring job that is no longer registered anywhere.
+- `recurring(...)` and `connection(...)` lead to different builders, so a recurring job can't be
+  scheduled in the caller's transaction.
+
 ### Waiting for events
 
 A handler can wait for an event as a durable step. If the event hasn't been published yet, the

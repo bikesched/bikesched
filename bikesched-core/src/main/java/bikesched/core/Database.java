@@ -44,8 +44,40 @@ final class Database {
 
   private static final String INSERT_JOB_SQL =
       """
-            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts, timeout_millis)
-            values (?, ?, ?::jsonb, ?, ?, ?, ?)""";
+            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts, timeout_millis, schedule, planned_at)
+            values (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)""";
+
+  // Inserts an occurrence of a recurring job unless one is pending already (partial unique index).
+  private static final String INSERT_OCCURRENCE_SQL =
+      INSERT_JOB_SQL
+          + """
+
+            on conflict (job_type) where schedule is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING')
+            do nothing""";
+
+  // Moves a pending (not yet running) occurrence to a new schedule; returns the old description.
+  private static final String RESCHEDULE_OCCURRENCE_SQL =
+      """
+            update bikesched_jobs j
+               set schedule = ?, scheduled_at = ?, planned_at = ?, updated_at = now()
+              from (select id, schedule from bikesched_jobs
+                     where job_type = ? and schedule is not null and state = 'SCHEDULED'
+                       and schedule <> ?
+                     for update) old
+             where j.id = old.id
+            returning old.schedule""";
+
+  private static final String FIND_PENDING_OCCURRENCE_SQL =
+      """
+            select id, scheduled_at, state from bikesched_jobs
+             where job_type = ? and schedule is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING')""";
+
+  // Running occurrences cannot be deleted; finishing them schedules no successor on nodes that no
+  // longer have the recurring job registered.
+  private static final String DELETE_PENDING_OCCURRENCES_SQL =
+      """
+            delete from bikesched_jobs
+             where job_type = ? and schedule is not null and state in ('SCHEDULED', 'WAITING')""";
 
   // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
   // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
@@ -59,7 +91,7 @@ final class Database {
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
-            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis""";
+            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, schedule, planned_at""";
 
   private static final String COMPLETE_JOB_SQL =
       """
@@ -441,7 +473,9 @@ final class Database {
       OffsetDateTime.ofInstant(job.scheduledAt(), ZoneOffset.UTC),
       job.priority(),
       job.maxAttempts(),
-      job.timeout() == null ? null : job.timeout().toMillis()
+      job.timeout() == null ? null : job.timeout().toMillis(),
+      job.schedule(),
+      job.plannedAt() == null ? null : OffsetDateTime.ofInstant(job.plannedAt(), ZoneOffset.UTC)
     };
   }
 
@@ -475,7 +509,9 @@ final class Database {
                   rs.getObject(5, OffsetDateTime.class).toInstant(),
                   rs.getInt(6),
                   rs.getInt(7),
-                  toDuration(rs.getObject(8, Long.class))));
+                  toDuration(rs.getObject(8, Long.class)),
+                  rs.getString(9),
+                  toInstant(rs.getObject(10, OffsetDateTime.class))));
         }
       }
       commitIfNeeded(connection);
@@ -498,6 +534,20 @@ final class Database {
   }
 
   /**
+   * Marks a job claimed by the node as {@code SUCCEEDED} and, in the same transaction, inserts the
+   * next occurrence of its recurring job.
+   *
+   * @param jobId the job id
+   * @param nodeId the node that claimed the job
+   * @param next the next occurrence, {@code null} if none
+   * @return empty if the job is not running on this node (anymore); otherwise whether the next
+   *     occurrence was inserted (not if one is pending already)
+   */
+  Optional<Boolean> completeJob(UUID jobId, UUID nodeId, NewJob next) {
+    return finishJob("Completing bikesched job " + jobId, next, COMPLETE_JOB_SQL, jobId, nodeId);
+  }
+
+  /**
    * Marks a job claimed by the node as {@code CANCELLED}; it is not retried.
    *
    * @param jobId the job id
@@ -507,6 +557,134 @@ final class Database {
    */
   boolean cancelJob(UUID jobId, UUID nodeId, String message) {
     return update(CANCEL_JOB_SQL, "Cancelling bikesched job " + jobId, message, jobId, nodeId) > 0;
+  }
+
+  /**
+   * Marks a job claimed by the node as {@code CANCELLED} and, in the same transaction, inserts the
+   * next occurrence of its recurring job (cancelling cancels this occurrence only).
+   *
+   * @param jobId the job id
+   * @param nodeId the node that claimed the job
+   * @param message why the job was cancelled, may be {@code null}
+   * @param next the next occurrence, {@code null} if none
+   * @return empty if the job is not running on this node (anymore); otherwise whether the next
+   *     occurrence was inserted
+   */
+  Optional<Boolean> cancelJob(UUID jobId, UUID nodeId, String message, NewJob next) {
+    return finishJob(
+        "Cancelling bikesched job " + jobId, next, CANCEL_JOB_SQL, message, jobId, nodeId);
+  }
+
+  /** Runs the update finishing a job and inserts the next occurrence in the same transaction. */
+  private Optional<Boolean> finishJob(
+      String action, NewJob next, String sql, Object... parameters) {
+    if (next == null) {
+      return update(sql, action, parameters) > 0 ? Optional.of(false) : Optional.empty();
+    }
+    return inTransaction(
+        action,
+        connection -> {
+          if (execute(connection, sql, parameters) == 0) {
+            return Optional.empty();
+          }
+          return Optional.of(insertOccurrence(connection, next));
+        });
+  }
+
+  /**
+   * Inserts an occurrence of a recurring job unless one is pending already.
+   *
+   * @param occurrence the occurrence
+   * @return whether it was inserted
+   */
+  boolean insertOccurrence(NewJob occurrence) {
+    return inTransaction(
+        "Scheduling an occurrence of recurring job " + occurrence.type(),
+        connection -> insertOccurrence(connection, occurrence));
+  }
+
+  private static boolean insertOccurrence(Connection connection, NewJob occurrence)
+      throws SQLException {
+    return execute(
+            connection, INSERT_OCCURRENCE_SQL, insertParameters(UUID.randomUUID(), occurrence))
+        > 0;
+  }
+
+  /**
+   * Registers a recurring job: inserts its first occurrence unless one is pending; a pending
+   * occurrence of a different schedule (description) that has not started yet is moved to the first
+   * run of the new schedule.
+   *
+   * @param first the first occurrence of the (new) schedule
+   * @return the pending occurrence after registering
+   */
+  RecurringRegistration registerRecurringJob(NewJob first) {
+    return inTransaction(
+        "Registering recurring job " + first.type(),
+        connection -> {
+          boolean created = insertOccurrence(connection, first);
+          String previousSchedule = null;
+          if (!created) {
+            try (PreparedStatement reschedule =
+                connection.prepareStatement(RESCHEDULE_OCCURRENCE_SQL)) {
+              reschedule.setString(1, first.schedule());
+              reschedule.setObject(
+                  2, OffsetDateTime.ofInstant(first.scheduledAt(), ZoneOffset.UTC));
+              reschedule.setObject(
+                  3,
+                  first.plannedAt() == null
+                      ? null
+                      : OffsetDateTime.ofInstant(first.plannedAt(), ZoneOffset.UTC),
+                  Types.TIMESTAMP_WITH_TIMEZONE);
+              reschedule.setString(4, first.type());
+              reschedule.setString(5, first.schedule());
+              try (ResultSet rs = reschedule.executeQuery()) {
+                if (rs.next()) {
+                  previousSchedule = rs.getString(1);
+                }
+              }
+            }
+          }
+          try (PreparedStatement find = connection.prepareStatement(FIND_PENDING_OCCURRENCE_SQL)) {
+            find.setString(1, first.type());
+            try (ResultSet rs = find.executeQuery()) {
+              if (!rs.next()) {
+                // Cannot happen within this transaction: the insert either succeeded or conflicted.
+                throw new IllegalStateException(
+                    "No pending occurrence of recurring job " + first.type());
+              }
+              return new RecurringRegistration(
+                  rs.getObject(1, UUID.class),
+                  rs.getObject(2, OffsetDateTime.class).toInstant(),
+                  rs.getString(3),
+                  created,
+                  previousSchedule);
+            }
+          }
+        });
+  }
+
+  /**
+   * The pending occurrence of a recurring job after registering it.
+   *
+   * @param jobId the occurrence's job id
+   * @param scheduledAt when it runs (or ran, if already running)
+   * @param state its state
+   * @param created whether registering created it
+   * @param previousSchedule the description of the schedule it was moved away from, {@code null} if
+   *     it was not moved
+   */
+  record RecurringRegistration(
+      UUID jobId, Instant scheduledAt, String state, boolean created, String previousSchedule) {}
+
+  /**
+   * Deletes the pending occurrences of a recurring job that are not running.
+   *
+   * @param type the job type of the recurring job
+   * @return the number of deleted occurrences
+   */
+  int deletePendingOccurrences(String type) {
+    return update(DELETE_PENDING_OCCURRENCES_SQL, "Removing recurring job " + type, type);
   }
 
   /**
@@ -863,25 +1041,60 @@ final class Database {
    */
   Optional<FailedJob> failJob(
       UUID jobId, UUID nodeId, String error, Integer maxAttempts, Duration retryAfter) {
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement fail = connection.prepareStatement(FAIL_JOB_SQL)) {
+    return failJob(jobId, nodeId, error, maxAttempts, retryAfter, null);
+  }
+
+  /**
+   * Records a failed attempt like {@link #failJob(UUID, UUID, String, Integer, Duration)}; if the
+   * job fails permanently, the next occurrence of its recurring job is inserted in the same
+   * transaction.
+   *
+   * @param next the next occurrence, {@code null} if none
+   */
+  Optional<FailedJob> failJob(
+      UUID jobId,
+      UUID nodeId,
+      String error,
+      Integer maxAttempts,
+      Duration retryAfter,
+      NewJob next) {
+    return inTransaction(
+        "Recording failure of bikesched job " + jobId,
+        connection -> {
+          Optional<FailedJob> failed =
+              failJob(connection, jobId, nodeId, error, maxAttempts, retryAfter);
+          if (next != null && failed.isPresent() && !failed.get().retried()) {
+            boolean scheduled = insertOccurrence(connection, next);
+            return Optional.of(failed.get().withNextOccurrence(scheduled));
+          }
+          return failed;
+        });
+  }
+
+  private static Optional<FailedJob> failJob(
+      Connection connection,
+      UUID jobId,
+      UUID nodeId,
+      String error,
+      Integer maxAttempts,
+      Duration retryAfter)
+      throws SQLException {
+    try (PreparedStatement fail = connection.prepareStatement(FAIL_JOB_SQL)) {
       fail.setString(1, error);
       fail.setObject(2, maxAttempts, Types.INTEGER);
       fail.setObject(3, retryAfter == null ? null : retryAfter.toMillis(), Types.BIGINT);
       fail.setObject(4, jobId);
       fail.setObject(5, nodeId);
-      FailedJob failed = null;
       try (ResultSet rs = fail.executeQuery()) {
-        if (rs.next()) {
-          failed =
-              new FailedJob(
-                  rs.getString(1), rs.getInt(2), rs.getObject(3, OffsetDateTime.class).toInstant());
-        }
+        return rs.next()
+            ? Optional.of(
+                new FailedJob(
+                    rs.getString(1),
+                    rs.getInt(2),
+                    rs.getObject(3, OffsetDateTime.class).toInstant(),
+                    false))
+            : Optional.empty();
       }
-      commitIfNeeded(connection);
-      return Optional.ofNullable(failed);
-    } catch (SQLException e) {
-      throw new BikeschedException("Recording failure of bikesched job " + jobId + " failed", e);
     }
   }
 
@@ -891,11 +1104,17 @@ final class Database {
    * @param state {@code SCHEDULED} (retried) or {@code FAILED}
    * @param maxAttempts its maximum number of attempts
    * @param scheduledAt when it is retried (only meaningful if {@code SCHEDULED})
+   * @param nextOccurrenceScheduled whether the next occurrence of its recurring job was inserted
    */
-  record FailedJob(String state, int maxAttempts, Instant scheduledAt) {
+  record FailedJob(
+      String state, int maxAttempts, Instant scheduledAt, boolean nextOccurrenceScheduled) {
 
     boolean retried() {
       return state.equals("SCHEDULED");
+    }
+
+    FailedJob withNextOccurrence(boolean scheduled) {
+      return new FailedJob(state, maxAttempts, scheduledAt, scheduled);
     }
   }
 

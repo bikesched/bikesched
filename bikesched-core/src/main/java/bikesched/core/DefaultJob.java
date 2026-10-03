@@ -28,6 +28,8 @@ final class DefaultJob implements Job {
   private final int attempts;
   private final int maxAttempts;
   private final Duration timeout;
+  private final String schedule;
+  private final Instant plannedAt;
 
   // Set by the handler, read by bikesched after the handler returned (the handler may use other
   // threads).
@@ -47,7 +49,9 @@ final class DefaultJob implements Job {
       Instant scheduledAt,
       int attempts,
       int maxAttempts,
-      Duration timeout) {
+      Duration timeout,
+      String schedule,
+      Instant plannedAt) {
     this.database = Objects.requireNonNull(database, "database");
     this.id = Objects.requireNonNull(id, "id");
     this.type = Objects.requireNonNull(type, "type");
@@ -57,6 +61,8 @@ final class DefaultJob implements Job {
     this.attempts = attempts;
     this.maxAttempts = maxAttempts;
     this.timeout = timeout;
+    this.schedule = schedule;
+    this.plannedAt = plannedAt;
   }
 
   @Override
@@ -88,6 +94,22 @@ final class DefaultJob implements Job {
   public <T> T payload(Class<T> type) {
     Objects.requireNonNull(type, "type");
     return payload == null ? null : database.jsonMapper().fromJson(payload, type);
+  }
+
+  /**
+   * The description of the recurring job's schedule this job is an occurrence of, {@code null} for
+   * a one-off job.
+   */
+  String schedule() {
+    return schedule;
+  }
+
+  /**
+   * The planned run of an occurrence whose schedule {@link Schedule#usePlannedTime() uses planned
+   * times}, {@code null} otherwise.
+   */
+  Instant plannedAt() {
+    return plannedAt;
   }
 
   /** Higher priorities are claimed first. */

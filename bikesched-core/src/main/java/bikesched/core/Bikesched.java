@@ -90,6 +90,19 @@ public interface Bikesched extends AutoCloseable {
   JobBuilder newJob(String type);
 
   /**
+   * Stops a recurring job (see {@link JobBuilder#recurring(Schedule)}): unregisters it on this node
+   * and deletes its pending occurrence unless that is running right now (a running occurrence ends
+   * normally; a node that no longer has the recurring job registered schedules no successor).
+   *
+   * <p>Meant for recurring jobs that were removed from the code: nodes that still register the
+   * recurring job recreate its occurrence on their next heartbeat.
+   *
+   * @param type the job type of the recurring job
+   * @return whether a pending occurrence was deleted
+   */
+  boolean removeRecurringJob(String type);
+
+  /**
    * Starts building an event; {@link EventBuilder#publish()} publishes it to the steps waiting for
    * it (see {@link Job#waitForEvent(String, String, String)}), whose jobs then continue:
    *

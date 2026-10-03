@@ -28,6 +28,9 @@ create table bikesched_jobs (
     attempts     integer     not null default 0,
     max_attempts integer     not null default 3,
     timeout_millis bigint,                      -- max. duration of an attempt; null: node default / none
+    schedule     text,                          -- occurrence of a recurring job: its schedule's description
+    planned_at   timestamptz,                   -- its planned run (only if the schedule uses planned times);
+                                                -- unlike scheduled_at not moved by retries or event waits
     locked_by    uuid        references bikesched_nodes (id),
     locked_at    timestamptz,
     last_error   text,
@@ -47,6 +50,12 @@ create table bikesched_jobs (
 -- Polling index: only due-able jobs, in claim order.
 create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at)
     where state in ('SCHEDULED', 'WAITING');
+
+-- Recurring jobs (identified by their job type): at most one pending occurrence each. Finishing an
+-- occurrence inserts the next one in the same transaction; registering a recurring job and the
+-- heartbeat's repair insert one with "on conflict do nothing" if it is missing.
+create unique index bikesched_jobs_recurring_idx on bikesched_jobs (job_type)
+    where schedule is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING');
 
 -- Finding/releasing jobs of a (dead) node; also backs the foreign key.
 create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);

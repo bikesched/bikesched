@@ -4,6 +4,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.sql.Connection;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -65,6 +66,7 @@ final class DefaultBikesched implements Bikesched {
   private final UUID nodeId;
   private final String nodeName;
   private final Map<String, JobHandler> handlers = new ConcurrentHashMap<>();
+  private final Map<String, RecurringJob> recurringJobs = new ConcurrentHashMap<>();
   private final Duration pollInterval;
 
   private final Semaphore jobSlots;
@@ -97,13 +99,19 @@ final class DefaultBikesched implements Bikesched {
         Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("bikesched-job-", 0).factory());
     this.heartbeat =
         new Heartbeat(
-            database, nodeId, nodeName, settings.nodeTimeout(), settings.eventRetention());
+            database,
+            nodeId,
+            nodeName,
+            settings.nodeTimeout(),
+            settings.eventRetention(),
+            recurringJobs::values);
     this.processor =
         new JobProcessor(
             database,
             nodeId,
             nodeName,
             handlers::get,
+            recurringJobs::get,
             timeoutExecutor,
             settings.defaultJobTimeout(),
             settings.defaultEventTimeout(),
@@ -195,12 +203,28 @@ final class DefaultBikesched implements Bikesched {
   @Override
   public JobBuilder newJob(String type) {
     requireValidType(type);
-    return new JobBuilder(type, database.jsonMapper(), this::scheduleJob);
+    return new JobBuilder(type, database.jsonMapper(), scheduler);
   }
 
-  /** Stores a job built by a {@link JobBuilder}; registers its handler first if given and new. */
-  private UUID scheduleJob(NewJob job, JobHandler handler, Connection connection) {
-    String type = job.type();
+  /** Stores the jobs built by the job builders. */
+  private final AbstractJobBuilder.Scheduler scheduler =
+      new AbstractJobBuilder.Scheduler() {
+        @Override
+        public UUID schedule(NewJob job, JobHandler handler, Connection connection) {
+          return scheduleJob(job, handler, connection);
+        }
+
+        @Override
+        public UUID scheduleRecurring(RecurringJob job, JobHandler handler, Instant firstRun) {
+          return scheduleRecurringJob(job, handler, firstRun);
+        }
+      };
+
+  /**
+   * Checks that this node is open and the job type has a handler, registering the given one first
+   * if there is none yet.
+   */
+  private void requireHandler(String type, JobHandler handler) {
     if (closed.get()) {
       throw new IllegalStateException("bikesched node " + nodeName + " is closed");
     }
@@ -220,6 +244,58 @@ final class DefaultBikesched implements Bikesched {
               + new TreeSet<>(handlers.keySet())
               + ")");
     }
+  }
+
+  /** Registers a recurring job built by a {@link RecurringJobBuilder}. */
+  private UUID scheduleRecurringJob(RecurringJob job, JobHandler handler, Instant firstRun) {
+    String type = job.type();
+    requireHandler(type, handler);
+    Instant now = Instant.now();
+    Instant first = firstRun != null ? firstRun : job.nextRun(now, now);
+    var registration = database.registerRecurringJob(job.occurrence(first));
+    recurringJobs.put(type, job);
+    String schedule = job.schedule().description();
+    if (registration.created()) {
+      LOG.info(
+          "Registered recurring job {} ({}), first occurrence at {}",
+          type,
+          schedule,
+          registration.scheduledAt());
+    } else if (registration.previousSchedule() != null) {
+      LOG.info(
+          "Schedule of recurring job {} changed from '{}' to '{}', next occurrence moved to {}",
+          type,
+          registration.previousSchedule(),
+          schedule,
+          registration.scheduledAt());
+    } else {
+      LOG.info(
+          "Registered recurring job {} ({}), pending occurrence {} at {}",
+          type,
+          schedule,
+          registration.state(),
+          registration.scheduledAt());
+    }
+    return registration.jobId();
+  }
+
+  @Override
+  public boolean removeRecurringJob(String type) {
+    requireValidType(type);
+    boolean registered = recurringJobs.remove(type) != null;
+    int deleted = database.deletePendingOccurrences(type);
+    LOG.info(
+        "Removed recurring job {}{}{}",
+        type,
+        registered ? " from this node" : "",
+        deleted > 0 ? ", deleted its pending occurrence" : ", no pending occurrence to delete");
+    return deleted > 0;
+  }
+
+  /** Stores a job built by a {@link JobBuilder}; registers its handler first if given and new. */
+  private UUID scheduleJob(NewJob job, JobHandler handler, Connection connection) {
+    String type = job.type();
+    requireHandler(type, handler);
     UUID jobId = UUID.randomUUID();
     if (connection == null) {
       database.insertJob(jobId, job);

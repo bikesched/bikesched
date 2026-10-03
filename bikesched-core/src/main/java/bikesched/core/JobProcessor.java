@@ -40,6 +40,7 @@ final class JobProcessor {
   private final UUID nodeId;
   private final String nodeName;
   private final Function<String, JobHandler> handlers;
+  private final Function<String, RecurringJob> recurringJobs;
   private final ScheduledExecutorService timeoutExecutor;
   private final Duration defaultJobTimeout;
   private final Duration defaultEventTimeout;
@@ -50,6 +51,8 @@ final class JobProcessor {
    * @param nodeId the node the jobs were claimed by
    * @param nodeName its name, for logging
    * @param handlers looks up the handler of a job type, {@code null} if none is registered
+   * @param recurringJobs looks up the recurring job registered on this node for a job type, {@code
+   *     null} if none
    * @param timeoutExecutor runs the timers interrupting attempts that exceed their timeout
    * @param defaultJobTimeout timeout of jobs without one of their own, {@code null} for none
    * @param defaultEventTimeout timeout of waits for events without one of their own, {@code null}
@@ -61,6 +64,7 @@ final class JobProcessor {
       UUID nodeId,
       String nodeName,
       Function<String, JobHandler> handlers,
+      Function<String, RecurringJob> recurringJobs,
       ScheduledExecutorService timeoutExecutor,
       Duration defaultJobTimeout,
       Duration defaultEventTimeout,
@@ -69,6 +73,7 @@ final class JobProcessor {
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
     this.handlers = Objects.requireNonNull(handlers, "handlers");
+    this.recurringJobs = Objects.requireNonNull(recurringJobs, "recurringJobs");
     this.timeoutExecutor = Objects.requireNonNull(timeoutExecutor, "timeoutExecutor");
     this.defaultJobTimeout = defaultJobTimeout;
     this.defaultEventTimeout = defaultEventTimeout;
@@ -184,11 +189,13 @@ final class JobProcessor {
       return recordFailure(job, failure);
     } else {
       try {
-        if (!database.completeJob(job.id(), nodeId)) {
+        NewJob next = nextOccurrence(job);
+        var completed = database.completeJob(job.id(), nodeId, next);
+        if (completed.isEmpty()) {
           LOG.warn("Job {} was no longer running on this node when completing it", job.id());
           return NOT_RUNNING;
         }
-        return "SUCCEEDED";
+        return "SUCCEEDED" + nextOccurrenceOutcome(next, completed.get());
       } catch (RuntimeException e) {
         LOG.warn("Completing job {} failed", job.id(), e);
         return NOT_RECORDED;
@@ -232,7 +239,9 @@ final class JobProcessor {
   private String recordCancellation(DefaultJob job) {
     String message = job.cancelMessage();
     try {
-      if (database.cancelJob(job.id(), nodeId, message)) {
+      NewJob next = nextOccurrence(job);
+      var cancelled = database.cancelJob(job.id(), nodeId, message, next);
+      if (cancelled.isPresent()) {
         LOG.info(
             "Job {} of type {} cancelled by its handler (attempt {} of {}){}",
             job.id(),
@@ -240,7 +249,7 @@ final class JobProcessor {
             job.attempts(),
             job.maxAttempts(),
             message == null ? "" : ": " + message);
-        return "CANCELLED";
+        return "CANCELLED" + nextOccurrenceOutcome(next, cancelled.get());
       } else {
         LOG.warn(
             "Job {} of type {} was cancelled but no longer running on this node",
@@ -254,8 +263,44 @@ final class JobProcessor {
     }
   }
 
-  private String recordFailure(Job job, Exception failure) {
+  private String recordFailure(DefaultJob job, Exception failure) {
     return recordFailure(job, failure.toString(), failure, null, null);
+  }
+
+  /**
+   * The next occurrence to schedule when this job (an occurrence of a recurring job) ends; {@code
+   * null} for a one-off job, or if the recurring job is not registered on this node (a node that
+   * registers it recreates the occurrence on its next heartbeat) or its schedule fails.
+   */
+  private NewJob nextOccurrence(DefaultJob job) {
+    if (job.schedule() == null) {
+      return null;
+    }
+    RecurringJob recurring = recurringJobs.apply(job.type());
+    if (recurring == null) {
+      LOG.debug(
+          "Recurring job {} is not registered on bikesched node {} ({}), not scheduling its next"
+              + " occurrence",
+          job.type(),
+          nodeName,
+          nodeId);
+      return null;
+    }
+    try {
+      return recurring.occurrence(recurring.nextRun(job, Instant.now()));
+    } catch (RuntimeException e) {
+      LOG.warn("Computing the next occurrence of recurring job {} failed", job.type(), e);
+      return null;
+    }
+  }
+
+  private static String nextOccurrenceOutcome(NewJob next, boolean scheduled) {
+    if (next == null) {
+      return "";
+    }
+    return scheduled
+        ? ", next occurrence at " + next.scheduledAt()
+        : ", next occurrence already pending";
   }
 
   /**
@@ -284,12 +329,13 @@ final class JobProcessor {
    * number of attempts and the delay of the next attempt if not {@code null}.
    */
   private String recordFailure(
-      Job job, String error, Throwable cause, Integer maxAttempts, Duration retryAfter) {
+      DefaultJob job, String error, Throwable cause, Integer maxAttempts, Duration retryAfter) {
     if (retryAfter == null) {
       retryAfter = backoffDelay(job);
     }
     try {
-      var failed = database.failJob(job.id(), nodeId, error, maxAttempts, retryAfter);
+      NewJob next = nextOccurrence(job);
+      var failed = database.failJob(job.id(), nodeId, error, maxAttempts, retryAfter, next);
       if (failed.isEmpty()) {
         LOG.warn(
             "Job {} of type {} failed and was no longer running on this node: {}",
@@ -306,7 +352,7 @@ final class JobProcessor {
             job.attempts(),
             error,
             cause);
-        return "FAILED";
+        return "FAILED" + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled());
       } else {
         String when =
             retryAfter == null ? "as soon as possible" : "at " + failed.get().scheduledAt();
