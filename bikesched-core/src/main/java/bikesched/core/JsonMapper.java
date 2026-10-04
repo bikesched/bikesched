@@ -1,6 +1,6 @@
 package bikesched.core;
 
-import bikesched.core.internal.RawJsonMapper;
+import bikesched.core.internal.Internals;
 
 /**
  * Maps job payloads and step results between Java objects and the JSON text bikesched stores in
@@ -62,6 +62,6 @@ public interface JsonMapper {
    * @return the raw JSON mapper
    */
   static JsonMapper rawJson() {
-    return RawJsonMapper.INSTANCE;
+    return Internals.rawJsonMapper();
   }
 }

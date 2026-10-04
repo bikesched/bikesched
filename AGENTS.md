@@ -43,6 +43,9 @@ Core packages (JPMS module `bikesched.core`, see `module-info.java`):
   - `internal.event`: `DefaultEventBuilder`, `DefaultEvent`, `EventCleanUp`
   - `internal.database` (+ `.schema`): `Database`, `DatabaseAccess`, `Sql`, the stores and the rows
     they read and write (`NewJob`, `DefaultJobInfo`)
+- The API packages reach the implementation only through the factories in `internal.Internals`
+  (plus the `Settings` record the builder fills); public API signatures never mention internal
+  types. `ArchitectureTest` (ArchUnit) enforces both rules and the package dependencies above.
 
 New dependencies for core need a very good reason: integrations users may want to swap become a
 small SPI with a dependency-free default; concrete libraries are test dependencies only.

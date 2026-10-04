@@ -10,10 +10,10 @@ import java.util.Objects;
  *
  * <p>The JSON is not validated here; PostgreSQL rejects invalid JSON when it is stored.
  */
-public final class RawJsonMapper implements JsonMapper {
+final class RawJsonMapper implements JsonMapper {
 
   /** The only instance; stateless. */
-  public static final RawJsonMapper INSTANCE = new RawJsonMapper();
+  static final RawJsonMapper INSTANCE = new RawJsonMapper();
 
   private RawJsonMapper() {}
 

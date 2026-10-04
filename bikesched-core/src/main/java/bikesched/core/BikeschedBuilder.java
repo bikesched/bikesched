@@ -3,9 +3,8 @@ package bikesched.core;
 import bikesched.core.event.EventTimeoutException;
 import bikesched.core.event.EventWait;
 import bikesched.core.event.TimeoutHandler;
-import bikesched.core.internal.DefaultBikesched;
+import bikesched.core.internal.Internals;
 import bikesched.core.internal.Settings;
-import bikesched.core.internal.database.Database;
 import bikesched.core.job.Job;
 import bikesched.core.job.JobBuilder;
 import bikesched.core.job.JobFailure;
@@ -272,7 +271,7 @@ public final class BikeschedBuilder {
             defaultEventTimeout,
             nodeCleanUpInterval,
             eventCleanUpInterval);
-    return DefaultBikesched.create(new Database(dataSource, jsonMapper), settings);
+    return Internals.create(settings, dataSource, jsonMapper);
   }
 
   private static String localHostName() {
