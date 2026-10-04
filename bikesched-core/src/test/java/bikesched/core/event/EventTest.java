@@ -6,7 +6,7 @@ import static org.awaitility.Awaitility.await;
 import bikesched.core.AbstractBikeschedTest;
 import bikesched.core.Bikesched;
 import bikesched.core.LogCapture;
-import bikesched.core.internal.EventCleanUp;
+import bikesched.core.internal.event.EventCleanUp;
 import bikesched.core.job.Job;
 import bikesched.core.job.JobBuilder;
 import java.sql.Connection;

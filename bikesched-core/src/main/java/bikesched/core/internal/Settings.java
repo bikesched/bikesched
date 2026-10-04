@@ -3,6 +3,7 @@ package bikesched.core.internal;
 import bikesched.core.Bikesched;
 import bikesched.core.BikeschedBuilder;
 import bikesched.core.RetryBackoff;
+import bikesched.core.internal.event.EventCleanUp;
 import java.time.Duration;
 import java.util.Objects;
 

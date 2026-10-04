@@ -34,7 +34,15 @@ Core packages (JPMS module `bikesched.core`, see `module-info.java`):
 - `bikesched.core`: entry point `Bikesched` + `BikeschedBuilder`, exceptions, SPIs (`JsonMapper`,
   `RetryBackoff`), `BikeschedLogContext` (MDC keys).
 - `bikesched.core.job`, `bikesched.core.event`: public API, interfaces/records/enums/exceptions only.
-- `bikesched.core.internal` (+ `.schema`): every implementation (`Default<X>`), not exported.
+- `bikesched.core.internal` and its subpackages: every implementation (`Default<X>`), not exported.
+  Members used across these packages are `public`; dependencies only point downwards:
+  - `internal`: `DefaultBikesched` (wiring, lifecycle, polling), `Settings`, `Heartbeat`,
+    `NodeCleanUp`, `RawJsonMapper`
+  - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
+    event waits via `DefaultEventWait`), `RecurringJob`, `RecurringJobRepair`
+  - `internal.event`: `DefaultEventBuilder`, `DefaultEvent`, `EventCleanUp`
+  - `internal.database` (+ `.schema`): `Database`, `DatabaseAccess`, `Sql`, the stores and the rows
+    they read and write (`NewJob`, `DefaultJobInfo`)
 
 New dependencies for core need a very good reason: integrations users may want to swap become a
 small SPI with a dependency-free default; concrete libraries are test dependencies only.

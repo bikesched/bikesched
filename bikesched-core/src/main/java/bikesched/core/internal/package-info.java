@@ -1,5 +1,6 @@
 /**
- * The bikesched implementation: nodes, job processing, heartbeat and database access. Not exported
- * by the module; not part of the API.
+ * The bikesched implementation: the node ({@code DefaultBikesched}) with its settings, heartbeat
+ * and node clean-up. Jobs, events and database access live in the subpackages {@code job}, {@code
+ * event} and {@code database}. Not exported by the module; not part of the API.
  */
 package bikesched.core.internal;

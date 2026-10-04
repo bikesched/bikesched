@@ -1,5 +1,8 @@
 package bikesched.core.internal;
 
+import bikesched.core.internal.database.Database;
+import bikesched.core.internal.event.EventCleanUp;
+import bikesched.core.internal.job.RecurringJobRepair;
 import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;

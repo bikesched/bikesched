@@ -3,7 +3,7 @@ package bikesched.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import bikesched.core.internal.DatabaseInitializer;
+import bikesched.core.internal.database.DatabaseInitializer;
 import java.net.InetAddress;
 import java.sql.SQLException;
 import java.time.Duration;

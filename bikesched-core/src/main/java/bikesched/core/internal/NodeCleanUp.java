@@ -1,5 +1,7 @@
 package bikesched.core.internal;
 
+import bikesched.core.internal.database.Database;
+import bikesched.core.internal.database.NodeStore;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;

@@ -7,7 +7,7 @@ import bikesched.core.AbstractBikeschedTest;
 import bikesched.core.Bikesched;
 import bikesched.core.LogCapture;
 import bikesched.core.internal.DefaultBikesched;
-import bikesched.core.internal.RecurringJobRepair;
+import bikesched.core.internal.job.RecurringJobRepair;
 import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;

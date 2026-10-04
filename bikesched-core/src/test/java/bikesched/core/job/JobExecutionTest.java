@@ -8,7 +8,7 @@ import bikesched.core.Bikesched;
 import bikesched.core.BikeschedLogContext;
 import bikesched.core.LogCapture;
 import bikesched.core.internal.DefaultBikesched;
-import bikesched.core.internal.JobProcessor;
+import bikesched.core.internal.job.JobProcessor;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import java.time.Duration;
 import java.util.UUID;
