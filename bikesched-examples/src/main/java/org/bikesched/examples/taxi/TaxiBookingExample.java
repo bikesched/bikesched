@@ -1,12 +1,13 @@
 package org.bikesched.examples.taxi;
 
+import static org.awaitility.Awaitility.await;
+
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
 import org.bikesched.Bikesched;
+import org.bikesched.examples.util.DatabaseUtil;
 import org.bikesched.jackson.JacksonJsonMapper;
-import org.postgresql.ds.PGSimpleDataSource;
 
 /**
  * Books taxi rides end to end against the Postgres from {@code compose.yaml} ({@code docker compose
@@ -39,7 +40,7 @@ public final class TaxiBookingExample {
 
     try (Bikesched bikesched =
         Bikesched.builder()
-            .dataSource(composeDatabase())
+            .dataSource(DatabaseUtil.composeDatabase())
             .nodeName("taxi-example")
             .jsonMapper(new JacksonJsonMapper())
             .build()) {
@@ -101,7 +102,9 @@ public final class TaxiBookingExample {
     System.out.println("[app] customer cancels the ride");
     booking.cancelRide(jobId);
 
-    awaitUntil("the ride is withdrawn", () -> broker.cancelledRides().contains(ride.rideId()));
+    await("the ride is withdrawn")
+        .atMost(ANSWER_TIMEOUT)
+        .until(() -> broker.cancelledRides().contains(ride.rideId()));
   }
 
   /**
@@ -126,9 +129,9 @@ public final class TaxiBookingExample {
       booking.priceDecided(ride.rideId(), true);
 
       // Approving fails in all 3 attempts (see the WARN/ERROR log), then the job is compensated.
-      awaitUntil(
-          "the ride is withdrawn after releasing the payment",
-          () -> broker.cancelledRides().contains(ride.rideId()));
+      await("the ride is withdrawn after releasing the payment")
+          .atMost(ANSWER_TIMEOUT)
+          .until(() -> broker.cancelledRides().contains(ride.rideId()));
       System.out.println(
           "[example] released reservations: "
               + payments.releasedReservations().stream()
@@ -141,28 +144,5 @@ public final class TaxiBookingExample {
 
   private static RideRequest newRide() {
     return new RideRequest(UUID.randomUUID().toString(), "customer-42", "Main Station", "Airport");
-  }
-
-  /** Waits (polling) until the simulated services observed the outcome of a ride. */
-  private static void awaitUntil(String what, BooleanSupplier condition)
-      throws InterruptedException {
-    long deadline = System.nanoTime() + ANSWER_TIMEOUT.toNanos();
-    while (!condition.getAsBoolean()) {
-      if (System.nanoTime() > deadline) {
-        throw new IllegalStateException("Timed out waiting until " + what);
-      }
-      Thread.sleep(100);
-    }
-  }
-
-  private static PGSimpleDataSource composeDatabase() {
-    var dataSource = new PGSimpleDataSource();
-    dataSource.setServerNames(new String[] {"localhost"});
-    dataSource.setPortNumbers(
-        new int[] {Integer.parseInt(System.getenv().getOrDefault("POSTGRES_PORT", "5432"))});
-    dataSource.setDatabaseName("bikesched");
-    dataSource.setUser("bikesched");
-    dataSource.setPassword("bikesched");
-    return dataSource;
   }
 }

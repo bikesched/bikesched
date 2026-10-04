@@ -1,5 +1,6 @@
 package org.bikesched;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.event.EventBuilder;
@@ -9,6 +10,7 @@ import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
+import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.TypedJobHandler;
 
@@ -100,6 +102,25 @@ public interface Bikesched extends AutoCloseable {
    *     the type's name with another payload class
    */
   <T> Bikesched registerJobHandler(JobType<T> type, TypedJobHandler<? super T> handler);
+
+  /**
+   * Registers a handler that carries its job type, see {@link JobTypeHandler}; like {@link
+   * #registerJobHandler(JobType, TypedJobHandler) registerJobHandler(handler.type(), handler)}.
+   *
+   * <pre>{@code
+   * handlers.forEach(bikesched::registerJobHandler);   // e.g. List<JobTypeHandler<?>> from DI
+   * }</pre>
+   *
+   * @param handler executes the jobs of {@link JobTypeHandler#type()}
+   * @param <T> the payload type
+   * @return this instance
+   * @throws IllegalArgumentException if the type already has a handler, or this node already uses
+   *     the type's name with another payload class
+   */
+  default <T> Bikesched registerJobHandler(JobTypeHandler<T> handler) {
+    Objects.requireNonNull(handler, "handler");
+    return registerJobHandler(Objects.requireNonNull(handler.type(), "handler.type()"), handler);
+  }
 
   /**
    * Starts building a job of the given type; {@link JobBuilder#schedule()} (or one of its

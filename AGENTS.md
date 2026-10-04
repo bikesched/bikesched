@@ -55,7 +55,8 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 - Callback interfaces are `<X>Handler` with one `handle(...)` method (`JobHandler`, `StepHandler`,
   `EventHandler`, `TimeoutHandler`, `CompensationHandler`); they receive the context object (e.g.
-  the `Step`), not just a value.
+  the `Step`), not just a value. Exception: `JobTypeHandler` adds `type()` for class-based handlers
+  registered without a separate type argument.
 - Everything handed to user code (job, event, builders, `JobFailure`, `EventWait`) is a public
   **interface**; implementations are `Default<X>` in `internal`.
 - Builders: one fluent path ending in a verb that performs the action (`newJob(type)…schedule()`,

@@ -74,8 +74,9 @@ The [documentation](docs/index.md) covers the concepts in detail:
 
 ## Examples
 
-Runnable examples with tests, e.g. a taxi booking saga with event waits and compensation, live in
-the [`bikesched-examples`](bikesched-examples/README.md) module.
+Runnable examples with tests, a taxi booking saga with event waits and compensation and a cinema
+ticket order with a `JobTypeHandler`, live in the [`bikesched-examples`](bikesched-examples/README.md)
+module.
 
 ## Building
 

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +43,38 @@ class JobTypeTest extends AbstractBikeschedTest {
           .schedule();
 
       assertThat(received.get(10, TimeUnit.SECONDS)).isEqualTo(new Payment("order-2", 200));
+    }
+  }
+
+  /** A handler class carrying its type, as registered from a DI container. */
+  record PaymentHandler(JobType<Payment> type, CompletableFuture<Payment> received)
+      implements JobTypeHandler<Payment> {
+    @Override
+    public void handle(Job job, Payment payment) {
+      received.complete(payment);
+    }
+  }
+
+  @Test
+  void handlerCarryingItsTypeIsRegisteredOnItsOwn() throws Exception {
+    var first =
+        new PaymentHandler(
+            JobType.of(unique("payment-a"), Payment.class), new CompletableFuture<>());
+    var second =
+        new PaymentHandler(
+            JobType.of(unique("payment-b"), Payment.class), new CompletableFuture<>());
+    List<JobTypeHandler<?>> handlers = List.of(first, second);
+    try (Bikesched bikesched = node("node-job-type-handler")) {
+      handlers.forEach(bikesched::registerJobHandler);
+
+      bikesched.newJob(first.type()).payload(new Payment("order-a", 1)).schedule();
+      bikesched.newJob(second.type()).payload(new Payment("order-b", 2)).schedule();
+
+      assertThat(first.received().get(10, TimeUnit.SECONDS)).isEqualTo(new Payment("order-a", 1));
+      assertThat(second.received().get(10, TimeUnit.SECONDS)).isEqualTo(new Payment("order-b", 2));
+      assertThatThrownBy(() -> bikesched.registerJobHandler(first))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("already registered");
     }
   }
 

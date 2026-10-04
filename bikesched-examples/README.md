@@ -9,7 +9,8 @@ by [`bikesched-jackson`](../docs/configuration.md#jackson).
 
 ```shell
 docker compose up -d                      # from the repository root
-./gradlew :bikesched-examples:run         # honors POSTGRES_PORT, like docker compose
+./gradlew :bikesched-examples:run         # taxi booking; honors POSTGRES_PORT, like docker compose
+./gradlew :bikesched-examples:runCinema   # cinema tickets
 ./gradlew :bikesched-examples:test        # the example tests, against Testcontainers
 ```
 
@@ -49,3 +50,34 @@ waits suspend the job without holding a thread; publishing an event resumes it.
 `TaxiBookingExample` plays three rides (booked, cancelled by the customer, failed approval) and
 prints what happens; `TaxiBookingTest` covers the booked ride, a declined price, no driver, a
 cancellation by the customer and a failed approval.
+
+## Cinema tickets
+
+Package [`org.bikesched.examples.cinema`](src/main/java/org/bikesched/examples/cinema): ordering
+cinema tickets as one job (`cinema-ticket-order`) with a handler class that carries its job type
+(`JobTypeHandler`). The cinema, the payment provider and the mail server are simulated with
+console output.
+
+```java
+public final class TicketOrderHandler implements JobTypeHandler<TicketOrder> {
+    public JobType<TicketOrder> type() { return CinemaJobs.TICKET_ORDER; }
+    public void handle(Job job, TicketOrder order) throws Exception { … }
+}
+
+bikesched.registerJobHandler(new TicketOrderHandler());          // no separate type argument
+bikesched.newJob(CinemaJobs.TICKET_ORDER).payload(order).schedule();
+```
+
+**Steps:**
+
+1. `reserve-seats`: holds the seats at the cinema.
+2. `charge-payment`: charges the order's total.
+3. `mail-tickets`: mails the tickets to the customer.
+
+**Concepts shown:** [typed job types](../docs/jobs.md#typed-job-types) with a self-describing
+handler class, the job type as a shared constant (`CinemaJobs`) used by the code ordering tickets,
+and [durable steps](../docs/steps.md#durable-steps): a retry skips completed steps and reuses
+their results, so seats aren't reserved or cards charged twice.
+
+`CinemaExample` orders tickets for two customers and prints each step; `CinemaTest` checks the
+steps and their output.

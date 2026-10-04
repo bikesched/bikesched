@@ -42,6 +42,10 @@ UUID id = bikesched.newJob(ORDER).payload(order).schedule();                // p
 
 - The builder works as above (`priority`, `connection`, `recurring`, …); `handler((job, order) -> …)`
   sets a typed handler inline. `removeRecurringJob(ORDER)` stops a typed recurring job.
+- A handler class can carry its type by implementing `JobTypeHandler<T>` (`type()` plus
+  `handle(job, payload)`); `registerJobHandler(handler)` then needs no second argument, e.g.
+  `handlers.forEach(bikesched::registerJobHandler)` for all handler beans of a DI container.
+  Return a shared constant from `type()`, so producers don't depend on the handler class.
 - Only the name is stored, so typed and string-based code work on the same jobs: `newJob("order")`
   schedules a job the `ORDER` handler receives, and vice versa.
 - A node rejects using one name with two payload classes (`IllegalArgumentException`).
