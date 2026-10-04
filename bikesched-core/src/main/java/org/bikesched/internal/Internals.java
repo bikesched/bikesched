@@ -5,6 +5,7 @@ import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.JsonMapper;
 import org.bikesched.internal.database.Database;
+import org.bikesched.internal.json.RawJsonMapper;
 
 /**
  * The only way from the API packages into the implementation: the API creates instances through

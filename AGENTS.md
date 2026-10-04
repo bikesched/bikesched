@@ -36,8 +36,9 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 - `org.bikesched.job`, `org.bikesched.event`: public API, interfaces/records/enums/exceptions only.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
-  - `internal`: `DefaultBikesched` (wiring, lifecycle, polling), `Settings`, `Heartbeat`,
-    `NodeCleanUp`, `RawJsonMapper`
+  - `internal`: `DefaultBikesched` (wiring, lifecycle, polling), `Settings`
+  - `internal.json`: `RawJsonMapper` (the default mapper, passes JSON strings through)
+  - `internal.node`: `NodeHeartbeat`, `NodeCleanUp` (releases jobs of dead nodes, removes them)
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
     event waits via `DefaultEventWait`), `RecurringJob`, `RecurringJobRepair`, `HistoryCleanUp`,
     `JobCleanUp`

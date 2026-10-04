@@ -1,4 +1,4 @@
-package org.bikesched.internal;
+package org.bikesched.internal.node;
 
 import java.time.Duration;
 import java.util.List;
@@ -37,7 +37,7 @@ public final class NodeCleanUp {
    * @param nodeName its name, for logging
    * @param nodeTimeout a node without heartbeat for this long is considered dead
    */
-  NodeCleanUp(Database database, UUID nodeId, String nodeName, Duration nodeTimeout) {
+  public NodeCleanUp(Database database, UUID nodeId, String nodeName, Duration nodeTimeout) {
     this.database = Objects.requireNonNull(database, "database");
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
@@ -48,7 +48,7 @@ public final class NodeCleanUp {
    * Runs one clean-up. Never throws: an exception would silently cancel all future clean-ups of the
    * scheduled executor, so every part logs and swallows its own failures.
    */
-  void run() {
+  public void run() {
     releaseJobsOfDeadNodes();
     deleteDeadNodes();
   }

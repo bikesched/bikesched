@@ -1,19 +1,19 @@
-package org.bikesched.internal;
+package org.bikesched.internal.json;
 
 import java.util.Objects;
 import org.bikesched.JsonMapper;
 
 /**
- * The {@link JsonMapper} used when none is configured (see {@link Internals#create}): supports only
+ * The {@link JsonMapper} used when none is configured (see {@code Internals.create}): supports only
  * strings that already contain JSON text, which it passes through unchanged. Configure another
  * mapper via {@code BikeschedBuilder.jsonMapper(JsonMapper)} to use other types.
  *
  * <p>The JSON is not validated here; PostgreSQL rejects invalid JSON when it is stored.
  */
-final class RawJsonMapper implements JsonMapper {
+public final class RawJsonMapper implements JsonMapper {
 
   /** The only instance; stateless. */
-  static final RawJsonMapper INSTANCE = new RawJsonMapper();
+  public static final RawJsonMapper INSTANCE = new RawJsonMapper();
 
   private RawJsonMapper() {}
 

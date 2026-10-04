@@ -8,6 +8,7 @@ import org.bikesched.RetryBackoff;
 import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
+import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.internal.util.ValidationUtil;
 
 /**

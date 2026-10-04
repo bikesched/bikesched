@@ -1,4 +1,4 @@
-package org.bikesched.internal;
+package org.bikesched.internal.json;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -31,6 +31,6 @@ class RawJsonMapperTest {
                 + " bikesched-jackson's JacksonJsonMapper");
     assertThatThrownBy(() -> mapper.fromJson("{}", Payment.class))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("not org.bikesched.internal.RawJsonMapperTest$Payment");
+        .hasMessageContaining("not org.bikesched.internal.json.RawJsonMapperTest$Payment");
   }
 }

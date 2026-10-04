@@ -9,7 +9,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
-import org.bikesched.internal.NodeCleanUp;
+import org.bikesched.internal.node.NodeCleanUp;
 import org.junit.jupiter.api.Test;
 
 /**

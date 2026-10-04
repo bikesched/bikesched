@@ -38,6 +38,8 @@ import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.job.JobProcessor;
 import org.bikesched.internal.job.RecurringJob;
 import org.bikesched.internal.job.RecurringJobRepair;
+import org.bikesched.internal.node.NodeCleanUp;
+import org.bikesched.internal.node.NodeHeartbeat;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
@@ -56,9 +58,9 @@ import org.slf4j.MDC;
  * <p>Threads:
  *
  * <ul>
- *   <li>{@code bikesched-heartbeat}: single scheduled thread running the {@link Heartbeat} while
- *       the node polls, updating this node's heartbeat. A node that does not poll executes no jobs
- *       and sends no heartbeats
+ *   <li>{@code bikesched-heartbeat}: single scheduled thread running the {@link NodeHeartbeat}
+ *       while the node polls, updating this node's heartbeat. A node that does not poll executes no
+ *       jobs and sends no heartbeats
  *   <li>{@code bikesched-cleanup}: single scheduled thread running the housekeeping while the node
  *       polls, each on its own interval: the {@link NodeCleanUp} (releases the running jobs of dead
  *       nodes, removes dead nodes), the {@link EventCleanUp} (deletes expired events) and, with the
@@ -216,7 +218,7 @@ public final class DefaultBikesched implements Bikesched {
               settings.defaultJobTimeout(),
               settings.defaultEventTimeout(),
               settings.retryBackoff());
-      var heartbeat = new Heartbeat(database, id, nodeName);
+      var heartbeat = new NodeHeartbeat(database, id, nodeName);
       var nodeCleanUp = new NodeCleanUp(database, id, nodeName, settings.nodeTimeout());
       var recurringJobRepair = new RecurringJobRepair(database, recurringJobs::values);
       var eventCleanUp = new EventCleanUp(database, id, nodeName);
