@@ -2,9 +2,10 @@
 // one Maven publication with the jar, sources and Javadoc jars, published to GitHub Packages with
 // `./gradlew publishAllPublicationsToGitHubPackagesRepository`.
 //
-// Credentials come from the Gradle properties gitHubPackagesUsername and gitHubPackagesPassword,
-// e.g. via the environment variables ORG_GRADLE_PROJECT_gitHubPackagesUsername and
-// ORG_GRADLE_PROJECT_gitHubPackagesPassword (in CI: the actor and GITHUB_TOKEN).
+// Credentials come from the Gradle properties GitHubPackagesUsername and GitHubPackagesPassword
+// (named after the repository, case-sensitive), e.g. via the environment variables
+// ORG_GRADLE_PROJECT_GitHubPackagesUsername and ORG_GRADLE_PROJECT_GitHubPackagesPassword (in CI:
+// the actor and GITHUB_TOKEN).
 
 plugins {
     `maven-publish`
