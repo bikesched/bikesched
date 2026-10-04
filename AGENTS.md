@@ -18,9 +18,9 @@ does; this file covers how to change it.
   run an example, e.g. `./gradlew :bikesched-examples:runSimple`.
 - Every version (libraries, Gradle plugins, Java, the project version) lives in
   `gradle/libs.versions.toml`; no version literals in `.kts` files. Use the latest stable releases.
-- CI: `.github/workflows/build.yml` runs `./gradlew build` on every push to `main` (Temurin JDK,
-  Docker for Testcontainers), then publishes snapshot versions of the library modules to GitHub
-  Packages (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin
+- CI: `.github/workflows/build.yml` runs `./gradlew build` on every pull request and push to
+  `main` (Temurin JDK, Docker for Testcontainers); a separate job publishes snapshot versions of the
+  library modules to GitHub Packages after successful builds of `main` only (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin
   `bikesched.publishing` with `maven-publish`). Keep its `java-version` in sync with `java` in the
   version catalog.
 

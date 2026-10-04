@@ -1,17 +1,18 @@
-# Builds and tests every push to main: compiles all modules, runs Spotless, Javadoc and all tests.
-# The tests start PostgreSQL with Testcontainers, which uses the Docker daemon of the
-# ubuntu-latest runner. After a successful build, the library modules are published to GitHub
-# Packages (the snapshot version from gradle/libs.versions.toml).
+# Builds and tests every pull request and every push to main: compiles all modules, runs Spotless,
+# Javadoc and all tests. The tests start PostgreSQL with Testcontainers, which uses the Docker
+# daemon of the ubuntu-latest runner. After a successful build of main, the library modules are
+# published to GitHub Packages (the snapshot version from gradle/libs.versions.toml).
 
 name: Build
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
-  packages: write # publishing to GitHub Packages
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,6 +34,7 @@ jobs:
           distribution: temurin
           java-version: '26'
 
+      # Writes the Gradle cache only on main; pull requests read it.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
@@ -41,6 +43,36 @@ jobs:
 
       - name: Build
         run: ./gradlew build
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: '**/build/reports/tests/'
+          retention-days: 7
+
+  # Only for pushes to main, after a successful build; pull requests never publish.
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write # publishing to GitHub Packages
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 26
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '26'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
 
       # Only snapshots: a release version would be overwritten on every push.
       - name: Publish snapshot to GitHub Packages
@@ -53,11 +85,3 @@ jobs:
         env:
           ORG_GRADLE_PROJECT_GitHubPackagesUsername: ${{ github.actor }}
           ORG_GRADLE_PROJECT_GitHubPackagesPassword: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload test reports
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-reports
-          path: '**/build/reports/tests/'
-          retention-days: 7
