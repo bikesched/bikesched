@@ -26,6 +26,8 @@ public final class BikeschedBuilder {
   static final Duration DEFAULT_NODE_TIMEOUT = Duration.ofSeconds(30);
   static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(1);
   static final Duration DEFAULT_EVENT_RETENTION = Duration.ofDays(7);
+  static final Duration DEFAULT_NODE_CLEAN_UP_INTERVAL = Duration.ofSeconds(15);
+  static final Duration DEFAULT_EVENT_CLEAN_UP_INTERVAL = Duration.ofHours(1);
   static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
 
   private DataSource dataSource;
@@ -40,6 +42,8 @@ public final class BikeschedBuilder {
   private Duration defaultEventTimeout;
   private RetryBackoff retryBackoff = RetryBackoff.none();
   private Duration eventRetention = DEFAULT_EVENT_RETENTION;
+  private Duration nodeCleanUpInterval = DEFAULT_NODE_CLEAN_UP_INTERVAL;
+  private Duration eventCleanUpInterval = DEFAULT_EVENT_CLEAN_UP_INTERVAL;
 
   BikeschedBuilder() {}
 
@@ -181,6 +185,35 @@ public final class BikeschedBuilder {
     return this;
   }
 
+  /**
+   * Sets how often this node cleans up after other nodes (optional, default 15 seconds): it
+   * releases the running jobs of dead nodes (no heartbeat for 30 seconds) for retry and removes
+   * dead nodes. Every polling node does this; shorter intervals recover the jobs of crashed nodes
+   * sooner, at the cost of more queries. Also the retry delay of the check for missing occurrences
+   * of the node's recurring jobs, which runs once when polling starts.
+   *
+   * @param interval the time between clean-ups, positive
+   * @return this builder
+   */
+  public BikeschedBuilder nodeCleanUpInterval(Duration interval) {
+    Objects.requireNonNull(interval, "interval");
+    this.nodeCleanUpInterval = requirePositive(interval, "nodeCleanUpInterval");
+    return this;
+  }
+
+  /**
+   * Sets how often this node deletes events older than the {@linkplain #eventRetention(Duration)
+   * event retention} (optional, default 1 hour). Every polling node does this.
+   *
+   * @param interval the time between clean-ups, positive
+   * @return this builder
+   */
+  public BikeschedBuilder eventCleanUpInterval(Duration interval) {
+    Objects.requireNonNull(interval, "interval");
+    this.eventCleanUpInterval = requirePositive(interval, "eventCleanUpInterval");
+    return this;
+  }
+
   /** Heartbeat interval; package-private so tests can speed it up. */
   BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
     this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -236,7 +269,9 @@ public final class BikeschedBuilder {
             defaultJobTimeout,
             retryBackoff,
             eventRetention,
-            defaultEventTimeout);
+            defaultEventTimeout,
+            nodeCleanUpInterval,
+            eventCleanUpInterval);
     return DefaultBikesched.create(new Database(dataSource, jsonMapper), settings);
   }
 

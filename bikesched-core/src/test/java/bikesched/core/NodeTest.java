@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
-import bikesched.core.internal.Heartbeat;
+import bikesched.core.internal.NodeCleanUp;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -150,8 +150,8 @@ class NodeTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void heartbeatReleasesJobsOfDeadNodesAndThenRemovesThem() throws Exception {
-    var logs = LogCapture.of(Heartbeat.class);
+  void nodeCleanUpReleasesJobsOfDeadNodesAndThenRemovesThem() throws Exception {
+    var logs = LogCapture.of(NodeCleanUp.class);
     UUID deadNode = UUID.randomUUID();
     try (logs;
         Bikesched bikesched =
@@ -160,6 +160,7 @@ class NodeTest extends AbstractBikeschedTest {
                 .nodeName("node-reaper")
                 .heartbeatInterval(Duration.ofMillis(50))
                 .nodeTimeout(Duration.ofSeconds(1))
+                .nodeCleanUpInterval(Duration.ofMillis(50))
                 .pollInterval(Duration.ofMillis(50))
                 .build()) {
       bikesched.registerJobHandler("orphan", () -> {});
@@ -174,7 +175,7 @@ class NodeTest extends AbstractBikeschedTest {
               + deadNode
               + "' from generate_series(1, 2)");
 
-      // Released by the heartbeat, then claimed and executed by this node's poller; the dead
+      // Released by the node clean-up, then claimed and executed by this node's poller; the dead
       // node itself is removed once its jobs no longer reference it.
       await()
           .untilAsserted(

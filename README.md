@@ -216,7 +216,8 @@ bikesched.newJob("cleanup")
   fixed rate.
 - Each occurrence stores the schedule's description. Registering a schedule with a different
   description (e.g. after a deploy) moves the pending occurrence to the new schedule.
-- Nodes recreate a missing occurrence of their recurring jobs on every heartbeat.
+- Registering a recurring job recreates a missing occurrence; a node also checks all its recurring
+  jobs once when it starts polling, retried every `nodeCleanUpInterval` if that fails.
   `bikesched.removeRecurringJob(type)` stops a recurring job that is no longer registered anywhere.
 - `recurring(...)` and `connection(...)` lead to different builders, so a recurring job can't be
   scheduled in the caller's transaction.
@@ -290,12 +291,15 @@ on virtual threads.
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))`; a handler's `job.fail().retryAfter(…)` takes precedence |
 | `jsonMapper(JsonMapper)` | `JsonMapper.rawJson()` | maps payloads and step results to and from JSON |
 | `eventRetention(Duration)` | 7 days | how long published events are kept for steps that start waiting later |
+| `eventCleanUpInterval(Duration)` | 1 hour | how often the node deletes events older than the retention |
+| `nodeCleanUpInterval(Duration)` | 15 seconds | how often the node releases the running jobs of dead nodes and removes dead nodes; also the retry delay of the one-time check for missing occurrences of its recurring jobs |
 | `defaultEventTimeout(Duration)` | none | maximum wait for events without a `.timeout(...)` of their own; afterwards the job fails with an `EventTimeoutException` |
 
 Nodes send a heartbeat every 5 seconds and poll for due jobs every second, claiming at most 10
 jobs per poll and never more than they have free slots. A node without heartbeat for 30 seconds is
-considered dead: other nodes release its running jobs for retry and remove the node after another
-30 seconds.
+considered dead: on their next node clean-up, other nodes release its running jobs for retry, and
+remove the node after another 30 seconds. The heartbeat itself only updates the node's row; the
+clean-ups run on their own thread and intervals, so they never delay it.
 
 ### JSON mapping
 

@@ -7,6 +7,7 @@ import bikesched.core.AbstractBikeschedTest;
 import bikesched.core.Bikesched;
 import bikesched.core.LogCapture;
 import bikesched.core.internal.DefaultBikesched;
+import bikesched.core.internal.RecurringJobRepair;
 import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
@@ -225,8 +226,14 @@ class RecurringJobTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void heartbeatRecreatesAMissingOccurrence() throws Exception {
-    try (Bikesched bikesched = node("node-recurring-repair")) {
+  void missingOccurrenceIsRecreatedOnceWhenPollingStarts() throws Exception {
+    var logs = LogCapture.of(RecurringJobRepair.class);
+    try (logs;
+        Bikesched bikesched =
+            testNode("node-recurring-repair")
+                .nodeCleanUpInterval(Duration.ofMillis(200))
+                .autoStartPolling(false)
+                .build()) {
       UUID occurrence =
           bikesched
               .newJob("recurring-repair")
@@ -235,8 +242,19 @@ class RecurringJobTest extends AbstractBikeschedTest {
               .schedule();
       execute("delete from bikesched_jobs where id = '" + occurrence + "'");
 
-      awaitCount("job_type = 'recurring-repair' and state = 'SCHEDULED'", 1);
+      bikesched.startPolling();
+      assertThat(count("job_type = 'recurring-repair' and state = 'SCHEDULED'"))
+          .as("repaired before startPolling() returns")
+          .isOne();
+
+      // Only once per node lifetime: a later missing occurrence is not recreated.
+      execute("delete from bikesched_jobs where job_type = 'recurring-repair'");
+      Thread.sleep(600);
+      assertThat(count("job_type = 'recurring-repair'")).isZero();
     }
+    assertThat(logs.messages())
+        .filteredOn(m -> m.startsWith("Recurring job recurring-repair had no pending occurrence"))
+        .hasSize(1);
   }
 
   @Test
@@ -298,7 +316,50 @@ class RecurringJobTest extends AbstractBikeschedTest {
         .untilAsserted(() -> assertThat(count(where)).as(where).isGreaterThanOrEqualTo(expected));
   }
 
+  @Test
+  void failedRepairIsRetriedUntilItSucceeds() throws Exception {
+    var failures = new AtomicInteger(2);
+    Schedule flaky =
+        Schedule.of(
+            "flaky",
+            previous -> {
+              if (failures.getAndDecrement() > 0) {
+                throw new IllegalStateException("schedule not available yet");
+              }
+              return previous.plus(Duration.ofHours(1));
+            });
+    var logs = LogCapture.of(RecurringJobRepair.class, DefaultBikesched.class);
+    try (logs;
+        Bikesched bikesched =
+            testNode("node-recurring-retry")
+                .nodeCleanUpInterval(Duration.ofMillis(100))
+                .autoStartPolling(false)
+                .build()) {
+      UUID occurrence =
+          bikesched
+              .newJob("recurring-retry")
+              .recurring(flaky)
+              .handler(() -> {})
+              .schedule(Instant.now().plus(Duration.ofHours(1)));
+      execute("delete from bikesched_jobs where id = '" + occurrence + "'");
+
+      bikesched.startPolling();
+      assertThat(count("job_type = 'recurring-retry'")).as("first attempt failed").isZero();
+
+      awaitCount("job_type = 'recurring-retry' and state = 'SCHEDULED'", 1);
+    }
+    assertThat(logs.messages())
+        .filteredOn(m -> m.equals("Checking recurring job recurring-retry failed"))
+        .hasSize(2);
+    assertThat(logs.messages())
+        .filteredOn(m -> m.equals("Repairing recurring jobs failed, retrying in PT0.1S"))
+        .hasSize(2);
+    assertThat(logs.messages())
+        .filteredOn(m -> m.startsWith("Recurring job recurring-retry had no pending occurrence"))
+        .hasSize(1);
+  }
+
   private static Bikesched node(String name) {
-    return testNode(name, Duration.ofMillis(50)).build();
+    return testNode(name).nodeCleanUpInterval(Duration.ofMillis(50)).build();
   }
 }

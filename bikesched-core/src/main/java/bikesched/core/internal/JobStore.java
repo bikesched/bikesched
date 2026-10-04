@@ -226,6 +226,8 @@ final class JobStore {
    */
   record DeadNodeJobs(UUID nodeId, String nodeName, int releasedJobs) {}
 
+  // The ORDER BY in CLAIM_JOBS_SQL only selects which jobs are claimed; UPDATE ... RETURNING
+  // returns the claimed rows in no particular order, so they are sorted into claim order here.
   private static final Comparator<ClaimedJob> CLAIM_ORDER =
       Comparator.comparingInt(ClaimedJob::priority)
           .reversed()

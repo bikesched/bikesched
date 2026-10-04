@@ -22,6 +22,8 @@ class BikeschedDslTest {
       defaultEventTimeout = 1.minutes
       retryBackoff = exponentialBackoff(1.seconds, 1.minutes)
       eventRetention = 1.minutes
+      eventCleanUpInterval = 10.minutes
+      nodeCleanUpInterval = 30.seconds
     }
       .use { bikesched ->
         assertThat(bikesched.node().name()).isEqualTo("dsl-node")

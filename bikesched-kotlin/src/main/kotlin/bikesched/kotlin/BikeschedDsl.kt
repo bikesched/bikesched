@@ -62,6 +62,15 @@ public class BikeschedSpec internal constructor() {
   /** How long published events are kept; defaults to 7 days. */
   public var eventRetention: Duration? = null
 
+  /** How often events older than [eventRetention] are deleted; defaults to 1 hour. */
+  public var eventCleanUpInterval: Duration? = null
+
+  /**
+   * How often the jobs of dead nodes are released and dead nodes removed; also the retry delay of
+   * the one-time check for missing occurrences of recurring jobs. Defaults to 15 seconds.
+   */
+  public var nodeCleanUpInterval: Duration? = null
+
   internal fun build(): Bikesched {
     val builder = Bikesched.builder()
     dataSource?.let(builder::dataSource)
@@ -73,6 +82,8 @@ public class BikeschedSpec internal constructor() {
     defaultEventTimeout?.let { builder.defaultEventTimeout(it.toJavaDuration()) }
     retryBackoff?.let(builder::retryBackoff)
     eventRetention?.let { builder.eventRetention(it.toJavaDuration()) }
+    eventCleanUpInterval?.let { builder.eventCleanUpInterval(it.toJavaDuration()) }
+    nodeCleanUpInterval?.let { builder.nodeCleanUpInterval(it.toJavaDuration()) }
     return builder.build()
   }
 }

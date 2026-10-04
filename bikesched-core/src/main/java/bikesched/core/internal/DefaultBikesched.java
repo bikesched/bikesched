@@ -39,9 +39,13 @@ import org.slf4j.MDC;
  *
  * <ul>
  *   <li>{@code bikesched-heartbeat}: single scheduled thread running the {@link Heartbeat} while
- *       the node polls: updates this node's heartbeat, releases the running jobs of dead nodes,
- *       removes dead nodes and deletes expired events. A node that does not poll executes no jobs
+ *       the node polls, updating this node's heartbeat. A node that does not poll executes no jobs
  *       and sends no heartbeats
+ *   <li>{@code bikesched-cleanup}: single scheduled thread running the housekeeping while the node
+ *       polls, each on its own interval: the {@link NodeCleanUp} (releases the running jobs of dead
+ *       nodes, removes dead nodes) and the {@link EventCleanUp} (deletes expired events); also
+ *       retries of the {@link RecurringJobRepair} (recreates missing occurrences of the node's
+ *       recurring jobs), which runs once when polling starts
  *   <li>{@code bikesched-poller}: single scheduled thread claiming due jobs (skip locked) and
  *       handing them to the job executor
  *   <li>{@code bikesched-job-N}: one virtual thread per claimed job, processed by the {@link
@@ -74,6 +78,7 @@ public final class DefaultBikesched implements Bikesched {
 
   private final Semaphore jobSlots;
   private final ScheduledExecutorService heartbeatExecutor;
+  private final ScheduledThreadPoolExecutor cleanUpExecutor;
   private final ScheduledExecutorService pollerExecutor;
   private final ScheduledThreadPoolExecutor timeoutExecutor;
   private final ExecutorService jobExecutor;
@@ -101,6 +106,11 @@ public final class DefaultBikesched implements Bikesched {
     this.heartbeatExecutor =
         Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().name("bikesched-heartbeat").daemon().factory());
+    this.cleanUpExecutor =
+        new ScheduledThreadPoolExecutor(
+            1, Thread.ofPlatform().name("bikesched-cleanup").daemon().factory());
+    // close() must not wait for the one-time recurring job repair if it has not started yet.
+    this.cleanUpExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
     this.pollerExecutor =
         Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().name("bikesched-poller").daemon().factory());
@@ -183,18 +193,18 @@ public final class DefaultBikesched implements Bikesched {
               settings.defaultJobTimeout(),
               settings.defaultEventTimeout(),
               settings.retryBackoff());
-      var heartbeat =
-          new Heartbeat(
-              database,
-              id,
-              nodeName,
-              settings.nodeTimeout(),
-              settings.eventRetention(),
-              recurringJobs::values);
+      var heartbeat = new Heartbeat(database, id, nodeName);
+      var nodeCleanUp = new NodeCleanUp(database, id, nodeName, settings.nodeTimeout());
+      var recurringJobRepair = new RecurringJobRepair(database, recurringJobs::values);
+      var eventCleanUp = new EventCleanUp(database, id, nodeName, settings.eventRetention());
       nodeId = id;
+      // Once per node lifetime, before anything is scheduled; retried until it succeeds.
+      repairRecurringJobs(recurringJobRepair);
       // A polling node claims jobs, so it must heartbeat: otherwise other nodes would consider it
       // dead and release its running jobs.
       scheduleWithFixedDelay(heartbeatExecutor, heartbeat::run, settings.heartbeatInterval());
+      scheduleWithFixedDelay(cleanUpExecutor, nodeCleanUp::run, settings.nodeCleanUpInterval());
+      scheduleWithFixedDelay(cleanUpExecutor, eventCleanUp::run, settings.eventCleanUpInterval());
       scheduleWithFixedDelay(pollerExecutor, this::poll, settings.pollInterval());
       LOG.info(
           "bikesched node {} ({}) registered, polling for jobs every {} (running up to {}"
@@ -444,6 +454,7 @@ public final class DefaultBikesched implements Bikesched {
     shutdownAndAwait(jobExecutor, "job executor");
     timeoutExecutor
         .shutdownNow(); // all jobs ended (or were abandoned): no timeouts left to enforce
+    shutdownAndAwait(cleanUpExecutor, "clean-up");
     shutdownAndAwait(heartbeatExecutor, "heartbeat");
     if (id == null) {
       LOG.info("bikesched node {} closed (it never polled, so it was not registered)", nodeName);
@@ -473,6 +484,35 @@ public final class DefaultBikesched implements Bikesched {
         },
         millis,
         millis,
+        TimeUnit.MILLISECONDS);
+  }
+
+  /**
+   * Runs the repair now; if it fails, again on the clean-up thread after the node clean-up
+   * interval, until it succeeds or the node is closed.
+   */
+  private void repairRecurringJobs(RecurringJobRepair repair) {
+    if (repair.run()) {
+      return;
+    }
+    Duration retryIn = settings.nodeCleanUpInterval();
+    LOG.warn("Repairing recurring jobs failed, retrying in {}", retryIn);
+    try {
+      scheduleOnce(cleanUpExecutor, () -> repairRecurringJobs(repair), retryIn);
+    } catch (RejectedExecutionException e) {
+      LOG.debug("Not retrying the recurring job repair: bikesched node {} is closing", nodeName);
+    }
+  }
+
+  /** Runs the task once after the delay, with this node's id in the MDC. */
+  private void scheduleOnce(ScheduledExecutorService executor, Runnable task, Duration delay) {
+    executor.schedule(
+        () -> {
+          try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId))) {
+            task.run();
+          }
+        },
+        delay.toMillis(),
         TimeUnit.MILLISECONDS);
   }
 

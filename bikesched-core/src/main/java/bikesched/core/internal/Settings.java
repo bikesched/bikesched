@@ -24,6 +24,8 @@ import java.util.Objects;
  * @param eventRetention how long published events are kept for steps that start waiting later
  * @param defaultEventTimeout maximum wait for an event for waits without a timeout of their own;
  *     {@code null} for none
+ * @param nodeCleanUpInterval interval between node clean-ups ({@link NodeCleanUp})
+ * @param eventCleanUpInterval interval between event clean-ups ({@link EventCleanUp})
  */
 public record Settings(
     String nodeName,
@@ -35,7 +37,9 @@ public record Settings(
     Duration defaultJobTimeout,
     RetryBackoff retryBackoff,
     Duration eventRetention,
-    Duration defaultEventTimeout) {
+    Duration defaultEventTimeout,
+    Duration nodeCleanUpInterval,
+    Duration eventCleanUpInterval) {
 
   /** Validates the settings. */
   public Settings {
@@ -45,6 +49,8 @@ public record Settings(
     Objects.requireNonNull(pollInterval, "pollInterval");
     Objects.requireNonNull(retryBackoff, "retryBackoff");
     Objects.requireNonNull(eventRetention, "eventRetention");
+    Objects.requireNonNull(nodeCleanUpInterval, "nodeCleanUpInterval");
+    Objects.requireNonNull(eventCleanUpInterval, "eventCleanUpInterval");
     if (maxConcurrentJobs < 1) {
       throw new IllegalArgumentException("maxConcurrentJobs must be >= 1: " + maxConcurrentJobs);
     }

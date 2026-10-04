@@ -58,6 +58,16 @@ class BikeschedTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void cleanUpIntervalsMustBePositive() {
+    assertThatThrownBy(() -> Bikesched.builder().nodeCleanUpInterval(Duration.ZERO))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("nodeCleanUpInterval");
+    assertThatThrownBy(() -> Bikesched.builder().eventCleanUpInterval(Duration.ofSeconds(-1)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("eventCleanUpInterval");
+  }
+
+  @Test
   void maxConcurrentJobsMustBePositive() {
     assertThatThrownBy(() -> Bikesched.builder().maxConcurrentJobs(0))
         .isInstanceOf(IllegalArgumentException.class);
@@ -116,7 +126,11 @@ class BikeschedTest extends AbstractBikeschedTest {
             .nodeName("node-closing")
             .heartbeatInterval(Duration.ofMillis(50))
             .build();
+    long start = System.nanoTime();
     bikesched.close();
+    assertThat(Duration.ofNanos(System.nanoTime() - start))
+        .as("close() does not wait for the pending one-time recurring job repair")
+        .isLessThan(Duration.ofSeconds(5));
     bikesched.close(); // idempotent
 
     assertThat(nodeName(bikesched.node().id().orElseThrow())).isNull();
@@ -124,6 +138,7 @@ class BikeschedTest extends AbstractBikeschedTest {
         .noneMatch(
             t ->
                 (t.getName().equals("bikesched-heartbeat")
+                        || t.getName().equals("bikesched-cleanup")
                         || t.getName().equals("bikesched-poller"))
                     && t.isAlive());
   }

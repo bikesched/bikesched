@@ -5,6 +5,8 @@ import static org.awaitility.Awaitility.await;
 
 import bikesched.core.AbstractBikeschedTest;
 import bikesched.core.Bikesched;
+import bikesched.core.LogCapture;
+import bikesched.core.internal.EventCleanUp;
 import bikesched.core.job.Job;
 import bikesched.core.job.JobBuilder;
 import java.sql.Connection;
@@ -340,6 +342,28 @@ class EventTest extends AbstractBikeschedTest {
     } finally {
       nodes.forEach(Bikesched::close);
     }
+  }
+
+  @Test
+  void eventCleanUpDeletesEventsOlderThanTheRetention() throws Exception {
+    String key = "cleanup-" + UUID.randomUUID();
+    var logs = LogCapture.of(EventCleanUp.class);
+    try (logs;
+        Bikesched bikesched =
+            testNode("node-event-cleanup")
+                .eventRetention(Duration.ofMillis(200))
+                .eventCleanUpInterval(Duration.ofMillis(50))
+                .build()) {
+      bikesched.newEvent("cleaned-up", key).publish();
+      assertThat(countRows("bikesched_events", "event_key = '" + key + "'")).isOne();
+
+      await()
+          .untilAsserted(
+              () ->
+                  assertThat(countRows("bikesched_events", "event_key = '" + key + "'")).isZero());
+    }
+    assertThat(logs.messages())
+        .anyMatch(m -> m.matches("Deleted \\d+ event\\(s\\) published more than PT0.2S ago"));
   }
 
   private static Bikesched node(String name) {
