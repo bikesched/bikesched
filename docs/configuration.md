@@ -74,6 +74,31 @@ Bikesched.builder()
         .build();
 ```
 
+### Payload design
+
+We recommend objects (records or classes) as job and event payloads, rather than plain values,
+arrays or collections:
+
+```java
+record ImportCustomers(List<CustomerId> customerIds) {}      // instead of a List<CustomerId>
+
+bikesched.newJob(IMPORT_CUSTOMERS).payload(new ImportCustomers(ids)).schedule();
+```
+
+- **Evolution:** payloads are stored as JSON and read back later, possibly by a newer version of
+  your code (jobs scheduled before a deploy, events kept for the retention period). A JSON object
+  can gain properties without breaking payloads already stored, e.g. a new
+  `record ImportCustomers(List<CustomerId> customerIds, boolean sendWelcomeMail)`; a bare list or
+  string cannot.
+- **Generic collections** like `List<CustomerId>` can't be described by a `Class` (the `JsonMapper`
+  and `JobType` only take one), so wrapping them in an object is needed for typed payloads anyway.
+- The same applies to step results, which are replayed after a retry or resume.
+
+Make new properties optional (nullable, or a primitive whose zero value is a sensible default), so
+payloads stored by an older version still map. With Jackson 3's defaults (as in `bikesched-jackson`), a record component missing from
+the JSON becomes `null` (or `false`/`0`), and properties the class doesn't know are ignored. So
+during a rolling deploy, old and new code can read each other's payloads.
+
 ## Logging
 
 bikesched logs through the SLF4J API under the logger names `org.bikesched.*`; bring your own

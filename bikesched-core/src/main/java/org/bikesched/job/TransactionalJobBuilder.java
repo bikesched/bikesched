@@ -13,8 +13,11 @@ import org.bikesched.BikeschedException;
  * the connection, nor change its auto-commit mode.
  *
  * <p>Every {@code schedule} call stores a new job. Not thread-safe.
+ *
+ * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
+ *     of a {@link JobType}
  */
-public interface TransactionalJobBuilder extends JobSettings<TransactionalJobBuilder> {
+public interface TransactionalJobBuilder<P> extends JobSettings<TransactionalJobBuilder<P>, P> {
 
   /**
    * Schedules the job to run as soon as possible once the caller's transaction commits.

@@ -8,7 +8,7 @@ import org.bikesched.JsonMapper;
 
 /**
  * Builds and publishes an event, obtained via {@link org.bikesched.Bikesched#newEvent(String,
- * String)}:
+ * String)} or, with a typed payload, {@link org.bikesched.Bikesched#newEvent(EventType, String)}:
  *
  * <pre>{@code
  * List<ReceivedEvent> received = bikesched.newEvent("payment-received", orderId)
@@ -20,8 +20,11 @@ import org.bikesched.JsonMapper;
  * key, see {@link org.bikesched.job.Job#waitForEvent(String, String, String)}); their jobs continue
  * right away. The event is kept for the {@link BikeschedBuilder#eventRetention(java.time.Duration)
  * retention period}, so a step that starts waiting for it later still receives it. Not thread-safe.
+ *
+ * @param <P> the payload type: {@code Object} for an event name given as a string, the payload
+ *     class of an {@link EventType}
  */
-public interface EventBuilder {
+public interface EventBuilder<P> {
 
   /**
    * Sets the event payload (optional, default none), converted to JSON right away by the configured
@@ -33,7 +36,7 @@ public interface EventBuilder {
    *     from the default mapper (no {@code jsonMapper} configured) for types other than {@link
    *     String}
    */
-  EventBuilder payload(Object payload);
+  EventBuilder<P> payload(P payload);
 
   /**
    * Publishes the event as part of the caller's transaction (optional): the event is stored and the
@@ -46,7 +49,7 @@ public interface EventBuilder {
    * @param connection the caller's connection, or {@code null} to use bikesched's own
    * @return this builder
    */
-  EventBuilder connection(Connection connection);
+  EventBuilder<P> connection(Connection connection);
 
   /**
    * Publishes the event.

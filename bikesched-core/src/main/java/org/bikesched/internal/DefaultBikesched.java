@@ -23,6 +23,7 @@ import org.bikesched.BikeschedException;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.Node;
 import org.bikesched.event.EventBuilder;
+import org.bikesched.event.EventType;
 import org.bikesched.event.ReceivedEvent;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.DatabaseInitializer;
@@ -38,7 +39,9 @@ import org.bikesched.internal.job.RecurringJobRepair;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobInfo;
+import org.bikesched.job.JobType;
 import org.bikesched.job.RecurringJobBuilder;
+import org.bikesched.job.TypedJobHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -86,6 +89,9 @@ public final class DefaultBikesched implements Bikesched {
   private final String nodeName;
   private final Map<String, JobHandler> handlers = new ConcurrentHashMap<>();
   private final Map<String, RecurringJob> recurringJobs = new ConcurrentHashMap<>();
+
+  /** Payload classes of the job types used with a {@link JobType} on this node, by name. */
+  private final Map<String, Class<?>> payloadTypes = new ConcurrentHashMap<>();
 
   private final Semaphore jobSlots;
   private final ScheduledExecutorService heartbeatExecutor;
@@ -271,9 +277,42 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public JobBuilder newJob(String type) {
+  public <T> Bikesched registerJobHandler(JobType<T> type, TypedJobHandler<? super T> handler) {
+    Objects.requireNonNull(handler, "handler");
+    requirePayloadType(type);
+    Class<T> payloadType = type.payloadType();
+    return registerJobHandler(type.name(), job -> handler.handle(job, job.payload(payloadType)));
+  }
+
+  @Override
+  public JobBuilder<Object> newJob(String type) {
     requireValidType(type);
-    return new DefaultJobBuilder(type, database.jsonMapper(), scheduler);
+    return new DefaultJobBuilder<>(type, Object.class, database.jsonMapper(), scheduler);
+  }
+
+  @Override
+  public <T> JobBuilder<T> newJob(JobType<T> type) {
+    requirePayloadType(type);
+    return new DefaultJobBuilder<>(
+        type.name(), type.payloadType(), database.jsonMapper(), scheduler);
+  }
+
+  /**
+   * Remembers the payload class of a typed job type; rejects a second payload class for the same
+   * name on this node, which would make producers and handlers disagree on the payload.
+   */
+  private void requirePayloadType(JobType<?> type) {
+    Objects.requireNonNull(type, "type");
+    Class<?> known = payloadTypes.putIfAbsent(type.name(), type.payloadType());
+    if (known != null && known != type.payloadType()) {
+      throw new IllegalArgumentException(
+          "Job type '"
+              + type.name()
+              + "' is already used with payload type "
+              + known.getName()
+              + ", not "
+              + type.payloadType().getName());
+    }
   }
 
   /** Stores the jobs built by the job builders. */
@@ -387,13 +426,21 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public EventBuilder newEvent(String eventName, String eventKey) {
+  public EventBuilder<Object> newEvent(String eventName, String eventKey) {
     Objects.requireNonNull(eventName, "eventName");
     if (eventName.isBlank()) {
       throw new IllegalArgumentException("event name must not be blank");
     }
     Objects.requireNonNull(eventKey, "eventKey");
-    return new DefaultEventBuilder(eventName, eventKey, database.jsonMapper(), this::publish);
+    return new DefaultEventBuilder<>(eventName, eventKey, database.jsonMapper(), this::publish);
+  }
+
+  @Override
+  public <T> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey) {
+    Objects.requireNonNull(eventType, "eventType");
+    Objects.requireNonNull(eventKey, "eventKey");
+    return new DefaultEventBuilder<>(
+        eventType.name(), eventKey, database.jsonMapper(), this::publish);
   }
 
   @Override

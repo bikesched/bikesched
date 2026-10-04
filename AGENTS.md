@@ -67,6 +67,11 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - SPI defaults are static factories on the interface (`RetryBackoff.none()`); a default that only
   makes sense as "nothing configured" stays internal instead (`RawJsonMapper`, used by `Internals`
   when no `jsonMapper` was set).
+- Typed variants sit next to the string-based API, never replacing it: `JobType<T>`/`EventType<T>`
+  (records: name + payload class) select overloads (`newJob(JobType)`, `registerJobHandler(JobType,
+  TypedJobHandler)`, `newEvent(EventType, key)`, `waitForEvent(step, EventType, key)`). Builders
+  carry the payload type as `P` (`JobBuilder<P>`, `EventBuilder<P>`; `Object` for strings). Keep
+  the Kotlin API on reified generics instead.
 - Results get their own type in the feature package (`event.ReceivedEvent`); lookups return
   `Optional` of a minimal interface (`findJob` → `JobInfo` with a `JobState` enum).
 - No exceptions for control flow: intent is a flag checked after the handler (`job.cancel()`,

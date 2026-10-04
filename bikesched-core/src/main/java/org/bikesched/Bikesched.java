@@ -3,11 +3,14 @@ package org.bikesched;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.event.EventBuilder;
+import org.bikesched.event.EventType;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobInfo;
+import org.bikesched.job.JobType;
 import org.bikesched.job.Schedule;
+import org.bikesched.job.TypedJobHandler;
 
 /**
  * Entry point of bikesched: a database-backed job scheduler shared by all connected nodes.
@@ -80,6 +83,25 @@ public interface Bikesched extends AutoCloseable {
   }
 
   /**
+   * Registers the handler executing jobs of a {@link JobType}; it receives the payload mapped to
+   * the type's payload class. Like {@link #registerJobHandler(String, JobHandler)} otherwise.
+   *
+   * <pre>{@code
+   * static final JobType<Order> ORDER = JobType.of("order", Order.class);
+   *
+   * bikesched.registerJobHandler(ORDER, (job, order) -> shipping.ship(order));
+   * }</pre>
+   *
+   * @param type the job type and its payload class
+   * @param handler executes the jobs; receives the job and its payload
+   * @param <T> the payload type
+   * @return this instance
+   * @throws IllegalArgumentException if the type already has a handler, or this node already uses
+   *     the type's name with another payload class
+   */
+  <T> Bikesched registerJobHandler(JobType<T> type, TypedJobHandler<? super T> handler);
+
+  /**
    * Starts building a job of the given type; {@link JobBuilder#schedule()} (or one of its
    * overloads) stores it. This is the only way to schedule jobs:
    *
@@ -94,7 +116,23 @@ public interface Bikesched extends AutoCloseable {
    * @return a builder for the job
    * @throws IllegalArgumentException if the type is blank
    */
-  JobBuilder newJob(String type);
+  JobBuilder<Object> newJob(String type);
+
+  /**
+   * Starts building a job of a {@link JobType}: {@link JobBuilder#payload(Object) payload(...)}
+   * only accepts the type's payload class.
+   *
+   * <pre>{@code
+   * bikesched.newJob(ORDER).payload(order).schedule();
+   * }</pre>
+   *
+   * @param type the job type and its payload class
+   * @param <T> the payload type
+   * @return a builder for the job
+   * @throws IllegalArgumentException if this node already uses the type's name with another payload
+   *     class
+   */
+  <T> JobBuilder<T> newJob(JobType<T> type);
 
   /**
    * Stops a recurring job (see {@link JobBuilder#recurring(Schedule)}): unregisters it on this node
@@ -102,12 +140,22 @@ public interface Bikesched extends AutoCloseable {
    * normally; a node that no longer has the recurring job registered schedules no successor).
    *
    * <p>Meant for recurring jobs that were removed from the code: nodes that still register the
-   * recurring job recreate its occurrence on their next heartbeat.
+   * recurring job recreate its occurrence when they register it again, e.g. on their next start.
    *
    * @param type the job type of the recurring job
    * @return whether a pending occurrence was deleted
    */
   boolean removeRecurringJob(String type);
+
+  /**
+   * Stops a recurring job of a {@link JobType}, see {@link #removeRecurringJob(String)}.
+   *
+   * @param type the job type of the recurring job
+   * @return whether a pending occurrence was deleted
+   */
+  default boolean removeRecurringJob(JobType<?> type) {
+    return removeRecurringJob(type.name());
+  }
 
   /**
    * Starts building an event; {@link EventBuilder#publish()} publishes it to the steps waiting for
@@ -124,7 +172,22 @@ public interface Bikesched extends AutoCloseable {
    * @return a builder for the event
    * @throws IllegalArgumentException if the event name is blank
    */
-  EventBuilder newEvent(String eventName, String eventKey);
+  EventBuilder<Object> newEvent(String eventName, String eventKey);
+
+  /**
+   * Starts building an event of an {@link EventType}: {@link EventBuilder#payload(Object)
+   * payload(...)} only accepts the type's payload class.
+   *
+   * <pre>{@code
+   * bikesched.newEvent(PAYMENT_RECEIVED, order.id()).payload(payment).publish();
+   * }</pre>
+   *
+   * @param eventType the event's name and payload class
+   * @param eventKey identifies the event instance, e.g. an order id
+   * @param <T> the payload type
+   * @return a builder for the event
+   */
+  <T> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
 
   /**
    * Looks up a job by its id, in a read-only transaction.

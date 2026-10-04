@@ -17,7 +17,9 @@ docker compose up -d                      # from the repository root
 
 Package [`org.bikesched.examples.taxi`](src/main/java/org/bikesched/examples/taxi): booking a taxi
 ride as one job (`taxi-ride`, see `TaxiBooking`) that talks to a taxi broker, a payment service and
-push notifications (simulated in `Simulated*`).
+push notifications (simulated in `Simulated*`). The job and its two events are declared as typed
+constants (`JobType<RideRequest>`, `EventType<DriverOffer>`, `EventType<PriceDecision>`), so
+payloads need no casts or `Class` arguments.
 
 **The happy path:**
 

@@ -9,6 +9,7 @@ import org.bikesched.JsonMapper;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobSettings;
+import org.bikesched.job.TypedJobHandler;
 
 /**
  * The shared settings of the job builder implementations ({@link DefaultJobBuilder}, {@link
@@ -16,7 +17,7 @@ import org.bikesched.job.JobSettings;
  *
  * @param <B> the builder interface
  */
-public abstract class BaseJobBuilder<B extends JobSettings<B>> implements JobSettings<B> {
+public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements JobSettings<B, P> {
 
   static final int DEFAULT_PRIORITY = 0;
   static final int DEFAULT_MAX_ATTEMPTS = 3;
@@ -31,6 +32,7 @@ public abstract class BaseJobBuilder<B extends JobSettings<B>> implements JobSet
   }
 
   final String type;
+  final Class<P> payloadType;
   final JsonMapper jsonMapper;
   final Scheduler scheduler;
   String payload;
@@ -39,15 +41,16 @@ public abstract class BaseJobBuilder<B extends JobSettings<B>> implements JobSet
   int maxAttempts = DEFAULT_MAX_ATTEMPTS;
   Duration timeout;
 
-  BaseJobBuilder(String type, JsonMapper jsonMapper, Scheduler scheduler) {
+  BaseJobBuilder(String type, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
     this.type = Objects.requireNonNull(type, "type");
+    this.payloadType = Objects.requireNonNull(payloadType, "payloadType");
     this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
     this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
   }
 
   /** Continues building with the settings of the given builder. */
-  BaseJobBuilder(BaseJobBuilder<?> settings) {
-    this(settings.type, settings.jsonMapper, settings.scheduler);
+  BaseJobBuilder(BaseJobBuilder<?, P> settings) {
+    this(settings.type, settings.payloadType, settings.jsonMapper, settings.scheduler);
     this.payload = settings.payload;
     this.handler = settings.handler;
     this.priority = settings.priority;
@@ -59,7 +62,7 @@ public abstract class BaseJobBuilder<B extends JobSettings<B>> implements JobSet
   abstract B self();
 
   @Override
-  public B payload(Object payload) {
+  public B payload(P payload) {
     this.payload = payload == null ? null : jsonMapper.toJson(payload);
     return self();
   }
@@ -68,6 +71,12 @@ public abstract class BaseJobBuilder<B extends JobSettings<B>> implements JobSet
   public B handler(JobHandler handler) {
     this.handler = Objects.requireNonNull(handler, "handler");
     return self();
+  }
+
+  @Override
+  public B handler(TypedJobHandler<? super P> handler) {
+    Objects.requireNonNull(handler, "handler");
+    return handler(job -> handler.handle(job, job.payload(payloadType)));
   }
 
   @Override

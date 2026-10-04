@@ -11,15 +11,18 @@ import org.bikesched.JsonMapper;
  * setter returns the concrete builder, so they can be called in any order:
  *
  * <ul>
- *   <li>{@link JobBuilder}: a one-off job, from {@link org.bikesched.Bikesched#newJob(String)}
+ *   <li>{@link JobBuilder}: a one-off job, from {@link org.bikesched.Bikesched#newJob(String)} or
+ *       {@link org.bikesched.Bikesched#newJob(JobType)}
  *   <li>{@link TransactionalJobBuilder}: a one-off job stored in the caller's transaction, from
  *       {@link JobBuilder#connection(Connection)}
  *   <li>{@link RecurringJobBuilder}: a recurring job, from {@link JobBuilder#recurring(Schedule)}
  * </ul>
  *
  * @param <B> the concrete builder type
+ * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
+ *     of a {@link JobType}
  */
-public interface JobSettings<B extends JobSettings<B>> {
+public interface JobSettings<B extends JobSettings<B, P>, P> {
 
   /**
    * Sets the job payload (optional, default none), converted to JSON right away by the configured
@@ -33,7 +36,7 @@ public interface JobSettings<B extends JobSettings<B>> {
    *     String}
    * @see Job#payload(Class)
    */
-  B payload(Object payload);
+  B payload(P payload);
 
   /**
    * Sets the handler executing jobs of this type (optional if one is already registered). It is
@@ -59,6 +62,17 @@ public interface JobSettings<B extends JobSettings<B>> {
     Objects.requireNonNull(handler, "handler");
     return handler(_ -> handler.run());
   }
+
+  /**
+   * Sets a handler receiving the payload mapped to the payload type (the {@link JobType}'s payload
+   * class, {@code Object} for a job type given as a string). Registered like {@link
+   * #handler(JobHandler)}.
+   *
+   * @param handler executes jobs of this type
+   * @return this builder
+   * @see org.bikesched.Bikesched#registerJobHandler(JobType, TypedJobHandler)
+   */
+  B handler(TypedJobHandler<? super P> handler);
 
   /**
    * Sets the priority (optional, default 0). Due jobs with a higher priority are claimed first.

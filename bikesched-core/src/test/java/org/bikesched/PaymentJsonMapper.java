@@ -9,9 +9,10 @@ import com.grack.nanojson.JsonWriter;
  * A {@link JsonMapper} for tests backed by nanojson. nanojson has no data binding, so the {@link
  * Payment} fields are mapped explicitly; strings are written and read as JSON strings.
  */
-final class PaymentJsonMapper implements JsonMapper {
+public final class PaymentJsonMapper implements JsonMapper {
 
-  record Payment(String id, int amount) {}
+  /** The payload type this mapper supports, besides strings. */
+  public record Payment(String id, int amount) {}
 
   @Override
   public String toJson(Object value) {

@@ -3,7 +3,9 @@ package org.bikesched.examples.taxi;
 import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.Bikesched;
+import org.bikesched.event.EventType;
 import org.bikesched.job.Job;
+import org.bikesched.job.JobType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,14 +37,16 @@ public final class TaxiBooking {
 
   private static final Logger LOG = LoggerFactory.getLogger(TaxiBooking.class);
 
-  /** The job type of rides. */
-  public static final String JOB_TYPE = "taxi-ride";
+  /** The job type of rides, with the ride request as payload. */
+  public static final JobType<RideRequest> JOB_TYPE = JobType.of("taxi-ride", RideRequest.class);
 
   /** Event published when a driver accepted a ride, keyed by the ride id. */
-  public static final String DRIVER_ACCEPTED = "taxi-driver-accepted";
+  public static final EventType<DriverOffer> DRIVER_ACCEPTED =
+      EventType.of("taxi-driver-accepted", DriverOffer.class);
 
   /** Event published when the customer accepted or declined the price, keyed by the ride id. */
-  public static final String PRICE_DECIDED = "taxi-price-decided";
+  public static final EventType<PriceDecision> PRICE_DECIDED =
+      EventType.of("taxi-price-decided", PriceDecision.class);
 
   private final Bikesched bikesched;
   private final TaxiBroker broker;
@@ -139,8 +143,7 @@ public final class TaxiBooking {
    * formatting method), so both can be matched in the log. The log pattern adds the job id and step
    * name, which bikesched puts into the logging context while a step or compensation runs.
    */
-  private void book(Job job) throws Exception {
-    RideRequest ride = job.payload(RideRequest.class);
+  private void book(Job job, RideRequest ride) throws Exception {
     String customer = ride.customerId();
 
     // 1. Hand the request to the broker, which forwards it to its drivers.
@@ -160,8 +163,8 @@ public final class TaxiBooking {
     // 2. Wait until a driver accepts the ride with a price.
     DriverOffer offer =
         job.waitForEvent("await-driver", DRIVER_ACCEPTED, ride.rideId())
-            .<DriverOffer>timeout(driverTimeout, () -> null)
-            .receive(event -> event.payload(DriverOffer.class));
+            .timeout(driverTimeout, () -> null)
+            .receive();
     if (offer == null) {
       job.step(
           "notify-no-driver",
@@ -193,11 +196,11 @@ public final class TaxiBooking {
                   + ". Accept?");
           return null;
         });
-    boolean accepted =
+    PriceDecision decision =
         job.waitForEvent("await-price-decision", PRICE_DECIDED, ride.rideId())
-            .timeout(priceTimeout, () -> false)
-            .receive(event -> event.payload(PriceDecision.class).accepted());
-    if (!accepted) {
+            .timeout(priceTimeout, () -> new PriceDecision(false))
+            .receive();
+    if (!decision.accepted()) {
       job.cancel("The customer did not accept the price"); // withdraws the request
       return;
     }

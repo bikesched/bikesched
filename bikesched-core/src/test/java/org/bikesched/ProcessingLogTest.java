@@ -39,7 +39,7 @@ class ProcessingLogTest extends AbstractBikeschedTest {
                     throw new IllegalStateException("boom");
                   })
               .schedule();
-      cancelled = bikesched.newJob("outcome-cancel").handler(Job::cancel).schedule();
+      cancelled = bikesched.newJob("outcome-cancel").handler(job -> job.cancel()).schedule();
 
       awaitState(succeeded, "SUCCEEDED");
       awaitState(failed, "FAILED");

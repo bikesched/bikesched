@@ -85,7 +85,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
               running.decrementAndGet();
             }
           });
-      JobBuilder slowJob = bikesched.newJob(jobType);
+      JobBuilder<Object> slowJob = bikesched.newJob(jobType);
       for (int i = 0; i < count; i++) {
         slowJob.schedule();
       }

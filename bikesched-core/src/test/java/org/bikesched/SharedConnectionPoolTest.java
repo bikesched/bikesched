@@ -61,7 +61,7 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
                 }
               });
         }
-        JobBuilder newJob = nodes.getFirst().newJob(type);
+        JobBuilder<Object> newJob = nodes.getFirst().newJob(type);
         for (int i = 0; i < JOBS; i++) {
           newJob.payload("{\"n\": " + i + "}").schedule();
         }

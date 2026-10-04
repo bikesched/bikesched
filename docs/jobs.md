@@ -27,6 +27,27 @@ Optional<JobInfo> job = bikesched.findJob(id);   // id(), type() and state(), e.
 boolean done = job.map(info -> info.state().isEnded()).orElse(false);
 ```
 
+### Typed job types
+
+A `JobType` names a job type together with its payload class. Producer and handler share the
+constant, so the compiler checks the payload on both sides:
+
+```java
+static final JobType<Order> ORDER = JobType.of("order", Order.class);
+
+bikesched.registerJobHandler(ORDER, (job, order) -> shipping.ship(order));   // order is an Order
+UUID id = bikesched.newJob(ORDER).payload(order).schedule();                // payload(Order) only
+```
+
+- The builder works as above (`priority`, `connection`, `recurring`, …); `handler((job, order) -> …)`
+  sets a typed handler inline. `removeRecurringJob(ORDER)` stops a typed recurring job.
+- Only the name is stored, so typed and string-based code work on the same jobs: `newJob("order")`
+  schedules a job the `ORDER` handler receives, and vice versa.
+- A node rejects using one name with two payload classes (`IllegalArgumentException`).
+- The payload class is passed to the `JsonMapper`, so it must be a concrete class like a record;
+  wrap generic collections such as `List<Order>` in a record, see
+  [Payload design](configuration.md#payload-design).
+
 ### Transactional scheduling
 
 Pass your own connection to create the job atomically with your other changes. The job becomes
@@ -54,7 +75,7 @@ A handler receives the `Job` being executed:
 | `payload()`, `payload(Class)` | the payload as raw JSON or mapped by the `JsonMapper` |
 | `step(name, Class, handler)` | run a durable step, see [Durable steps](steps.md#durable-steps) |
 | `newStep(name, Class)` | build a step with a compensation, see [Compensation](steps.md#compensation) |
-| `waitForEvent(step, name, key)` | wait for an event, see [Events](events.md) |
+| `waitForEvent(step, name, key)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](events.md) |
 | `cancel()`, `cancel(message)` | cancel the job, see [Cancellation](#cancellation) |
 | `fail()`, `fail(message)` | fail the attempt without throwing, see [Failures and retries](#failures-and-retries) |
 | `isCompensating()` | whether the handler is replayed to compensate the job |

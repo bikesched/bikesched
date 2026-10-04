@@ -126,7 +126,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-job-builder-later").build()) {
       Instant inOneHour =
           Instant.now().plus(Duration.ofHours(1)).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-      JobBuilder later = bikesched.newJob("later").handler(() -> {});
+      JobBuilder<Object> later = bikesched.newJob("later").handler(() -> {});
 
       UUID atInstant = later.schedule(inOneHour);
       UUID afterDelay = later.schedule(Duration.ofHours(2));

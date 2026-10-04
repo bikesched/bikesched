@@ -8,18 +8,18 @@ import org.bikesched.job.RecurringJobBuilder;
 import org.bikesched.job.Schedule;
 
 /** The {@link RecurringJobBuilder} implementation. */
-final class DefaultRecurringJobBuilder extends BaseJobBuilder<RecurringJobBuilder>
-    implements RecurringJobBuilder {
+final class DefaultRecurringJobBuilder<P> extends BaseJobBuilder<RecurringJobBuilder<P>, P>
+    implements RecurringJobBuilder<P> {
 
   private final Schedule schedule;
 
-  DefaultRecurringJobBuilder(DefaultJobBuilder settings, Schedule schedule) {
+  DefaultRecurringJobBuilder(DefaultJobBuilder<P> settings, Schedule schedule) {
     super(settings);
     this.schedule = schedule;
   }
 
   @Override
-  RecurringJobBuilder self() {
+  RecurringJobBuilder<P> self() {
     return this;
   }
 

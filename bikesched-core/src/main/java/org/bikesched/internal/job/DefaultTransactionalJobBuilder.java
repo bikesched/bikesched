@@ -8,18 +8,18 @@ import java.util.UUID;
 import org.bikesched.job.TransactionalJobBuilder;
 
 /** The {@link TransactionalJobBuilder} implementation. */
-final class DefaultTransactionalJobBuilder extends BaseJobBuilder<TransactionalJobBuilder>
-    implements TransactionalJobBuilder {
+final class DefaultTransactionalJobBuilder<P> extends BaseJobBuilder<TransactionalJobBuilder<P>, P>
+    implements TransactionalJobBuilder<P> {
 
   private final Connection connection;
 
-  DefaultTransactionalJobBuilder(DefaultJobBuilder settings, Connection connection) {
+  DefaultTransactionalJobBuilder(DefaultJobBuilder<P> settings, Connection connection) {
     super(settings);
     this.connection = connection;
   }
 
   @Override
-  TransactionalJobBuilder self() {
+  TransactionalJobBuilder<P> self() {
     return this;
   }
 

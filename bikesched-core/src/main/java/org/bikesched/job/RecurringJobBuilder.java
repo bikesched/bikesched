@@ -28,13 +28,17 @@ import org.bikesched.BikeschedException;
  * first occurrence unless one is pending. If the pending occurrence belongs to a schedule of
  * another {@link Schedule#description() description} (e.g. after a deploy) and has not started yet,
  * it is moved to the new schedule. Nodes recreate a missing occurrence of the recurring jobs they
- * registered on every heartbeat; {@link org.bikesched.Bikesched#removeRecurringJob(String)} stops a
- * recurring job that no node registers anymore.
+ * registered once when they start polling; {@link
+ * org.bikesched.Bikesched#removeRecurringJob(String)} stops a recurring job that no node registers
+ * anymore.
  *
  * <p>Recurring jobs cannot be stored in the caller's transaction (there is no {@code connection}
  * method): their registration also lives in the node's memory. Not thread-safe.
+ *
+ * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
+ *     of a {@link JobType}
  */
-public interface RecurringJobBuilder extends JobSettings<RecurringJobBuilder> {
+public interface RecurringJobBuilder<P> extends JobSettings<RecurringJobBuilder<P>, P> {
 
   /**
    * Registers the recurring job; a new first occurrence runs at the schedule's next run from now.

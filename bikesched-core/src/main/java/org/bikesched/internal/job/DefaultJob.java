@@ -12,7 +12,9 @@ import java.util.function.Function;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.Event;
+import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
+import org.bikesched.event.TypedEventWait;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.StepStore;
@@ -372,6 +374,14 @@ public final class DefaultJob implements Job {
     requireName(eventName, "event name");
     Objects.requireNonNull(eventKey, "eventKey");
     return new DefaultEventWait(this, stepName, eventName, eventKey);
+  }
+
+  @Override
+  public <T> TypedEventWait<T> waitForEvent(
+      String stepName, EventType<T> eventType, String eventKey) {
+    Objects.requireNonNull(eventType, "eventType");
+    return new DefaultTypedEventWait<>(
+        waitForEvent(stepName, eventType.name(), eventKey), eventType.payloadType());
   }
 
   /** A call run with the step name in the logging context. */

@@ -8,7 +8,7 @@ import org.bikesched.event.EventBuilder;
 import org.bikesched.event.ReceivedEvent;
 
 /** The {@link EventBuilder} implementation. */
-public final class DefaultEventBuilder implements EventBuilder {
+public final class DefaultEventBuilder<P> implements EventBuilder<P> {
 
   /** Publishes an event built by an {@link EventBuilder}; implemented by the owning bikesched. */
   @FunctionalInterface
@@ -34,13 +34,13 @@ public final class DefaultEventBuilder implements EventBuilder {
   }
 
   @Override
-  public EventBuilder payload(Object payload) {
+  public EventBuilder<P> payload(P payload) {
     this.payload = payload == null ? null : jsonMapper.toJson(payload);
     return this;
   }
 
   @Override
-  public EventBuilder connection(Connection connection) {
+  public EventBuilder<P> connection(Connection connection) {
     this.connection = connection;
     return this;
   }

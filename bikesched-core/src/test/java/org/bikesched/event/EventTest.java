@@ -97,7 +97,7 @@ class EventTest extends AbstractBikeschedTest {
   @Test
   void eventIsDeliveredToAllWaitingJobs() throws Exception {
     try (Bikesched bikesched = node("node-event-broadcast")) {
-      JobBuilder newJob =
+      JobBuilder<Object> newJob =
           bikesched
               .newJob("event-broadcast")
               .handler(

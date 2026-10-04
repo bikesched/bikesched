@@ -12,26 +12,28 @@ import org.bikesched.job.Schedule;
 import org.bikesched.job.TransactionalJobBuilder;
 
 /** The {@link JobBuilder} implementation. */
-public final class DefaultJobBuilder extends BaseJobBuilder<JobBuilder> implements JobBuilder {
+public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
+    implements JobBuilder<P> {
 
-  public DefaultJobBuilder(String type, JsonMapper jsonMapper, Scheduler scheduler) {
-    super(type, jsonMapper, scheduler);
+  public DefaultJobBuilder(
+      String type, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
+    super(type, payloadType, jsonMapper, scheduler);
   }
 
   @Override
-  JobBuilder self() {
+  JobBuilder<P> self() {
     return this;
   }
 
   @Override
-  public TransactionalJobBuilder connection(Connection connection) {
-    return new DefaultTransactionalJobBuilder(
+  public TransactionalJobBuilder<P> connection(Connection connection) {
+    return new DefaultTransactionalJobBuilder<>(
         this, Objects.requireNonNull(connection, "connection"));
   }
 
   @Override
-  public RecurringJobBuilder recurring(Schedule schedule) {
-    return new DefaultRecurringJobBuilder(this, Objects.requireNonNull(schedule, "schedule"));
+  public RecurringJobBuilder<P> recurring(Schedule schedule) {
+    return new DefaultRecurringJobBuilder<>(this, Objects.requireNonNull(schedule, "schedule"));
   }
 
   @Override

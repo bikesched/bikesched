@@ -8,7 +8,8 @@ import org.bikesched.BikeschedException;
 
 /**
  * Builds and schedules a job of one type, obtained via {@link
- * org.bikesched.Bikesched#newJob(String)}:
+ * org.bikesched.Bikesched#newJob(String)} or, with a typed payload, {@link
+ * org.bikesched.Bikesched#newJob(JobType)}:
  *
  * <pre>{@code
  * UUID id = bikesched.newJob("send-mail")
@@ -24,8 +25,11 @@ import org.bikesched.BikeschedException;
  *
  * <p>Every {@code schedule} call stores a new job, so a builder can be reused to schedule several
  * jobs with the same settings. Not thread-safe.
+ *
+ * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
+ *     of a {@link JobType}
  */
-public interface JobBuilder extends JobSettings<JobBuilder> {
+public interface JobBuilder<P> extends JobSettings<JobBuilder<P>, P> {
 
   /**
    * Continues with storing the job using the given connection, as part of the caller's transaction
@@ -53,7 +57,7 @@ public interface JobBuilder extends JobSettings<JobBuilder> {
    * @param connection the caller's connection
    * @return a builder with the settings made so far, storing the job on the connection
    */
-  TransactionalJobBuilder connection(Connection connection);
+  TransactionalJobBuilder<P> connection(Connection connection);
 
   /**
    * Continues with a recurring job running according to the schedule, identified by its job type;
@@ -69,7 +73,7 @@ public interface JobBuilder extends JobSettings<JobBuilder> {
    * @param schedule when the job runs
    * @return a builder with the settings made so far, registering a recurring job
    */
-  RecurringJobBuilder recurring(Schedule schedule);
+  RecurringJobBuilder<P> recurring(Schedule schedule);
 
   /**
    * Schedules the job to run as soon as possible.

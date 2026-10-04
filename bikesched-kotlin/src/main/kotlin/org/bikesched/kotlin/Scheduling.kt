@@ -250,7 +250,7 @@ internal class JobOptions(
   private val handler: JobHandler?,
 ) {
 
-  fun <B : JobSettings<B>> applyTo(builder: B): B {
+  fun <B : JobSettings<B, Any>> applyTo(builder: B): B {
     var b = builder
     payload?.let { b = b.payload(it) }
     priority?.let { b = b.priority(it) }

@@ -34,6 +34,7 @@ small:
 - **Cancellation** from within a handler or from outside
 - **Recurring jobs** with fixed-rate, daily, weekly or custom schedules
 - **Events**: jobs wait for an event without holding a thread and resume when it is published
+- Optional typed `JobType`/`EventType` constants, next to plain string names
 - Crash recovery: jobs of dead nodes are released and retried by others
 - Pluggable JSON mapping and node, job and step ids in the SLF4J logging context
 

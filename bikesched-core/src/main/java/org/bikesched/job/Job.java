@@ -8,7 +8,9 @@ import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.Event;
 import org.bikesched.event.EventHandler;
+import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
+import org.bikesched.event.TypedEventWait;
 
 /**
  * A job being executed, as seen by its {@link JobHandler}.
@@ -215,6 +217,27 @@ public interface Job {
    * @throws IllegalArgumentException if the step or event name is blank
    */
   EventWait waitForEvent(String stepName, String eventName, String eventKey);
+
+  /**
+   * Waits for an event of an {@link EventType}, like {@link #waitForEvent(String, String, String)},
+   * receiving its payload mapped to the type's payload class:
+   *
+   * <pre>{@code
+   * static final EventType<Payment> PAYMENT_RECEIVED = EventType.of("payment-received", Payment.class);
+   *
+   * Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id())
+   *         .timeout(Duration.ofDays(3), () -> null)   // optional
+   *         .receive();
+   * }</pre>
+   *
+   * @param stepName the step name, unique within the job
+   * @param eventType the event's name and payload class
+   * @param eventKey identifies the event instance waited for, e.g. an order id
+   * @param <T> the payload type
+   * @return the wait, to set an optional timeout and receive the payload
+   * @throws IllegalArgumentException if the step name is blank
+   */
+  <T> TypedEventWait<T> waitForEvent(String stepName, EventType<T> eventType, String eventKey);
 
   /**
    * Marks this job as cancelled. Once the handler returns, bikesched sets the job to {@code

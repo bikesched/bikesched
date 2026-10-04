@@ -29,6 +29,25 @@ List<ReceivedEvent> received = bikesched.newEvent("payment-received", order.id()
 - Waiting does not use up an attempt.
 - Code outside steps runs again on every resume, so it must be cheap and deterministic.
 
+## Typed events
+
+An `EventType` names an event together with its payload class, shared by the publisher and the
+waiting jobs:
+
+```java
+static final EventType<Payment> PAYMENT_RECEIVED = EventType.of("payment-received", Payment.class);
+
+Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id())
+        .timeout(Duration.ofDays(3), () -> null)   // optional; the result type is already known
+        .receive();
+
+bikesched.newEvent(PAYMENT_RECEIVED, order.id()).payload(payment).publish();   // payload(Payment) only
+```
+
+Only the name is stored, so events published with the string-based API reach typed waits and vice
+versa. Like job payloads, event payloads should be objects rather than bare values or collections,
+see [Payload design](configuration.md#payload-design).
+
 ## Timeouts
 
 To stop waiting after a while, add a timeout; its handler's result is returned instead of the

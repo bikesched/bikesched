@@ -15,23 +15,24 @@ import org.bikesched.job.TransactionalJobBuilder
 // kotlin.time.Duration overloads of the bikesched methods taking a java.time.Duration.
 
 /** Schedules the job to run once [delay] has passed, see `JobBuilder.schedule(Duration)`. */
-public fun JobBuilder.schedule(delay: Duration): UUID = schedule(delay.toJavaDuration())
+public fun JobBuilder<*>.schedule(delay: Duration): UUID = schedule(delay.toJavaDuration())
 
 /**
  * Schedules the job in the caller's transaction to run once [delay] has passed, see
  * `TransactionalJobBuilder.schedule(Duration)`.
  */
-public fun TransactionalJobBuilder.schedule(delay: Duration): UUID =
+public fun TransactionalJobBuilder<*>.schedule(delay: Duration): UUID =
   schedule(delay.toJavaDuration())
 
 /**
  * Registers the recurring job with its first run once [delay] has passed, see
  * `RecurringJobBuilder.schedule(Duration)`.
  */
-public fun RecurringJobBuilder.schedule(delay: Duration): UUID = schedule(delay.toJavaDuration())
+public fun RecurringJobBuilder<*>.schedule(delay: Duration): UUID = schedule(delay.toJavaDuration())
 
 /** Sets the maximum duration of an attempt, see `JobSettings.timeout(Duration)`. */
-public fun <B : JobSettings<B>> B.timeout(timeout: Duration): B = timeout(timeout.toJavaDuration())
+public fun <B : JobSettings<B, *>> B.timeout(timeout: Duration): B =
+  timeout(timeout.toJavaDuration())
 
 /** Delays the next attempt, see `JobFailure.retryAfter(Duration)`. */
 public fun JobFailure.retryAfter(delay: Duration): JobFailure = retryAfter(delay.toJavaDuration())
