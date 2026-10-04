@@ -1,6 +1,7 @@
 package org.bikesched.job;
 
 import java.util.Objects;
+import org.bikesched.internal.util.ValidationUtil;
 
 /**
  * A job type together with the class of its payload, shared by the code that schedules jobs of the
@@ -17,7 +18,7 @@ import java.util.Objects;
  * the name can also be scheduled and handled with the string-based API. A node rejects using one
  * name with two different payload classes.
  *
- * @param name the job type stored with each job, not blank
+ * @param name the job type stored with each job, not blank, at most 200 characters
  * @param payloadType the class payloads are mapped to and from by the {@code JsonMapper}
  * @param <T> the payload type
  */
@@ -25,17 +26,14 @@ public record JobType<T>(String name, Class<T> payloadType) {
 
   /** Validates the type. */
   public JobType {
-    Objects.requireNonNull(name, "name");
+    ValidationUtil.requireName(name, "job type");
     Objects.requireNonNull(payloadType, "payloadType");
-    if (name.isBlank()) {
-      throw new IllegalArgumentException("job type must not be blank");
-    }
   }
 
   /**
    * Creates a job type.
    *
-   * @param name the job type stored with each job, not blank
+   * @param name the job type stored with each job, not blank, at most 200 characters
    * @param payloadType the class payloads are mapped to and from
    * @param <T> the payload type
    * @return the job type

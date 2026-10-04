@@ -19,6 +19,7 @@ import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.event.DefaultEvent;
+import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobFailure;
@@ -33,7 +34,7 @@ import org.slf4j.MDC;
 /**
  * The {@link Job} implementation: a job claimed from {@code bikesched_jobs} for execution on this
  * node. Besides the handler API it carries what bikesched itself needs to schedule, time out and
- * record the job (priority, schedule time, timeout, cancellation state).
+ * record the job (priority, scheduled time, timeout, cancellation state).
  *
  * <p>A job claimed to be compensated runs its handler in compensation mode: steps and event waits
  * only return what they stored, completed steps register their compensations (latest first), and
@@ -52,7 +53,7 @@ public final class DefaultJob implements Job {
   private final int attempts;
   private final int maxAttempts;
   private final Duration timeout;
-  private final String schedule;
+  private final String recurrence;
   private final Instant fixedRateAt;
   private final boolean compensating;
   private final int compensationAttempts;
@@ -82,7 +83,7 @@ public final class DefaultJob implements Job {
     this.attempts = claimed.attempts();
     this.maxAttempts = claimed.maxAttempts();
     this.timeout = claimed.timeout();
-    this.schedule = claimed.schedule();
+    this.recurrence = claimed.recurrence();
     this.fixedRateAt = claimed.fixedRateAt();
     this.compensating = claimed.compensatedState() != null;
     this.compensationAttempts = claimed.compensationAttempts();
@@ -122,16 +123,16 @@ public final class DefaultJob implements Job {
   }
 
   /**
-   * The description of the recurring job's schedule this job is an occurrence of, {@code null} for
-   * a one-off job.
+   * The description of the recurring job's recurrence this job is an occurrence of, {@code null}
+   * for a one-off job.
    */
-  String schedule() {
-    return schedule;
+  String recurrence() {
+    return recurrence;
   }
 
   /**
-   * The planned run of an occurrence whose schedule {@link Recurrence#isFixedRate() is fixed-rate},
-   * {@code null} otherwise.
+   * The planned run of an occurrence whose recurrence {@link Recurrence#isFixedRate() is
+   * fixed-rate}, {@code null} otherwise.
    */
   Instant fixedRateAt() {
     return fixedRateAt;
@@ -296,7 +297,7 @@ public final class DefaultJob implements Job {
 
   @Override
   public <T> StepBuilder<T> newStep(String name, Class<T> resultType) {
-    requireName(name, "step name");
+    ValidationUtil.requireName(name, "step name");
     Objects.requireNonNull(resultType, "resultType");
     return new DefaultStepBuilder<>(this, name, resultType);
   }
@@ -308,11 +309,8 @@ public final class DefaultJob implements Job {
       Function<String, T> fromJson,
       CompensationHandler<? super T> compensation)
       throws Exception {
-    Objects.requireNonNull(name, "name");
+    ValidationUtil.requireName(name, "step name");
     Objects.requireNonNull(handler, "handler");
-    if (name.isBlank()) {
-      throw new IllegalArgumentException("step name must not be blank");
-    }
     Runnable restoreStepName = putStepName(name);
     try {
       var completed = database.steps().findCompletedStep(id, name);
@@ -370,9 +368,9 @@ public final class DefaultJob implements Job {
 
   @Override
   public EventWait waitForEvent(String stepName, String eventName, String eventKey) {
-    requireName(stepName, "step name");
-    requireName(eventName, "event name");
-    Objects.requireNonNull(eventKey, "eventKey");
+    ValidationUtil.requireName(stepName, "step name");
+    ValidationUtil.requireName(eventName, "event name");
+    ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultEventWait(this, stepName, eventName, eventKey);
   }
 
@@ -455,13 +453,6 @@ public final class DefaultJob implements Job {
       }
     } finally {
       restoreStepName.run();
-    }
-  }
-
-  private static void requireName(String name, String what) {
-    Objects.requireNonNull(name, what);
-    if (name.isBlank()) {
-      throw new IllegalArgumentException(what + " must not be blank");
     }
   }
 

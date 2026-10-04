@@ -32,7 +32,7 @@ class RecurringJobNextRunTest {
         .hasMessageEndingWith("it must return a later instant");
   }
 
-  private static RecurringJob recurring(Recurrence schedule) {
-    return new RecurringJob("report", schedule, null, 0, 3, null);
+  private static RecurringJob recurring(Recurrence recurrence) {
+    return new RecurringJob("report", recurrence, null, 0, 3, null);
   }
 }

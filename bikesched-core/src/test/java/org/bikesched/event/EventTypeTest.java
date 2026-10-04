@@ -87,7 +87,7 @@ class EventTypeTest extends AbstractBikeschedTest {
         .hasMessage("event name must not be blank");
     assertThatThrownBy(() -> EventType.of(null, Payment.class))
         .isInstanceOf(NullPointerException.class)
-        .hasMessage("name");
+        .hasMessage("event name");
   }
 
   private static Bikesched node(String name) {

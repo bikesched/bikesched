@@ -36,6 +36,7 @@ import org.bikesched.internal.job.DefaultJobBuilder;
 import org.bikesched.internal.job.JobProcessor;
 import org.bikesched.internal.job.RecurringJob;
 import org.bikesched.internal.job.RecurringJobRepair;
+import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobInfo;
@@ -363,25 +364,25 @@ public final class DefaultBikesched implements Bikesched {
     initializer.ensureInitialized();
     var registration = database.jobs().registerRecurringJob(job.occurrence(first));
     recurringJobs.put(type, job);
-    String schedule = job.schedule().description();
+    String recurrence = job.recurrence().description();
     if (registration.created()) {
       LOG.info(
           "Registered recurring job {} ({}), first occurrence at {}",
           type,
-          schedule,
+          recurrence,
           registration.scheduledAt());
-    } else if (registration.previousSchedule() != null) {
+    } else if (registration.previousRecurrence() != null) {
       LOG.info(
           "Recurrence of recurring job {} changed from '{}' to '{}', next occurrence moved to {}",
           type,
-          registration.previousSchedule(),
-          schedule,
+          registration.previousRecurrence(),
+          recurrence,
           registration.scheduledAt());
     } else {
       LOG.info(
           "Registered recurring job {} ({}), pending occurrence {} at {}",
           type,
-          schedule,
+          recurrence,
           registration.state(),
           registration.scheduledAt());
     }
@@ -427,18 +428,15 @@ public final class DefaultBikesched implements Bikesched {
 
   @Override
   public EventBuilder<Object> newEvent(String eventName, String eventKey) {
-    Objects.requireNonNull(eventName, "eventName");
-    if (eventName.isBlank()) {
-      throw new IllegalArgumentException("event name must not be blank");
-    }
-    Objects.requireNonNull(eventKey, "eventKey");
+    ValidationUtil.requireName(eventName, "event name");
+    ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultEventBuilder<>(eventName, eventKey, database.jsonMapper(), this::publish);
   }
 
   @Override
   public <T> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey) {
     Objects.requireNonNull(eventType, "eventType");
-    Objects.requireNonNull(eventKey, "eventKey");
+    ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultEventBuilder<>(
         eventType.name(), eventKey, database.jsonMapper(), this::publish);
   }
@@ -655,9 +653,6 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   private static void requireValidType(String type) {
-    Objects.requireNonNull(type, "type");
-    if (type.isBlank()) {
-      throw new IllegalArgumentException("job type must not be blank");
-    }
+    ValidationUtil.requireName(type, "job type");
   }
 }

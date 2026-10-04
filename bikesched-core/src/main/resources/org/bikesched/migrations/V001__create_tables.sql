@@ -1,5 +1,10 @@
 -- bikesched schema v1: nodes, jobs, steps and events.
 -- States are text + CHECK constraints (not Postgres enums) so adding states later is a cheap migration.
+-- Names (node names, job types, step and event names, recurrence descriptions) have at most 200
+-- characters, event keys at most 500: most are indexed, and B-tree entries are limited to about
+-- 2.7 kB. The library checks the same limits (ValidationUtil) before writing. Messages (last_error,
+-- cancel_message) are not indexed and have no constraint: the library truncates them to 4000
+-- characters, so recording a failure never fails on its length.
 
 -- Every application instance (node) registers itself here and heartbeats periodically.
 -- Nodes whose heartbeat is too old are considered dead; their RUNNING jobs can be rescheduled.
@@ -9,7 +14,8 @@ create table bikesched_nodes (
     name              text        not null,
     started_at        timestamptz not null default now(),
     last_heartbeat_at timestamptz not null default now(),
-    constraint bikesched_nodes_name_key unique (name)
+    constraint bikesched_nodes_name_key unique (name),
+    constraint bikesched_nodes_name_check check (char_length(name) between 1 and 200)
 );
 
 create index bikesched_nodes_last_heartbeat_at_idx on bikesched_nodes (last_heartbeat_at);
@@ -32,8 +38,8 @@ create table bikesched_jobs (
     attempts     integer     not null default 0,
     max_attempts integer     not null default 3,
     timeout_millis bigint,                      -- max. duration of an attempt; null: node default / none
-    schedule     text,                          -- occurrence of a recurring job: its schedule's description
-    fixed_rate_at timestamptz,                  -- its planned run (only for fixed-rate schedules);
+    recurrence   text,                          -- occurrence of a recurring job: its recurrence's description
+    fixed_rate_at timestamptz,                  -- its planned run (only for fixed-rate recurrences);
                                                 -- unlike scheduled_at not moved by retries or event waits
     compensated_state     text,                 -- CANCELLED or FAILED: the state a compensating job ends in
     compensation_attempts integer not null default 0,
@@ -57,7 +63,11 @@ create table bikesched_jobs (
     constraint bikesched_jobs_timeout_check
         check (timeout_millis > 0),
     constraint bikesched_jobs_lock_check
-        check ((state = 'RUNNING') = (locked_by is not null))
+        check ((state = 'RUNNING') = (locked_by is not null)),
+    constraint bikesched_jobs_job_type_check
+        check (char_length(job_type) between 1 and 200),
+    constraint bikesched_jobs_recurrence_check
+        check (char_length(recurrence) between 1 and 200)
 );
 
 -- Polling index: only due-able jobs, in claim order.
@@ -66,9 +76,9 @@ create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled
 
 -- Recurring jobs (identified by their job type): at most one pending occurrence each. Finishing an
 -- occurrence inserts the next one in the same transaction; registering a recurring job and the
--- heartbeat's repair insert one with "on conflict do nothing" if it is missing.
+-- node's repair insert one with "on conflict do nothing" if it is missing.
 create unique index bikesched_jobs_recurring_idx on bikesched_jobs (job_type)
-    where schedule is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING');
+    where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING');
 
 -- Finding/releasing jobs of a (dead) node; also backs the foreign key.
 create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
@@ -97,7 +107,11 @@ create table bikesched_steps (
                          'CANCELLED')),
     constraint bikesched_steps_event_check
         check ((event_name is null) = (event_key is null)
-               and (event_name is not null or (wait_until is null and state not in ('WAITING', 'TIMED_OUT'))))
+               and (event_name is not null or (wait_until is null and state not in ('WAITING', 'TIMED_OUT')))),
+    constraint bikesched_steps_name_check
+        check (char_length(name) between 1 and 200
+               and char_length(event_name) between 1 and 200
+               and char_length(event_key) between 1 and 500)
 );
 
 -- Matching published events to the steps waiting for them.
@@ -112,7 +126,9 @@ create table bikesched_events (
     event_name   text        not null,
     event_key    text        not null,
     payload      jsonb,
-    published_at timestamptz not null default now()
+    published_at timestamptz not null default now(),
+    constraint bikesched_events_name_key_check
+        check (char_length(event_name) between 1 and 200 and char_length(event_key) between 1 and 500)
 );
 
 create index bikesched_events_name_key_idx on bikesched_events (event_name, event_key, published_at desc);

@@ -10,6 +10,7 @@ import org.bikesched.event.EventWait;
 import org.bikesched.event.TimeoutHandler;
 import org.bikesched.internal.Internals;
 import org.bikesched.internal.Settings;
+import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailure;
@@ -62,15 +63,11 @@ public final class BikeschedBuilder {
    * name). Only one live node per name is allowed; the name of a dead node (no heartbeat for 30
    * seconds) is taken over.
    *
-   * @param nodeName the node name
+   * @param nodeName the node name, not blank, at most 200 characters
    * @return this builder
    */
   public BikeschedBuilder nodeName(String nodeName) {
-    Objects.requireNonNull(nodeName, "nodeName");
-    if (nodeName.isBlank()) {
-      throw new IllegalArgumentException("node name must not be blank");
-    }
-    this.nodeName = nodeName;
+    this.nodeName = ValidationUtil.requireName(nodeName, "node name");
     return this;
   }
 

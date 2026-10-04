@@ -10,6 +10,7 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.Objects;
 import java.util.function.UnaryOperator;
 import org.bikesched.RetryBackoff;
+import org.bikesched.internal.util.ValidationUtil;
 
 /**
  * When a recurring job runs, passed to {@link JobBuilder#schedule(Recurrence)}: computes the next
@@ -32,17 +33,17 @@ public interface Recurrence {
   Instant next(Instant previous);
 
   /**
-   * Returns a stable description of this schedule, e.g. {@code daily at 03:00 Europe/Berlin}.
+   * Returns a stable description of this recurrence, e.g. {@code daily at 03:00 Europe/Berlin}.
    *
    * @return the description
    */
   String description();
 
   /**
-   * Returns whether this is a fixed-rate schedule: the next run is computed from the previous
+   * Returns whether this is a fixed-rate recurrence: the next run is computed from the previous
    * occurrence's planned run time rather than from its scheduled time, which retries ({@link
    * JobFailure#retryAfter(Duration)}, {@link RetryBackoff}) and event waits move. Schedules that
-   * only add to the previous run, like {@link #every(Duration)}, would otherwise drift; schedules
+   * only add to the previous run, like {@link #every(Duration)}, would otherwise drift; recurrences
    * that snap to the wall clock, like {@link #daily(LocalTime, ZoneId)}, are not affected and need
    * no planned time.
    *
@@ -61,23 +62,23 @@ public interface Recurrence {
    * #isFixedRate()}), regardless of retries or event waits of the previous occurrence.
    *
    * @param interval the time between runs, positive
-   * @return the schedule
+   * @return the recurrence
    */
   static Recurrence every(Duration interval) {
     Objects.requireNonNull(interval, "interval");
     if (interval.isNegative() || interval.isZero()) {
       throw new IllegalArgumentException("interval must be positive: " + interval);
     }
-    Recurrence schedule = of("every " + interval, previous -> previous.plus(interval));
+    Recurrence recurrence = of("every " + interval, previous -> previous.plus(interval));
     return new Recurrence() {
       @Override
       public Instant next(Instant previous) {
-        return schedule.next(previous);
+        return recurrence.next(previous);
       }
 
       @Override
       public String description() {
-        return schedule.description();
+        return recurrence.description();
       }
 
       @Override
@@ -87,7 +88,7 @@ public interface Recurrence {
 
       @Override
       public String toString() {
-        return schedule.description();
+        return recurrence.description();
       }
     };
   }
@@ -98,7 +99,7 @@ public interface Recurrence {
    *
    * @param time the local time of day
    * @param zone the time zone of {@code time}
-   * @return the schedule
+   * @return the recurrence
    */
   static Recurrence daily(LocalTime time, ZoneId zone) {
     Objects.requireNonNull(time, "time");
@@ -120,7 +121,7 @@ public interface Recurrence {
    * @param day the day of the week
    * @param time the local time of day
    * @param zone the time zone of {@code time}
-   * @return the schedule
+   * @return the recurrence
    */
   static Recurrence weekly(DayOfWeek day, LocalTime time, ZoneId zone) {
     Objects.requireNonNull(day, "day");
@@ -138,23 +139,20 @@ public interface Recurrence {
   }
 
   /**
-   * Creates a custom schedule:
+   * Creates a custom recurrence:
    *
    * <pre>{@code
    * Recurrence.of("first monday of the month at 08:00 UTC", previous -> firstMondayAfter(previous))
    * }</pre>
    *
-   * @param description a stable description; change it whenever the logic changes, so nodes move
-   *     the pending occurrence to the new schedule
+   * @param description a stable description, not blank, at most 200 characters; change it whenever
+   *     the logic changes, so nodes move the pending occurrence to the new recurrence
    * @param next computes the next run after the previous one; must return a later instant
-   * @return the schedule
+   * @return the recurrence
    */
   static Recurrence of(String description, UnaryOperator<Instant> next) {
-    Objects.requireNonNull(description, "description");
+    ValidationUtil.requireName(description, "recurrence description");
     Objects.requireNonNull(next, "next");
-    if (description.isBlank()) {
-      throw new IllegalArgumentException("description must not be blank");
-    }
     return new Recurrence() {
       @Override
       public Instant next(Instant previous) {

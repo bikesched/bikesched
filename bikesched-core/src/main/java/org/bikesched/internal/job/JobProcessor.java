@@ -454,10 +454,10 @@ public final class JobProcessor {
   /**
    * The next occurrence to schedule when this job (an occurrence of a recurring job) ends; {@code
    * null} for a one-off job, or if the recurring job is not registered on this node (a node that
-   * registers it recreates the occurrence on its next heartbeat) or its schedule fails.
+   * registers it recreates the occurrence when it starts polling) or its recurrence fails.
    */
   private NewJob nextOccurrence(DefaultJob job) {
-    if (job.schedule() == null) {
+    if (job.recurrence() == null) {
       return null;
     }
     RecurringJob recurring = recurringJobs.apply(job.type());

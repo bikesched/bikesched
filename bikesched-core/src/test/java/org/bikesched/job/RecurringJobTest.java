@@ -45,7 +45,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
                   })
               .schedule(EVERY_200_MS);
 
-      assertThat(count("id = '" + first + "' and schedule = 'every PT0.2S'")).isEqualTo(1);
+      assertThat(count("id = '" + first + "' and recurrence = 'every PT0.2S'")).isEqualTo(1);
       awaitCount("job_type = 'recurring-basic' and state = 'SUCCEEDED'", 3);
 
       assertThat(count("job_type = 'recurring-basic' and state in ('SCHEDULED', 'RUNNING')"))
@@ -84,7 +84,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
               count(
                   "id = '"
                       + moved
-                      + "' and schedule = 'every PT2H'"
+                      + "' and recurrence = 'every PT2H'"
                       + " and scheduled_at > now() + interval '110 minutes'"))
           .isEqualTo(1);
       assertThat(count("job_type = 'recurring-change'")).isEqualTo(1);
@@ -272,7 +272,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
 
       awaitState(oneOff, "SUCCEEDED");
       assertThat(count("job_type = 'recurring-oneoff'")).as("one-off + pending").isEqualTo(2);
-      assertThat(count("id = '" + oneOff + "' and schedule is null")).isEqualTo(1);
+      assertThat(count("id = '" + oneOff + "' and recurrence is null")).isEqualTo(1);
     }
   }
 

@@ -63,7 +63,7 @@ public interface Bikesched extends AutoCloseable {
    * Registers the handler executing jobs of the given type. From then on jobs of that type can be
    * scheduled with {@link #newJob(String)} and are executed by this handler on this node.
    *
-   * @param type the job type
+   * @param type the job type, not blank, at most 200 characters
    * @param handler executes the jobs; receives the job being executed
    * @return this instance
    * @throws IllegalArgumentException if the type is blank or already has a handler
@@ -74,7 +74,7 @@ public interface Bikesched extends AutoCloseable {
    * Registers a handler for jobs of the given type that does not need the job itself (e.g. no
    * payload).
    *
-   * @param type the job type
+   * @param type the job type, not blank, at most 200 characters
    * @param handler executes the jobs
    * @return this instance
    * @throws IllegalArgumentException if the type is blank or already has a handler
@@ -133,7 +133,8 @@ public interface Bikesched extends AutoCloseable {
    * bikesched.newJob("cleanup").schedule(Instant.parse("2026-10-03T06:00:00Z"));
    * }</pre>
    *
-   * @param type the job type, also the name its handler is registered under
+   * @param type the job type, also the name its handler is registered under (at most 200
+   *     characters)
    * @return a builder for the job
    * @throws IllegalArgumentException if the type is blank
    */
@@ -188,8 +189,8 @@ public interface Bikesched extends AutoCloseable {
    *         .publish();
    * }</pre>
    *
-   * @param eventName the name of the event, e.g. {@code payment-received}
-   * @param eventKey identifies the event instance, e.g. an order id
+   * @param eventName the name of the event, e.g. {@code payment-received}, at most 200 characters
+   * @param eventKey identifies the event instance, e.g. an order id, at most 500 characters
    * @return a builder for the event
    * @throws IllegalArgumentException if the event name is blank
    */
@@ -204,7 +205,7 @@ public interface Bikesched extends AutoCloseable {
    * }</pre>
    *
    * @param eventType the event's name and payload class
-   * @param eventKey identifies the event instance, e.g. an order id
+   * @param eventKey identifies the event instance, e.g. an order id, at most 500 characters
    * @param <T> the payload type
    * @return a builder for the event
    */

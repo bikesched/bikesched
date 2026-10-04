@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.internal.util.ValidationUtil;
 
 /**
  * The {@code bikesched_steps} table: durable steps of jobs (event steps are handled by {@link
@@ -187,7 +188,7 @@ public final class StepStore {
    */
   public void failCompensation(UUID jobId, String name, String error) {
     access.withConnection(
-        db -> db.update(FAIL_COMPENSATION_SQL, error, jobId, name),
+        db -> db.update(FAIL_COMPENSATION_SQL, ValidationUtil.truncateMessage(error), jobId, name),
         e ->
             new BikeschedException(
                 "Recording the failed compensation of step '"
@@ -207,7 +208,7 @@ public final class StepStore {
    */
   public void failStep(UUID jobId, String name, String error) {
     access.withConnection(
-        db -> db.update(FAIL_STEP_SQL, error, jobId, name),
+        db -> db.update(FAIL_STEP_SQL, ValidationUtil.truncateMessage(error), jobId, name),
         e ->
             new BikeschedException(
                 "Recording the failure of step '"

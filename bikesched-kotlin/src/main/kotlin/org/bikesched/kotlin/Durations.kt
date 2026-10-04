@@ -40,7 +40,7 @@ public fun JobFailure.retryAfter(delay: Duration): JobFailure = retryAfter(delay
 /** Moves the deadline of the running attempt, see `Job.updateTimeout(Duration)`. */
 public fun Job.updateTimeout(timeout: Duration): Unit = updateTimeout(timeout.toJavaDuration())
 
-/** A fixed-rate schedule running every [interval], see `Recurrence.every(Duration)`. */
+/** A fixed-rate recurrence running every [interval], see `Recurrence.every(Duration)`. */
 public fun every(interval: Duration): Recurrence = Recurrence.every(interval.toJavaDuration())
 
 /** Retries after a fixed [delay], see `RetryBackoff.fixed(Duration)`. */

@@ -112,7 +112,7 @@ class SchedulingTest {
   }
 
   @Test
-  fun `createRecurringJob registers the schedule with an optional payload and handler`() {
+  fun `createRecurringJob registers the recurrence with an optional payload and handler`() {
     val typed = unique("recurring-report")
     val plain = unique("recurring-cleanup")
 

@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Rules of the package structure (see AGENTS.md): the API packages exported by the module reach the
- * implementation only through {@link Internals}, expose no implementation types, and the
- * implementation packages only depend downwards.
+ * implementation only through {@link Internals} (plus the dependency-free {@code internal.util}),
+ * expose no implementation types, and the implementation packages only depend downwards.
  */
 class ArchitectureTest {
 
@@ -38,6 +38,9 @@ class ArchitectureTest {
   private static final String[] API = {"org.bikesched", "org.bikesched.job", "org.bikesched.event"};
 
   private static final String INTERNAL = "org.bikesched.internal..";
+
+  /** Helpers without dependencies on the rest of bikesched, used by the API and implementation. */
+  private static final String UTIL = "org.bikesched.internal.util..";
 
   private static final JavaClasses CLASSES =
       new ClassFileImporter()
@@ -51,8 +54,10 @@ class ArchitectureTest {
         .resideInAnyPackage(API)
         .should()
         .dependOnClassesThat(
-            resideInAPackage(INTERNAL).and(not(belongToAnyOf(Internals.class, Settings.class))))
-        .because("the API creates the implementation via Internals only")
+            resideInAPackage(INTERNAL)
+                .and(not(belongToAnyOf(Internals.class, Settings.class)))
+                .and(not(resideInAPackage(UTIL))))
+        .because("the API creates the implementation via Internals only (and shares the utilities)")
         .check(CLASSES);
   }
 
@@ -93,6 +98,17 @@ class ArchitectureTest {
         .mayOnlyBeAccessedByLayers("Node", "Job", "Event")
         .whereLayer("Schema")
         .mayOnlyBeAccessedByLayers("Database")
+        .check(CLASSES);
+  }
+
+  @Test
+  void utilitiesDependOnNothingElseOfBikesched() {
+    noClasses()
+        .that()
+        .resideInAPackage(UTIL)
+        .should()
+        .dependOnClassesThat(resideInAPackage("org.bikesched..").and(not(resideInAPackage(UTIL))))
+        .because("the utilities are shared by the API and every implementation package")
         .check(CLASSES);
   }
 

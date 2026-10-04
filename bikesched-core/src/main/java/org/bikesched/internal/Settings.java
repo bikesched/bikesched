@@ -6,6 +6,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.RetryBackoff;
 import org.bikesched.internal.event.EventCleanUp;
+import org.bikesched.internal.util.ValidationUtil;
 
 /**
  * Validated configuration of a {@link DefaultBikesched} node, assembled by {@link
@@ -44,7 +45,7 @@ public record Settings(
 
   /** Validates the settings. */
   public Settings {
-    Objects.requireNonNull(nodeName, "nodeName");
+    ValidationUtil.requireName(nodeName, "node name");
     Objects.requireNonNull(heartbeatInterval, "heartbeatInterval");
     Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     Objects.requireNonNull(pollInterval, "pollInterval");

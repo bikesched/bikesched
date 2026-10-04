@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobState;
 
 /**
@@ -28,7 +29,7 @@ public final class JobStore {
 
   private static final String INSERT_JOB_SQL =
       """
-            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts, timeout_millis, schedule, fixed_rate_at)
+            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, fixed_rate_at)
             values (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)""";
 
   // Inserts an occurrence of a recurring job unless one is pending already (partial unique index).
@@ -36,32 +37,32 @@ public final class JobStore {
       INSERT_JOB_SQL
           + """
 
-            on conflict (job_type) where schedule is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')
+            on conflict (job_type) where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')
             do nothing""";
 
-  // Moves a pending (not yet running) occurrence to a new schedule; returns the old description.
+  // Moves a pending (not yet running) occurrence to a new recurrence; returns the old description.
   private static final String RESCHEDULE_OCCURRENCE_SQL =
       """
             update bikesched_jobs j
-               set schedule = ?, scheduled_at = ?, fixed_rate_at = ?, updated_at = now()
-              from (select id, schedule from bikesched_jobs
-                     where job_type = ? and schedule is not null and state = 'SCHEDULED'
-                       and schedule <> ?
+               set recurrence = ?, scheduled_at = ?, fixed_rate_at = ?, updated_at = now()
+              from (select id, recurrence from bikesched_jobs
+                     where job_type = ? and recurrence is not null and state = 'SCHEDULED'
+                       and recurrence <> ?
                      for update) old
              where j.id = old.id
-            returning old.schedule""";
+            returning old.recurrence""";
 
   private static final String FIND_PENDING_OCCURRENCE_SQL =
       """
             select id, scheduled_at, state from bikesched_jobs
-             where job_type = ? and schedule is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')""";
+             where job_type = ? and recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')""";
 
   // Running occurrences cannot be deleted; finishing them schedules no successor on nodes that no
   // longer have the recurring job registered.
   private static final String DELETE_PENDING_OCCURRENCES_SQL =
       """
             delete from bikesched_jobs
-             where job_type = ? and schedule is not null and state in ('SCHEDULED', 'WAITING')""";
+             where job_type = ? and recurrence is not null and state in ('SCHEDULED', 'WAITING')""";
 
   // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
   // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
@@ -79,7 +80,7 @@ public final class JobStore {
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
-            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, schedule, fixed_rate_at,
+            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, recurrence, fixed_rate_at,
                       compensated_state, compensation_attempts, cancel_requested_at is not null, cancel_message""";
 
   private static final String FIND_JOB_SQL =
@@ -273,7 +274,7 @@ public final class JobStore {
       job.priority(),
       job.maxAttempts(),
       Sql.millis(job.timeout()),
-      job.schedule(),
+      job.recurrence(),
       Sql.timestamp(job.fixedRateAt())
     };
   }
@@ -387,7 +388,7 @@ public final class JobStore {
                   CANCEL_JOB_SQL,
                   row -> row.string(1),
                   attemptRan ? 0 : 1,
-                  message,
+                  ValidationUtil.truncateMessage(message),
                   jobId,
                   jobId,
                   nodeId);
@@ -425,7 +426,7 @@ public final class JobStore {
    */
   public boolean requestCancel(UUID jobId, String message) {
     return access.withConnection(
-            db -> db.update(REQUEST_CANCEL_SQL, message, jobId),
+            db -> db.update(REQUEST_CANCEL_SQL, ValidationUtil.truncateMessage(message), jobId),
             e -> new BikeschedException("Cancelling bikesched job " + jobId + " failed", e))
         > 0;
   }
@@ -476,7 +477,7 @@ public final class JobStore {
               db.one(
                   FAIL_COMPENSATION_SQL,
                   FailedJob::from,
-                  error,
+                  ValidationUtil.truncateMessage(error),
                   Sql.millis(retryAfter),
                   jobId,
                   nodeId);
@@ -510,33 +511,33 @@ public final class JobStore {
 
   /**
    * Registers a recurring job: inserts its first occurrence unless one is pending; a pending
-   * occurrence of a different schedule (description) that has not started yet is moved to the first
-   * run of the new schedule.
+   * occurrence of a different recurrence (description) that has not started yet is moved to the
+   * first run of the new recurrence.
    *
-   * @param first the first occurrence of the (new) schedule
+   * @param first the first occurrence of the (new) recurrence
    * @return the pending occurrence after registering
    */
   public RecurringRegistration registerRecurringJob(NewJob first) {
     return access.inTransaction(
         db -> {
           boolean created = insertOccurrence(db, first);
-          String previousSchedule =
+          String previousRecurrence =
               created
                   ? null
                   : db.one(
                           RESCHEDULE_OCCURRENCE_SQL,
                           row -> row.string(1),
-                          first.schedule(),
+                          first.recurrence(),
                           first.scheduledAt(),
                           Sql.timestamp(first.fixedRateAt()),
                           first.type(),
-                          first.schedule())
+                          first.recurrence())
                       .orElse(null);
           return db.one(
                   FIND_PENDING_OCCURRENCE_SQL,
                   row ->
                       new RecurringRegistration(
-                          row.uuid(1), row.instant(2), row.string(3), created, previousSchedule),
+                          row.uuid(1), row.instant(2), row.string(3), created, previousRecurrence),
                   first.type())
               // Cannot happen within this transaction: the insert either succeeded or conflicted.
               .orElseThrow(
@@ -554,11 +555,11 @@ public final class JobStore {
    * @param scheduledAt when it runs (or ran, if already running)
    * @param state its state
    * @param created whether registering created it
-   * @param previousSchedule the description of the schedule it was moved away from, {@code null} if
-   *     it was not moved
+   * @param previousRecurrence the description of the recurrence it was moved away from, {@code
+   *     null} if it was not moved
    */
   public record RecurringRegistration(
-      UUID jobId, Instant scheduledAt, String state, boolean created, String previousSchedule) {}
+      UUID jobId, Instant scheduledAt, String state, boolean created, String previousRecurrence) {}
 
   /**
    * Deletes the pending occurrences of a recurring job that are not running.
@@ -609,7 +610,7 @@ public final class JobStore {
               db.one(
                   FAIL_JOB_SQL,
                   FailedJob::from,
-                  error,
+                  ValidationUtil.truncateMessage(error),
                   Sql.typed(maxAttempts, Types.INTEGER),
                   Sql.millis(retryAfter),
                   jobId,
@@ -701,8 +702,9 @@ public final class JobStore {
    * @param attempts the number of attempts including the claimed one
    * @param maxAttempts the maximum number of attempts
    * @param timeout its timeout, {@code null} for the node default
-   * @param schedule the description of its recurring job's schedule, {@code null} for a one-off job
-   * @param fixedRateAt its planned run if its schedule is fixed-rate, {@code null} otherwise
+   * @param recurrence the description of its recurring job's recurrence, {@code null} for a one-off
+   *     job
+   * @param fixedRateAt its planned run if its recurrence is fixed-rate, {@code null} otherwise
    * @param compensatedState {@code CANCELLED} or {@code FAILED} if the job was claimed to
    *     compensate its steps, {@code null} if it was claimed to run
    * @param compensationAttempts the number of compensation attempts including the claimed one
@@ -718,7 +720,7 @@ public final class JobStore {
       int attempts,
       int maxAttempts,
       Duration timeout,
-      String schedule,
+      String recurrence,
       Instant fixedRateAt,
       String compensatedState,
       int compensationAttempts,

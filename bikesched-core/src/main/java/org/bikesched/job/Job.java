@@ -113,7 +113,7 @@ public interface Job {
    * more than once (e.g. if the node dies before its result is stored), so steps should be
    * idempotent. Steps run on the calling thread, one at a time.
    *
-   * @param name the step name, unique within the job
+   * @param name the step name, unique within the job, at most 200 characters
    * @param resultType the type of the step result, used to read a stored result back
    * @param handler executes the step and returns its result (may be {@code null})
    * @param <T> the type of the step result
@@ -153,7 +153,7 @@ public interface Job {
    * attempts, with the node's retry backoff), afterwards the job is {@code COMPENSATION_FAILED}.
    * Once all compensations ran, the job ends {@code CANCELLED} or {@code FAILED}.
    *
-   * @param name the step name, unique within the job
+   * @param name the step name, unique within the job, at most 200 characters
    * @param resultType the type of the step result, used to read a stored result back and passed to
    *     the compensation
    * @param <T> the type of the step result
@@ -210,9 +210,10 @@ public interface Job {
    * handler returns ({@link #cancel() cancelling} or {@link #fail() failing} the attempt takes
    * precedence).
    *
-   * @param stepName the step name, unique within the job
-   * @param eventName the name of the event, e.g. {@code payment-received}
-   * @param eventKey identifies the event instance waited for, e.g. an order id
+   * @param stepName the step name, unique within the job, at most 200 characters
+   * @param eventName the name of the event, e.g. {@code payment-received}, at most 200 characters
+   * @param eventKey identifies the event instance waited for, e.g. an order id, at most 500
+   *     characters
    * @return the wait, to set an optional timeout and receive the event
    * @throws IllegalArgumentException if the step or event name is blank
    */
@@ -230,9 +231,10 @@ public interface Job {
    *         .receive();
    * }</pre>
    *
-   * @param stepName the step name, unique within the job
+   * @param stepName the step name, unique within the job, at most 200 characters
    * @param eventType the event's name and payload class
-   * @param eventKey identifies the event instance waited for, e.g. an order id
+   * @param eventKey identifies the event instance waited for, e.g. an order id, at most 500
+   *     characters
    * @param <T> the payload type
    * @return the wait, to set an optional timeout and receive the payload
    * @throws IllegalArgumentException if the step name is blank

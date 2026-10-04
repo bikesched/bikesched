@@ -1,6 +1,7 @@
 package org.bikesched.event;
 
 import java.util.Objects;
+import org.bikesched.internal.util.ValidationUtil;
 
 /**
  * An event name together with the class of its payload, shared by the code that publishes events of
@@ -16,7 +17,7 @@ import java.util.Objects;
  * <p>Only the name is stored with the event, so an {@code EventType} is a compile-time contract:
  * events of the name can also be published and received with the string-based API.
  *
- * @param name the event name stored with each event, not blank
+ * @param name the event name stored with each event, not blank, at most 200 characters
  * @param payloadType the class payloads are mapped to and from by the {@code JsonMapper}
  * @param <T> the payload type
  */
@@ -24,17 +25,14 @@ public record EventType<T>(String name, Class<T> payloadType) {
 
   /** Validates the type. */
   public EventType {
-    Objects.requireNonNull(name, "name");
+    ValidationUtil.requireName(name, "event name");
     Objects.requireNonNull(payloadType, "payloadType");
-    if (name.isBlank()) {
-      throw new IllegalArgumentException("event name must not be blank");
-    }
   }
 
   /**
    * Creates an event type.
    *
-   * @param name the event name stored with each event, not blank
+   * @param name the event name stored with each event, not blank, at most 200 characters
    * @param payloadType the class payloads are mapped to and from
    * @param <T> the payload type
    * @return the event type

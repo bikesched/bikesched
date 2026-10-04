@@ -16,9 +16,9 @@ import org.bikesched.job.Recurrence;
  * @param priority higher priorities are claimed first
  * @param maxAttempts number of attempts before the job is marked {@code FAILED}
  * @param timeout maximum duration of an attempt, {@code null} for the executing node's default
- * @param schedule the description of the recurring job's schedule this job is an occurrence of;
+ * @param recurrence the description of the recurring job's recurrence this job is an occurrence of;
  *     {@code null} for a one-off job
- * @param fixedRateAt the planned run of an occurrence whose schedule {@link
+ * @param fixedRateAt the planned run of an occurrence whose recurrence {@link
  *     Recurrence#isFixedRate() is fixed-rate}; {@code null} otherwise
  */
 public record NewJob(
@@ -28,7 +28,7 @@ public record NewJob(
     int priority,
     int maxAttempts,
     Duration timeout,
-    String schedule,
+    String recurrence,
     Instant fixedRateAt) {
 
   public NewJob {

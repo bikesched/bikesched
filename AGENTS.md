@@ -42,10 +42,13 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
     event waits via `DefaultEventWait`), `RecurringJob`, `RecurringJobRepair`
   - `internal.event`: `DefaultEventBuilder`, `DefaultEvent`, `EventCleanUp`
+  - `internal.util`: dependency-free helpers usable from the API and every implementation package
+    (`ValidationUtil`: name and key checks matching the schema's length constraints, message
+    truncation)
   - `internal.database` (+ `.schema`): `Database`, `DatabaseAccess`, `Sql`, the stores and the rows
     they read and write (`NewJob`, `DefaultJobInfo`)
 - The API packages reach the implementation only through the factories in `internal.Internals`
-  (plus the `Settings` record the builder fills); public API signatures never mention internal
+  (plus the `Settings` record the builder fills, and `internal.util`); public API signatures never mention internal
   types. `ArchitectureTest` (ArchUnit) enforces both rules and the package dependencies above.
 
 New dependencies for core need a very good reason: integrations users may want to swap become a
@@ -102,6 +105,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `bikesched-core/src/main/resources/org/bikesched/migrations`, applied by the own `SchemaMigrator`
   (no Flyway/Liquibase). While unreleased, schema changes go **into `V001` in place**; local
   databases then need `docker compose down -v` (checksum mismatch).
+- Name and key columns are `text` with a `char_length` CHECK matching `ValidationUtil` (200 for
+  names, 500 for event keys); new ones get both. Message columns (`last_error`, `cancel_message`)
+  have no CHECK: the stores pass them through `ValidationUtil.truncateMessage`.
 - New states go into the table's CHECK constraint. History rows are never deleted on state
   changes; they get a terminal state (`CANCELLED`, `COMPENSATED`) other code paths ignore.
 - A new table also goes into `SchemaMigratorTest` (drop list and expected tables) and the table list

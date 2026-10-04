@@ -95,7 +95,7 @@ class TypedEventTest {
   }
 
   @Test
-  fun `recurring jobs accept a kotlin schedule`() {
+  fun `recurring jobs accept a kotlin recurrence`() {
     val tick = unique("tick")
 
     testNode("recurring").use { bikesched ->
