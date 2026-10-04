@@ -17,8 +17,8 @@ class StepStoreTest extends AbstractStoreTest {
     UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
 
     assertThat(database.steps().findCompletedStep(jobId, "a")).isEmpty();
-    assertThat(database.steps().startStep(jobId, "a")).contains(1);
-    database.steps().failStep(jobId, "a", "boom");
+    assertThat(database.steps().startStep(jobId, node, "a")).contains(1);
+    database.steps().failStep(jobId, node, "a", "boom");
     assertThat(database.steps().findCompletedStep(jobId, "a"))
         .as("failed is not completed")
         .isEmpty();
@@ -27,20 +27,22 @@ class StepStoreTest extends AbstractStoreTest {
                 "name = 'a' and state = 'FAILED' and last_error = 'boom' and finished_at is not null"))
         .isEqualTo(1);
 
-    assertThat(database.steps().startStep(jobId, "a")).as("second attempt").contains(2);
+    assertThat(database.steps().startStep(jobId, node, "a")).as("second attempt").contains(2);
     assertThat(countSteps("name = 'a' and state = 'RUNNING' and finished_at is null")).isEqualTo(1);
-    database.steps().completeStep(jobId, "a", "{\"x\": 1}");
+    database.steps().completeStep(jobId, node, "a", "{\"x\": 1}");
 
     assertThat(database.steps().findCompletedStep(jobId, "a"))
         .contains(new StepStore.CompletedStep("{\"x\": 1}", false, 2));
-    assertThat(database.steps().startStep(jobId, "a")).as("no restart once succeeded").isEmpty();
+    assertThat(database.steps().startStep(jobId, node, "a"))
+        .as("no restart once succeeded")
+        .isEmpty();
     assertThat(
             countSteps(
                 "name = 'a' and state = 'SUCCEEDED' and attempts = 2 and finished_at is not null"))
         .isEqualTo(1);
 
-    assertThat(database.steps().startStep(jobId, "b")).contains(1);
-    database.steps().completeStep(jobId, "b", null);
+    assertThat(database.steps().startStep(jobId, node, "b")).contains(1);
+    database.steps().completeStep(jobId, node, "b", null);
     assertThat(database.steps().findCompletedStep(jobId, "b"))
         .contains(new StepStore.CompletedStep(null, false, 1));
   }
@@ -50,11 +52,80 @@ class StepStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-1");
     insertJobs(1, 0, "now()");
     UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
-    database.steps().startStep(jobId, "a");
+    database.steps().startStep(jobId, node, "a");
 
-    assertThatThrownBy(() -> database.steps().completeStep(jobId, "a", "not json"))
+    assertThatThrownBy(() -> database.steps().completeStep(jobId, node, "a", "not json"))
         .isInstanceOf(BikeschedException.class)
         .hasMessage("Storing the result of step 'a' of bikesched job " + jobId + " failed");
     assertThat(countSteps("name = 'a' and state = 'RUNNING'")).isEqualTo(1);
+  }
+
+  @Test
+  void runningStepIsLockedByItsNode() throws SQLException {
+    UUID node = registerNode("node-1");
+    insertJobs(1, 0, "now()");
+    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+
+    database.steps().startStep(jobId, node, "a");
+    assertThat(countSteps("name = 'a' and state = 'RUNNING' and locked_by = '" + node + "'"))
+        .isEqualTo(1);
+    database.steps().completeStep(jobId, node, "a", null);
+    assertThat(countSteps("name = 'a' and state = 'SUCCEEDED' and locked_by is null")).isEqualTo(1);
+
+    database.steps().startStep(jobId, node, "b");
+    database.steps().failStep(jobId, node, "b", "boom");
+    assertThat(countSteps("name = 'b' and state = 'FAILED' and locked_by is null")).isEqualTo(1);
+  }
+
+  @Test
+  void stepWritesOfANodeThatLostTheJobAreRejected() throws SQLException {
+    UUID node = registerNode("node-1");
+    UUID other = registerNode("node-2");
+    insertJobs(1, 0, "now()");
+    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+    database.steps().startStep(jobId, node, "a");
+    database.steps().startStep(jobId, node, "b");
+    database.steps().completeStep(jobId, node, "b", null, true);
+    // Released (as for a node considered dead) and claimed by another node.
+    execute("update bikesched_jobs set locked_by = '" + other + "' where id = '" + jobId + "'");
+
+    assertThatThrownBy(() -> database.steps().completeStep(jobId, node, "a", "1"))
+        .isInstanceOf(JobLockLostException.class)
+        .hasMessageContaining(jobId + " is no longer running on node " + node);
+    assertThatThrownBy(() -> database.steps().failStep(jobId, node, "a", "boom"))
+        .isInstanceOf(JobLockLostException.class);
+    assertThatThrownBy(() -> database.steps().startStep(jobId, node, "c"))
+        .isInstanceOf(JobLockLostException.class);
+    assertThatThrownBy(() -> database.steps().compensateStep(jobId, node, "b"))
+        .isInstanceOf(JobLockLostException.class);
+    assertThatThrownBy(() -> database.steps().failCompensation(jobId, node, "b", "boom"))
+        .isInstanceOf(JobLockLostException.class);
+    assertThat(countSteps("job_id = '" + jobId + "' and name = 'c'")).isZero();
+    assertThat(countSteps("name = 'a' and state = 'RUNNING' and locked_by = '" + node + "'"))
+        .as("unchanged")
+        .isEqualTo(1);
+
+    // The new owner takes the step over.
+    assertThat(database.steps().startStep(jobId, other, "a")).contains(2);
+    database.steps().completeStep(jobId, other, "a", "1");
+    assertThat(countSteps("name = 'a' and state = 'SUCCEEDED' and locked_by is null")).isEqualTo(1);
+  }
+
+  @Test
+  void stepWritesOfAnEndedJobAreRejected() throws SQLException {
+    UUID node = registerNode("node-1");
+    insertJobs(1, 0, "now()");
+    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+    execute(
+        "update bikesched_jobs set state = 'CANCELLED', locked_by = null, locked_at = null,"
+            + " finished_at = now() where id = '"
+            + jobId
+            + "'");
+
+    assertThatThrownBy(() -> database.steps().startStep(jobId, node, "a"))
+        .isInstanceOf(JobLockLostException.class);
+    assertThatThrownBy(() -> database.events().awaitEvent(jobId, node, "w", "event", "key", null))
+        .isInstanceOf(JobLockLostException.class);
+    assertThat(countSteps("job_id = '" + jobId + "'")).isZero();
   }
 }

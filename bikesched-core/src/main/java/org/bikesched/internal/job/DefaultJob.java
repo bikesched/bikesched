@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.Event;
@@ -16,6 +17,7 @@ import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.TypedEventWait;
 import org.bikesched.internal.database.Database;
+import org.bikesched.internal.database.JobLockLostException;
 import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.event.DefaultEvent;
@@ -46,6 +48,10 @@ public final class DefaultJob implements Job {
 
   private final Database database;
   private final UUID id;
+
+  /** The node that claimed the job: its step writes are fenced by this lock. */
+  private final UUID nodeId;
+
   private final String type;
   private final String payload;
   private final int priority;
@@ -71,11 +77,13 @@ public final class DefaultJob implements Job {
   private volatile JobSuspended.Suspension suspension;
   private volatile JobAttempt attempt;
   private volatile Duration defaultEventTimeout;
+  private volatile boolean lockLost;
 
   /** A job claimed by this node, accessing its steps and events through the database. */
   public DefaultJob(Database database, JobStore.ClaimedJob claimed) {
     this.database = Objects.requireNonNull(database, "database");
     this.id = claimed.id();
+    this.nodeId = Objects.requireNonNull(claimed.lockedBy(), "lockedBy");
     this.type = claimed.type();
     this.payload = claimed.payload();
     this.priority = claimed.priority();
@@ -192,13 +200,13 @@ public final class DefaultJob implements Job {
             millisSince(start),
             e.toString());
         try {
-          database.steps().failCompensation(id, name, e.toString());
+          fenced(() -> database.steps().failCompensation(id, nodeId, name, e.toString()));
         } catch (RuntimeException recording) {
           e.addSuppressed(recording);
         }
         throw e;
       }
-      database.steps().compensateStep(id, name);
+      fenced(() -> database.steps().compensateStep(id, nodeId, name));
       LOG.debug("Step {} of job {} COMPENSATED in {} ms", name, id, millisSince(start));
     } finally {
       restoreStepName.run();
@@ -332,7 +340,7 @@ public final class DefaultJob implements Job {
         return result;
       }
       if (completed.isEmpty()) {
-        var stepAttempt = database.steps().startStep(id, name);
+        var stepAttempt = fenced(() -> database.steps().startStep(id, nodeId, name));
         if (stepAttempt.isPresent()) {
           return executeStep(name, stepAttempt.get(), handler, toJson, compensation != null);
         }
@@ -422,7 +430,10 @@ public final class DefaultJob implements Job {
           default -> throw new CompensationReplayEnded(stepName);
         };
       }
-      var wait = database.events().awaitEvent(id, stepName, eventName, eventKey, timeout);
+      var wait =
+          fenced(
+              () ->
+                  database.events().awaitEvent(id, nodeId, stepName, eventName, eventKey, timeout));
       switch (wait.state()) {
         case "SUCCEEDED" -> {
           LOG.debug("Step {} of job {} received event {}/{}", stepName, id, eventName, eventKey);
@@ -468,9 +479,8 @@ public final class DefaultJob implements Job {
     T result;
     try {
       result = handler.handle(new Step(id, name, stepAttempt));
-      database
-          .steps()
-          .completeStep(id, name, result == null ? null : toJson.apply(result), compensable);
+      String json = result == null ? null : toJson.apply(result);
+      fenced(() -> database.steps().completeStep(id, nodeId, name, json, compensable));
     } catch (Exception e) {
       recordStepFailure(name, stepAttempt, e, start);
       throw e;
@@ -493,10 +503,37 @@ public final class DefaultJob implements Job {
         millisSince(start),
         failure.toString());
     try {
-      database.steps().failStep(id, name, failure.toString());
+      fenced(() -> database.steps().failStep(id, nodeId, name, failure.toString()));
     } catch (RuntimeException e) {
       failure.addSuppressed(e);
     }
+  }
+
+  /**
+   * Whether a step write of this attempt found the job no longer running on this node: it was
+   * released (e.g. after missed heartbeats) and may run elsewhere, so the attempt must not record
+   * an outcome. Set even if the handler caught the {@link JobLockLostException}.
+   */
+  boolean isLockLost() {
+    return lockLost;
+  }
+
+  /** Runs a fenced step write, remembering a lost job lock. */
+  private <T> T fenced(Supplier<T> write) {
+    try {
+      return write.get();
+    } catch (JobLockLostException e) {
+      lockLost = true;
+      throw e;
+    }
+  }
+
+  private void fenced(Runnable write) {
+    fenced(
+        () -> {
+          write.run();
+          return null;
+        });
   }
 
   private static long millisSince(long startNanos) {

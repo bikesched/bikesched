@@ -34,6 +34,7 @@ import org.bikesched.internal.job.BaseJobBuilder;
 import org.bikesched.internal.job.DefaultJob;
 import org.bikesched.internal.job.DefaultJobBuilder;
 import org.bikesched.internal.job.HistoryCleanUp;
+import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.job.JobProcessor;
 import org.bikesched.internal.job.RecurringJob;
 import org.bikesched.internal.job.RecurringJobRepair;
@@ -61,9 +62,10 @@ import org.slf4j.MDC;
  *   <li>{@code bikesched-cleanup}: single scheduled thread running the housekeeping while the node
  *       polls, each on its own interval: the {@link NodeCleanUp} (releases the running jobs of dead
  *       nodes, removes dead nodes), the {@link EventCleanUp} (deletes expired events) and, with the
- *       job history enabled, the {@link HistoryCleanUp} (deletes expired history entries); also
- *       retries of the {@link RecurringJobRepair} (recreates missing occurrences of the node's
- *       recurring jobs), which runs once when polling starts
+ *       job history enabled, the {@link HistoryCleanUp} (deletes expired history entries) and the
+ *       {@link JobCleanUp} (deletes ended jobs after the job retention); also retries of the {@link
+ *       RecurringJobRepair} (recreates missing occurrences of the node's recurring jobs), which
+ *       runs once when polling starts
  *   <li>{@code bikesched-poller}: single scheduled thread claiming due jobs (skip locked) and
  *       handing them to the job executor
  *   <li>{@code bikesched-job-N}: one virtual thread per claimed job, processed by the {@link
@@ -236,6 +238,8 @@ public final class DefaultBikesched implements Bikesched {
             nodeName,
             historyRetention);
       }
+      var jobCleanUp = new JobCleanUp(database, id, nodeName, settings.jobRetention());
+      scheduleWithFixedDelay(cleanUpExecutor, jobCleanUp::run, settings.jobCleanUpInterval());
       scheduleWithFixedDelay(pollerExecutor, this::poll, settings.pollInterval());
       LOG.info(
           "bikesched node {} ({}) registered, polling for jobs every {} (running up to {}"

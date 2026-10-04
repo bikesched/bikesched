@@ -193,6 +193,24 @@ A job that waited for an event and was retried once could show:
 - Only nodes with the history enabled record: enable it on all nodes, or the history has gaps.
   `findJobHistory` reads the table on any node.
 
+## Job retention
+
+Every polling node deletes jobs that ended (`SUCCEEDED`, `FAILED`, `CANCELLED`) longer than the job
+retention ago, 7 days by default, together with their steps, every `jobCleanUpInterval` (1 hour).
+Set a different retention with `jobRetention(retention)`, the same on all nodes:
+
+```java
+Bikesched bikesched = Bikesched.builder().dataSource(dataSource).jobRetention(Duration.ofDays(30)).build();
+```
+
+- Scheduled, running, waiting and compensating jobs are never deleted, nor are jobs ending in
+  `COMPENSATION_FAILED`, which need attention. Neither are the pending occurrences of recurring
+  jobs, only their ended ones.
+- The clean-up deletes in batches of 1000 jobs, each in a short transaction, so a large backlog
+  does not lock the table for long. Several nodes share the work.
+- `findJob` returns empty for a deleted job. The [job history](#job-history) has its own retention
+  and keeps entries of deleted jobs until then.
+
 ## Timeouts
 
 When an attempt exceeds its timeout (per job, or the node's `defaultJobTimeout`), bikesched logs a

@@ -43,12 +43,12 @@ class HistoryStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-steps");
     UUID jobId = scheduleAndClaim(node);
 
-    database.steps().startStep(jobId, "charge");
-    database.steps().failStep(jobId, "charge", "card declined");
-    database.steps().startStep(jobId, "charge");
-    database.events().awaitEvent(jobId, "wait", "paid", "order-1", Duration.ofMillis(1));
+    database.steps().startStep(jobId, node, "charge");
+    database.steps().failStep(jobId, node, "charge", "card declined");
+    database.steps().startStep(jobId, node, "charge");
+    database.events().awaitEvent(jobId, node, "wait", "paid", "order-1", Duration.ofMillis(1));
     Thread.sleep(20);
-    database.events().awaitEvent(jobId, "wait", "paid", "order-1", Duration.ofMillis(1));
+    database.events().awaitEvent(jobId, node, "wait", "paid", "order-1", Duration.ofMillis(1));
 
     List<JobHistoryEntry> history = database.history().findHistory(jobId);
     assertThat(history.subList(2, history.size()))

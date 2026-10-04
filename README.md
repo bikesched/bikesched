@@ -35,7 +35,10 @@ small:
 - **Recurring jobs** with fixed-rate, daily, weekly or custom schedules
 - **Events**: jobs wait for an event without holding a thread and resume when it is published
 - Optional typed `JobType`/`EventType` constants, next to plain string names
-- Crash recovery: jobs of dead nodes are released and retried by others
+- Crash recovery: jobs of dead nodes are released and retried by others; a node that lost a job
+  can no longer change its steps
+- Ended jobs are deleted after a retention (7 days by default); optional job history and
+  statement timeout
 - Pluggable JSON mapping and node, job and step ids in the SLF4J logging context
 
 ## Quick start
@@ -64,7 +67,8 @@ maximum number of attempts is used up and then marked `FAILED`.
 
 The [documentation](docs/index.md) covers the concepts in detail:
 
-- [Jobs](docs/jobs.md): scheduling, writing handlers, retries, cancellation, timeouts
+- [Jobs](docs/jobs.md): scheduling, writing handlers, retries, cancellation, history, retention,
+  timeouts
 - [Steps and compensation](docs/steps.md)
 - [Recurring jobs](docs/recurring-jobs.md)
 - [Events](docs/events.md)

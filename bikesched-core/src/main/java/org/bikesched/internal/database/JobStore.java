@@ -89,7 +89,8 @@ public final class JobStore {
                            limit ?
                            for update skip locked)
             returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, recurrence, fixed_rate_at,
-                      compensated_state, compensation_attempts, cancel_requested_at is not null, cancel_message""";
+                      compensated_state, compensation_attempts, cancel_requested_at is not null, cancel_message,
+                      locked_by""";
 
   private static final String FIND_JOB_SQL =
       """
@@ -130,7 +131,7 @@ public final class JobStore {
   // does (EventStore.RESUME_WAITING_STEPS_SQL), so the two cannot deadlock.
   private static final String CANCEL_STEPS_SQL =
       """
-            update bikesched_steps set state = 'CANCELLED', finished_at = now()
+            update bikesched_steps set state = 'CANCELLED', locked_by = null, finished_at = now()
              where job_id = ? and state in ('WAITING', 'RUNNING')
                and exists (select 1 from bikesched_jobs
                             where id = ? and locked_by = ? and state = 'RUNNING' and compensated_state is null)
@@ -881,6 +882,31 @@ public final class JobStore {
         e -> new BikeschedException("Releasing jobs of dead bikesched nodes failed", e));
   }
 
+  // A batch of ended jobs past the retention; their steps go with them (on delete cascade). Skips
+  // locked rows, so concurrent clean-ups on several nodes delete different jobs.
+  private static final String DELETE_FINISHED_JOBS_SQL =
+      """
+            delete from bikesched_jobs
+             where id in (select id from bikesched_jobs
+                           where finished_at < now() - make_interval(secs => ?)
+                             and state in ('SUCCEEDED', 'FAILED', 'CANCELLED')
+                           limit ? for update skip locked)""";
+
+  /**
+   * Deletes up to {@code limit} ended jobs ({@code SUCCEEDED}, {@code FAILED}, {@code CANCELLED})
+   * that finished longer than {@code retention} ago, with their steps. The job history is kept, it
+   * has its own retention.
+   *
+   * @param retention how long ended jobs are kept
+   * @param limit the maximum number of jobs to delete
+   * @return the number of deleted jobs
+   */
+  public int deleteFinishedJobs(Duration retention, int limit) {
+    return access.withConnection(
+        db -> db.update(DELETE_FINISHED_JOBS_SQL, Sql.seconds(retention), limit),
+        e -> new BikeschedException("Deleting finished bikesched jobs failed", e));
+  }
+
   /**
    * A job claimed for execution, as stored; becomes a {@code DefaultJob} on the claiming node.
    *
@@ -900,6 +926,7 @@ public final class JobStore {
    * @param compensationAttempts the number of compensation attempts including the claimed one
    * @param cancelRequested whether its cancellation was requested via {@code Bikesched.cancel}
    * @param cancelMessage the message of that request, may be {@code null}
+   * @param lockedBy the claiming node; step writes of the job are fenced by it
    */
   public record ClaimedJob(
       UUID id,
@@ -915,7 +942,8 @@ public final class JobStore {
       String compensatedState,
       int compensationAttempts,
       boolean cancelRequested,
-      String cancelMessage) {
+      String cancelMessage,
+      UUID lockedBy) {
 
     /** Maps a row of {@code CLAIM_JOBS_SQL}. */
     static ClaimedJob from(Sql.Row row) throws SQLException {
@@ -933,7 +961,8 @@ public final class JobStore {
           row.string(11),
           row.integer(12),
           row.bool(13),
-          row.string(14));
+          row.string(14),
+          row.uuid(15));
     }
   }
 }

@@ -29,6 +29,8 @@ public final class BikeschedBuilder {
   static final Duration DEFAULT_NODE_CLEAN_UP_INTERVAL = Duration.ofSeconds(15);
   static final Duration DEFAULT_EVENT_CLEAN_UP_INTERVAL = Duration.ofHours(1);
   static final Duration DEFAULT_JOB_HISTORY_CLEAN_UP_INTERVAL = Duration.ofHours(1);
+  static final Duration DEFAULT_JOB_RETENTION = Duration.ofDays(7);
+  static final Duration DEFAULT_JOB_CLEAN_UP_INTERVAL = Duration.ofHours(1);
   static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
 
   private DataSource dataSource;
@@ -47,6 +49,9 @@ public final class BikeschedBuilder {
   private Duration eventCleanUpInterval = DEFAULT_EVENT_CLEAN_UP_INTERVAL;
   private Duration jobHistoryRetention; // null: no job history
   private Duration jobHistoryCleanUpInterval = DEFAULT_JOB_HISTORY_CLEAN_UP_INTERVAL;
+  private Duration jobRetention = DEFAULT_JOB_RETENTION;
+  private Duration jobCleanUpInterval = DEFAULT_JOB_CLEAN_UP_INTERVAL;
+  private Duration statementTimeout; // null: left to the data source
 
   BikeschedBuilder() {}
 
@@ -245,6 +250,53 @@ public final class BikeschedBuilder {
     return this;
   }
 
+  /**
+   * Deletes ended jobs ({@code SUCCEEDED}, {@code FAILED}, {@code CANCELLED}) with their steps once
+   * they finished longer than the given period ago (optional, default 7 days). Every polling node
+   * does this every {@link #jobCleanUpInterval(Duration)}; several do not get in each other's way,
+   * so give all nodes the same retention. Pending and running jobs, including the pending
+   * occurrences of recurring jobs, are never deleted; the job history has its own {@link
+   * #jobHistory(Duration) retention}.
+   *
+   * @param retention how long ended jobs are kept, positive
+   * @return this builder
+   */
+  public BikeschedBuilder jobRetention(Duration retention) {
+    Objects.requireNonNull(retention, "retention");
+    this.jobRetention = requirePositive(retention, "jobRetention");
+    return this;
+  }
+
+  /**
+   * Sets how often this node deletes ended jobs older than the {@linkplain #jobRetention(Duration)
+   * job retention} (optional, default 1 hour). Every polling node does this.
+   *
+   * @param interval the time between clean-ups, positive
+   * @return this builder
+   */
+  public BikeschedBuilder jobCleanUpInterval(Duration interval) {
+    Objects.requireNonNull(interval, "interval");
+    this.jobCleanUpInterval = requirePositive(interval, "jobCleanUpInterval");
+    return this;
+  }
+
+  /**
+   * Limits how long a single database statement of this node may run (optional, default: whatever
+   * the data source does). A statement still running then is cancelled and fails like any other
+   * database error, so a hanging statement cannot block polling, heartbeats or job execution
+   * indefinitely. Applied as JDBC query timeout, in whole seconds (rounded up); statements of
+   * {@linkplain JobBuilder#connection(java.sql.Connection) transactional scheduling} on a caller's
+   * connection get it too.
+   *
+   * @param timeout the maximum duration of a statement, positive
+   * @return this builder
+   */
+  public BikeschedBuilder statementTimeout(Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout");
+    this.statementTimeout = requirePositive(timeout, "statementTimeout");
+    return this;
+  }
+
   /** Heartbeat interval; package-private so tests can speed it up. */
   BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
     this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -304,7 +356,10 @@ public final class BikeschedBuilder {
             nodeCleanUpInterval,
             eventCleanUpInterval,
             jobHistoryRetention,
-            jobHistoryCleanUpInterval);
+            jobHistoryCleanUpInterval,
+            jobRetention,
+            jobCleanUpInterval,
+            statementTimeout);
     return Internals.create(settings, dataSource, jsonMapper);
   }
 

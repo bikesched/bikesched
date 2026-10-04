@@ -86,6 +86,21 @@ public class BikeschedSpec internal constructor() {
   /** How often history entries older than [jobHistoryRetention] are deleted; defaults to 1 hour. */
   public var jobHistoryCleanUpInterval: Duration? = null
 
+  /**
+   * Deletes ended jobs with their steps once they finished this long ago (see
+   * `BikeschedBuilder.jobRetention`); defaults to 7 days.
+   */
+  public var jobRetention: Duration? = null
+
+  /** How often ended jobs older than [jobRetention] are deleted; defaults to 1 hour. */
+  public var jobCleanUpInterval: Duration? = null
+
+  /**
+   * The maximum duration of a database statement of this node (see
+   * `BikeschedBuilder.statementTimeout`); defaults to whatever the data source does.
+   */
+  public var statementTimeout: Duration? = null
+
   internal fun build(): Bikesched {
     val builder = Bikesched.builder()
     dataSource?.let(builder::dataSource)
@@ -101,6 +116,9 @@ public class BikeschedSpec internal constructor() {
     nodeCleanUpInterval?.let { builder.nodeCleanUpInterval(it.toJavaDuration()) }
     jobHistoryRetention?.let { builder.jobHistory(it.toJavaDuration()) }
     jobHistoryCleanUpInterval?.let { builder.jobHistoryCleanUpInterval(it.toJavaDuration()) }
+    jobRetention?.let { builder.jobRetention(it.toJavaDuration()) }
+    jobCleanUpInterval?.let { builder.jobCleanUpInterval(it.toJavaDuration()) }
+    statementTimeout?.let { builder.statementTimeout(it.toJavaDuration()) }
     return builder.build()
   }
 }

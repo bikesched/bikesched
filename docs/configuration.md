@@ -19,6 +19,9 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 | `defaultEventTimeout(Duration)` | none | maximum wait for events without a `.timeout(...)` of their own; afterwards the job fails with an `EventTimeoutException` |
 | `jobHistory(Duration retention)` | off | records every change of jobs and their steps in `bikesched_job_history` and keeps it for the retention, see [Job history](jobs.md#job-history); enable it on all nodes |
 | `jobHistoryCleanUpInterval(Duration)` | 1 hour | how often a node with the job history deletes entries older than the retention |
+| `jobRetention(Duration)` | 7 days | deletes ended jobs (`SUCCEEDED`, `FAILED`, `CANCELLED`) with their steps once they finished longer ago, see [Job retention](jobs.md#job-retention) |
+| `jobCleanUpInterval(Duration)` | 1 hour | how often the node deletes ended jobs older than the retention |
+| `statementTimeout(Duration)` | data source | maximum duration of each database statement of the node, applied as JDBC query timeout (whole seconds, rounded up); a statement running longer is cancelled and fails like any other database error, see [Statement timeout](#statement-timeout) |
 
 ## Nodes
 
@@ -28,9 +31,26 @@ considered dead: on their next node clean-up, other nodes release its running jo
 remove the node after another 30 seconds. The heartbeat itself only updates the node's row; the
 clean-ups run on their own thread and intervals, so they never delay it.
 
+A node whose heartbeat was missed (e.g. after a long GC pause or a network partition) may still be
+running jobs that other nodes have released meanwhile. Its step writes are fenced: each one only
+takes effect while the job is still `RUNNING` on that node, and a running step is locked by its node
+(`bikesched_steps.locked_by`). The first step, event wait or compensation the stale attempt reaches
+fails, and the node abandons the attempt without recording an outcome, logging a warning; this
+holds even if the handler catches the exception. Work done outside steps is not covered.
+
 `bikesched.node()` describes the node (`name()`, `id()` once registered, `isPolling()`).
 `close()` stops polling and the heartbeat, waits up to 10 seconds for running jobs, puts jobs
 that are still running back to `SCHEDULED` for other nodes, and deregisters the node.
+
+## Statement timeout
+
+Without a `statementTimeout`, a statement runs as long as the data source allows: a connection
+that hangs, e.g. after a database failover without a TCP reset, can then block polling or a job
+indefinitely. Set it a good deal above your slowest expected statement (e.g. 30 seconds), or
+configure the equivalent in the data source or pool (the PostgreSQL driver's `socketTimeout`, or
+`options=-c statement_timeout=30s` in the JDBC URL). The node applies it per statement as JDBC
+query timeout, so no session setting is left on pooled connections; it also covers statements of
+[transactional scheduling](jobs.md#transactional-scheduling) on the caller's connection.
 
 ## JSON mapping
 

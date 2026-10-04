@@ -1,6 +1,7 @@
 package org.bikesched.kotlin
 
 import java.util.UUID
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -26,6 +27,9 @@ class BikeschedDslTest {
       nodeCleanUpInterval = 30.seconds
       jobHistoryRetention = 1.hours
       jobHistoryCleanUpInterval = 10.minutes
+      jobRetention = 30.days
+      jobCleanUpInterval = 10.minutes
+      statementTimeout = 30.seconds
     }
       .use { bikesched ->
         assertThat(bikesched.node().name()).isEqualTo("dsl-node")

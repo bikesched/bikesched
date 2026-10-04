@@ -39,7 +39,8 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   - `internal`: `DefaultBikesched` (wiring, lifecycle, polling), `Settings`, `Heartbeat`,
     `NodeCleanUp`, `RawJsonMapper`
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
-    event waits via `DefaultEventWait`), `RecurringJob`, `RecurringJobRepair`, `HistoryCleanUp`
+    event waits via `DefaultEventWait`), `RecurringJob`, `RecurringJobRepair`, `HistoryCleanUp`,
+    `JobCleanUp`
   - `internal.event`: `DefaultEventBuilder`, `DefaultEvent`, `EventCleanUp`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
     (`ValidationUtil`: name and key checks matching the schema's length constraints, message
@@ -146,6 +147,8 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 ## Documentation
 
+- `ideas.md` (repository root) collects possible future improvements; remove an entry once it is
+  implemented or decided against.
 - `README.md` stays minimal: pitch, feature list, quick start, links into `docs/`, examples and
   build instructions. Details go into `docs/`, one page per concept, linked from `docs/index.md`:
   `jobs.md` (scheduling, handlers, `Job` method table, failures, cancellation, timeouts), `steps.md`

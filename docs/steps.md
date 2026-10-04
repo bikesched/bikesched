@@ -27,6 +27,21 @@ bikesched.registerJobHandler("order", job -> {
   keys.
 - Code outside of steps runs again on every attempt, so it should be cheap and deterministic.
 
+### Idempotency keys
+
+Steps run at least once: a completed step is not repeated, but a step whose side effect happened
+before its completion was stored runs again, e.g. after a crash right after the side effect, or on
+a node that lost its job (see [Nodes](configuration.md#nodes)) while another node runs the step
+too. bikesched stores only one result, but cannot undo the side effect. Pass an idempotency key
+derived from the step to external systems, so they recognize a repeated call:
+
+```java
+Payment payment = job.step("charge-card", Payment.class, step ->
+        payments.charge(order, step.jobId() + ":" + step.name()));   // same key in every attempt
+```
+
+Use the job id and step name, not the attempt number, which changes between attempts.
+
 ## Compensation
 
 Steps with side effects can declare a compensation that undoes them if the job is cancelled or

@@ -92,6 +92,25 @@ public final class JobProcessor {
     this.retryBackoff = Objects.requireNonNull(retryBackoff, "retryBackoff");
   }
 
+  /**
+   * Ends an attempt whose job was released while it ran (a step write found it no longer running on
+   * this node, see {@link DefaultJob#isLockLost()}): records nothing, the job belongs to whichever
+   * node claims it next.
+   */
+  private String abandon(DefaultJob job, Exception failure) {
+    LOG.warn(
+        "Job {} of type {} is no longer running on bikesched node {} ({}): it was released, e.g."
+            + " after missed heartbeats, and may run on another node; abandoning attempt {}"
+            + " without recording it",
+        job.id(),
+        job.type(),
+        nodeName,
+        nodeId,
+        job.attempts(),
+        failure);
+    return "abandoned, the job was released";
+  }
+
   /** Runs the job and logs the recorded outcome. */
   public void process(DefaultJob job) {
     long start = System.nanoTime();
@@ -161,6 +180,9 @@ public final class JobProcessor {
     // Clear a pending interrupt (timeout, shutdown or the handler's own): this thread still has
     // to record the outcome, and blocking I/O of an interrupted virtual thread fails.
     Thread.interrupted();
+    if (job.isLockLost()) {
+      return abandon(job, failure);
+    }
 
     if (job.isCancelled()) {
       if (failure != null) {
@@ -360,6 +382,9 @@ public final class JobProcessor {
     }
     boolean timedOut = attempt.finish(); // no interrupt can arrive after this
     Thread.interrupted(); // see runAndRecord
+    if (job.isLockLost()) {
+      return abandon(job, failure);
+    }
     if (failure != null) {
       return recordCompensationFailure(
           job,

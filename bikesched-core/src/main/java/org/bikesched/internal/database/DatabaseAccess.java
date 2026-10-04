@@ -2,6 +2,7 @@ package org.bikesched.internal.database;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.Objects;
 import javax.sql.DataSource;
 
@@ -13,13 +14,37 @@ import javax.sql.DataSource;
  *
  * <p>Writes are committed explicitly if the data source hands out connections with auto-commit
  * disabled. Runtime exceptions thrown by the work are rethrown as they are (after a rollback).
+ *
+ * <p>With a statement timeout, every statement gets it as JDBC query timeout (whole seconds,
+ * rounded up): a statement still running then is cancelled and fails like any other.
  */
 public final class DatabaseAccess {
 
   private final DataSource dataSource;
+  private final int queryTimeoutSeconds;
 
   DatabaseAccess(DataSource dataSource) {
+    this(dataSource, null);
+  }
+
+  /**
+   * @param dataSource the data source
+   * @param statementTimeout the maximum duration of a statement, {@code null} to leave it to the
+   *     data source
+   */
+  DatabaseAccess(DataSource dataSource, Duration statementTimeout) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+    this.queryTimeoutSeconds = statementTimeout == null ? 0 : seconds(statementTimeout);
+  }
+
+  /** JDBC query timeouts are whole seconds: rounded up, at least 1. */
+  private static int seconds(Duration timeout) {
+    long seconds = timeout.toSeconds() + (timeout.getNano() > 0 ? 1 : 0);
+    return (int) Math.min(Integer.MAX_VALUE, Math.max(1, seconds));
+  }
+
+  private Sql sql(Connection connection) {
+    return new Sql(connection, queryTimeoutSeconds);
   }
 
   /**
@@ -50,10 +75,10 @@ public final class DatabaseAccess {
   public <T> T withConnection(Sql.Work<T> work, SqlExceptionHandler onFailure) {
     try (Connection connection = dataSource.getConnection()) {
       if (connection.getAutoCommit()) {
-        return work.run(new Sql(connection));
+        return work.run(sql(connection));
       }
       try {
-        T result = work.run(new Sql(connection));
+        T result = work.run(sql(connection));
         connection.commit();
         return result;
       } catch (SQLException | RuntimeException e) {
@@ -103,7 +128,7 @@ public final class DatabaseAccess {
   public <T> T onCallerConnection(
       Connection connection, Sql.Work<T> work, SqlExceptionHandler onFailure) {
     try {
-      return work.run(new Sql(connection));
+      return work.run(sql(connection));
     } catch (SQLException e) {
       throw failure(onFailure, e);
     }
@@ -120,7 +145,7 @@ public final class DatabaseAccess {
         connection.setReadOnly(readOnly); // before the transaction starts (BEGIN READ ONLY)
       }
       try {
-        T result = work.run(new Sql(connection));
+        T result = work.run(sql(connection));
         connection.commit();
         return result;
       } catch (SQLException | RuntimeException e) {

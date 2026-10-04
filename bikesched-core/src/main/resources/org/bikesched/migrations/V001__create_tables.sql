@@ -80,6 +80,10 @@ create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled
 create unique index bikesched_jobs_recurring_idx on bikesched_jobs (job_type)
     where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING');
 
+-- Deleting finished jobs after the job retention (only ended jobs have finished_at).
+create index bikesched_jobs_finished_at_idx on bikesched_jobs (finished_at)
+    where finished_at is not null;
+
 -- Finding/releasing jobs of a (dead) node; also backs the foreign key.
 create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 
@@ -89,12 +93,16 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 -- wait_until has passed.
 -- A compensable step (declared with a compensation) is COMPENSATED once its compensation ran.
 -- Cancelling a job marks its unfinished steps (WAITING, or RUNNING after a crash) CANCELLED.
+-- A RUNNING step is locked by the node running it (locked_by). Every step write also requires the
+-- job to be RUNNING on that node, so a node whose job was released (e.g. after missed heartbeats)
+-- can no longer change its steps.
 create table bikesched_steps (
     job_id      uuid        not null references bikesched_jobs (id) on delete cascade,
     name        text        not null,
     state       text        not null default 'RUNNING',
     result      jsonb,
     attempts    integer     not null default 0,
+    locked_by   uuid,                   -- the node running the step (no FK: may outlive a dead node)
     last_error  text,
     event_name  text,
     event_key   text,
@@ -111,6 +119,8 @@ create table bikesched_steps (
         check ((event_name is null) = (event_key is null)
                and (event_name is not null or (wait_until is null and state not in ('WAITING', 'TIMED_OUT')))
                and (event_id is null or event_name is not null)),
+    constraint bikesched_steps_lock_check
+        check ((state = 'RUNNING') = (locked_by is not null)),
     constraint bikesched_steps_name_check
         check (char_length(name) between 1 and 200
                and char_length(event_name) between 1 and 200

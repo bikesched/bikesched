@@ -142,6 +142,7 @@ public final class EventStore {
    * {@code WAITING}. Runs in one transaction holding the event's advisory lock.
    *
    * @param jobId the job id
+   * @param nodeId the node running the job
    * @param stepName the step name
    * @param eventName the event name
    * @param eventKey the event key
@@ -149,11 +150,18 @@ public final class EventStore {
    * @return the outcome
    * @throws IllegalStateException if the step name belongs to a step waiting for another event or
    *     to a regular step
+   * @throws JobLockLostException if the job is no longer running on the node
    */
   public EventWait awaitEvent(
-      UUID jobId, String stepName, String eventName, String eventKey, Duration timeout) {
+      UUID jobId,
+      UUID nodeId,
+      String stepName,
+      String eventName,
+      String eventKey,
+      Duration timeout) {
     return access.inTransaction(
         db -> {
+          StepStore.requireJobLock(db, jobId, nodeId);
           lockEvent(db, eventName, eventKey);
           Optional<EventStep> step =
               db.one(

@@ -2,6 +2,7 @@ package org.bikesched.internal.database;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
@@ -50,9 +51,23 @@ public final class Database {
    * @param jobHistory whether the stores record their changes in the job history
    */
   public Database(DataSource dataSource, JsonMapper jsonMapper, boolean jobHistory) {
+    this(dataSource, jsonMapper, jobHistory, null);
+  }
+
+  /**
+   * Creates the database access.
+   *
+   * @param dataSource the PostgreSQL data source
+   * @param jsonMapper maps payloads and step results of the {@link Job}s this instance claims
+   * @param jobHistory whether the stores record their changes in the job history
+   * @param statementTimeout the maximum duration of a statement of the stores, {@code null} to
+   *     leave it to the data source
+   */
+  public Database(
+      DataSource dataSource, JsonMapper jsonMapper, boolean jobHistory, Duration statementTimeout) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
     this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
-    var access = new DatabaseAccess(dataSource);
+    var access = new DatabaseAccess(dataSource, statementTimeout);
     this.history = new HistoryStore(access, jobHistory);
     this.nodes = new NodeStore(access);
     this.jobs = new JobStore(access, history);

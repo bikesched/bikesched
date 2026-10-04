@@ -30,8 +30,23 @@ public final class Sql {
 
   private final Connection connection;
 
+  /** The JDBC query timeout of every statement in seconds; 0 for none. */
+  private final int queryTimeoutSeconds;
+
   public Sql(Connection connection) {
+    this(connection, 0);
+  }
+
+  /**
+   * @param connection the connection
+   * @param queryTimeoutSeconds the JDBC query timeout of every statement in seconds, 0 for none
+   */
+  public Sql(Connection connection, int queryTimeoutSeconds) {
     this.connection = Objects.requireNonNull(connection, "connection");
+    if (queryTimeoutSeconds < 0) {
+      throw new IllegalArgumentException("queryTimeoutSeconds must not be negative");
+    }
+    this.queryTimeoutSeconds = queryTimeoutSeconds;
   }
 
   /** Work on an {@link Sql}; any {@link SQLException} is wrapped by the caller of the work. */
@@ -102,6 +117,9 @@ public final class Sql {
   private PreparedStatement prepare(String sql, Object[] parameters) throws SQLException {
     PreparedStatement statement = connection.prepareStatement(sql);
     try {
+      if (queryTimeoutSeconds > 0) {
+        statement.setQueryTimeout(queryTimeoutSeconds);
+      }
       for (int i = 0; i < parameters.length; i++) {
         switch (parameters[i]) {
           case Typed typed -> statement.setObject(i + 1, typed.value(), typed.sqlType());
