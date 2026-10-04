@@ -14,5 +14,5 @@ dependencies {
 
 // ./gradlew :bikesched-examples:run against the Postgres from compose.yaml (honors POSTGRES_PORT).
 application {
-    mainClass = "bikesched.examples.taxi.TaxiBookingExample"
+    mainClass = "org.bikesched.examples.taxi.TaxiBookingExample"
 }

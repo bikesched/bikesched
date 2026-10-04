@@ -427,7 +427,7 @@ events also take transaction-scoped advisory locks per event name and key; no ta
 The `bikesched-examples` module contains runnable examples, each covered by a test against
 PostgreSQL:
 
-- **Taxi booking** ([`bikesched.examples.taxi`](bikesched-examples/src/main/java/bikesched/examples/taxi)):
+- **Taxi booking** ([`org.bikesched.examples.taxi`](bikesched-examples/src/main/java/org/bikesched/examples/taxi)):
   a ride request is sent to a taxi broker, waits for a driver to accept it with a price and for the
   customer to accept that price, then reserves the payment, approves the ride at the broker and
   sends the customer a push notification with the estimated time of arrival. One job with durable

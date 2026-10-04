@@ -7,7 +7,7 @@
         </encoder>
     </appender>
 
-    <logger name="bikesched" level="DEBUG"/>
+    <logger name="org.bikesched" level="DEBUG"/>
     <logger name="org.testcontainers" level="WARN"/>
     <logger name="tc" level="WARN"/>
     <logger name="com.github.dockerjava" level="WARN"/>

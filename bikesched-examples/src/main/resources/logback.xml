@@ -7,8 +7,8 @@
   </appender>
 
   <!-- DEBUG shows every processed job and step. -->
-  <!-- bikesched and the examples (bikesched.examples) at INFO. -->
-  <logger name="bikesched" level="INFO"/>
+  <!-- bikesched and the examples (org.bikesched.examples) at INFO. -->
+  <logger name="org.bikesched" level="INFO"/>
 
   <root level="WARN">
     <appender-ref ref="CONSOLE"/>

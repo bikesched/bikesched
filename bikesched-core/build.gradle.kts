@@ -11,12 +11,12 @@ dependencies {
     testImplementation(libs.archunit)
 }
 
-// Dev helper: runs bikesched.core.Starter (test sources, so it isn't shipped in the library jar)
+// Dev helper: runs org.bikesched.Starter (test sources, so it isn't shipped in the library jar)
 // against the Postgres from compose.yaml.
 tasks.register<JavaExec>("runStarter") {
     group = "application"
     description = "Starts bikesched against the docker compose Postgres."
     classpath = sourceSets.test.get().runtimeClasspath
-    mainClass = "bikesched.core.Starter"
+    mainClass = "org.bikesched.Starter"
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }

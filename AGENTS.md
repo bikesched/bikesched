@@ -29,12 +29,12 @@ this file covers how to change it.
 | `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test); may use Jackson etc. |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
 
-Core packages (JPMS module `bikesched.core`, see `module-info.java`):
+Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 
-- `bikesched.core`: entry point `Bikesched` + `BikeschedBuilder`, exceptions, SPIs (`JsonMapper`,
+- `org.bikesched`: entry point `Bikesched` + `BikeschedBuilder`, exceptions, SPIs (`JsonMapper`,
   `RetryBackoff`), `BikeschedLogContext` (MDC keys).
-- `bikesched.core.job`, `bikesched.core.event`: public API, interfaces/records/enums/exceptions only.
-- `bikesched.core.internal` and its subpackages: every implementation (`Default<X>`), not exported.
+- `org.bikesched.job`, `org.bikesched.event`: public API, interfaces/records/enums/exceptions only.
+- `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
   - `internal`: `DefaultBikesched` (wiring, lifecycle, polling), `Settings`, `Heartbeat`,
     `NodeCleanUp`, `RawJsonMapper`
@@ -73,7 +73,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - Breaking API changes are fine while unreleased; rename across code, tests, examples and README in
   one go.
 
-### Kotlin module (`bikesched.kotlin`)
+### Kotlin module (`org.bikesched.kotlin`)
 
 - Kotlin-style entry points are extensions on `Bikesched` with named arguments and an optional
   trailing handler, implemented with the Java builders underneath: `handleJobs<T>(type) { payload -> }`
@@ -88,7 +88,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 ## Database
 
 - All tables are prefixed `bikesched_`. Migrations are plain SQL in
-  `bikesched-core/src/main/resources/bikesched/migrations`, applied by the own `SchemaMigrator`
+  `bikesched-core/src/main/resources/org/bikesched/migrations`, applied by the own `SchemaMigrator`
   (no Flyway/Liquibase). While unreleased, schema changes go **into `V001` in place**; local
   databases then need `docker compose down -v` (checksum mismatch).
 - New states go into the table's CHECK constraint. History rows are never deleted on state

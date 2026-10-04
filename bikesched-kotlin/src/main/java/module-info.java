@@ -2,9 +2,9 @@
  * Kotlin helpers for bikesched: a configuration DSL, reified generics, {@code kotlin.time.Duration}
  * overloads, nullable lookups, and job handlers receiving their typed payload.
  */
-module bikesched.kotlin {
-  requires transitive bikesched.core;
+module org.bikesched.kotlin {
+  requires transitive org.bikesched;
   requires transitive kotlin.stdlib;
 
-  exports bikesched.kotlin;
+  exports org.bikesched.kotlin;
 }

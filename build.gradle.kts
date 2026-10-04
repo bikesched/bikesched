@@ -2,6 +2,6 @@
 // all versions live in gradle/libs.versions.toml.
 
 allprojects {
-    group = "bikesched"
+    group = "org.bikesched"
     version = rootProject.libs.versions.bikesched.get()
 }
