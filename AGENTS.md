@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Guidance for coding agents (and humans) working on bikesched: a PostgreSQL-backed job scheduler
-library for Java 26 with a Kotlin companion module. Read `README.md` for what the library does;
-this file covers how to change it.
+library for Java 26 with a Kotlin companion module. Read `README.md` and `docs/` for what the library
+does; this file covers how to change it.
 
 ## Build and run
 
@@ -70,8 +70,8 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `job.fail()`), except suspending at an event wait (internal `Error`, see `JobSuspended`).
 - New mechanisms are opt-in: jobs not using them behave exactly as before (no extra state, replay
   or round-trip).
-- Breaking API changes are fine while unreleased; rename across code, tests, examples and README in
-  one go.
+- Breaking API changes are fine while unreleased; rename across code, tests, examples, README and
+  `docs/` in one go.
 
 ### Kotlin module (`org.bikesched.kotlin`)
 
@@ -93,8 +93,8 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   databases then need `docker compose down -v` (checksum mismatch).
 - New states go into the table's CHECK constraint. History rows are never deleted on state
   changes; they get a terminal state (`CANCELLED`, `COMPENSATED`) other code paths ignore.
-- A new table also goes into `SchemaMigratorTest` (drop list and expected tables) and the README's
-  Database section.
+- A new table also goes into `SchemaMigratorTest` (drop list and expected tables) and the table list
+  in `docs/database.md`.
 - JDBC only inside the stores (`JobStore`, `StepStore`, `EventStore`, `NodeStore`), which receive a
   `DatabaseAccess` (no reference to `Database`, which only wires them). Statements go through the
   `Sql` handle: `one`/`list`/`update`/`execute`, `Sql.Row` getters, `Sql.millis/seconds/timestamp/
@@ -125,9 +125,15 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 ## Documentation
 
-- Keep `README.md` in sync in the same change: feature sections with samples, the builder option
-  table (defaults checked against the code), the Kotlin section, and every table in the Database
-  section. Samples are not compiled, so check them against the API.
+- `README.md` stays minimal: pitch, feature list, quick start, links into `docs/`, examples and
+  build instructions. Details go into `docs/`, one page per concept, linked from `docs/index.md`:
+  `jobs.md` (scheduling, handlers, `Job` method table, failures, cancellation, timeouts), `steps.md`
+  (steps, compensation), `recurring-jobs.md`, `events.md`, `configuration.md` (builder option
+  table, nodes, JSON mapping, logging), `kotlin.md` (extension tables), `database.md` (tables,
+  indexes, migrations).
+- Keep `docs/` in sync in the same change: samples, the builder option table (defaults checked
+  against the code), the Kotlin tables and the database tables. Samples are not compiled, so check
+  them against the API; check relative links and anchors after moving sections.
 - Public Javadoc must not link to non-exported classes; exceptions need `@Serial` ids and comments
   on serialized fields.
 
