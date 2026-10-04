@@ -1,6 +1,7 @@
 package org.bikesched.internal.event;
 
 import java.sql.Connection;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import org.bikesched.JsonMapper;
@@ -13,9 +14,16 @@ public final class DefaultEventBuilder<P> implements EventBuilder<P> {
   /** Publishes an event built by an {@link EventBuilder}; implemented by the owning bikesched. */
   @FunctionalInterface
   public interface Publisher {
-    /** {@code connection} is the caller's connection, or {@code null} to use bikesched's own. */
+    /**
+     * {@code retention} is the event's retention, {@code null} for the node default; {@code
+     * connection} is the caller's connection, or {@code null} to use bikesched's own.
+     */
     List<ReceivedEvent> publish(
-        String eventName, String eventKey, String payload, Connection connection);
+        String eventName,
+        String eventKey,
+        String payload,
+        Duration retention,
+        Connection connection);
   }
 
   private final String eventName;
@@ -23,6 +31,7 @@ public final class DefaultEventBuilder<P> implements EventBuilder<P> {
   private final JsonMapper jsonMapper;
   private final Publisher publisher;
   private String payload;
+  private Duration retention; // null: the node default
   private Connection connection;
 
   public DefaultEventBuilder(
@@ -40,6 +49,16 @@ public final class DefaultEventBuilder<P> implements EventBuilder<P> {
   }
 
   @Override
+  public EventBuilder<P> retention(Duration retention) {
+    Objects.requireNonNull(retention, "retention");
+    if (retention.isNegative()) {
+      throw new IllegalArgumentException("retention must not be negative: " + retention);
+    }
+    this.retention = retention;
+    return this;
+  }
+
+  @Override
   public EventBuilder<P> connection(Connection connection) {
     this.connection = connection;
     return this;
@@ -47,6 +66,6 @@ public final class DefaultEventBuilder<P> implements EventBuilder<P> {
 
   @Override
   public List<ReceivedEvent> publish() {
-    return publisher.publish(eventName, eventKey, payload, connection);
+    return publisher.publish(eventName, eventKey, payload, retention, connection);
   }
 }

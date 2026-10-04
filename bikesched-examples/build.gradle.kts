@@ -19,6 +19,15 @@ application {
     mainClass = "org.bikesched.examples.taxi.TaxiBookingExample"
 }
 
+// ./gradlew :bikesched-examples:runSimple: one handler, one job, same database as run.
+tasks.register<JavaExec>("runSimple") {
+    group = "application"
+    description = "Runs the simple example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.simple.SimpleExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
 // ./gradlew :bikesched-examples:runCinema: the cinema ticket example, same database as run.
 tasks.register<JavaExec>("runCinema") {
     group = "application"

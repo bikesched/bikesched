@@ -225,6 +225,9 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
  * @param name the event name
  * @param key identifies the event instance waited for, e.g. an order id
  * @param payload the payload, mapped to JSON by the configured `JsonMapper`; may be `null`
+ * @param retention how long steps starting to wait later still receive it, see
+ *   `EventBuilder.retention`; defaults to the node's `eventRetention`; `Duration.ZERO` delivers it
+ *   only to the steps waiting now
  * @param connection publishes the event in the caller's transaction, see `EventBuilder.connection`
  * @return the steps that received the event, with their job ids
  */
@@ -232,10 +235,12 @@ public fun Bikesched.publishEvent(
   name: String,
   key: String,
   payload: Any? = null,
+  retention: Duration? = null,
   connection: Connection? = null,
 ): List<ReceivedEvent> {
   val event = newEvent(name, key)
   payload?.let(event::payload)
+  retention?.let { event.retention(it.toJavaDuration()) }
   connection?.let(event::connection)
   return event.publish()
 }

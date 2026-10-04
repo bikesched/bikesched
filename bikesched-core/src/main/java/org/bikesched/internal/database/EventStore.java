@@ -49,7 +49,7 @@ public final class EventStore {
   private static final String LATEST_EVENT_SQL =
       """
             select id, payload::text from bikesched_events
-             where event_name = ? and event_key = ?
+             where event_name = ? and event_key = ? and expires_at > now()
              order by published_at desc limit 1""";
 
   private static final String RECEIVE_EVENT_STEP_SQL =
@@ -90,7 +90,8 @@ public final class EventStore {
 
   private static final String INSERT_EVENT_SQL =
       """
-            insert into bikesched_events (id, event_name, event_key, payload) values (?, ?, ?, ?::jsonb)""";
+            insert into bikesched_events (id, event_name, event_key, payload, expires_at)
+            values (?, ?, ?, ?::jsonb, now() + ? * interval '1 millisecond')""";
 
   // Completes all steps waiting for the event with its payload and resumes their WAITING jobs.
   // Jobs that are still RUNNING (suspending right now, or resumed by their deadline) are left
@@ -114,7 +115,7 @@ public final class EventStore {
 
   private static final String DELETE_EVENTS_SQL =
       """
-            delete from bikesched_events where published_at < now() - make_interval(secs => ?)""";
+            delete from bikesched_events where expires_at <= now()""";
 
   /**
    * The outcome of waiting for an event.
@@ -310,11 +311,14 @@ public final class EventStore {
    * @param eventName the event name
    * @param eventKey the event key
    * @param payload the payload as JSON text, may be {@code null}
+   * @param retention how long steps starting to wait later still receive it (and it is kept); may
+   *     be zero
    * @return the steps that received the event
    */
-  public List<ReceivedEvent> publishEvent(String eventName, String eventKey, String payload) {
+  public List<ReceivedEvent> publishEvent(
+      String eventName, String eventKey, String payload, Duration retention) {
     return access.inTransaction(
-        db -> publish(db, eventName, eventKey, payload),
+        db -> publish(db, eventName, eventKey, payload, retention),
         e ->
             new BikeschedException(
                 "Publishing event " + eventName + "/" + eventKey + " failed", e));
@@ -322,18 +326,23 @@ public final class EventStore {
 
   /**
    * Publishes an event as part of the caller's transaction (see {@link #publishEvent(String,
-   * String, String)}): the connection is neither committed nor closed, and the event's advisory
-   * lock is held until the caller ends the transaction.
+   * String, String, Duration)}): the connection is neither committed nor closed, and the event's
+   * advisory lock is held until the caller ends the transaction.
    *
    * @param connection the caller's connection, not in auto-commit mode
    * @param eventName the event name
    * @param eventKey the event key
    * @param payload the payload as JSON text, may be {@code null}
+   * @param retention how long steps starting to wait later still receive it; may be zero
    * @return the steps that received the event (visible to others once the caller commits)
    * @throws IllegalArgumentException if the connection is in auto-commit mode
    */
   public List<ReceivedEvent> publishEventInTransaction(
-      Connection connection, String eventName, String eventKey, String payload) {
+      Connection connection,
+      String eventName,
+      String eventKey,
+      String payload,
+      Duration retention) {
     return access.onCallerConnection(
         connection,
         db -> {
@@ -342,18 +351,20 @@ public final class EventStore {
                 "Publishing an event on the caller's connection requires a transaction:"
                     + " the connection must not be in auto-commit mode");
           }
-          return publish(db, eventName, eventKey, payload);
+          return publish(db, eventName, eventKey, payload, retention);
         },
         e ->
             new BikeschedException(
                 "Publishing event " + eventName + "/" + eventKey + " failed", e));
   }
 
-  private List<ReceivedEvent> publish(Sql db, String eventName, String eventKey, String payload)
+  private List<ReceivedEvent> publish(
+      Sql db, String eventName, String eventKey, String payload, Duration retention)
       throws SQLException {
+    Objects.requireNonNull(retention, "retention");
     lockEvent(db, eventName, eventKey);
     UUID eventId = UUID.randomUUID();
-    db.update(INSERT_EVENT_SQL, eventId, eventName, eventKey, payload);
+    db.update(INSERT_EVENT_SQL, eventId, eventName, eventKey, payload, retention.toMillis());
     List<Resumption> resumptions =
         db.list(
             RESUME_WAITING_STEPS_SQL,
@@ -386,14 +397,13 @@ public final class EventStore {
   }
 
   /**
-   * Deletes events published longer ago than the retention period.
+   * Deletes expired events (their retention has passed).
    *
-   * @param retention how long events are kept
    * @return the number of deleted events
    */
-  public int deleteEvents(Duration retention) {
+  public int deleteExpiredEvents() {
     return access.withConnection(
-        db -> db.update(DELETE_EVENTS_SQL, Sql.seconds(retention)),
+        db -> db.update(DELETE_EVENTS_SQL),
         e -> new BikeschedException("Deleting old bikesched events failed", e));
   }
 

@@ -62,10 +62,13 @@ public class BikeschedSpec internal constructor() {
   /** The delay of retries, see [fixedBackoff] and [exponentialBackoff]; defaults to none. */
   public var retryBackoff: RetryBackoff? = null
 
-  /** How long published events are kept; defaults to 7 days. */
+  /**
+   * How long events published through this node are kept, unless an event sets its own retention;
+   * defaults to 7 days.
+   */
   public var eventRetention: Duration? = null
 
-  /** How often events older than [eventRetention] are deleted; defaults to 1 hour. */
+  /** How often expired events are deleted; defaults to 1 hour. */
   public var eventCleanUpInterval: Duration? = null
 
   /**

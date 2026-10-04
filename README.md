@@ -87,12 +87,12 @@ which run against PostgreSQL 18 with [Testcontainers](https://testcontainers.com
 ./gradlew build
 ```
 
-To try it out locally, start PostgreSQL with Docker Compose and run the demo `Starter`, which
-schedules a few jobs and prints them as they are executed:
+To try it out locally, start PostgreSQL with Docker Compose and run the
+[simple example](bikesched-examples/README.md#simple), which registers a handler and runs one job:
 
 ```shell
 docker compose up -d                      # POSTGRES_PORT=5433 docker compose up -d if 5432 is taken
-./gradlew :bikesched-core:runStarter      # honors POSTGRES_PORT as well
+./gradlew :bikesched-examples:runSimple   # honors POSTGRES_PORT as well
 ```
 
 All dependency and tool versions are managed in `gradle/libs.versions.toml`.

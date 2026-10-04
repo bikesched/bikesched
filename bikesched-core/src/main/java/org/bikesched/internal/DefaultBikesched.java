@@ -217,7 +217,7 @@ public final class DefaultBikesched implements Bikesched {
       var heartbeat = new Heartbeat(database, id, nodeName);
       var nodeCleanUp = new NodeCleanUp(database, id, nodeName, settings.nodeTimeout());
       var recurringJobRepair = new RecurringJobRepair(database, recurringJobs::values);
-      var eventCleanUp = new EventCleanUp(database, id, nodeName, settings.eventRetention());
+      var eventCleanUp = new EventCleanUp(database, id, nodeName);
       nodeId = id;
       // Once per node lifetime, before anything is scheduled; retried until it succeeds.
       repairRecurringJobs(recurringJobRepair);
@@ -493,15 +493,22 @@ public final class DefaultBikesched implements Bikesched {
 
   /** Publishes an event built by an {@link EventBuilder}. */
   private List<ReceivedEvent> publish(
-      String eventName, String eventKey, String payload, Connection connection) {
+      String eventName,
+      String eventKey,
+      String payload,
+      Duration eventRetention,
+      Connection connection) {
     if (closed.get()) {
       throw new IllegalStateException("bikesched node " + nodeName + " is closed");
     }
     initializer.ensureInitialized();
+    Duration retention = eventRetention != null ? eventRetention : settings.eventRetention();
     List<ReceivedEvent> received =
         connection == null
-            ? database.events().publishEvent(eventName, eventKey, payload)
-            : database.events().publishEventInTransaction(connection, eventName, eventKey, payload);
+            ? database.events().publishEvent(eventName, eventKey, payload, retention)
+            : database
+                .events()
+                .publishEventInTransaction(connection, eventName, eventKey, payload, retention);
     LOG.debug(
         "Published event {}/{}{}, received by {} waiting step(s){}",
         eventName,

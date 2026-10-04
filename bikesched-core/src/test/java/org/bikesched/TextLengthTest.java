@@ -189,8 +189,8 @@ class TextLengthTest extends AbstractBikeschedTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_events (id, event_name, event_key)"
-                        + " values (gen_random_uuid(), 'event', '')"))
+                    "insert into bikesched_events (id, event_name, event_key, expires_at)"
+                        + " values (gen_random_uuid(), 'event', '', now())"))
         .hasMessageContaining("bikesched_events_name_key_check");
     assertThatThrownBy(
             () -> execute("insert into bikesched_nodes (id, name) values (gen_random_uuid(), '')"))

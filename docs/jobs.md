@@ -69,6 +69,18 @@ try (Connection connection = dataSource.getConnection()) {
 
 bikesched never commits, rolls back or closes your connection.
 
+This is the [transactional outbox pattern](https://microservices.io/patterns/data/transactional-outbox.html)
+without a separate outbox table: the job is the outbox entry. Writing to your database and calling
+another system (a mail server, a message broker, another service) can't be atomic; if the call
+fails after the commit, or the commit fails after the call, the two disagree. Scheduling a job in
+the same transaction records the intent atomically with your data, and the job then makes the
+call, retried on failure up to its maximum attempts. Since a job can run more than once (see
+[Failures and retries](#failures-and-retries)), the call should be idempotent, e.g. by passing an
+idempotency key derived from the order.
+
+Events can be published the same way, with `.connection(connection)`, see
+[Waiting and publishing](events.md#waiting-and-publishing).
+
 ## Writing handlers
 
 A handler receives the `Job` being executed:

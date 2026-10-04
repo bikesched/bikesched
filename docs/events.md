@@ -24,8 +24,9 @@ List<ReceivedEvent> received = bikesched.newEvent("payment-received", order.id()
 - An event is identified by its name and key and goes to every step waiting for it.
 - `receive(Payment.class)` returns the payload mapped by the `JsonMapper`; `receive(event -> …)`
   gets the whole `Event` (name, key, payload) instead.
-- Events are stored in `bikesched_events` for the `eventRetention` period (default 7 days). A step
-  that starts waiting after the event was published receives the latest one right away.
+- Events are stored in `bikesched_events` for their retention. A step that starts waiting after the
+  event was published receives the latest one whose retention has not passed, right away. See
+  [Retention](#retention).
 - Waiting does not use up an attempt.
 - Code outside steps runs again on every resume, so it must be cheap and deterministic.
 
@@ -61,6 +62,24 @@ Payment payment = job.waitForEvent("await-payment", "payment-received", order.id
 
 Without a timeout of its own, a wait uses the node's `defaultEventTimeout`, if set: once it passes,
 the job fails permanently with an `EventTimeoutException`.
+
+## Retention
+
+An event's retention only matters for steps that start waiting **after** it was published: steps
+already waiting receive it when it is published, whatever its retention. It defaults to the
+publishing node's `eventRetention` (7 days) and can be set per event:
+
+```java
+bikesched.newEvent("driver-accepted", rideId).payload(offer).retention(Duration.ofMinutes(5)).publish();
+bikesched.newEvent("location-updated", rideId).payload(location).retention(Duration.ZERO).publish();
+```
+
+- The expiry (`expires_at`) is fixed when the event is published, so all nodes agree on it,
+  whatever their own `eventRetention`.
+- `Duration.ZERO` delivers the event only to the steps waiting right now; later waits never receive
+  it. Useful for signals that make no sense once missed.
+- Expired events are no longer received, and every polling node deletes them every
+  `eventCleanUpInterval` (default 1 hour). Steps that received an event keep its payload and id.
 
 ## Consistency
 

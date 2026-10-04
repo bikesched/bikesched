@@ -2,17 +2,33 @@
 
 Runnable examples of [bikesched](../README.md), one package per scenario. Each example has a `main`
 that runs against the PostgreSQL from the repository's `compose.yaml`, and a test that runs against
-PostgreSQL 18 with Testcontainers. Payloads, step results and events are records, mapped to JSON
+PostgreSQL 18 with Testcontainers: one container shared by all example tests, provided by the
+test class `util.Database`. Payloads, step results and events are records, mapped to JSON
 by [`bikesched-jackson`](../docs/configuration.md#jackson).
 
 ## Running
 
 ```shell
 docker compose up -d                      # from the repository root
-./gradlew :bikesched-examples:run         # taxi booking; honors POSTGRES_PORT, like docker compose
+./gradlew :bikesched-examples:runSimple   # one handler, one job; honors POSTGRES_PORT, like docker compose
+./gradlew :bikesched-examples:run         # taxi booking
 ./gradlew :bikesched-examples:runCinema   # cinema tickets
 ./gradlew :bikesched-examples:test        # the example tests, against Testcontainers
 ```
+
+## Simple
+
+Package [`org.bikesched.examples.simple`](src/main/java/org/bikesched/examples/simple): the
+smallest setup, one job handler and one job with a `JobPayload` record (a `UUID`):
+
+```java
+JobType<JobPayload> JOB_TYPE = JobType.of("simple-job", JobPayload.class);
+
+bikesched.registerJobHandler(JOB_TYPE, (job, payload) -> System.out.println("Job " + job.id() + ": " + payload));
+bikesched.newJob(JOB_TYPE).payload(new JobPayload(UUID.randomUUID())).schedule();
+```
+
+`SimpleExampleTest` runs the job and waits until it ended.
 
 ## Taxi booking
 

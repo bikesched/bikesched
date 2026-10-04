@@ -197,10 +197,11 @@ public interface Job {
    * bikesched.newEvent("payment-received", orderId).payload(payment).publish();
    * }</pre>
    *
-   * <p>Events published before the job starts waiting are not lost: they are kept for the {@link
-   * BikeschedBuilder#eventRetention(Duration) retention period}, and the step receives the latest
-   * one right away. An event is delivered to every step waiting for it. The received event is
-   * stored with the step; the event handler runs whenever {@code receive} returns (see {@link
+   * <p>Events published before the job starts waiting are not lost: they are kept for their {@link
+   * org.bikesched.event.EventBuilder#retention(Duration) retention} (default {@link
+   * BikeschedBuilder#eventRetention(Duration)}), and the step receives the latest one right away.
+   * An event is delivered to every step waiting for it. The received event is stored with the step;
+   * the event handler runs whenever {@code receive} returns (see {@link
    * EventHandler#handle(Event)}), and if it throws, the job's attempt fails.
    *
    * <p>Because the job's handler runs again after the wait, code outside of steps must be cheap and

@@ -15,8 +15,7 @@ does; this file covers how to change it.
   explicit API mode (`public` and return types on every public declaration). Javadoc runs with
   `-Werror` too; also check the build log for warnings, not only failures.
 - Local database: `docker compose up -d` (prefix `POSTGRES_PORT=5433` if 5432 is taken), then
-  `./gradlew :bikesched-core:runStarter` (dev `Starter` in test sources) or
-  `./gradlew :bikesched-examples:run`.
+  run an example, e.g. `./gradlew :bikesched-examples:runSimple`.
 - Every version (libraries, Gradle plugins, Java, the project version) lives in
   `gradle/libs.versions.toml`; no version literals in `.kts` files. Use the latest stable releases.
 
@@ -27,7 +26,7 @@ does; this file covers how to change it.
 | `bikesched-core` | the library; runtime dependencies: PostgreSQL JDBC driver and `slf4j-api` only |
 | `bikesched-jackson` | `JacksonJsonMapper` (Java only, package `org.bikesched.jackson`); depends on core and `jackson-databind` (both `api`) |
 | `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core and the Kotlin stdlib only (tests use bikesched-jackson) |
-| `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test), described in its own `README.md`; JSON via bikesched-jackson |
+| `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test using the shared `util.Database`), described in its own `README.md`; JSON via bikesched-jackson |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):

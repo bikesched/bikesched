@@ -11,25 +11,17 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.bikesched.Bikesched;
+import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.JobState;
 import org.junit.jupiter.api.Test;
-import org.postgresql.ds.PGSimpleDataSource;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /** Runs the cinema ticket order against a real PostgreSQL. */
 class CinemaTest {
 
-  private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
-  private static final PGSimpleDataSource DATA_SOURCE = new PGSimpleDataSource();
-
-  static {
-    POSTGRES.start();
-    DATA_SOURCE.setUrl(POSTGRES.getJdbcUrl());
-    DATA_SOURCE.setUser(POSTGRES.getUsername());
-    DATA_SOURCE.setPassword(POSTGRES.getPassword());
-  }
+  private static final DataSource DATA_SOURCE = Database.dataSource();
 
   @Test
   void ticketsAreReservedPaidAndMailed() throws Exception {

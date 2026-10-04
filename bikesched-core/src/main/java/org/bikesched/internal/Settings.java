@@ -24,7 +24,8 @@ import org.bikesched.internal.util.ValidationUtil;
  * @param defaultJobTimeout maximum duration of a job attempt for jobs without a timeout of their
  *     own; {@code null} for none
  * @param retryBackoff delay of the retry after a failed attempt
- * @param eventRetention how long published events are kept for steps that start waiting later
+ * @param eventRetention how long events published through this node are kept for steps that start
+ *     waiting later, unless the event sets its own retention
  * @param defaultEventTimeout maximum wait for an event for waits without a timeout of their own;
  *     {@code null} for none
  * @param nodeCleanUpInterval interval between node clean-ups ({@link NodeCleanUp})

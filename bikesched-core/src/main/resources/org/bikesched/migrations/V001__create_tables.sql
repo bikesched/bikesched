@@ -121,23 +121,27 @@ create table bikesched_steps (
 create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_key)
     where state = 'WAITING';
 
--- Published events, kept for a retention period: a step that starts waiting for an event that was
--- already published receives the latest one right away, so events published before anyone waits
--- for them are not lost.
+-- Published events, kept until expires_at (published_at + the event's retention): a step that starts
+-- waiting for an event that was already published receives the latest unexpired one right away, so
+-- events published before anyone waits for them are not lost. With a retention of 0, an event only
+-- reaches the steps waiting when it is published.
 create table bikesched_events (
     id           uuid        primary key,
     event_name   text        not null,
     event_key    text        not null,
     payload      jsonb,
     published_at timestamptz not null default now(),
+    expires_at   timestamptz not null,
     constraint bikesched_events_name_key_check
-        check (char_length(event_name) between 1 and 200 and char_length(event_key) between 1 and 500)
+        check (char_length(event_name) between 1 and 200 and char_length(event_key) between 1 and 500),
+    constraint bikesched_events_expires_at_check
+        check (expires_at >= published_at)
 );
 
 create index bikesched_events_name_key_idx on bikesched_events (event_name, event_key, published_at desc);
 
--- Deleting events after their retention period.
-create index bikesched_events_published_at_idx on bikesched_events (published_at);
+-- Deleting expired events.
+create index bikesched_events_expires_at_idx on bikesched_events (expires_at);
 
 -- Job history (only written by nodes with the history enabled): one row per change of a job
 -- (step_name null) or of one of its steps, in the transaction of the change. attempt is the job's

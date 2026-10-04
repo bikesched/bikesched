@@ -20,6 +20,9 @@ import org.junit.jupiter.api.Test;
  */
 class EventStoreTest extends AbstractStoreTest {
 
+  /** The retention of events in these tests, unless a test is about retention. */
+  private static final Duration KEPT = Duration.ofDays(1);
+
   private static UUID node;
 
   @BeforeEach
@@ -37,7 +40,7 @@ class EventStoreTest extends AbstractStoreTest {
     // The event arrives after the step started waiting, but before the job is suspended (still
     // RUNNING): the step receives it, the job is left alone ...
     List<ReceivedEvent> received =
-        database.events().publishEvent("paid", "race-1", "{\"amount\": 1}");
+        database.events().publishEvent("paid", "race-1", "{\"amount\": 1}", KEPT);
     assertThat(received).containsExactly(new ReceivedEvent(job.id(), "wait"));
     assertThat(count("id = '" + job.id() + "' and state = 'RUNNING'")).isEqualTo(1);
 
@@ -71,14 +74,14 @@ class EventStoreTest extends AbstractStoreTest {
         .extracting(JobStore.ClaimedJob::id)
         .doesNotContain(job.id());
 
-    assertThat(database.events().publishEvent("paid", "suspend-1", null))
+    assertThat(database.events().publishEvent("paid", "suspend-1", null, KEPT))
         .containsExactly(new ReceivedEvent(job.id(), "wait"));
     assertThat(stateAndSchedule(job.id())).startsWith("SCHEDULED ");
   }
 
   @Test
   void eventPublishedBeforeWaitingIsReceivedRightAway() {
-    assertThat(database.events().publishEvent("paid", "early-1", "\"early\"")).isEmpty();
+    assertThat(database.events().publishEvent("paid", "early-1", "\"early\"", KEPT)).isEmpty();
     JobStore.ClaimedJob job = claimNewJob("early");
 
     assertThat(database.events().awaitEvent(job.id(), "wait", "paid", "early-1", null))
@@ -87,9 +90,9 @@ class EventStoreTest extends AbstractStoreTest {
 
   @Test
   void latestPublishedEventIsReceived() throws Exception {
-    database.events().publishEvent("status", "latest-1", "\"first\"");
+    database.events().publishEvent("status", "latest-1", "\"first\"", KEPT);
     Thread.sleep(5);
-    database.events().publishEvent("status", "latest-1", "\"second\"");
+    database.events().publishEvent("status", "latest-1", "\"second\"", KEPT);
     JobStore.ClaimedJob job = claimNewJob("latest");
 
     assertThat(database.events().awaitEvent(job.id(), "wait", "status", "latest-1", null).payload())
@@ -102,7 +105,9 @@ class EventStoreTest extends AbstractStoreTest {
     try (Connection connection = dataSource.getConnection()) {
       connection.setAutoCommit(false);
       assertThat(
-              database.events().publishEventInTransaction(connection, "paid", "lock-1", "\"tx\""))
+              database
+                  .events()
+                  .publishEventInTransaction(connection, "paid", "lock-1", "\"tx\"", KEPT))
           .isEmpty();
 
       // Without the lock, the wait would not see the uncommitted event and start waiting, and the
@@ -128,7 +133,9 @@ class EventStoreTest extends AbstractStoreTest {
     try (Connection connection = dataSource.getConnection()) {
       connection.setAutoCommit(false);
       assertThat(
-              database.events().publishEventInTransaction(connection, "paid", "rollback-1", null))
+              database
+                  .events()
+                  .publishEventInTransaction(connection, "paid", "rollback-1", null, KEPT))
           .hasSize(1);
       connection.rollback();
     }
@@ -141,7 +148,10 @@ class EventStoreTest extends AbstractStoreTest {
   void publishingOnAnAutoCommitConnectionIsRejected() throws Exception {
     try (Connection connection = dataSource.getConnection()) {
       assertThatThrownBy(
-              () -> database.events().publishEventInTransaction(connection, "paid", "auto-1", null))
+              () ->
+                  database
+                      .events()
+                      .publishEventInTransaction(connection, "paid", "auto-1", null, KEPT))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("must not be in auto-commit mode");
     }
@@ -170,7 +180,7 @@ class EventStoreTest extends AbstractStoreTest {
                 .events()
                 .awaitEvent(job.id(), "wait", "paid", "deadline-1", Duration.ofMillis(200)))
         .isEqualTo(new EventStore.EventWait("TIMED_OUT", null, null));
-    assertThat(database.events().publishEvent("paid", "deadline-1", null))
+    assertThat(database.events().publishEvent("paid", "deadline-1", null, KEPT))
         .as("a timed out step no longer receives the event")
         .isEmpty();
   }
@@ -187,15 +197,35 @@ class EventStoreTest extends AbstractStoreTest {
   }
 
   @Test
-  void deleteEventsRemovesEventsOlderThanTheRetention() throws Exception {
-    database.events().publishEvent("old", "retention-1", null);
+  void expiredEventsAreDeletedAndNoLongerReceived() throws Exception {
+    database.events().publishEvent("old", "retention-1", "\"short\"", Duration.ofMillis(200));
+    database.events().publishEvent("old", "retention-2", null, KEPT);
     Thread.sleep(300);
-    database.events().publishEvent("old", "retention-2", null);
 
-    database.events().deleteEvents(Duration.ofMillis(200));
+    JobStore.ClaimedJob job = claimNewJob("expired");
+    assertThat(database.events().awaitEvent(job.id(), "wait", "old", "retention-1", null).state())
+        .as("an expired event is not received, even before it is deleted")
+        .isEqualTo("WAITING");
 
+    assertThat(database.events().deleteExpiredEvents()).isOne();
     assertThat(countRows("bikesched_events", "event_key = 'retention-1'")).isZero();
     assertThat(countRows("bikesched_events", "event_key = 'retention-2'")).isOne();
+  }
+
+  @Test
+  void eventWithoutRetentionOnlyReachesTheStepsWaitingNow() {
+    JobStore.ClaimedJob waiting = claimNewJob("zero-waiting");
+    database.events().awaitEvent(waiting.id(), "wait", "ping", "zero-1", null);
+    database.events().suspendJob(waiting.id(), node, "wait", "ping", "zero-1");
+
+    assertThat(database.events().publishEvent("ping", "zero-1", "\"now\"", Duration.ZERO))
+        .extracting(ReceivedEvent::jobId)
+        .containsExactly(waiting.id());
+
+    JobStore.ClaimedJob later = claimNewJob("zero-later");
+    assertThat(database.events().awaitEvent(later.id(), "wait", "ping", "zero-1", null).state())
+        .isEqualTo("WAITING");
+    assertThat(database.events().deleteExpiredEvents()).isOne();
   }
 
   private static JobStore.ClaimedJob claimNewJob(String type) {

@@ -7,26 +7,18 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.bikesched.Bikesched;
+import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.postgresql.ds.PGSimpleDataSource;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /** Runs the taxi booking against a real PostgreSQL. */
 class TaxiBookingTest {
 
-  private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
-  private static final PGSimpleDataSource DATA_SOURCE = new PGSimpleDataSource();
+  private static final DataSource DATA_SOURCE = Database.dataSource();
   private static final Duration ANSWER_TIMEOUT = Duration.ofSeconds(10);
-
-  static {
-    POSTGRES.start();
-    DATA_SOURCE.setUrl(POSTGRES.getJdbcUrl());
-    DATA_SOURCE.setUser(POSTGRES.getUsername());
-    DATA_SOURCE.setPassword(POSTGRES.getPassword());
-  }
 
   private final SimulatedTaxiBroker broker = new SimulatedTaxiBroker();
   private final SimulatedPaymentService payments = new SimulatedPaymentService();

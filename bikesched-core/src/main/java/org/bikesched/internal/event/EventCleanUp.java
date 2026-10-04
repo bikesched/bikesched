@@ -1,6 +1,5 @@
 package org.bikesched.internal.event;
 
-import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.internal.database.Database;
@@ -8,8 +7,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Deletes events published longer ago than the event retention, run by the clean-up thread of a
- * polling node every event clean-up interval. Safe to run concurrently on several nodes.
+ * Deletes expired events (published longer ago than their retention), run by the clean-up thread of
+ * a polling node every event clean-up interval. Each event's expiry is fixed when it is published,
+ * so all nodes delete the same events, whatever their own default retention. Safe to run
+ * concurrently on several nodes.
  */
 public final class EventCleanUp {
 
@@ -18,19 +19,16 @@ public final class EventCleanUp {
   private final Database database;
   private final UUID nodeId;
   private final String nodeName;
-  private final Duration eventRetention;
 
   /**
    * @param database the database
    * @param nodeId the node doing the clean-up, for logging
    * @param nodeName its name, for logging
-   * @param eventRetention how long published events are kept
    */
-  public EventCleanUp(Database database, UUID nodeId, String nodeName, Duration eventRetention) {
+  public EventCleanUp(Database database, UUID nodeId, String nodeName) {
     this.database = Objects.requireNonNull(database, "database");
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
-    this.eventRetention = Objects.requireNonNull(eventRetention, "eventRetention");
   }
 
   /**
@@ -38,18 +36,13 @@ public final class EventCleanUp {
    * scheduled executor.
    */
   public void run() {
-    deleteOldEvents();
-  }
-
-  /** Deletes events published longer ago than the event retention. */
-  private void deleteOldEvents() {
     try {
-      int deleted = database.events().deleteEvents(eventRetention);
+      int deleted = database.events().deleteExpiredEvents();
       if (deleted > 0) {
-        LOG.debug("Deleted {} event(s) published more than {} ago", deleted, eventRetention);
+        LOG.debug("Deleted {} expired event(s)", deleted);
       }
     } catch (RuntimeException e) {
-      LOG.warn("Deleting old events failed on node {} ({})", nodeName, nodeId, e);
+      LOG.warn("Deleting expired events failed on node {} ({})", nodeName, nodeId, e);
     }
   }
 }

@@ -1,6 +1,7 @@
 package org.bikesched.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import java.sql.Connection;
@@ -8,8 +9,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
@@ -345,6 +348,65 @@ class EventTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void eventRetentionCanBeSetPerEvent() throws Exception {
+    String key = "retention-" + UUID.randomUUID();
+    try (Bikesched bikesched = node("node-event-retention")) {
+      bikesched.newEvent("kept", key).publish();
+      bikesched.newEvent("short", key).retention(Duration.ofMinutes(5)).publish();
+      bikesched.newEvent("not-kept", key).retention(Duration.ZERO).publish();
+
+      // The node default (7 days) unless the event sets its own retention.
+      assertThat(retentionSeconds("kept", key)).isEqualTo(Duration.ofDays(7).toSeconds());
+      assertThat(retentionSeconds("short", key)).isEqualTo(Duration.ofMinutes(5).toSeconds());
+      assertThat(retentionSeconds("not-kept", key)).isZero();
+      assertThatThrownBy(
+              () -> bikesched.newEvent("negative", key).retention(Duration.ofSeconds(-1)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("retention must not be negative: PT-1S");
+    } finally {
+      execute("delete from bikesched_events where event_key = '" + key + "'");
+    }
+  }
+
+  @Test
+  void eventWithoutRetentionIsNotReceivedByLaterWaits() throws Exception {
+    String key = "zero-" + UUID.randomUUID();
+    var received = new CompletableFuture<String>();
+    try (Bikesched bikesched = node("node-event-zero-retention")) {
+      bikesched.newEvent("signal", key).payload("\"too early\"").retention(Duration.ZERO).publish();
+      UUID jobId =
+          bikesched
+              .newJob("zero-retention")
+              .handler(
+                  job ->
+                      received.complete(
+                          job.waitForEvent("wait", "signal", key).receive(String.class)))
+              .schedule();
+      awaitState(jobId, "WAITING");
+
+      bikesched.newEvent("signal", key).payload("\"in time\"").retention(Duration.ZERO).publish();
+
+      assertThat(received.get(10, TimeUnit.SECONDS)).isEqualTo("\"in time\"");
+    }
+  }
+
+  /** The retention of the event with the given name and key, from its stored expiry. */
+  private static long retentionSeconds(String name, String key) throws Exception {
+    try (var connection = dataSource.getConnection();
+        var query =
+            connection.prepareStatement(
+                "select extract(epoch from expires_at - published_at)::bigint from bikesched_events"
+                    + " where event_name = ? and event_key = ?")) {
+      query.setString(1, name);
+      query.setString(2, key);
+      try (var rs = query.executeQuery()) {
+        assertThat(rs.next()).isTrue();
+        return rs.getLong(1);
+      }
+    }
+  }
+
+  @Test
   void eventCleanUpDeletesEventsOlderThanTheRetention() throws Exception {
     String key = "cleanup-" + UUID.randomUUID();
     var logs = LogCapture.of(EventCleanUp.class);
@@ -362,8 +424,7 @@ class EventTest extends AbstractBikeschedTest {
               () ->
                   assertThat(countRows("bikesched_events", "event_key = '" + key + "'")).isZero());
     }
-    assertThat(logs.messages())
-        .anyMatch(m -> m.matches("Deleted \\d+ event\\(s\\) published more than PT0.2S ago"));
+    assertThat(logs.messages()).anyMatch(m -> m.matches("Deleted \\d+ expired event\\(s\\)"));
   }
 
   private static Bikesched node(String name) {

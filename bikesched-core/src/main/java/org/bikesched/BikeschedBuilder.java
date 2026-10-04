@@ -170,10 +170,11 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Sets how long published events are kept (optional, default 7 days). A step that starts waiting
-   * for an event receives the latest one published within this period, so events published before a
-   * job waits for them are not lost. Older events are deleted by the nodes; steps that already
-   * received an event keep its payload.
+   * Sets how long events published through this node are kept (optional, default 7 days), unless an
+   * event sets its own {@link org.bikesched.event.EventBuilder#retention(Duration) retention}. A
+   * step that starts waiting for an event receives the latest one whose retention has not passed,
+   * so events published before a job waits for them are not lost. Expired events are deleted by the
+   * nodes; steps that already received an event keep its payload.
    *
    * @param retention how long events are kept, positive
    * @return this builder
@@ -202,8 +203,8 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Sets how often this node deletes events older than the {@linkplain #eventRetention(Duration)
-   * event retention} (optional, default 1 hour). Every polling node does this.
+   * Sets how often this node deletes expired events, see {@link #eventRetention(Duration)}
+   * (optional, default 1 hour). Every polling node does this.
    *
    * @param interval the time between clean-ups, positive
    * @return this builder
