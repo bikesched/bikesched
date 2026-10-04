@@ -14,7 +14,13 @@ small:
   migration tool, no JSON library.
 - **PostgreSQL first**: jobs, durable steps, events and nodes live in plain tables (`bikesched_*`);
   the schema is created and migrated on first use.
-- **Java 26**, jobs run on virtual threads. Kotlin extensions in `bikesched-kotlin`.
+- **Java 26**, jobs run on virtual threads.
+
+| Module | Contents |
+|---|---|
+| `bikesched-core` | the scheduler; depends on the PostgreSQL driver and the SLF4J API only |
+| `bikesched-jackson` | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
+| `bikesched-kotlin` | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
 
 > [!NOTE]
 > bikesched is at an early stage (`0.1.0-SNAPSHOT`) and not published to a Maven repository yet.
@@ -77,7 +83,7 @@ PostgreSQL:
   steps and event waits. Without a driver or an answer in time, if the customer declines the price
   or cancels the ride (`Bikesched.cancel`), or if the broker cannot approve it, the ride is
   cancelled resp. fails, and compensations release the payment and withdraw the ride at the
-  broker. Payloads and events are records, mapped with Jackson via `JacksonJsonMapper`.
+  broker. Payloads and events are records, mapped by `bikesched-jackson`.
 
 ```shell
 docker compose up -d

@@ -21,6 +21,22 @@ abstract class AbstractStoreTest {
 
   static final Duration DEAD_AFTER = Duration.ofSeconds(15);
 
+  /**
+   * Passes JSON text through, like bikesched's default mapper (which lives in {@code internal}).
+   */
+  static final JsonMapper JSON_TEXT =
+      new JsonMapper() {
+        @Override
+        public String toJson(Object value) {
+          return (String) value;
+        }
+
+        @Override
+        public <T> T fromJson(String json, Class<T> type) {
+          return type.cast(json);
+        }
+      };
+
   static final PGSimpleDataSource dataSource;
   static final Database database;
 
@@ -30,7 +46,7 @@ abstract class AbstractStoreTest {
     dataSource.setUrl(POSTGRES.getJdbcUrl());
     dataSource.setUser(POSTGRES.getUsername());
     dataSource.setPassword(POSTGRES.getPassword());
-    database = new Database(dataSource, JsonMapper.rawJson());
+    database = new Database(dataSource, JSON_TEXT);
     assertThat(database.migrate()).containsExactly(1);
   }
 

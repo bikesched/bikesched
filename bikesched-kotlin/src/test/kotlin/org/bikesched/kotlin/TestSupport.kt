@@ -5,10 +5,9 @@ import java.util.UUID
 import javax.sql.DataSource
 import org.awaitility.Awaitility
 import org.bikesched.Bikesched
-import org.bikesched.JsonMapper
+import org.bikesched.jackson.JacksonJsonMapper
 import org.postgresql.ds.PGSimpleDataSource
 import org.testcontainers.postgresql.PostgreSQLContainer
-import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.KotlinModule
 
 /** One PostgreSQL container per test JVM, shared by all test classes; Ryuk removes it. */
@@ -30,24 +29,19 @@ object TestDatabase {
   }
 }
 
-/** Maps Kotlin data classes with Jackson and its Kotlin module. */
-object JacksonJsonMapper : JsonMapper {
-
-  private val mapper: ObjectMapper =
+/** Maps Kotlin data classes: bikesched-jackson with Jackson's Kotlin module. */
+val kotlinJsonMapper: JacksonJsonMapper =
+  JacksonJsonMapper(
     tools.jackson.databind.json.JsonMapper.builder()
       .addModule(KotlinModule.Builder().build())
       .build()
-
-  override fun toJson(value: Any): String = mapper.writeValueAsString(value)
-
-  override fun <T : Any?> fromJson(json: String, type: Class<T>): T = mapper.readValue(json, type)
-}
+  )
 
 /** A polling node on the test database with a unique name, mapping payloads with Jackson. */
 fun testNode(name: String): Bikesched = bikesched {
   dataSource = TestDatabase.dataSource
   nodeName = "$name-${UUID.randomUUID()}"
-  jsonMapper = JacksonJsonMapper
+  jsonMapper = kotlinJsonMapper
 }
 
 /** A unique job type or event name per test run: the database is shared with other tests. */

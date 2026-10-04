@@ -25,8 +25,9 @@ does; this file covers how to change it.
 | Module | Contents |
 |---|---|
 | `bikesched-core` | the library; runtime dependencies: PostgreSQL JDBC driver and `slf4j-api` only |
-| `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core and the Kotlin stdlib only |
-| `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test); may use Jackson etc. |
+| `bikesched-jackson` | `JacksonJsonMapper` (Java only, package `org.bikesched.jackson`); depends on core and `jackson-databind` (both `api`) |
+| `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core and the Kotlin stdlib only (tests use bikesched-jackson) |
+| `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test); JSON via bikesched-jackson |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):
@@ -63,7 +64,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `RecurringJobBuilder`), enforced at compile time, not with runtime checks.
 - Boolean accessors use the `is` prefix (`isPolling`, `isEnded`, `isFixedRate`); builder setters are
   named after the property (`nodeName(String)`).
-- SPI defaults are static factories on the interface (`JsonMapper.rawJson()`, `RetryBackoff.none()`).
+- SPI defaults are static factories on the interface (`RetryBackoff.none()`); a default that only
+  makes sense as "nothing configured" stays internal instead (`RawJsonMapper`, used by `Internals`
+  when no `jsonMapper` was set).
 - Results get their own type in the feature package (`event.ReceivedEvent`); lookups return
   `Optional` of a minimal interface (`findJob` → `JobInfo` with a `JobState` enum).
 - No exceptions for control flow: intent is a flag checked after the handler (`job.cancel()`,
@@ -116,9 +119,11 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - Wait for async outcomes with Awaitility (`await().untilAsserted { … }`, defaults set in the base
   classes); "nothing happens" checks are `Thread.sleep` + assert.
 - Log assertions use `LogCapture.of(X.class)`; log meaningful lifecycle steps and assert them.
-- Core tests use `JsonMapper.rawJson()`: payloads and step results must be valid JSON text
+- Core tests use the default mapper (store tests: `AbstractStoreTest.JSON_TEXT`): payloads and step
+  results must be valid JSON text
   (`"\"x\""`, not `"x"`).
-- Kotlin tests share `TestDatabase` and map data classes with Jackson's Kotlin module; use
+- Kotlin tests share `TestDatabase` and map data classes with `kotlinJsonMapper` (bikesched-jackson
+  plus Jackson's Kotlin module); use
   `unique(name)` for job types and event names, computed outside handlers (handlers replay).
 - Verify with `./gradlew build` and count results from `build/test-results/test/*.xml`; rerun
   timing-sensitive tests a few times with `--tests … --rerun`.

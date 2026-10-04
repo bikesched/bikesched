@@ -47,7 +47,10 @@ public class BikeschedSpec internal constructor() {
   /** Whether to start polling for jobs right away; defaults to `true`. */
   public var autoStartPolling: Boolean? = null
 
-  /** Maps payloads and step results to and from JSON; defaults to [JsonMapper.rawJson]. */
+  /**
+   * Maps payloads and step results to and from JSON; without one, only strings that already contain
+   * JSON are accepted. See `bikesched-jackson` for Jackson.
+   */
   public var jsonMapper: JsonMapper? = null
 
   /** The timeout of job attempts without their own timeout; defaults to none. */

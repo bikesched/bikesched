@@ -8,7 +8,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.examples.JacksonJsonMapper;
+import org.bikesched.jackson.JacksonJsonMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;

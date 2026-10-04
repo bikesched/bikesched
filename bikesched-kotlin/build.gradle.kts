@@ -5,8 +5,8 @@ plugins {
 dependencies {
     api(project(":bikesched-core"))
 
-    // Tests map Kotlin data classes to JSON with Jackson and its Kotlin module.
-    testImplementation(libs.postgresql)
-    testImplementation(libs.jackson.databind)
+    // Tests map Kotlin data classes to JSON with bikesched-jackson plus Jackson's Kotlin module.
+    testImplementation(project(":bikesched-jackson"))
     testImplementation(libs.jackson.module.kotlin)
+    testImplementation(libs.postgresql)
 }

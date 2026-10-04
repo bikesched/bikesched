@@ -5,7 +5,7 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import org.bikesched.Bikesched;
-import org.bikesched.examples.JacksonJsonMapper;
+import org.bikesched.jackson.JacksonJsonMapper;
 import org.postgresql.ds.PGSimpleDataSource;
 
 /**

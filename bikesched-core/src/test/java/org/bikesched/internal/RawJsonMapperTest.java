@@ -1,13 +1,17 @@
-package org.bikesched;
+package org.bikesched.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.bikesched.JsonMapper;
 import org.junit.jupiter.api.Test;
 
+/** The mapper used when none is configured. */
 class RawJsonMapperTest {
 
-  private final JsonMapper mapper = JsonMapper.rawJson();
+  record Payment(String orderId, int amount) {}
+
+  private final JsonMapper mapper = RawJsonMapper.INSTANCE;
 
   @Test
   void passesJsonStringsThrough() {
@@ -22,10 +26,11 @@ class RawJsonMapperTest {
     assertThatThrownBy(() -> mapper.toJson(42))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(
-            "JsonMapper.rawJson() only supports JSON strings, not java.lang.Integer; "
-                + "configure a JsonMapper for other types via Bikesched.builder().jsonMapper(...)");
-    assertThatThrownBy(() -> mapper.fromJson("{}", PaymentJsonMapper.Payment.class))
+            "Without a configured JsonMapper, only JSON strings are supported, not"
+                + " java.lang.Integer; configure one via Bikesched.builder().jsonMapper(...), e.g."
+                + " bikesched-jackson's JacksonJsonMapper");
+    assertThatThrownBy(() -> mapper.fromJson("{}", Payment.class))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("not org.bikesched.PaymentJsonMapper$Payment");
+        .hasMessageContaining("not org.bikesched.internal.RawJsonMapperTest$Payment");
   }
 }

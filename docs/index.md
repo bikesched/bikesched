@@ -35,7 +35,8 @@ and without any coordinator besides PostgreSQL.
 2. [Steps and compensation](steps.md): durable steps and sagas
 3. [Recurring jobs](recurring-jobs.md): schedules and occurrences
 4. [Events](events.md): waiting for and publishing events
-5. [Configuration](configuration.md): builder options, nodes, JSON mapping, logging
+5. [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
+   logging
 6. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
 7. [Database](database.md): tables, indexes and migrations
 

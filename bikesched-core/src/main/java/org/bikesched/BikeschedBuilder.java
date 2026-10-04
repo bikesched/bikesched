@@ -36,7 +36,7 @@ public final class BikeschedBuilder {
   private Duration nodeTimeout = DEFAULT_NODE_TIMEOUT;
   private Duration pollInterval = DEFAULT_POLL_INTERVAL;
   private boolean autoStartPolling = true;
-  private JsonMapper jsonMapper = JsonMapper.rawJson();
+  private JsonMapper jsonMapper; // null: the default, accepting only JSON strings
   private Duration defaultJobTimeout;
   private Duration defaultEventTimeout;
   private RetryBackoff retryBackoff = RetryBackoff.none();
@@ -110,8 +110,9 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Sets the mapper converting job payloads and step results to and from JSON (optional, default
-   * {@link JsonMapper#rawJson()}, which only supports strings already containing JSON).
+   * Sets the mapper converting job payloads, step results and event payloads to and from JSON
+   * (optional). Without one, bikesched only accepts strings that already contain JSON text and
+   * passes them through unchanged; for Jackson, see the {@code bikesched-jackson} module.
    *
    * @param jsonMapper the mapper
    * @return this builder

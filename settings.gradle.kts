@@ -18,4 +18,5 @@ rootProject.name = "bikesched"
 
 include("bikesched-core")
 include("bikesched-kotlin")
+include("bikesched-jackson")
 include("bikesched-examples")

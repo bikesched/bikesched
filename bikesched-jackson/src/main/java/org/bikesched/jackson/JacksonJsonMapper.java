@@ -1,11 +1,23 @@
-package org.bikesched.examples;
+package org.bikesched.jackson;
 
+import java.util.Objects;
 import org.bikesched.JsonMapper;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Maps payloads, events and step results with Jackson, so they can be plain records. Configure it
- * with {@code Bikesched.builder().jsonMapper(new JacksonJsonMapper())}.
+ * A {@link JsonMapper} backed by Jackson 3, so payloads, step results and event payloads can be
+ * plain records and classes:
+ *
+ * <pre>{@code
+ * Bikesched bikesched = Bikesched.builder()
+ *     .dataSource(dataSource)
+ *     .jsonMapper(new JacksonJsonMapper())
+ *     .build();
+ * }</pre>
+ *
+ * <p>Pass a configured {@link ObjectMapper} to add modules (e.g. Jackson's Kotlin module) or change
+ * features. Mapping failures are reported with Jackson's unchecked {@code JacksonException}.
+ * Thread-safe, like the {@link ObjectMapper} it uses.
  */
 public final class JacksonJsonMapper implements JsonMapper {
 
@@ -22,7 +34,7 @@ public final class JacksonJsonMapper implements JsonMapper {
    * @param mapper the Jackson mapper
    */
   public JacksonJsonMapper(ObjectMapper mapper) {
-    this.mapper = mapper;
+    this.mapper = Objects.requireNonNull(mapper, "mapper");
   }
 
   @Override

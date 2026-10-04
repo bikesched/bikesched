@@ -30,7 +30,8 @@ public interface EventBuilder {
    * @param payload the payload, may be {@code null}
    * @return this builder
    * @throws RuntimeException any exception of the mapper, e.g. {@link IllegalArgumentException}
-   *     from the default {@link JsonMapper#rawJson()} for types other than {@link String}
+   *     from the default mapper (no {@code jsonMapper} configured) for types other than {@link
+   *     String}
    */
   EventBuilder payload(Object payload);
 

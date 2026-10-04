@@ -4,9 +4,9 @@ import java.util.Objects;
 import org.bikesched.JsonMapper;
 
 /**
- * The default {@link JsonMapper}, created by {@link JsonMapper#rawJson()}: supports only strings
- * that already contain JSON text, which it passes through unchanged. Configure another mapper via
- * {@code BikeschedBuilder.jsonMapper(JsonMapper)} to use other types.
+ * The {@link JsonMapper} used when none is configured (see {@link Internals#create}): supports only
+ * strings that already contain JSON text, which it passes through unchanged. Configure another
+ * mapper via {@code BikeschedBuilder.jsonMapper(JsonMapper)} to use other types.
  *
  * <p>The JSON is not validated here; PostgreSQL rejects invalid JSON when it is stored.
  */
@@ -52,8 +52,9 @@ final class RawJsonMapper implements JsonMapper {
   }
 
   private static String unsupported(Class<?> type) {
-    return "JsonMapper.rawJson() only supports JSON strings, not "
+    return "Without a configured JsonMapper, only JSON strings are supported, not "
         + type.getName()
-        + "; configure a JsonMapper for other types via Bikesched.builder().jsonMapper(...)";
+        + "; configure one via Bikesched.builder().jsonMapper(...), e.g. bikesched-jackson's"
+        + " JacksonJsonMapper";
   }
 }

@@ -4,9 +4,12 @@ The `bikesched-kotlin` module adds Kotlin extensions on top of the Java API, in 
 `org.bikesched.kotlin`; it depends on `bikesched-core` and the Kotlin standard library only.
 
 ```kotlin
+// bikesched-jackson with Jackson's Kotlin module (tools.jackson.module:jackson-module-kotlin)
+val kotlinObjectMapper = JsonMapper.builder().addModule(KotlinModule.Builder().build()).build()
+
 val bikesched = bikesched {                         // instead of Bikesched.builder()…build()
     dataSource = ds
-    jsonMapper = myJsonMapper                       // e.g. Jackson with its Kotlin module
+    jsonMapper = JacksonJsonMapper(kotlinObjectMapper)
     defaultJobTimeout = 5.minutes                   // kotlin.time.Duration everywhere
 }
 

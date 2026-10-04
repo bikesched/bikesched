@@ -25,7 +25,7 @@ hikaricp = "7.1.0"
 awaitility = "4.3.0"
 archunit = "1.5.1"
 
-# Examples and bikesched-kotlin tests only
+# bikesched-jackson (jackson-module-kotlin: bikesched-kotlin tests only)
 jackson = "3.2.3"
 
 [libraries]

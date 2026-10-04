@@ -91,7 +91,8 @@ class JsonMapperTest extends AbstractBikeschedTest {
                       .newJob("default-mapper")
                       .payload(new PaymentJsonMapper.Payment("order-1", 100)))
           .isInstanceOf(IllegalArgumentException.class)
-          .hasMessageStartingWith("JsonMapper.rawJson() only supports JSON strings");
+          .hasMessageStartingWith(
+              "Without a configured JsonMapper, only JSON strings are supported");
 
       var seen = new java.util.concurrent.CompletableFuture<String>();
       UUID jobId =

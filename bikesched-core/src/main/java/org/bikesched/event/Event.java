@@ -42,7 +42,8 @@ public interface Event {
    * @param <T> the type to convert the payload to
    * @return the payload, or {@code null} if the event has none
    * @throws RuntimeException any exception of the mapper, e.g. {@link IllegalArgumentException}
-   *     from the default {@link JsonMapper#rawJson()} for types other than {@link String}
+   *     from the default mapper (no {@code jsonMapper} configured) for types other than {@link
+   *     String}
    */
   <T> T payload(Class<T> type);
 }

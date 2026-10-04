@@ -1,30 +1,22 @@
 package org.bikesched;
 
-import org.bikesched.internal.Internals;
-
 /**
  * Maps job payloads and step results between Java objects and the JSON text bikesched stores in
- * {@code jsonb} columns. Configured via {@link BikeschedBuilder#jsonMapper(JsonMapper)}; the
- * default {@link JsonMapper#rawJson()} only passes JSON strings through. Plug in a JSON library,
- * e.g. Jackson:
+ * {@code jsonb} columns. Configured via {@link BikeschedBuilder#jsonMapper(JsonMapper)}; without
+ * one, bikesched only accepts strings that already contain JSON text and passes them through
+ * unchanged (other types are rejected with an {@link IllegalArgumentException}). For Jackson, use
+ * {@code org.bikesched.jackson.JacksonJsonMapper} from the {@code bikesched-jackson} module; for
+ * another JSON library, implement the two methods:
  *
  * <pre>{@code
- * ObjectMapper objectMapper = new ObjectMapper();
- * JsonMapper jackson = new JsonMapper() {
+ * Gson gson = new Gson();
+ * JsonMapper mapper = new JsonMapper() {
  *     public String toJson(Object value) {
- *         try {
- *             return objectMapper.writeValueAsString(value);
- *         } catch (JsonProcessingException e) {
- *             throw new IllegalArgumentException(e);
- *         }
+ *         return gson.toJson(value);
  *     }
  *
  *     public <T> T fromJson(String json, Class<T> type) {
- *         try {
- *             return objectMapper.readValue(json, type);
- *         } catch (JsonProcessingException e) {
- *             throw new IllegalArgumentException(e);
- *         }
+ *         return gson.fromJson(json, type);
  *     }
  * };
  * }</pre>
@@ -51,17 +43,4 @@ public interface JsonMapper {
    * @return the value
    */
   <T> T fromJson(String json, Class<T> type);
-
-  /**
-   * Returns the default mapper: it supports only strings that already contain JSON text, which it
-   * passes through unchanged ({@code toJson("{\"a\": 1}")} returns the string as is, {@code
-   * fromJson(json, String.class)} returns the JSON text). Other types are rejected with an {@link
-   * IllegalArgumentException}; configure a mapper backed by a JSON library for them. The JSON is
-   * not validated here; PostgreSQL rejects invalid JSON when it is stored.
-   *
-   * @return the raw JSON mapper
-   */
-  static JsonMapper rawJson() {
-    return Internals.rawJsonMapper();
-  }
 }

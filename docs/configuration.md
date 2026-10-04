@@ -12,7 +12,7 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 | `autoStartPolling(boolean)` | `true` | with `false`, call `startPolling()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated on first use (`startPolling()`, scheduling a job, publishing an event), and retried on the next one if that fails |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.fixed(Duration.ofSeconds(30))` or `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))`; a handler's `job.fail().retryAfter(…)` takes precedence |
-| `jsonMapper(JsonMapper)` | `JsonMapper.rawJson()` | maps payloads and step results to and from JSON, see [JSON mapping](#json-mapping) |
+| `jsonMapper(JsonMapper)` | JSON strings only | maps payloads, step results and event payloads to and from JSON, see [JSON mapping](#json-mapping) |
 | `eventRetention(Duration)` | 7 days | how long published events are kept for steps that start waiting later |
 | `eventCleanUpInterval(Duration)` | 1 hour | how often the node deletes events older than the retention |
 | `nodeCleanUpInterval(Duration)` | 15 seconds | how often the node releases the running jobs of dead nodes and removes dead nodes; also the retry delay of the one-time check for missing occurrences of its recurring jobs |
@@ -32,28 +32,47 @@ that are still running back to `SCHEDULED` for other nodes, and deregisters the 
 
 ## JSON mapping
 
-bikesched ships without a JSON library. The default `JsonMapper.rawJson()` only accepts strings that
-already contain JSON. Plug in the library of your choice to use typed payloads and step results,
-e.g. Jackson 3:
+`bikesched-core` ships without a JSON library. Without a configured `jsonMapper`, bikesched only
+accepts strings that already contain JSON (e.g. `"{\"to\": \"alice@example.com\"}"`) and passes them
+through unchanged. To use records and classes as payloads, step results and event payloads, plug in
+a JSON library.
+
+### Jackson
+
+The `bikesched-jackson` module (package `org.bikesched.jackson`) maps with Jackson 3 and brings
+`bikesched-core` and `jackson-databind` along:
 
 ```java
-ObjectMapper objectMapper = JsonMapper.builder().build();   // tools.jackson.databind.json.JsonMapper
+Bikesched bikesched = Bikesched.builder()
+        .dataSource(dataSource)
+        .jsonMapper(new JacksonJsonMapper())   // Jackson's defaults: records, java.time types
+        .build();
+```
+
+Pass a configured `ObjectMapper` to add modules or change features, e.g.
+`new JacksonJsonMapper(JsonMapper.builder().addModule(KotlinModule.Builder().build()).build())`
+for Kotlin data classes. Mapping failures surface as Jackson's unchecked `JacksonException`.
+
+### Other libraries
+
+Implement `JsonMapper`'s two methods; they must be thread-safe and throw unchecked exceptions.
+`null` never reaches the mapper:
+
+```java
+Gson gson = new Gson();
 Bikesched.builder()
         .dataSource(dataSource)
-        .jsonMapper(new org.bikesched.JsonMapper() {
+        .jsonMapper(new JsonMapper() {
             public String toJson(Object value) {
-                return objectMapper.writeValueAsString(value);
+                return gson.toJson(value);
             }
 
             public <T> T fromJson(String json, Class<T> type) {
-                return objectMapper.readValue(json, type);
+                return gson.fromJson(json, type);
             }
         })
         .build();
 ```
-
-The examples module contains this mapper as
-[`JacksonJsonMapper`](../bikesched-examples/src/main/java/org/bikesched/examples/JacksonJsonMapper.java).
 
 ## Logging
 

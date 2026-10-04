@@ -20,20 +20,13 @@ public final class Internals {
    *
    * @param settings the node's settings
    * @param dataSource the PostgreSQL data source
-   * @param jsonMapper maps payloads and step results
+   * @param jsonMapper maps payloads and step results; {@code null} for the default, which only
+   *     passes JSON strings through ({@link RawJsonMapper})
    * @return the node; already polling if {@link Settings#autoStartPolling()} is set
    */
   public static Bikesched create(Settings settings, DataSource dataSource, JsonMapper jsonMapper) {
     Objects.requireNonNull(settings, "settings");
-    return DefaultBikesched.create(new Database(dataSource, jsonMapper), settings);
-  }
-
-  /**
-   * The JSON mapper that passes JSON text through unchanged, see {@link JsonMapper#rawJson()}.
-   *
-   * @return the shared instance
-   */
-  public static JsonMapper rawJsonMapper() {
-    return RawJsonMapper.INSTANCE;
+    JsonMapper mapper = jsonMapper != null ? jsonMapper : RawJsonMapper.INSTANCE;
+    return DefaultBikesched.create(new Database(dataSource, mapper), settings);
   }
 }

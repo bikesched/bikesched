@@ -4,11 +4,11 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":bikesched-core"))
+    // Payloads, events and step results are records, mapped to JSON with bikesched-jackson
+    // (brings bikesched-core and Jackson).
+    implementation(project(":bikesched-jackson"))
     implementation(libs.postgresql)
     implementation(libs.slf4j.api)
-    // Payloads, events and step results are records, mapped to JSON with Jackson.
-    implementation(libs.jackson.databind)
     runtimeOnly(libs.logback.classic)
 }
 

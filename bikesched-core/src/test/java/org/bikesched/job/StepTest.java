@@ -187,7 +187,7 @@ class StepTest extends AbstractBikeschedTest {
                   "job_id = '"
                       + jobId
                       + "' and name = 'unmappable' "
-                      + "and state = 'FAILED' and last_error like 'java.lang.IllegalArgumentException: JsonMapper.rawJson()%'"))
+                      + "and state = 'FAILED' and last_error like 'java.lang.IllegalArgumentException: Without a configured JsonMapper%'"))
           .isEqualTo(1);
     }
   }
