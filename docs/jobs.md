@@ -17,7 +17,8 @@ UUID id = bikesched.newJob("report")
         .schedule();                               // or schedule(Instant) / schedule(Duration)
 ```
 
-A builder can be reused: every `schedule…` call stores a new job. Handlers can also be registered
+A builder can be reused: every `schedule…` call stores a new job. `schedule(Recurrence)` registers a
+[recurring job](recurring-jobs.md) instead. Handlers can also be registered
 up front with `bikesched.registerJobHandler(type, handler)`.
 
 To check on a job later, look it up by its id:

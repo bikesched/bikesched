@@ -16,10 +16,10 @@ import org.bikesched.internal.job.RecurringJobRepair;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** Recurring jobs: {@link JobBuilder#recurring(Schedule)}. */
+/** Recurring jobs: {@link JobBuilder#schedule(Recurrence)}. */
 class RecurringJobTest extends AbstractBikeschedTest {
 
-  private static final Schedule EVERY_200_MS = Schedule.every(Duration.ofMillis(200));
+  private static final Recurrence EVERY_200_MS = Recurrence.every(Duration.ofMillis(200));
 
   /**
    * Deletes the occurrences left pending: otherwise the nodes of later tests (which do not register
@@ -37,14 +37,13 @@ class RecurringJobTest extends AbstractBikeschedTest {
       UUID first =
           bikesched
               .newJob("recurring-basic")
-              .recurring(EVERY_200_MS)
               .payload("{\"report\": 1}")
               .handler(
                   job -> {
                     assertThat(job.payload()).isEqualTo("{\"report\": 1}");
                     runs.incrementAndGet();
                   })
-              .schedule();
+              .schedule(EVERY_200_MS);
 
       assertThat(count("id = '" + first + "' and schedule = 'every PT0.2S'")).isEqualTo(1);
       awaitCount("job_type = 'recurring-basic' and state = 'SUCCEEDED'", 3);
@@ -60,9 +59,9 @@ class RecurringJobTest extends AbstractBikeschedTest {
   void registeringOnSeveralNodesCreatesOneOccurrence() throws Exception {
     try (Bikesched first = node("node-recurring-a");
         Bikesched second = node("node-recurring-b")) {
-      Schedule hourly = Schedule.every(Duration.ofHours(1));
-      UUID a = first.newJob("recurring-shared").recurring(hourly).handler(() -> {}).schedule();
-      UUID b = second.newJob("recurring-shared").recurring(hourly).handler(() -> {}).schedule();
+      Recurrence hourly = Recurrence.every(Duration.ofHours(1));
+      UUID a = first.newJob("recurring-shared").handler(() -> {}).schedule(hourly);
+      UUID b = second.newJob("recurring-shared").handler(() -> {}).schedule(hourly);
 
       assertThat(b).as("the same pending occurrence").isEqualTo(a);
       assertThat(count("job_type = 'recurring-shared'")).isEqualTo(1);
@@ -76,14 +75,10 @@ class RecurringJobTest extends AbstractBikeschedTest {
         Bikesched bikesched = node("node-recurring-change")) {
       bikesched
           .newJob("recurring-change")
-          .recurring(Schedule.every(Duration.ofHours(1)))
           .handler(() -> {})
-          .schedule();
+          .schedule(Recurrence.every(Duration.ofHours(1)));
       UUID moved =
-          bikesched
-              .newJob("recurring-change")
-              .recurring(Schedule.every(Duration.ofHours(2)))
-              .schedule();
+          bikesched.newJob("recurring-change").schedule(Recurrence.every(Duration.ofHours(2)));
 
       assertThat(
               count(
@@ -98,18 +93,17 @@ class RecurringJobTest extends AbstractBikeschedTest {
         .anyMatch(
             m ->
                 m.startsWith(
-                    "Schedule of recurring job recurring-change changed from 'every PT1H' to"
+                    "Recurrence of recurring job recurring-change changed from 'every PT1H' to"
                         + " 'every PT2H', next occurrence moved to "));
   }
 
   @Test
   void unchangedScheduleKeepsThePendingOccurrence() throws Exception {
     try (Bikesched bikesched = node("node-recurring-same")) {
-      Schedule hourly = Schedule.every(Duration.ofHours(1));
+      Recurrence hourly = Recurrence.every(Duration.ofHours(1));
       Instant firstRun = Instant.now().plus(Duration.ofMinutes(5));
-      UUID first =
-          bikesched.newJob("recurring-same").recurring(hourly).handler(() -> {}).schedule(firstRun);
-      UUID again = bikesched.newJob("recurring-same").recurring(hourly).schedule();
+      UUID first = bikesched.newJob("recurring-same").handler(() -> {}).schedule(hourly, firstRun);
+      UUID again = bikesched.newJob("recurring-same").schedule(hourly);
 
       assertThat(again).isEqualTo(first);
       assertThat(count("id = '" + first + "' and scheduled_at < now() + interval '10 minutes'"))
@@ -123,13 +117,12 @@ class RecurringJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = node("node-recurring-fail")) {
       bikesched
           .newJob("recurring-fail")
-          .recurring(Schedule.every(Duration.ofHours(1)))
           .maxAttempts(1)
           .handler(
               () -> {
                 throw new IllegalStateException("boom");
               })
-          .schedule(Instant.now());
+          .schedule(Recurrence.every(Duration.ofHours(1)), Instant.now());
 
       awaitCount("job_type = 'recurring-fail' and state = 'FAILED'", 1);
       assertThat(
@@ -147,14 +140,13 @@ class RecurringJobTest extends AbstractBikeschedTest {
       UUID first =
           bikesched
               .newJob("recurring-planned")
-              .recurring(Schedule.every(Duration.ofHours(1)))
               .handler(
                   job -> {
                     if (job.attempts() == 1) {
                       job.fail("later").retryAfter(Duration.ofMillis(500)); // moves scheduled_at
                     }
                   })
-              .schedule(firstRun);
+              .schedule(Recurrence.every(Duration.ofHours(1)), firstRun);
       assertThat(count("id = '" + first + "' and fixed_rate_at = scheduled_at")).isEqualTo(1);
 
       awaitState(first, "SUCCEEDED");
@@ -181,9 +173,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
       UUID occurrence =
           bikesched
               .newJob("recurring-wall-clock")
-              .recurring(Schedule.daily(java.time.LocalTime.NOON, java.time.ZoneOffset.UTC))
               .handler(() -> {})
-              .schedule();
+              .schedule(Recurrence.daily(java.time.LocalTime.NOON, java.time.ZoneOffset.UTC));
 
       assertThat(count("id = '" + occurrence + "' and fixed_rate_at is null")).isEqualTo(1);
     }
@@ -195,14 +186,13 @@ class RecurringJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = node("node-recurring-retry")) {
       bikesched
           .newJob("recurring-retry")
-          .recurring(Schedule.every(Duration.ofHours(1)))
           .handler(
               () -> {
                 if (attempts.incrementAndGet() == 1) {
                   throw new IllegalStateException("first attempt fails");
                 }
               })
-          .schedule(Instant.now());
+          .schedule(Recurrence.every(Duration.ofHours(1)), Instant.now());
 
       awaitCount("job_type = 'recurring-retry' and state = 'SUCCEEDED'", 1);
       assertThat(count("job_type = 'recurring-retry'")).as("succeeded + next").isEqualTo(2);
@@ -216,9 +206,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = node("node-recurring-cancel")) {
       bikesched
           .newJob("recurring-cancel")
-          .recurring(Schedule.every(Duration.ofHours(1)))
           .handler(job -> job.cancel("not today"))
-          .schedule(Instant.now());
+          .schedule(Recurrence.every(Duration.ofHours(1)), Instant.now());
 
       awaitCount("job_type = 'recurring-cancel' and state = 'CANCELLED'", 1);
       assertThat(count("job_type = 'recurring-cancel' and state = 'SCHEDULED'")).isEqualTo(1);
@@ -237,9 +226,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
       UUID occurrence =
           bikesched
               .newJob("recurring-repair")
-              .recurring(Schedule.every(Duration.ofHours(1)))
               .handler(() -> {})
-              .schedule();
+              .schedule(Recurrence.every(Duration.ofHours(1)));
       execute("delete from bikesched_jobs where id = '" + occurrence + "'");
 
       bikesched.startPolling();
@@ -262,9 +250,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = node("node-recurring-remove")) {
       bikesched
           .newJob("recurring-remove")
-          .recurring(Schedule.every(Duration.ofHours(1)))
           .handler(() -> {})
-          .schedule();
+          .schedule(Recurrence.every(Duration.ofHours(1)));
 
       assertThat(bikesched.removeRecurringJob("recurring-remove")).isTrue();
       Thread.sleep(300); // several heartbeats
@@ -279,9 +266,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = node("node-recurring-oneoff")) {
       bikesched
           .newJob("recurring-oneoff")
-          .recurring(Schedule.every(Duration.ofHours(1)))
           .handler(() -> {})
-          .schedule();
+          .schedule(Recurrence.every(Duration.ofHours(1)));
       UUID oneOff = bikesched.newJob("recurring-oneoff").schedule();
 
       awaitState(oneOff, "SUCCEEDED");
@@ -295,8 +281,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = node("node-recurring-tx");
         Connection connection = dataSource.getConnection()) {
       connection.setAutoCommit(false);
-      // connection(...) leads to a TransactionalJobBuilder, which has no recurring(...) method;
-      // recurring(...) leads to a RecurringJobBuilder, which has no connection(...) method.
+      // connection(...) leads to a TransactionalJobBuilder, which has no schedule(Recurrence):
+      // recurring jobs can't be scheduled in the caller's transaction.
       UUID jobId =
           bikesched
               .newJob("recurring-tx")
@@ -319,8 +305,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
   @Test
   void failedRepairIsRetriedUntilItSucceeds() throws Exception {
     var failures = new AtomicInteger(2);
-    Schedule flaky =
-        Schedule.of(
+    Recurrence flaky =
+        Recurrence.of(
             "flaky",
             previous -> {
               if (failures.getAndDecrement() > 0) {
@@ -338,9 +324,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
       UUID occurrence =
           bikesched
               .newJob("recurring-retry")
-              .recurring(flaky)
               .handler(() -> {})
-              .schedule(Instant.now().plus(Duration.ofHours(1)));
+              .schedule(flaky, Instant.now().plus(Duration.ofHours(1)));
       execute("delete from bikesched_jobs where id = '" + occurrence + "'");
 
       bikesched.startPolling();

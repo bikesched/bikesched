@@ -5,10 +5,10 @@ import java.time.Instant;
 import java.util.Objects;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.job.JobBuilder;
-import org.bikesched.job.Schedule;
+import org.bikesched.job.Recurrence;
 
 /**
- * A recurring job registered on this node (via {@link JobBuilder#recurring(Schedule)}): its type
+ * A recurring job registered on this node (via {@link JobBuilder#schedule(Recurrence)}): its type
  * (the identity of the recurring job), its schedule and the attributes of its occurrences.
  *
  * @param type the job type
@@ -20,7 +20,7 @@ import org.bikesched.job.Schedule;
  */
 public record RecurringJob(
     String type,
-    Schedule schedule,
+    Recurrence schedule,
     String payload,
     int priority,
     int maxAttempts,
@@ -49,8 +49,8 @@ public record RecurringJob(
 
   /**
    * The next run after an ended occurrence: computed from its planned run if the schedule {@link
-   * Schedule#isFixedRate() is fixed-rate} and it has one, otherwise from its scheduled time (which
-   * retries and event waits may have moved).
+   * Recurrence#isFixedRate() is fixed-rate} and it has one, otherwise from its scheduled time
+   * (which retries and event waits may have moved).
    */
   Instant nextRun(DefaultJob ended, Instant now) {
     Instant previous =
@@ -81,7 +81,7 @@ public record RecurringJob(
     Instant next = schedule.next(previous);
     if (next == null || !next.isAfter(previous)) {
       throw new IllegalStateException(
-          "Schedule '"
+          "Recurrence '"
               + schedule.description()
               + "' of recurring job "
               + type

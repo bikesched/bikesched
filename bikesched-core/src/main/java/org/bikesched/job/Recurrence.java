@@ -12,16 +12,16 @@ import java.util.function.UnaryOperator;
 import org.bikesched.RetryBackoff;
 
 /**
- * When a recurring job runs, see {@link JobBuilder#recurring(Schedule)}: computes the next run from
- * the previous one.
+ * When a recurring job runs, passed to {@link JobBuilder#schedule(Recurrence)}: computes the next
+ * run from the previous one.
  *
- * <p>Every schedule has a {@link #description() description}, stored with the pending occurrence.
- * When a node registers the recurring job with a schedule of a different description (e.g. after a
- * deploy), the pending occurrence is moved to the new schedule. The built-in schedules describe
- * themselves; custom ones are created with {@link #of(String, UnaryOperator)} and must change their
- * description whenever their logic changes.
+ * <p>Every recurrence has a {@link #description() description}, stored with the pending occurrence.
+ * When a node registers the recurring job with a recurrence of a different description (e.g. after
+ * a deploy), the pending occurrence is moved to the new recurrence. The built-in recurrences
+ * describe themselves; custom ones are created with {@link #of(String, UnaryOperator)} and must
+ * change their description whenever their logic changes.
  */
-public interface Schedule {
+public interface Recurrence {
 
   /**
    * Returns the next run after the given one.
@@ -63,13 +63,13 @@ public interface Schedule {
    * @param interval the time between runs, positive
    * @return the schedule
    */
-  static Schedule every(Duration interval) {
+  static Recurrence every(Duration interval) {
     Objects.requireNonNull(interval, "interval");
     if (interval.isNegative() || interval.isZero()) {
       throw new IllegalArgumentException("interval must be positive: " + interval);
     }
-    Schedule schedule = of("every " + interval, previous -> previous.plus(interval));
-    return new Schedule() {
+    Recurrence schedule = of("every " + interval, previous -> previous.plus(interval));
+    return new Recurrence() {
       @Override
       public Instant next(Instant previous) {
         return schedule.next(previous);
@@ -100,7 +100,7 @@ public interface Schedule {
    * @param zone the time zone of {@code time}
    * @return the schedule
    */
-  static Schedule daily(LocalTime time, ZoneId zone) {
+  static Recurrence daily(LocalTime time, ZoneId zone) {
     Objects.requireNonNull(time, "time");
     Objects.requireNonNull(zone, "zone");
     return of(
@@ -122,7 +122,7 @@ public interface Schedule {
    * @param zone the time zone of {@code time}
    * @return the schedule
    */
-  static Schedule weekly(DayOfWeek day, LocalTime time, ZoneId zone) {
+  static Recurrence weekly(DayOfWeek day, LocalTime time, ZoneId zone) {
     Objects.requireNonNull(day, "day");
     Objects.requireNonNull(time, "time");
     Objects.requireNonNull(zone, "zone");
@@ -141,7 +141,7 @@ public interface Schedule {
    * Creates a custom schedule:
    *
    * <pre>{@code
-   * Schedule.of("first monday of the month at 08:00 UTC", previous -> firstMondayAfter(previous))
+   * Recurrence.of("first monday of the month at 08:00 UTC", previous -> firstMondayAfter(previous))
    * }</pre>
    *
    * @param description a stable description; change it whenever the logic changes, so nodes move
@@ -149,13 +149,13 @@ public interface Schedule {
    * @param next computes the next run after the previous one; must return a later instant
    * @return the schedule
    */
-  static Schedule of(String description, UnaryOperator<Instant> next) {
+  static Recurrence of(String description, UnaryOperator<Instant> next) {
     Objects.requireNonNull(description, "description");
     Objects.requireNonNull(next, "next");
     if (description.isBlank()) {
       throw new IllegalArgumentException("description must not be blank");
     }
-    return new Schedule() {
+    return new Recurrence() {
       @Override
       public Instant next(Instant previous) {
         return next.apply(previous);

@@ -9,7 +9,7 @@ import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
-import org.bikesched.job.Schedule;
+import org.bikesched.job.Recurrence;
 import org.bikesched.job.TypedJobHandler;
 
 /**
@@ -135,9 +135,9 @@ public interface Bikesched extends AutoCloseable {
   <T> JobBuilder<T> newJob(JobType<T> type);
 
   /**
-   * Stops a recurring job (see {@link JobBuilder#recurring(Schedule)}): unregisters it on this node
-   * and deletes its pending occurrence unless that is running right now (a running occurrence ends
-   * normally; a node that no longer has the recurring job registered schedules no successor).
+   * Stops a recurring job (see {@link JobBuilder#schedule(Recurrence)}): unregisters it on this
+   * node and deletes its pending occurrence unless that is running right now (a running occurrence
+   * ends normally; a node that no longer has the recurring job registered schedules no successor).
    *
    * <p>Meant for recurring jobs that were removed from the code: nodes that still register the
    * recurring job recreate its occurrence when they register it again, e.g. on their next start.

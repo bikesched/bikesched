@@ -22,7 +22,7 @@ import org.bikesched.internal.event.DefaultEvent;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobFailure;
-import org.bikesched.job.Schedule;
+import org.bikesched.job.Recurrence;
 import org.bikesched.job.Step;
 import org.bikesched.job.StepBuilder;
 import org.bikesched.job.StepHandler;
@@ -130,7 +130,7 @@ public final class DefaultJob implements Job {
   }
 
   /**
-   * The planned run of an occurrence whose schedule {@link Schedule#isFixedRate() is fixed-rate},
+   * The planned run of an occurrence whose schedule {@link Recurrence#isFixedRate() is fixed-rate},
    * {@code null} otherwise.
    */
   Instant fixedRateAt() {

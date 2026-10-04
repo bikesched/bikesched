@@ -100,8 +100,7 @@ class TypedEventTest {
 
     testNode("recurring").use { bikesched ->
       bikesched.handleJobs<Order>(tick) {}
-      val first =
-        bikesched.newJob(tick).payload(Order("tick", 0)).recurring(every(1.hours)).schedule(1.hours)
+      val first = bikesched.newJob(tick).payload(Order("tick", 0)).schedule(every(1.hours), 1.hours)
       assertThat(bikesched.findJobOrNull(first)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(bikesched.removeRecurringJob(tick)).isTrue()
     }

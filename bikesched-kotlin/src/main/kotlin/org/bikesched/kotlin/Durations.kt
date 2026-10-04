@@ -8,8 +8,7 @@ import org.bikesched.job.Job
 import org.bikesched.job.JobBuilder
 import org.bikesched.job.JobFailure
 import org.bikesched.job.JobSettings
-import org.bikesched.job.RecurringJobBuilder
-import org.bikesched.job.Schedule
+import org.bikesched.job.Recurrence
 import org.bikesched.job.TransactionalJobBuilder
 
 // kotlin.time.Duration overloads of the bikesched methods taking a java.time.Duration.
@@ -25,10 +24,11 @@ public fun TransactionalJobBuilder<*>.schedule(delay: Duration): UUID =
   schedule(delay.toJavaDuration())
 
 /**
- * Registers the recurring job with its first run once [delay] has passed, see
- * `RecurringJobBuilder.schedule(Duration)`.
+ * Registers a recurring job with its first run once [delay] has passed, see
+ * `JobBuilder.schedule(Recurrence, Duration)`.
  */
-public fun RecurringJobBuilder<*>.schedule(delay: Duration): UUID = schedule(delay.toJavaDuration())
+public fun JobBuilder<*>.schedule(recurrence: Recurrence, delay: Duration): UUID =
+  schedule(recurrence, delay.toJavaDuration())
 
 /** Sets the maximum duration of an attempt, see `JobSettings.timeout(Duration)`. */
 public fun <B : JobSettings<B, *>> B.timeout(timeout: Duration): B =
@@ -40,8 +40,8 @@ public fun JobFailure.retryAfter(delay: Duration): JobFailure = retryAfter(delay
 /** Moves the deadline of the running attempt, see `Job.updateTimeout(Duration)`. */
 public fun Job.updateTimeout(timeout: Duration): Unit = updateTimeout(timeout.toJavaDuration())
 
-/** A fixed-rate schedule running every [interval], see `Schedule.every(Duration)`. */
-public fun every(interval: Duration): Schedule = Schedule.every(interval.toJavaDuration())
+/** A fixed-rate schedule running every [interval], see `Recurrence.every(Duration)`. */
+public fun every(interval: Duration): Recurrence = Recurrence.every(interval.toJavaDuration())
 
 /** Retries after a fixed [delay], see `RetryBackoff.fixed(Duration)`. */
 public fun fixedBackoff(delay: Duration): RetryBackoff = RetryBackoff.fixed(delay.toJavaDuration())

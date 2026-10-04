@@ -4,7 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import org.bikesched.job.JobBuilder;
-import org.bikesched.job.Schedule;
+import org.bikesched.job.Recurrence;
 
 /**
  * The stored attributes of a job to be scheduled, assembled by {@link JobBuilder} (or of an
@@ -18,8 +18,8 @@ import org.bikesched.job.Schedule;
  * @param timeout maximum duration of an attempt, {@code null} for the executing node's default
  * @param schedule the description of the recurring job's schedule this job is an occurrence of;
  *     {@code null} for a one-off job
- * @param fixedRateAt the planned run of an occurrence whose schedule {@link Schedule#isFixedRate()
- *     is fixed-rate}; {@code null} otherwise
+ * @param fixedRateAt the planned run of an occurrence whose schedule {@link
+ *     Recurrence#isFixedRate() is fixed-rate}; {@code null} otherwise
  */
 public record NewJob(
     String type,

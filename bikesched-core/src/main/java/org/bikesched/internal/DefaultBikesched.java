@@ -40,7 +40,7 @@ import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
-import org.bikesched.job.RecurringJobBuilder;
+import org.bikesched.job.Recurrence;
 import org.bikesched.job.TypedJobHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -354,7 +354,7 @@ public final class DefaultBikesched implements Bikesched {
     }
   }
 
-  /** Registers a recurring job built by a {@link RecurringJobBuilder}. */
+  /** Registers a recurring job, see {@link JobBuilder#schedule(Recurrence)}. */
   private UUID scheduleRecurringJob(RecurringJob job, JobHandler handler, Instant firstRun) {
     String type = job.type();
     requireHandler(type, handler);
@@ -372,7 +372,7 @@ public final class DefaultBikesched implements Bikesched {
           registration.scheduledAt());
     } else if (registration.previousSchedule() != null) {
       LOG.info(
-          "Schedule of recurring job {} changed from '{}' to '{}', next occurrence moved to {}",
+          "Recurrence of recurring job {} changed from '{}' to '{}', next occurrence moved to {}",
           type,
           registration.previousSchedule(),
           schedule,

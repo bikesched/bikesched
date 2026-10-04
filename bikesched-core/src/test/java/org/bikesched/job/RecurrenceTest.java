@@ -10,13 +10,13 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import org.junit.jupiter.api.Test;
 
-class ScheduleTest {
+class RecurrenceTest {
 
   private static final ZoneId BERLIN = ZoneId.of("Europe/Berlin");
 
   @Test
   void everyAddsTheInterval() {
-    Schedule schedule = Schedule.every(Duration.ofMinutes(15));
+    Recurrence schedule = Recurrence.every(Duration.ofMinutes(15));
 
     assertThat(schedule.next(Instant.parse("2026-10-03T10:00:00Z")))
         .isEqualTo(Instant.parse("2026-10-03T10:15:00Z"));
@@ -25,7 +25,7 @@ class ScheduleTest {
 
   @Test
   void dailyRunsAtTheLocalTime() {
-    Schedule schedule = Schedule.daily(LocalTime.of(3, 0), BERLIN);
+    Recurrence schedule = Recurrence.daily(LocalTime.of(3, 0), BERLIN);
 
     // 02:00 Berlin (summer time, UTC+2) -> 03:00 the same day
     assertThat(schedule.next(Instant.parse("2026-10-03T00:00:00Z")))
@@ -41,7 +41,7 @@ class ScheduleTest {
 
   @Test
   void dailyShiftsTimesInTheDaylightSavingGap() {
-    Schedule schedule = Schedule.daily(LocalTime.of(2, 30), BERLIN);
+    Recurrence schedule = Recurrence.daily(LocalTime.of(2, 30), BERLIN);
 
     // 2026-03-29 02:30 does not exist in Berlin: runs at 03:30 (UTC+2)
     assertThat(schedule.next(Instant.parse("2026-03-28T12:00:00Z")))
@@ -50,7 +50,7 @@ class ScheduleTest {
 
   @Test
   void weeklyRunsOnTheDayAtTheLocalTime() {
-    Schedule schedule = Schedule.weekly(DayOfWeek.MONDAY, LocalTime.of(8, 0), BERLIN);
+    Recurrence schedule = Recurrence.weekly(DayOfWeek.MONDAY, LocalTime.of(8, 0), BERLIN);
 
     // Saturday 2026-10-03 -> Monday 2026-10-05 08:00 Berlin
     assertThat(schedule.next(Instant.parse("2026-10-03T12:00:00Z")))
@@ -63,7 +63,7 @@ class ScheduleTest {
 
   @Test
   void customScheduleHasItsDescription() {
-    Schedule schedule = Schedule.of("hourly", previous -> previous.plusSeconds(3600));
+    Recurrence schedule = Recurrence.of("hourly", previous -> previous.plusSeconds(3600));
 
     assertThat(schedule.next(Instant.EPOCH)).isEqualTo(Instant.ofEpochSecond(3600));
     assertThat(schedule.description()).isEqualTo("hourly");
@@ -72,18 +72,19 @@ class ScheduleTest {
 
   @Test
   void onlyFixedRateSchedulesUsePlannedTimes() {
-    assertThat(Schedule.every(Duration.ofMinutes(1)).isFixedRate()).isTrue();
-    assertThat(Schedule.daily(LocalTime.NOON, BERLIN).isFixedRate()).isFalse();
-    assertThat(Schedule.weekly(DayOfWeek.MONDAY, LocalTime.NOON, BERLIN).isFixedRate()).isFalse();
-    assertThat(Schedule.of("custom", previous -> previous.plusSeconds(1)).isFixedRate()).isFalse();
+    assertThat(Recurrence.every(Duration.ofMinutes(1)).isFixedRate()).isTrue();
+    assertThat(Recurrence.daily(LocalTime.NOON, BERLIN).isFixedRate()).isFalse();
+    assertThat(Recurrence.weekly(DayOfWeek.MONDAY, LocalTime.NOON, BERLIN).isFixedRate()).isFalse();
+    assertThat(Recurrence.of("custom", previous -> previous.plusSeconds(1)).isFixedRate())
+        .isFalse();
   }
 
   @Test
   void invalidSchedulesAreRejected() {
-    assertThatThrownBy(() -> Schedule.every(Duration.ZERO))
+    assertThatThrownBy(() -> Recurrence.every(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("interval must be positive: PT0S");
-    assertThatThrownBy(() -> Schedule.of(" ", previous -> previous))
+    assertThatThrownBy(() -> Recurrence.of(" ", previous -> previous))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("description must not be blank");
   }

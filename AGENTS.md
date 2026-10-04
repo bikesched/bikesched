@@ -59,9 +59,11 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - Everything handed to user code (job, event, builders, `JobFailure`, `EventWait`) is a public
   **interface**; implementations are `Default<X>` in `internal`.
 - Builders: one fluent path ending in a verb that performs the action (`newJob(type)…schedule()`,
+  `…schedule(Recurrence)` for a recurring job,
   `newEvent(name, key)…publish()`, `newStep(name, Class)…run(handler)`). Mutually exclusive options
-  are separate builder types (`connection(…)` → `TransactionalJobBuilder`, `recurring(…)` →
-  `RecurringJobBuilder`), enforced at compile time, not with runtime checks.
+  are separate builder types (`connection(…)` → `TransactionalJobBuilder`, which has no
+  `schedule(Recurrence)`), enforced at compile time, not with runtime checks. Overloads of the
+  verb are distinguished by argument type (`Instant`/`Duration` vs. `Recurrence`).
 - Boolean accessors use the `is` prefix (`isPolling`, `isEnded`, `isFixedRate`); builder setters are
   named after the property (`nodeName(String)`).
 - SPI defaults are static factories on the interface (`RetryBackoff.none()`); a default that only

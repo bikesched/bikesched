@@ -25,20 +25,20 @@ bikesched.handleJobs<Order>("order") { order ->    // this: Job, order: the mapp
 
 bikesched.createJob(type = "order", payload = Order("o-1", 100))
 bikesched.publishEvent(name = "payment-received", key = "o-1", payload = payment)
-bikesched.createRecurringJob(type = "cleanup", schedule = every(1.hours)) { cleanup.run() }
+bikesched.createRecurringJob(type = "cleanup", recurrence = every(1.hours)) { cleanup.run() }
 ```
 
 ## Functions
 
 `createJob`, `createRecurringJob`, `publishEvent` and `waitForEvent` take named arguments. Only the
-type (resp. step, name and key) and the schedule are required; omitted options keep the builder
+type (resp. step, name and key) and the recurrence are required; omitted options keep the builder
 defaults:
 
 | Function | Arguments |
 |---|---|
 | `handleJobs<T>(type) { payload -> }`, `handleJobs(type) { }` | registers the handler; the `Job` is the receiver |
 | `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id |
-| `createRecurringJob(type, schedule, payload, firstRun, delay, priority, maxAttempts, timeout) { … }` | registers a recurring job and returns the id of its pending occurrence |
+| `createRecurringJob(type, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout) { … }` | registers a recurring job and returns the id of its pending occurrence |
 | `publishEvent(name, key, payload, connection)` | publishes an event and returns the steps that received it |
 | `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result (e.g. `waitForEvent<Payment?>(…, timeout = 3.days) { null }`), without fallback the job fails permanently like with the default event timeout |
 | `step<T>(name, compensation) { … }` (in a handler) | runs a durable step; the optional `compensation = { step, result -> … }` undoes it if the job is cancelled or fails permanently |

@@ -17,14 +17,20 @@ import org.bikesched.BikeschedException;
  *         .handler(job -> mailer.send(job.payload()))   // optional if already registered
  *         .priority(10)
  *         .schedule();                                   // or schedule(instant) / schedule(delay)
+ *
+ * bikesched.newJob("cleanup")
+ *         .handler(job -> cleanup())
+ *         .schedule(Recurrence.daily(LocalTime.of(3, 0), ZoneId.of("Europe/Berlin")));
  * }</pre>
  *
- * <p>{@link #connection(Connection)} continues with a {@link TransactionalJobBuilder} storing the
- * job in the caller's transaction, {@link #recurring(Schedule)} with a {@link RecurringJobBuilder}
- * for a recurring job; both keep the settings made so far.
+ * <p>The argument of {@code schedule} decides what is created: no argument, an {@link Instant} or a
+ * {@link Duration} store a one-off job; a {@link Recurrence} registers a recurring job (see {@link
+ * #schedule(Recurrence)}). {@link #connection(Connection)} continues with a {@link
+ * TransactionalJobBuilder} storing a one-off job in the caller's transaction; it keeps the settings
+ * made so far.
  *
- * <p>Every {@code schedule} call stores a new job, so a builder can be reused to schedule several
- * jobs with the same settings. Not thread-safe.
+ * <p>Every one-off {@code schedule} call stores a new job, so a builder can be reused to schedule
+ * several jobs with the same settings. Not thread-safe.
  *
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
@@ -51,29 +57,14 @@ public interface JobBuilder<P> extends JobSettings<JobBuilder<P>, P> {
    * }
    * }</pre>
    *
-   * <p>Recurring jobs cannot be stored in the caller's transaction: their registration also lives
-   * in the node's memory, which the transaction cannot roll back.
+   * <p>Recurring jobs cannot be stored in the caller's transaction (the returned builder has no
+   * {@code schedule(Recurrence)}): their registration also lives in the node's memory, which the
+   * transaction cannot roll back.
    *
    * @param connection the caller's connection
    * @return a builder with the settings made so far, storing the job on the connection
    */
   TransactionalJobBuilder<P> connection(Connection connection);
-
-  /**
-   * Continues with a recurring job running according to the schedule, identified by its job type;
-   * see {@link RecurringJobBuilder}:
-   *
-   * <pre>{@code
-   * bikesched.newJob("cleanup")
-   *         .recurring(Schedule.daily(LocalTime.of(3, 0), ZoneId.of("Europe/Berlin")))
-   *         .handler(job -> cleanup())
-   *         .schedule();
-   * }</pre>
-   *
-   * @param schedule when the job runs
-   * @return a builder with the settings made so far, registering a recurring job
-   */
-  RecurringJobBuilder<P> recurring(Schedule schedule);
 
   /**
    * Schedules the job to run as soon as possible.
@@ -110,4 +101,69 @@ public interface JobBuilder<P> extends JobSettings<JobBuilder<P>, P> {
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
    */
   UUID schedule(Duration delay);
+
+  /**
+   * Registers a recurring job, identified by its job type, running according to the recurrence.
+   * Every node registering it runs the same code, typically on startup:
+   *
+   * <pre>{@code
+   * bikesched.newJob("cleanup")
+   *         .handler(job -> cleanup())
+   *         .schedule(Recurrence.daily(LocalTime.of(3, 0), ZoneId.of("Europe/Berlin")));
+   * }</pre>
+   *
+   * <p>Unlike the one-off {@code schedule} methods, this registration is idempotent: it creates the
+   * first occurrence unless one is pending, so calling it again (on every node, on every start)
+   * does not add jobs. If the pending occurrence belongs to a recurrence of another {@link
+   * Recurrence#description() description} (e.g. after a deploy) and has not started yet, it is
+   * moved to the new recurrence. A new first occurrence runs at the recurrence's next run from now.
+   *
+   * <p>Each run is an occurrence: a regular job with its own retries, timeout, steps and events;
+   * the payload, priority, maximum attempts and timeout apply to every occurrence. At most one
+   * occurrence is pending at a time. When an occurrence ends ({@code SUCCEEDED}, permanently {@code
+   * FAILED} or {@code CANCELLED}, which cancels this occurrence only), the next one is scheduled in
+   * the same transaction; runs that would already be due are skipped, not caught up on. Nodes
+   * recreate a missing occurrence of the recurring jobs they registered once when they start
+   * polling; {@link org.bikesched.Bikesched#removeRecurringJob(String)} stops a recurring job that
+   * no node registers anymore.
+   *
+   * @param recurrence when the job runs
+   * @return the id of the pending occurrence
+   * @throws IllegalArgumentException if no handler is set nor registered for the job type
+   * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
+   *     valid JSON
+   * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed or the
+   *     recurrence does not return a later instant
+   */
+  UUID schedule(Recurrence recurrence);
+
+  /**
+   * Registers a recurring job like {@link #schedule(Recurrence)}; a new first occurrence runs at
+   * the given time (also when moving the pending occurrence to a changed recurrence), the following
+   * ones according to the recurrence.
+   *
+   * @param recurrence when the job runs
+   * @param firstRun when a new first occurrence runs
+   * @return the id of the pending occurrence
+   * @throws IllegalArgumentException if no handler is set nor registered for the job type
+   * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
+   *     valid JSON
+   * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
+   */
+  UUID schedule(Recurrence recurrence, Instant firstRun);
+
+  /**
+   * Registers a recurring job like {@link #schedule(Recurrence)}; a new first occurrence runs once
+   * the given delay has passed, the following ones according to the recurrence.
+   *
+   * @param recurrence when the job runs
+   * @param delay how long to wait before a new first occurrence runs, not negative
+   * @return the id of the pending occurrence
+   * @throws IllegalArgumentException if the delay is negative or no handler is set nor registered
+   *     for the job type
+   * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
+   *     valid JSON
+   * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
+   */
+  UUID schedule(Recurrence recurrence, Duration delay);
 }

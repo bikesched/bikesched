@@ -96,10 +96,9 @@ class JobTypeTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = node("node-job-type-recurring")) {
       bikesched
           .newJob(payment)
-          .recurring(Schedule.every(Duration.ofHours(1)))
           .payload(new Payment("monthly", 10))
           .handler((_, _) -> {})
-          .schedule(Duration.ofHours(1));
+          .schedule(Recurrence.every(Duration.ofHours(1)), Duration.ofHours(1));
       assertThat(count("job_type = '" + payment.name() + "' and state = 'SCHEDULED'")).isOne();
 
       assertThat(bikesched.removeRecurringJob(payment)).isTrue();

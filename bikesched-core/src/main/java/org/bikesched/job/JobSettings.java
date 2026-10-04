@@ -11,11 +11,11 @@ import org.bikesched.JsonMapper;
  * setter returns the concrete builder, so they can be called in any order:
  *
  * <ul>
- *   <li>{@link JobBuilder}: a one-off job, from {@link org.bikesched.Bikesched#newJob(String)} or
- *       {@link org.bikesched.Bikesched#newJob(JobType)}
+ *   <li>{@link JobBuilder}: a one-off job or, with {@link JobBuilder#schedule(Recurrence)}, a
+ *       recurring job, from {@link org.bikesched.Bikesched#newJob(String)} or {@link
+ *       org.bikesched.Bikesched#newJob(JobType)}
  *   <li>{@link TransactionalJobBuilder}: a one-off job stored in the caller's transaction, from
  *       {@link JobBuilder#connection(Connection)}
- *   <li>{@link RecurringJobBuilder}: a recurring job, from {@link JobBuilder#recurring(Schedule)}
  * </ul>
  *
  * @param <B> the concrete builder type

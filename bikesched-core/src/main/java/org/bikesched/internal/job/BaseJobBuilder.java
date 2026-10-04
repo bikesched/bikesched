@@ -13,7 +13,7 @@ import org.bikesched.job.TypedJobHandler;
 
 /**
  * The shared settings of the job builder implementations ({@link DefaultJobBuilder}, {@link
- * DefaultTransactionalJobBuilder}, {@link DefaultRecurringJobBuilder}).
+ * DefaultTransactionalJobBuilder}).
  *
  * @param <B> the builder interface
  */

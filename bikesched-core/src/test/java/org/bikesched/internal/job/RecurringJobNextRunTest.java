@@ -5,14 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
-import org.bikesched.job.Schedule;
+import org.bikesched.job.Recurrence;
 import org.junit.jupiter.api.Test;
 
 class RecurringJobNextRunTest {
 
   @Test
   void nextRunSkipsRunsThatAreAlreadyDue() {
-    var job = recurring(Schedule.every(Duration.ofMinutes(15)));
+    var job = recurring(Recurrence.every(Duration.ofMinutes(15)));
     Instant previous = Instant.parse("2026-10-03T10:00:00Z");
 
     assertThat(job.nextRun(previous, Instant.parse("2026-10-03T10:05:00Z")))
@@ -24,15 +24,15 @@ class RecurringJobNextRunTest {
 
   @Test
   void nextRunRejectsSchedulesThatDoNotMoveForward() {
-    var job = recurring(Schedule.of("broken", previous -> previous));
+    var job = recurring(Recurrence.of("broken", previous -> previous));
 
     assertThatThrownBy(() -> job.nextRun(Instant.EPOCH, Instant.EPOCH))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Schedule 'broken' of recurring job report returned")
+        .hasMessageContaining("Recurrence 'broken' of recurring job report returned")
         .hasMessageEndingWith("it must return a later instant");
   }
 
-  private static RecurringJob recurring(Schedule schedule) {
+  private static RecurringJob recurring(Recurrence schedule) {
     return new RecurringJob("report", schedule, null, 0, 3, null);
   }
 }

@@ -120,7 +120,7 @@ class SchedulingTest {
       val reportOccurrence =
         bikesched.createRecurringJob(
           type = typed,
-          schedule = every(1.hours),
+          recurrence = every(1.hours),
           payload = Report("daily"),
           delay = 1.hours,
         ) { report ->
@@ -130,14 +130,18 @@ class SchedulingTest {
       val cleanupOccurrence =
         bikesched.createRecurringJob(
           type = plain,
-          schedule = every(1.hours),
+          recurrence = every(1.hours),
           firstRun = firstRun,
         ) {}
 
       assertThat(bikesched.findJobOrNull(reportOccurrence)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(bikesched.findJobOrNull(cleanupOccurrence)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(
-          bikesched.createRecurringJob(type = plain, schedule = every(1.hours), firstRun = firstRun)
+          bikesched.createRecurringJob(
+            type = plain,
+            recurrence = every(1.hours),
+            firstRun = firstRun,
+          )
         )
         .`as`("registering again keeps the pending occurrence")
         .isEqualTo(cleanupOccurrence)

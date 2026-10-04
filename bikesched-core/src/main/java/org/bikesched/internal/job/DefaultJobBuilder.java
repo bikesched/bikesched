@@ -7,8 +7,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.job.JobBuilder;
-import org.bikesched.job.RecurringJobBuilder;
-import org.bikesched.job.Schedule;
+import org.bikesched.job.Recurrence;
 import org.bikesched.job.TransactionalJobBuilder;
 
 /** The {@link JobBuilder} implementation. */
@@ -32,11 +31,6 @@ public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
   }
 
   @Override
-  public RecurringJobBuilder<P> recurring(Schedule schedule) {
-    return new DefaultRecurringJobBuilder<>(this, Objects.requireNonNull(schedule, "schedule"));
-  }
-
-  @Override
   public UUID schedule() {
     return schedule(Instant.now());
   }
@@ -50,5 +44,26 @@ public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
   @Override
   public UUID schedule(Duration delay) {
     return schedule(after(delay));
+  }
+
+  @Override
+  public UUID schedule(Recurrence recurrence) {
+    return scheduler.scheduleRecurring(recurringJob(recurrence), handler, null);
+  }
+
+  @Override
+  public UUID schedule(Recurrence recurrence, Instant firstRun) {
+    Objects.requireNonNull(firstRun, "firstRun");
+    return scheduler.scheduleRecurring(recurringJob(recurrence), handler, firstRun);
+  }
+
+  @Override
+  public UUID schedule(Recurrence recurrence, Duration delay) {
+    return schedule(recurrence, after(delay));
+  }
+
+  private RecurringJob recurringJob(Recurrence recurrence) {
+    Objects.requireNonNull(recurrence, "recurrence");
+    return new RecurringJob(type, recurrence, payload, priority, maxAttempts, timeout);
   }
 }

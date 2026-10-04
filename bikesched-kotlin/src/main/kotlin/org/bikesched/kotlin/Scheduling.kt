@@ -10,7 +10,7 @@ import org.bikesched.event.ReceivedEvent
 import org.bikesched.job.Job
 import org.bikesched.job.JobHandler
 import org.bikesched.job.JobSettings
-import org.bikesched.job.Schedule
+import org.bikesched.job.Recurrence
 
 // Kotlin-style entry points: one call with named arguments instead of a builder chain. They use
 // the Java API underneath (registerJobHandler, newJob(...)...schedule(), newEvent(...).publish()).
@@ -131,15 +131,15 @@ public inline fun <reified T : Any> Bikesched.createJob(
   )
 
 /**
- * Registers a recurring job without payload, see `JobBuilder.recurring(Schedule)`:
+ * Registers a recurring job without payload, see `JobBuilder.schedule(Recurrence)`:
  * ```
- * bikesched.createRecurringJob(type = "cleanup", schedule = every(1.hours)) { cleanup.run() }
+ * bikesched.createRecurringJob(type = "cleanup", recurrence = every(1.hours)) { cleanup.run() }
  * ```
  *
  * @param type the job type; one recurring job per type
- * @param schedule when it runs, e.g. [every] or `Schedule.daily(...)`
+ * @param recurrence when it runs, e.g. [every] or `Recurrence.daily(...)`
  * @param firstRun when the first occurrence runs; with neither [firstRun] nor [delay] the
- *   schedule's next run from now
+ *   recurrence's next run from now
  * @param delay how long from now until the first occurrence runs
  * @param priority the priority of its occurrences, higher runs first; defaults to 0
  * @param maxAttempts the maximum number of attempts per occurrence; defaults to 3
@@ -151,7 +151,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
  */
 public fun Bikesched.createRecurringJob(
   type: String,
-  schedule: Schedule,
+  recurrence: Recurrence,
   firstRun: Instant? = null,
   delay: Duration? = null,
   priority: Int? = null,
@@ -162,7 +162,7 @@ public fun Bikesched.createRecurringJob(
   registerRecurringJob(
     this,
     type,
-    schedule,
+    recurrence,
     JobOptions(
       null,
       priority,
@@ -176,9 +176,9 @@ public fun Bikesched.createRecurringJob(
 
 /**
  * Registers a recurring job with a payload (the same for every occurrence), see
- * `JobBuilder.recurring(Schedule)`:
+ * `JobBuilder.schedule(Recurrence)`:
  * ```
- * bikesched.createRecurringJob(type = "report", schedule = every(1.days), payload = Report("sales")) {
+ * bikesched.createRecurringJob(type = "report", recurrence = every(1.days), payload = Report("sales")) {
  *     report -> reports.send(report)
  * }
  * ```
@@ -192,7 +192,7 @@ public fun Bikesched.createRecurringJob(
  */
 public inline fun <reified T : Any> Bikesched.createRecurringJob(
   type: String,
-  schedule: Schedule,
+  recurrence: Recurrence,
   payload: T,
   firstRun: Instant? = null,
   delay: Duration? = null,
@@ -204,7 +204,7 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
   registerRecurringJob(
     this,
     type,
-    schedule,
+    recurrence,
     JobOptions(
       payload,
       priority,
@@ -292,17 +292,17 @@ internal fun scheduleJob(
 internal fun registerRecurringJob(
   bikesched: Bikesched,
   type: String,
-  schedule: Schedule,
+  recurrence: Recurrence,
   options: JobOptions,
   firstRun: Instant?,
   delay: Duration?,
 ): UUID {
   require(firstRun == null || delay == null) { "firstRun and delay are mutually exclusive" }
-  val recurring = options.applyTo(bikesched.newJob(type).recurring(schedule))
+  val builder = options.applyTo(bikesched.newJob(type))
   return when {
-    firstRun != null -> recurring.schedule(firstRun)
-    delay != null -> recurring.schedule(delay.toJavaDuration())
-    else -> recurring.schedule()
+    firstRun != null -> builder.schedule(recurrence, firstRun)
+    delay != null -> builder.schedule(recurrence, delay.toJavaDuration())
+    else -> builder.schedule(recurrence)
   }
 }
 

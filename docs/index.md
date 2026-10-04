@@ -15,7 +15,7 @@ and without any coordinator besides PostgreSQL.
 - **Step**: a named, durable part of a job. A completed step is not executed again when the job is
   retried; its stored result is returned instead. Steps can declare a compensation that undoes them
   if the job is cancelled or fails (a saga).
-- **Recurring job**: a job type with a schedule; each run is a regular job (an *occurrence*).
+- **Recurring job**: a job type with a `Recurrence`; each run is a regular job (an *occurrence*).
 - **Event**: a message with a name and a key. A job can wait for an event as a step; it is
   suspended without holding a thread until the event is published, then resumes.
 
