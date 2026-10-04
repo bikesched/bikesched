@@ -1,9 +1,11 @@
 // Conventions for the published Java library modules of bikesched: the shared Java conventions
-// (toolchain, compiler flags, formatting, tests) plus sources and Javadoc jars.
+// (toolchain, compiler flags, formatting, tests) plus sources and Javadoc jars, published to GitHub
+// Packages (bikesched.publishing).
 
 plugins {
     id("bikesched.java-conventions")
     `java-library`
+    id("bikesched.publishing")
 }
 
 java {

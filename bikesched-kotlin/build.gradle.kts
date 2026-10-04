@@ -2,6 +2,8 @@ plugins {
     id("bikesched.kotlin-library")
 }
 
+description = "Kotlin extensions for bikesched"
+
 dependencies {
     api(project(":bikesched-core"))
 

@@ -1,12 +1,14 @@
 // Conventions for the published Kotlin library modules of bikesched: the shared Java conventions
 // (toolchain, formatting, tests) plus the Kotlin compiler in explicit API mode with warnings as
-// errors, ktfmt formatting, and sources and Dokka jars.
+// errors, ktfmt formatting, and sources and Dokka jars, published to GitHub Packages
+// (bikesched.publishing).
 
 plugins {
     id("bikesched.java-conventions")
     `java-library`
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.dokka")
+    id("bikesched.publishing")
 }
 
 // Version catalog access from a precompiled script plugin.

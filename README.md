@@ -100,3 +100,26 @@ docker compose up -d                      # POSTGRES_PORT=5433 docker compose up
 ```
 
 All dependency and tool versions are managed in `gradle/libs.versions.toml`.
+
+## Snapshots
+
+Every successful build of `main` publishes the current snapshot (`org.bikesched:bikesched-core`,
+`bikesched-jackson`, `bikesched-kotlin`, version `0.1.0-SNAPSHOT`) to GitHub Packages. Reading
+from GitHub Packages requires a GitHub token with the `read:packages` scope, even for public
+packages:
+
+```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.pkg.github.com/sbuettner/bikesched")
+        credentials {
+            username = providers.gradleProperty("gpr.user").get()
+            password = providers.gradleProperty("gpr.token").get()   // token with read:packages
+        }
+    }
+}
+
+dependencies {
+    implementation("org.bikesched:bikesched-core:0.1.0-SNAPSHOT")
+}
+```
