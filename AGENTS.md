@@ -40,7 +40,7 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   - `internal`: `DefaultBikesched` (wiring, lifecycle, polling), `Settings`, `Heartbeat`,
     `NodeCleanUp`, `RawJsonMapper`
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
-    event waits via `DefaultEventWait`), `RecurringJob`, `RecurringJobRepair`
+    event waits via `DefaultEventWait`), `RecurringJob`, `RecurringJobRepair`, `HistoryCleanUp`
   - `internal.event`: `DefaultEventBuilder`, `DefaultEvent`, `EventCleanUp`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
     (`ValidationUtil`: name and key checks matching the schema's length constraints, message
@@ -112,11 +112,14 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   changes; they get a terminal state (`CANCELLED`, `COMPENSATED`) other code paths ignore.
 - A new table also goes into `SchemaMigratorTest` (drop list and expected tables) and the table list
   in `docs/database.md`.
-- JDBC only inside the stores (`JobStore`, `StepStore`, `EventStore`, `NodeStore`), which receive a
-  `DatabaseAccess` (no reference to `Database`, which only wires them). Statements go through the
-  `Sql` handle: `one`/`list`/`update`/`execute`, `Sql.Row` getters, `Sql.millis/seconds/timestamp/
-  typed` for durations and typed nulls. No `PreparedStatement`, `ResultSet` or
-  `catch (SQLException)` in stores.
+- Changes of jobs and steps are recorded in the job history (optional): a store makes the change
+  through `history.change(…)` (a transaction only if the history is enabled) and passes the
+  changed rows to `history.record(db, …)` in the same transaction. New state changes do the same.
+- JDBC only inside the stores (`JobStore`, `StepStore`, `EventStore`, `NodeStore`,
+  `HistoryStore`), which receive a `DatabaseAccess` (no reference to `Database`, which only wires
+  them). Statements go through the `Sql` handle: `one`/`list`/`update`/`execute`, `Sql.Row`
+  getters, `Sql.millis/seconds/timestamp/typed/array` for durations, typed nulls and arrays. No
+  `PreparedStatement`, `ResultSet` or `catch (SQLException)` in stores.
 - `access.withConnection(db -> …, e -> new BikeschedException("… failed", e))`, `inTransaction`,
   `inReadOnlyTransaction`, `onCallerConnection(connection, …)`: the last argument is a lazy
   exception handler, called only for an `SQLException`. A caller's connection is never committed,

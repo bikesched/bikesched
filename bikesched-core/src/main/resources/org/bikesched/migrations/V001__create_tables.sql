@@ -1,4 +1,4 @@
--- bikesched schema v1: nodes, jobs, steps and events.
+-- bikesched schema v1: nodes, jobs, steps, events and the job history.
 -- States are text + CHECK constraints (not Postgres enums) so adding states later is a cheap migration.
 -- Names (node names, job types, step and event names, recurrence descriptions) have at most 200
 -- characters, event keys at most 500: most are indexed, and B-tree entries are limited to about
@@ -85,7 +85,8 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
 -- job can skip steps that already succeeded. Event steps (event_name/event_key set) wait for an
--- event instead: WAITING until it is published (result = its payload) or wait_until has passed.
+-- event instead: WAITING until it is published (result = its payload, event_id = the event) or
+-- wait_until has passed.
 -- A compensable step (declared with a compensation) is COMPENSATED once its compensation ran.
 -- Cancelling a job marks its unfinished steps (WAITING, or RUNNING after a crash) CANCELLED.
 create table bikesched_steps (
@@ -97,6 +98,7 @@ create table bikesched_steps (
     last_error  text,
     event_name  text,
     event_key   text,
+    event_id    uuid,                   -- the received event (no FK: events are deleted after retention)
     wait_until  timestamptz,
     compensable boolean     not null default false,
     started_at  timestamptz not null default now(),
@@ -107,7 +109,8 @@ create table bikesched_steps (
                          'CANCELLED')),
     constraint bikesched_steps_event_check
         check ((event_name is null) = (event_key is null)
-               and (event_name is not null or (wait_until is null and state not in ('WAITING', 'TIMED_OUT')))),
+               and (event_name is not null or (wait_until is null and state not in ('WAITING', 'TIMED_OUT')))
+               and (event_id is null or event_name is not null)),
     constraint bikesched_steps_name_check
         check (char_length(name) between 1 and 200
                and char_length(event_name) between 1 and 200
@@ -135,3 +138,30 @@ create index bikesched_events_name_key_idx on bikesched_events (event_name, even
 
 -- Deleting events after their retention period.
 create index bikesched_events_published_at_idx on bikesched_events (published_at);
+
+-- Job history (only written by nodes with the history enabled): one row per change of a job
+-- (step_name null) or of one of its steps, in the transaction of the change. attempt is the job's
+-- attempt count after the change; node_id the node that made it (null: the application, e.g.
+-- scheduling, cancel requests, publishing). No foreign keys: entries are kept for their own
+-- retention period, also after their job was deleted.
+create table bikesched_job_history (
+    job_id     uuid        not null,
+    seq        bigint      generated always as identity,
+    created_at timestamptz not null default now(),
+    step_name  text,
+    state      text        not null,
+    attempt    integer     not null,
+    node_id    uuid,
+    detail     text,                   -- error, cancel message, deadline, ...; truncated to 4000 characters
+    primary key (job_id, seq),
+    constraint bikesched_job_history_state_check
+        check (step_name is null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
+                                               'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED')
+               or step_name is not null and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
+                                                      'TIMED_OUT', 'COMPENSATED', 'CANCELLED')),
+    constraint bikesched_job_history_step_name_check
+        check (char_length(step_name) between 1 and 200)
+);
+
+-- Deleting entries after their retention period.
+create index bikesched_job_history_created_at_idx on bikesched_job_history (created_at);

@@ -2,6 +2,7 @@ package org.bikesched;
 
 import com.grack.nanojson.JsonObject;
 import com.grack.nanojson.JsonParser;
+import java.time.Duration;
 import org.postgresql.ds.PGSimpleDataSource;
 
 /**
@@ -26,7 +27,11 @@ public final class Starter {
     dataSource.setUser("bikesched");
     dataSource.setPassword("bikesched");
 
-    var builder = Bikesched.builder().dataSource(dataSource).autoStartPolling(false);
+    var builder =
+        Bikesched.builder()
+            .dataSource(dataSource)
+            .jobHistory(Duration.ofDays(1))
+            .autoStartPolling(false);
     if (args.length > 0) {
       builder.nodeName(args[0]);
     }
@@ -69,6 +74,7 @@ public final class Starter {
 
               var eventJson =
                   job.waitForEvent("wait for approval", "approval", approvalId.toString())
+                      .timeout()
                       .receive(event -> "{\"approval\": " + event.key() + "}");
               JsonObject event = JsonParser.object().from(eventJson);
               Integer approval = (Integer) event.get("approval");

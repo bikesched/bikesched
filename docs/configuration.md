@@ -17,6 +17,8 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 | `eventCleanUpInterval(Duration)` | 1 hour | how often the node deletes events older than the retention |
 | `nodeCleanUpInterval(Duration)` | 15 seconds | how often the node releases the running jobs of dead nodes and removes dead nodes; also the retry delay of the one-time check for missing occurrences of its recurring jobs |
 | `defaultEventTimeout(Duration)` | none | maximum wait for events without a `.timeout(...)` of their own; afterwards the job fails with an `EventTimeoutException` |
+| `jobHistory(Duration retention)` | off | records every change of jobs and their steps in `bikesched_job_history` and keeps it for the retention, see [Job history](jobs.md#job-history); enable it on all nodes |
+| `jobHistoryCleanUpInterval(Duration)` | 1 hour | how often a node with the job history deletes entries older than the retention |
 
 ## Nodes
 

@@ -24,6 +24,8 @@ class BikeschedDslTest {
       eventRetention = 1.minutes
       eventCleanUpInterval = 10.minutes
       nodeCleanUpInterval = 30.seconds
+      jobHistoryRetention = 1.hours
+      jobHistoryCleanUpInterval = 10.minutes
     }
       .use { bikesched ->
         assertThat(bikesched.node().name()).isEqualTo("dsl-node")
@@ -32,6 +34,9 @@ class BikeschedDslTest {
 
         val id = bikesched.startPolling().idOrNull
         assertThat(id).isNotNull()
+
+        val jobId = bikesched.createJob(type = unique("dsl-history"), delay = 1.hours) {}
+        assertThat(bikesched.findJobHistory(jobId).map { it.state() }).containsExactly("SCHEDULED")
       }
   }
 

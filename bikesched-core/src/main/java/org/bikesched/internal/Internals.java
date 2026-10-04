@@ -27,6 +27,7 @@ public final class Internals {
   public static Bikesched create(Settings settings, DataSource dataSource, JsonMapper jsonMapper) {
     Objects.requireNonNull(settings, "settings");
     JsonMapper mapper = jsonMapper != null ? jsonMapper : RawJsonMapper.INSTANCE;
-    return DefaultBikesched.create(new Database(dataSource, mapper), settings);
+    var database = new Database(dataSource, mapper, settings.jobHistoryRetention() != null);
+    return DefaultBikesched.create(database, settings);
   }
 }

@@ -105,6 +105,8 @@ public final class Sql {
       for (int i = 0; i < parameters.length; i++) {
         switch (parameters[i]) {
           case Typed typed -> statement.setObject(i + 1, typed.value(), typed.sqlType());
+          case Array array ->
+              statement.setArray(i + 1, connection.createArrayOf(array.type(), array.values()));
           case Instant instant -> statement.setObject(i + 1, instant.atOffset(ZoneOffset.UTC));
           case null, default -> statement.setObject(i + 1, parameters[i]);
         }
@@ -127,6 +129,19 @@ public final class Sql {
   /** A nullable parameter with an explicit SQL type, see {@link Types}. */
   public static Typed typed(Object value, int sqlType) {
     return new Typed(value, sqlType);
+  }
+
+  /**
+   * An array parameter, e.g. for {@code unnest(?::uuid[])}.
+   *
+   * @param type the PostgreSQL element type, e.g. {@code uuid} or {@code text}
+   * @param values the elements, may contain {@code null}s
+   */
+  public record Array(String type, Object[] values) {}
+
+  /** An array parameter of the given PostgreSQL element type, see {@link Array}. */
+  public static Array array(String type, Object[] values) {
+    return new Array(type, values);
   }
 
   /** A nullable {@code timestamptz} parameter. */

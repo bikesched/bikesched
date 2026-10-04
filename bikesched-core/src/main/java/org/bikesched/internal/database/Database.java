@@ -12,9 +12,9 @@ import org.bikesched.job.Job;
 
 /**
  * Entry point to bikesched's database: schema migration and one store per table ({@link #nodes()},
- * {@link #jobs()}, {@link #steps()}, {@link #events()}). The stores run their statements through a
- * shared {@link DatabaseAccess}; they do not know this class. Thread-safe; every call borrows its
- * own connection from the data source.
+ * {@link #jobs()}, {@link #steps()}, {@link #events()}, {@link #history()}). The stores run their
+ * statements through a shared {@link DatabaseAccess}; they do not know this class. Thread-safe;
+ * every call borrows its own connection from the data source.
  */
 public final class Database {
 
@@ -30,20 +30,34 @@ public final class Database {
 
   private final EventStore events;
 
+  private final HistoryStore history;
+
   /**
-   * Creates the database access.
+   * Creates the database access without job history.
    *
    * @param dataSource the PostgreSQL data source
    * @param jsonMapper maps payloads and step results of the {@link Job}s this instance claims
    */
   public Database(DataSource dataSource, JsonMapper jsonMapper) {
+    this(dataSource, jsonMapper, false);
+  }
+
+  /**
+   * Creates the database access.
+   *
+   * @param dataSource the PostgreSQL data source
+   * @param jsonMapper maps payloads and step results of the {@link Job}s this instance claims
+   * @param jobHistory whether the stores record their changes in the job history
+   */
+  public Database(DataSource dataSource, JsonMapper jsonMapper, boolean jobHistory) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
     this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
     var access = new DatabaseAccess(dataSource);
+    this.history = new HistoryStore(access, jobHistory);
     this.nodes = new NodeStore(access);
-    this.jobs = new JobStore(access);
-    this.steps = new StepStore(access);
-    this.events = new EventStore(access);
+    this.jobs = new JobStore(access, history);
+    this.steps = new StepStore(access, history);
+    this.events = new EventStore(access, history);
   }
 
   /** The {@code bikesched_nodes} table. */
@@ -64,6 +78,11 @@ public final class Database {
   /** The {@code bikesched_events} table and steps waiting for events. */
   public EventStore events() {
     return events;
+  }
+
+  /** The {@code bikesched_job_history} table, written by the other stores if enabled. */
+  public HistoryStore history() {
+    return history;
   }
 
   /** The mapper for payloads and step results; handed to the claimed {@link Job}s. */

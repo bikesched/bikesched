@@ -31,7 +31,7 @@ and without any coordinator besides PostgreSQL.
 
 ## Contents
 
-1. [Jobs](jobs.md): scheduling, writing handlers, retries, cancellation, timeouts
+1. [Jobs](jobs.md): scheduling, writing handlers, retries, cancellation, job history, timeouts
 2. [Steps and compensation](steps.md): durable steps and sagas
 3. [Recurring jobs](recurring-jobs.md): schedules and occurrences
 4. [Events](events.md): waiting for and publishing events

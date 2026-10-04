@@ -4,18 +4,22 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.ValidationUtil;
 
 /**
  * The {@code bikesched_steps} table: durable steps of jobs (event steps are handled by {@link
- * EventStore}). Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
+ * EventStore}). Changes are recorded in the {@link HistoryStore job history}, if enabled.
+ * Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  */
 public final class StepStore {
 
   private final DatabaseAccess access;
+  private final HistoryStore history;
 
-  StepStore(DatabaseAccess access) {
+  StepStore(DatabaseAccess access, HistoryStore history) {
     this.access = Objects.requireNonNull(access, "access");
+    this.history = Objects.requireNonNull(history, "history");
   }
 
   private static final String FIND_STEP_SQL =
@@ -124,8 +128,15 @@ public final class StepStore {
    * @return the attempt number of the step, or empty if the step has already succeeded
    */
   public Optional<Integer> startStep(UUID jobId, String name) {
-    return access.withConnection(
-        db -> db.one(START_STEP_SQL, row -> row.integer(1), jobId, name),
+    return history.change(
+        db -> {
+          Optional<Integer> attempt = db.one(START_STEP_SQL, row -> row.integer(1), jobId, name);
+          if (attempt.isPresent()) {
+            String detail = attempt.get() > 1 ? "step attempt " + attempt.get() : null;
+            history.record(db, Change.step(jobId, name, "RUNNING", null, detail));
+          }
+          return attempt;
+        },
         e ->
             new BikeschedException(
                 "Starting step '" + name + "' of bikesched job " + jobId + " failed", e));
@@ -152,8 +163,13 @@ public final class StepStore {
    *     with such a step is compensated before it ends
    */
   public void completeStep(UUID jobId, String name, String result, boolean compensable) {
-    access.withConnection(
-        db -> db.update(COMPLETE_STEP_SQL, result, compensable, jobId, name),
+    history.change(
+        db -> {
+          if (db.update(COMPLETE_STEP_SQL, result, compensable, jobId, name) > 0) {
+            history.record(db, Change.step(jobId, name, "SUCCEEDED", null, null));
+          }
+          return null;
+        },
         e ->
             new BikeschedException(
                 "Storing the result of step '" + name + "' of bikesched job " + jobId + " failed",
@@ -167,8 +183,13 @@ public final class StepStore {
    * @param name the step name
    */
   public void compensateStep(UUID jobId, String name) {
-    access.withConnection(
-        db -> db.update(COMPENSATE_STEP_SQL, jobId, name),
+    history.change(
+        db -> {
+          if (db.update(COMPENSATE_STEP_SQL, jobId, name) > 0) {
+            history.record(db, Change.step(jobId, name, "COMPENSATED", null, null));
+          }
+          return null;
+        },
         e ->
             new BikeschedException(
                 "Recording the compensation of step '"
@@ -187,8 +208,15 @@ public final class StepStore {
    * @param error description of the failure, stored as the step's {@code last_error}
    */
   public void failCompensation(UUID jobId, String name, String error) {
-    access.withConnection(
-        db -> db.update(FAIL_COMPENSATION_SQL, ValidationUtil.truncateMessage(error), jobId, name),
+    history.change(
+        db -> {
+          if (db.update(FAIL_COMPENSATION_SQL, ValidationUtil.truncateMessage(error), jobId, name)
+              > 0) {
+            history.record(
+                db, Change.step(jobId, name, "SUCCEEDED", null, "compensation failed: " + error));
+          }
+          return null;
+        },
         e ->
             new BikeschedException(
                 "Recording the failed compensation of step '"
@@ -207,8 +235,13 @@ public final class StepStore {
    * @param error description of the failure, stored as {@code last_error}
    */
   public void failStep(UUID jobId, String name, String error) {
-    access.withConnection(
-        db -> db.update(FAIL_STEP_SQL, ValidationUtil.truncateMessage(error), jobId, name),
+    history.change(
+        db -> {
+          if (db.update(FAIL_STEP_SQL, ValidationUtil.truncateMessage(error), jobId, name) > 0) {
+            history.record(db, Change.step(jobId, name, "FAILED", null, error));
+          }
+          return null;
+        },
         e ->
             new BikeschedException(
                 "Recording the failure of step '"

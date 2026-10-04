@@ -134,6 +134,53 @@ completes it). Its unfinished steps, e.g. a wait for an event, become `CANCELLED
 receive events; completed steps are kept. Steps with a compensation are undone first, see
 [Compensation](steps.md#compensation).
 
+## Job history
+
+With `jobHistory(retention)` on the builder, a node records every change of a job and of its steps
+in `bikesched_job_history`, in the same transaction as the change, and deletes entries older than
+the retention (every `jobHistoryCleanUpInterval`). Without it, nothing is recorded and no extra
+statement runs.
+
+```java
+Bikesched bikesched = Bikesched.builder().dataSource(dataSource).jobHistory(Duration.ofDays(7)).build();
+
+for (JobHistoryEntry entry : bikesched.findJobHistory(jobId)) {   // oldest first
+    System.out.println(entry);
+}
+```
+
+A job that waited for an event and was retried once could show:
+
+| `stepName` | `state` | `attempt` | `nodeId` | `detail` |
+|---|---|---|---|---|
+| | `SCHEDULED` | 0 | | `due at 2026-10-04T10:00:00Z` |
+| | `RUNNING` | 1 | node-a | |
+| `charge` | `RUNNING` | 1 | node-a | |
+| `charge` | `FAILED` | 1 | node-a | `java.lang.IllegalStateException: card declined` |
+| | `SCHEDULED` | 1 | node-a | `java.lang.IllegalStateException: card declined (retry at …)` |
+| | `RUNNING` | 2 | node-b | |
+| `charge` | `RUNNING` | 2 | node-b | `step attempt 2` |
+| `charge` | `SUCCEEDED` | 2 | node-b | |
+| `await` | `WAITING` | 2 | node-b | `waiting for event paid/order-1` |
+| | `WAITING` | 1 | node-b | `suspended at step 'await'` |
+| `await` | `SUCCEEDED` | 1 | | `received event 3f2a…` |
+| | `SCHEDULED` | 1 | | `resumed by event 3f2a…` |
+| | `RUNNING` | 2 | node-a | |
+| | `SUCCEEDED` | 2 | node-a | |
+
+- Entries without a step name are changes of the job, the others of a step. `state` is the new
+  state, or the unchanged one for recorded requests (a cancel request, a failed compensation of a
+  step).
+- `attempt` is the job's attempt count after the change: suspending at an event wait gives the
+  attempt back, resuming counts a new one.
+- `nodeId` is the node that made the change; it is empty for changes made by the application:
+  scheduling, cancel requests and publishing events.
+- Also recorded: cancellations, compensation (`COMPENSATING`, compensation attempts,
+  `COMPENSATED` steps), jobs released by a stopping node or from a dead node, occurrences moved to
+  a changed recurrence or deleted with their recurring job.
+- Only nodes with the history enabled record: enable it on all nodes, or the history has gaps.
+  `findJobHistory` reads the table on any node.
+
 ## Timeouts
 
 When an attempt exceeds its timeout (per job, or the node's `defaultJobTimeout`), bikesched logs a

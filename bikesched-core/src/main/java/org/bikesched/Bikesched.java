@@ -1,5 +1,6 @@
 package org.bikesched;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -8,6 +9,7 @@ import org.bikesched.event.EventType;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
+import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
 import org.bikesched.job.JobTypeHandler;
@@ -224,6 +226,24 @@ public interface Bikesched extends AutoCloseable {
    * @throws BikeschedException if the database cannot be accessed
    */
   Optional<JobInfo> findJob(UUID jobId);
+
+  /**
+   * Reads the recorded history of a job, in a read-only transaction: every change of the job and of
+   * its steps, oldest first.
+   *
+   * <pre>{@code
+   * bikesched.findJobHistory(jobId).forEach(entry -> log.info("{}", entry));
+   * }</pre>
+   *
+   * <p>Changes are only recorded by nodes with the history enabled ({@link
+   * BikeschedBuilder#jobHistory(java.time.Duration)}), and kept for its retention period. This
+   * method reads the table on any node, also on one that does not record itself.
+   *
+   * @param jobId the job id
+   * @return the job's history; empty if nothing was recorded (or it was deleted)
+   * @throws BikeschedException if the database cannot be accessed
+   */
+  List<JobHistoryEntry> findJobHistory(UUID jobId);
 
   /**
    * Cancels a job, e.g. because the customer withdrew the order. The job is cancelled by the node

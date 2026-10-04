@@ -46,12 +46,14 @@ abstract class AbstractStoreTest {
     dataSource.setUrl(POSTGRES.getJdbcUrl());
     dataSource.setUser(POSTGRES.getUsername());
     dataSource.setPassword(POSTGRES.getPassword());
-    database = new Database(dataSource, JSON_TEXT);
+    // With the job history, so the store tests also cover recording it in the stores' transactions.
+    database = new Database(dataSource, JSON_TEXT, true);
     assertThat(database.migrate()).containsExactly(1);
   }
 
   @BeforeEach
   void deleteAll() throws SQLException {
+    execute("delete from bikesched_job_history");
     execute("delete from bikesched_events");
     execute("delete from bikesched_jobs");
     execute("delete from bikesched_nodes");

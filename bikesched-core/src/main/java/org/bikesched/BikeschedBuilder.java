@@ -28,6 +28,7 @@ public final class BikeschedBuilder {
   static final Duration DEFAULT_EVENT_RETENTION = Duration.ofDays(7);
   static final Duration DEFAULT_NODE_CLEAN_UP_INTERVAL = Duration.ofSeconds(15);
   static final Duration DEFAULT_EVENT_CLEAN_UP_INTERVAL = Duration.ofHours(1);
+  static final Duration DEFAULT_JOB_HISTORY_CLEAN_UP_INTERVAL = Duration.ofHours(1);
   static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
 
   private DataSource dataSource;
@@ -44,6 +45,8 @@ public final class BikeschedBuilder {
   private Duration eventRetention = DEFAULT_EVENT_RETENTION;
   private Duration nodeCleanUpInterval = DEFAULT_NODE_CLEAN_UP_INTERVAL;
   private Duration eventCleanUpInterval = DEFAULT_EVENT_CLEAN_UP_INTERVAL;
+  private Duration jobHistoryRetention; // null: no job history
+  private Duration jobHistoryCleanUpInterval = DEFAULT_JOB_HISTORY_CLEAN_UP_INTERVAL;
 
   BikeschedBuilder() {}
 
@@ -211,6 +214,36 @@ public final class BikeschedBuilder {
     return this;
   }
 
+  /**
+   * Enables the job history on this node (optional, default off): every change of a job or of one
+   * of its steps made through this node is recorded in {@code bikesched_job_history}, in the same
+   * transaction as the change, and kept for the given period. Read it with {@link
+   * Bikesched#findJobHistory(java.util.UUID)}. Enable it on all nodes: a node without it records
+   * nothing, so the history of jobs it touches has gaps.
+   *
+   * @param retention how long history entries are kept, positive
+   * @return this builder
+   */
+  public BikeschedBuilder jobHistory(Duration retention) {
+    Objects.requireNonNull(retention, "retention");
+    this.jobHistoryRetention = requirePositive(retention, "jobHistory retention");
+    return this;
+  }
+
+  /**
+   * Sets how often this node deletes job history entries older than the {@linkplain
+   * #jobHistory(Duration) retention} (optional, default 1 hour). Only nodes with the job history
+   * enabled do this.
+   *
+   * @param interval the time between clean-ups, positive
+   * @return this builder
+   */
+  public BikeschedBuilder jobHistoryCleanUpInterval(Duration interval) {
+    Objects.requireNonNull(interval, "interval");
+    this.jobHistoryCleanUpInterval = requirePositive(interval, "jobHistoryCleanUpInterval");
+    return this;
+  }
+
   /** Heartbeat interval; package-private so tests can speed it up. */
   BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
     this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -268,7 +301,9 @@ public final class BikeschedBuilder {
             eventRetention,
             defaultEventTimeout,
             nodeCleanUpInterval,
-            eventCleanUpInterval);
+            eventCleanUpInterval,
+            jobHistoryRetention,
+            jobHistoryCleanUpInterval);
     return Internals.create(settings, dataSource, jsonMapper);
   }
 

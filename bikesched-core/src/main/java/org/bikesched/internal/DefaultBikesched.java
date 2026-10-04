@@ -33,12 +33,14 @@ import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.BaseJobBuilder;
 import org.bikesched.internal.job.DefaultJob;
 import org.bikesched.internal.job.DefaultJobBuilder;
+import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobProcessor;
 import org.bikesched.internal.job.RecurringJob;
 import org.bikesched.internal.job.RecurringJobRepair;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
+import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
@@ -58,7 +60,8 @@ import org.slf4j.MDC;
  *       and sends no heartbeats
  *   <li>{@code bikesched-cleanup}: single scheduled thread running the housekeeping while the node
  *       polls, each on its own interval: the {@link NodeCleanUp} (releases the running jobs of dead
- *       nodes, removes dead nodes) and the {@link EventCleanUp} (deletes expired events); also
+ *       nodes, removes dead nodes), the {@link EventCleanUp} (deletes expired events) and, with the
+ *       job history enabled, the {@link HistoryCleanUp} (deletes expired history entries); also
  *       retries of the {@link RecurringJobRepair} (recreates missing occurrences of the node's
  *       recurring jobs), which runs once when polling starts
  *   <li>{@code bikesched-poller}: single scheduled thread claiming due jobs (skip locked) and
@@ -223,6 +226,16 @@ public final class DefaultBikesched implements Bikesched {
       scheduleWithFixedDelay(heartbeatExecutor, heartbeat::run, settings.heartbeatInterval());
       scheduleWithFixedDelay(cleanUpExecutor, nodeCleanUp::run, settings.nodeCleanUpInterval());
       scheduleWithFixedDelay(cleanUpExecutor, eventCleanUp::run, settings.eventCleanUpInterval());
+      Duration historyRetention = settings.jobHistoryRetention();
+      if (historyRetention != null) {
+        var historyCleanUp = new HistoryCleanUp(database, id, nodeName, historyRetention);
+        scheduleWithFixedDelay(
+            cleanUpExecutor, historyCleanUp::run, settings.jobHistoryCleanUpInterval());
+        LOG.info(
+            "bikesched node {} records the job history, keeping entries for {}",
+            nodeName,
+            historyRetention);
+      }
       scheduleWithFixedDelay(pollerExecutor, this::poll, settings.pollInterval());
       LOG.info(
           "bikesched node {} ({}) registered, polling for jobs every {} (running up to {}"
@@ -449,6 +462,16 @@ public final class DefaultBikesched implements Bikesched {
     }
     initializer.ensureInitialized();
     return database.jobs().findJob(jobId).map(JobInfo.class::cast);
+  }
+
+  @Override
+  public List<JobHistoryEntry> findJobHistory(UUID jobId) {
+    Objects.requireNonNull(jobId, "jobId");
+    if (closed.get()) {
+      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
+    }
+    initializer.ensureInitialized();
+    return database.history().findHistory(jobId);
   }
 
   @Override

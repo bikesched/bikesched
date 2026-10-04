@@ -6,6 +6,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.RetryBackoff;
 import org.bikesched.internal.event.EventCleanUp;
+import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.util.ValidationUtil;
 
 /**
@@ -28,6 +29,9 @@ import org.bikesched.internal.util.ValidationUtil;
  *     {@code null} for none
  * @param nodeCleanUpInterval interval between node clean-ups ({@link NodeCleanUp})
  * @param eventCleanUpInterval interval between event clean-ups ({@link EventCleanUp})
+ * @param jobHistoryRetention how long job history entries are kept; {@code null} if the node does
+ *     not record job history
+ * @param jobHistoryCleanUpInterval interval between job history clean-ups ({@link HistoryCleanUp})
  */
 public record Settings(
     String nodeName,
@@ -41,7 +45,9 @@ public record Settings(
     Duration eventRetention,
     Duration defaultEventTimeout,
     Duration nodeCleanUpInterval,
-    Duration eventCleanUpInterval) {
+    Duration eventCleanUpInterval,
+    Duration jobHistoryRetention,
+    Duration jobHistoryCleanUpInterval) {
 
   /** Validates the settings. */
   public Settings {
@@ -53,6 +59,7 @@ public record Settings(
     Objects.requireNonNull(eventRetention, "eventRetention");
     Objects.requireNonNull(nodeCleanUpInterval, "nodeCleanUpInterval");
     Objects.requireNonNull(eventCleanUpInterval, "eventCleanUpInterval");
+    Objects.requireNonNull(jobHistoryCleanUpInterval, "jobHistoryCleanUpInterval");
     if (maxConcurrentJobs < 1) {
       throw new IllegalArgumentException("maxConcurrentJobs must be >= 1: " + maxConcurrentJobs);
     }

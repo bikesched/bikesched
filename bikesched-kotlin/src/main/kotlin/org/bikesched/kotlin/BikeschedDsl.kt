@@ -74,6 +74,15 @@ public class BikeschedSpec internal constructor() {
    */
   public var nodeCleanUpInterval: Duration? = null
 
+  /**
+   * Enables the job history, keeping entries for this long (see `BikeschedBuilder.jobHistory`);
+   * defaults to no history.
+   */
+  public var jobHistoryRetention: Duration? = null
+
+  /** How often history entries older than [jobHistoryRetention] are deleted; defaults to 1 hour. */
+  public var jobHistoryCleanUpInterval: Duration? = null
+
   internal fun build(): Bikesched {
     val builder = Bikesched.builder()
     dataSource?.let(builder::dataSource)
@@ -87,6 +96,8 @@ public class BikeschedSpec internal constructor() {
     eventRetention?.let { builder.eventRetention(it.toJavaDuration()) }
     eventCleanUpInterval?.let { builder.eventCleanUpInterval(it.toJavaDuration()) }
     nodeCleanUpInterval?.let { builder.nodeCleanUpInterval(it.toJavaDuration()) }
+    jobHistoryRetention?.let { builder.jobHistory(it.toJavaDuration()) }
+    jobHistoryCleanUpInterval?.let { builder.jobHistoryCleanUpInterval(it.toJavaDuration()) }
     return builder.build()
   }
 }
