@@ -78,3 +78,21 @@ module, would make the problems above visible in production.
 - Benchmarks for throughput and latency per node.
 - Failure tests: database restart in the middle of a job (would expose the outcome-recording issue
   above), a node pausing longer than the node timeout, a hanging connection.
+
+## Website
+
+### Project site on bikesched.org
+
+Publish a project site with GitHub Pages under the already reserved domain `bikesched.org`. Its
+sources live in a `page` directory of this repository; it presents the project (pitch, features,
+quick start) and the documentation from `docs/`.
+
+- Generator: Jekyll, which GitHub Pages supports natively, or another simple static site generator
+  (e.g. Hugo or MkDocs). Build and deploy with GitHub Actions in either case (GitHub's recommended
+  way, and required for a `page` source directory or a generator other than Jekyll).
+- Reuse `docs/*.md` instead of copying them, e.g. by building them into the site; links between the
+  Markdown pages (`jobs.md#job-history`) must keep working on the site.
+- Custom domain: DNS records for `bikesched.org` pointing to GitHub Pages, the domain set in the
+  repository's Pages settings, HTTPS enforced.
+- GitHub Pages for a private repository needs a paid plan (GitHub Pro); on the free plan the
+  repository has to be public first.

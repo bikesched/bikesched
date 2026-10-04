@@ -170,4 +170,5 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 ## Commits
 
 Small messages: one subject line plus a few `-` bullets of user-visible changes since the last
-commit. Push only as a fast-forward.
+commit. Always `git fetch` first and rebase local commits onto `origin/main` if it moved (e.g.
+merged Renovate PRs), then commit and push, only as a fast-forward.
