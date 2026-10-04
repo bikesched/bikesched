@@ -73,22 +73,8 @@ The [documentation](docs/index.md) covers the concepts in detail:
 
 ## Examples
 
-The `bikesched-examples` module contains runnable examples, each covered by a test against
-PostgreSQL:
-
-- **Taxi booking** ([`org.bikesched.examples.taxi`](bikesched-examples/src/main/java/org/bikesched/examples/taxi)):
-  a ride request is sent to a taxi broker, waits for a driver to accept it with a price and for the
-  customer to accept that price, then reserves the payment, approves the ride at the broker and
-  sends the customer a push notification with the estimated time of arrival. One job with durable
-  steps and event waits. Without a driver or an answer in time, if the customer declines the price
-  or cancels the ride (`Bikesched.cancel`), or if the broker cannot approve it, the ride is
-  cancelled resp. fails, and compensations release the payment and withdraw the ride at the
-  broker. Payloads and events are records, mapped by `bikesched-jackson`.
-
-```shell
-docker compose up -d
-./gradlew :bikesched-examples:run         # honors POSTGRES_PORT as well
-```
+Runnable examples with tests, e.g. a taxi booking saga with event waits and compensation, live in
+the [`bikesched-examples`](bikesched-examples/README.md) module.
 
 ## Building
 

@@ -40,5 +40,4 @@ and without any coordinator besides PostgreSQL.
 6. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
 7. [Database](database.md): tables, indexes and migrations
 
-The [examples module](../bikesched-examples) shows the concepts working together; see the
-[README](../README.md#examples).
+The [examples](../bikesched-examples/README.md) show the concepts working together.
