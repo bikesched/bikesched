@@ -68,7 +68,10 @@ class ConcurrencyTest extends AbstractBikeschedTest {
         Bikesched.builder()
             .dataSource(dataSource)
             .nodeName("node-" + jobType)
-            .pollInterval(Duration.ofMillis(20));
+            .pollInterval(Duration.ofMillis(20))
+            // Polling starts once all jobs are scheduled: with a full queue the node fills its
+            // slots right away, independent of how fast the jobs can be scheduled.
+            .autoStartPolling(false);
     if (maxConcurrentJobs != null) {
       builder.maxConcurrentJobs(maxConcurrentJobs);
     }
@@ -89,6 +92,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
       for (int i = 0; i < count; i++) {
         slowJob.schedule();
       }
+      bikesched.startPolling();
       await()
           .atMost(Duration.ofSeconds(20))
           .untilAsserted(
