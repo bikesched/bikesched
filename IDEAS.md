@@ -51,6 +51,28 @@ Every store call borrows its own connection. With `PGSimpleDataSource`, used by 
 docs, that is a new TCP connection and authentication per statement, several per step. Document
 using a pool (e.g. HikariCP) and how to size it: job slots plus poller, heartbeat and clean-ups.
 
+### Finding jobs
+
+`findJob(id)` needs the job id; there is no way to ask e.g. which jobs of a type failed without
+SQL. A small query API (`findJobs(type, state, limit)`, newest first) would be the basis for an
+admin UI, alerts and bulk `retry(...)`.
+
+- Needs an index fitting the query (e.g. `(job_type, state, updated_at)`), so it costs writes on
+  every state change; postponed until it is needed. Until then: SQL on `bikesched_jobs`.
+
+### Hook for permanently failed jobs
+
+Quartz has `JobListener`, db-scheduler a callback after the last retry. bikesched has no hook for a
+job ending `FAILED` or `COMPENSATION_FAILED`, e.g. to alert or move it to a dead-letter store. The
+handler cannot do this reliably itself: it does not run after a timeout, an abandoned attempt or a
+crash of its node.
+
+- Option: a listener SPI on the builder (`JobListener.onFailed(JobInfo)`), called after the commit
+  by the node recording the failure (at most once; lost if that node dies right after the commit).
+- Option: only through [Metrics](#metrics) and alerting on them.
+- Open: synchronous or on its own thread, other events (succeeded, cancelled), and how it relates to
+  the job history.
+
 ### Metrics
 
 Nothing reports due jobs, the delay between due and claimed, attempt durations, failure rates or
@@ -111,6 +133,59 @@ minutes.
   event retention period, so a later wait (new step name) still receives it.
 - Outcome: a documented pattern with a test, or API support (e.g. a timeout handler that can wait
   again).
+
+## Modules
+
+### bikesched-cron
+
+A separate module `bikesched-cron` with cron expressions as `Recurrence`, e.g.
+`CronRecurrence.of("0 3 * * MON-FRI", ZoneId.of("Europe/Berlin"))`. The parsing comes from an
+external library, so core stays free of the dependency and of a cron dialect of its own.
+
+- Library: [cron-utils](https://github.com/jmrozanec/cron-utils) (Unix, Quartz and Spring
+  dialects, `ExecutionTime.nextExecution`). Before choosing it, check its maintenance, its
+  transitive dependencies and JPMS support; alternatives are Spring's `CronExpression` (pulls in
+  `spring-context`) or a small parser of our own.
+- `next(previous)` calculates the next execution after `previous` in the given zone. The
+  description is the normalized expression plus the zone (e.g. `cron 0 3 * * MON-FRI
+  Europe/Berlin`), so changing the expression moves the pending occurrence. Not fixed rate: cron
+  snaps to the wall clock.
+- Choose the dialect explicitly (Unix by default, Quartz with seconds as an option), and reject
+  invalid expressions and expressions without a next execution when the recurrence is created.
+- Daylight saving time: document how skipped and repeated local times behave, and test them.
+- Kotlin: probably no extra API, the recurrence is passed to `createRecurringJob` as is.
+
+### bikesched-spring
+
+A Spring Boot integration `bikesched-spring` (auto-configuration plus starter) that creates the
+`Bikesched` node from the application context and registers job handlers found as beans, e.g.:
+
+```java
+@Component
+@BikeschedJob("send-invoice")
+class SendInvoiceHandler implements TypedJobHandler<Invoice> {
+  public void handle(Job job, Invoice invoice) { … }
+}
+```
+
+- Discovery: beans implementing `JobTypeHandler` are registered as they are (they know their
+  type); beans annotated with a type name (and a handler interface) as well. Possibly also
+  annotated methods (`@BikeschedJob("…") void sendInvoice(Job job, Invoice invoice)`), like
+  `@Scheduled`/`@EventListener`. The annotation needs a name that does not clash with
+  `org.bikesched.job.Job` (e.g. `@BikeschedJob` or `@JobHandler`).
+- Recurring jobs declared on the handler (`@BikeschedJob(value = "…", cron = "…")`, with
+  [bikesched-cron](#bikesched-cron)) and registered on startup.
+- Auto-configuration: the context's `DataSource`, the Jackson `ObjectMapper` (via
+  bikesched-jackson) as `JsonMapper`, the builder options as `bikesched.*` properties, and a
+  `BikeschedBuilderCustomizer` bean for everything else. Build the node with
+  `autoStartPolling(false)`, register the handlers, then `startPolling()` with the context
+  (`SmartLifecycle`) and close it on shutdown; polling can be turned off per application (e.g.
+  `bikesched.polling.enabled=false` for a web app that only schedules jobs).
+- Transactions: scheduling jobs and publishing events inside a Spring transaction should use its
+  connection (`DataSourceUtils.getConnection`), so they commit or roll back with it.
+- Optional later: Actuator health (node heartbeat) and metrics via Micrometer (see
+  [Metrics](#metrics)).
+- Target the latest Spring Boot; the module depends on Spring, core stays free of it.
 
 ## Website
 

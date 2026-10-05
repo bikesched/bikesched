@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,6 +59,21 @@ abstract class AbstractStoreTest {
     execute("delete from bikesched_events");
     execute("delete from bikesched_jobs");
     execute("delete from bikesched_nodes");
+  }
+
+  /** Claims due jobs of every type in the table, as a node with handlers for all of them would. */
+  static List<JobStore.ClaimedJob> claimJobs(UUID node, int limit) {
+    List<String> types = new ArrayList<>();
+    try (var connection = dataSource.getConnection();
+        var select = connection.prepareStatement("select distinct job_type from bikesched_jobs");
+        var rows = select.executeQuery()) {
+      while (rows.next()) {
+        types.add(rows.getString(1));
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+    return database.jobs().claimJobs(node, types, limit);
   }
 
   static void insertRunningJobs(UUID node, int count) throws SQLException {

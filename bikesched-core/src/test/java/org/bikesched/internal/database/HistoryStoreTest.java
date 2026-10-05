@@ -120,9 +120,7 @@ class HistoryStoreTest extends AbstractStoreTest {
     database
         .jobs()
         .insertJob(jobId, new NewJob("history", null, Instant.now(), 0, 3, null, null, null));
-    assertThat(database.jobs().claimJobs(node, 100))
-        .extracting(JobStore.ClaimedJob::id)
-        .contains(jobId);
+    assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).contains(jobId);
     return jobId;
   }
 

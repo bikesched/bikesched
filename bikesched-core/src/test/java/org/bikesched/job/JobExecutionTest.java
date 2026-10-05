@@ -87,37 +87,29 @@ class JobExecutionTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void jobWithoutHandlerOnClaimingNodeLogsErrorAndFails() throws Exception {
-    var logs = LogCapture.of(JobProcessor.class);
-    try (logs;
-        Bikesched bikesched = testNode("node-missing-handler").build()) {
-      bikesched.registerJobHandler("handled-here", () -> {});
-      // Scheduled by some other node that has a handler this node lacks; single attempt.
-      execute(
-          "insert into bikesched_jobs (id, job_type, max_attempts) "
-              + "values (gen_random_uuid(), 'handled-elsewhere', 1)");
-
-      await()
-          .untilAsserted(
-              () ->
-                  assertThat(count("job_type = 'handled-elsewhere' and state = 'FAILED'"))
-                      .isEqualTo(1));
-      assertThat(
-              count(
-                  "job_type = 'handled-elsewhere' and state = 'FAILED' and last_error like "
-                      + "'%No handler registered for job type ''handled-elsewhere''%'"))
-          .isEqualTo(1);
-      execute("delete from bikesched_jobs where job_type = 'handled-elsewhere'");
+  void jobWithoutHandlerIsLeftToNodesThatHaveOne() throws Exception {
+    // E.g. during a rolling deploy: a job of a type only the new version handles, scheduled by a
+    // node of the new version while this node (of the old version) still polls.
+    String type = "handled-elsewhere-" + UUID.randomUUID();
+    UUID jobId = UUID.randomUUID();
+    try {
+      try (Bikesched old = testNode("node-old-version").build()) {
+        old.registerJobHandler("handled-here", () -> {});
+        execute(
+            "insert into bikesched_jobs (id, job_type) values ('" + jobId + "', '" + type + "')");
+        Thread.sleep(500); // several polls
+        assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0"))
+            .as("not claimed without a handler")
+            .isOne();
+      }
+      try (Bikesched updated = testNode("node-new-version").build()) {
+        updated.registerJobHandler(type, () -> {});
+        awaitState(jobId, "SUCCEEDED");
+        assertThat(count("id = '" + jobId + "' and attempts = 1")).isOne();
+      }
+    } finally {
+      execute("delete from bikesched_jobs where job_type = '" + type + "'");
     }
-
-    assertThat(logs.events())
-        .filteredOn(e -> e.getLevel() == ch.qos.logback.classic.Level.ERROR)
-        .extracting(ILoggingEvent::getFormattedMessage)
-        .anyMatch(
-            m ->
-                m.matches(
-                    "No handler registered for job type handled-elsewhere on bikesched node "
-                        + "node-missing-handler \\(.*\\), cannot run job .*"));
   }
 
   @Test

@@ -271,6 +271,20 @@ public interface Bikesched extends AutoCloseable {
   boolean cancel(UUID jobId, String message);
 
   /**
+   * Retries a job that failed permanently ({@code FAILED}), e.g. after fixing the cause: it is
+   * scheduled to run right away with all its attempts again. Steps that completed are not executed
+   * again (unless they were compensated), so the job continues where it failed.
+   *
+   * @param jobId the job id
+   * @return {@code false} if the job does not exist (e.g. deleted after the job retention) or has
+   *     not failed
+   * @throws IllegalArgumentException if the job is an occurrence of a recurring job, which cannot
+   *     be retried (its next occurrence runs anyway)
+   * @throws BikeschedException if the database cannot be accessed
+   */
+  boolean retry(UUID jobId);
+
+  /**
    * Registers this instance as a node of the cluster and starts its heartbeat, then starts polling
    * for jobs and executing them. Only needed if the instance was built with {@link
    * BikeschedBuilder#autoStartPolling(boolean) autoStartPolling(false)}; calling it while already

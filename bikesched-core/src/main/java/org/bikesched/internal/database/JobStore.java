@@ -6,6 +6,7 @@ import java.sql.Types;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -75,7 +76,11 @@ public final class JobStore {
   // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
   // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
   // releases the row locks, so no other node can pick them up afterwards. Claiming a COMPENSATING
-  // job counts a compensation attempt instead of an attempt (compensated_state stays set).
+  // job counts a compensation attempt instead of an attempt (compensated_state stays set). Only
+  // jobs of types the node has handlers for: during a rolling deploy, nodes of the old version
+  // leave
+  // jobs of new types to the new ones (job_type is a key column of the polling index, so the filter
+  // is checked on index entries, in claim order, without visiting other rows).
   private static final String CLAIM_JOBS_SQL =
       """
             update bikesched_jobs
@@ -85,6 +90,7 @@ public final class JobStore {
                    updated_at = now()
              where id in (select id from bikesched_jobs
                            where state in ('SCHEDULED', 'WAITING', 'COMPENSATING') and scheduled_at <= now()
+                             and job_type = any(?)
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
@@ -136,6 +142,22 @@ public final class JobStore {
                and exists (select 1 from bikesched_jobs
                             where id = ? and lock_token = ? and state = 'RUNNING' and compensated_state is null)
             returning name""";
+
+  // Bikesched.retry(jobId): a FAILED job runs again with all its attempts, keeping its completed
+  // steps (compensated ones are COMPENSATED and run again). Not for occurrences of recurring jobs
+  // (FIND_RECURRING_TYPE_SQL tells them apart when nothing was retried).
+  private static final String RETRY_JOB_SQL =
+      """
+            update bikesched_jobs
+               set state = 'SCHEDULED', attempts = 0, compensated_state = null, compensation_attempts = 0,
+                   cancel_requested_at = null, cancel_message = null,
+                   scheduled_at = now(), finished_at = null, updated_at = now()
+             where id = ? and state = 'FAILED' and recurrence is null
+            returning state, attempts""";
+
+  private static final String FIND_RECURRING_TYPE_SQL =
+      """
+            select job_type from bikesched_jobs where id = ? and recurrence is not null""";
 
   // Bikesched.cancel(jobId): marks the job; the node claiming it next cancels it instead of running
   // its handler. Scheduled and waiting jobs are due right away; a running job is cancelled after
@@ -327,18 +349,25 @@ public final class JobStore {
   }
 
   /**
-   * Claims up to {@code limit} due, scheduled jobs for a node using {@code FOR UPDATE SKIP LOCKED}
-   * and marks them {@code RUNNING}.
+   * Claims up to {@code limit} due, scheduled jobs of the given types for a node using {@code FOR
+   * UPDATE SKIP LOCKED} and marks them {@code RUNNING}.
    *
    * @param nodeId the claiming node
+   * @param jobTypes the job types the node has handlers for
    * @param limit maximum number of jobs to claim
    * @return the claimed jobs, highest priority and earliest scheduled first
    */
-  public List<ClaimedJob> claimJobs(UUID nodeId, int limit) {
+  public List<ClaimedJob> claimJobs(UUID nodeId, Collection<String> jobTypes, int limit) {
     List<ClaimedJob> jobs =
         history.change(
             db -> {
-              List<ClaimedJob> claimed = db.list(CLAIM_JOBS_SQL, ClaimedJob::from, nodeId, limit);
+              List<ClaimedJob> claimed =
+                  db.list(
+                      CLAIM_JOBS_SQL,
+                      ClaimedJob::from,
+                      nodeId,
+                      Sql.array("text", jobTypes.toArray()),
+                      limit);
               history.record(
                   db,
                   claimed.stream()
@@ -512,6 +541,37 @@ public final class JobStore {
           return job.isPresent();
         },
         e -> new BikeschedException("Cancelling bikesched job " + jobId + " failed", e));
+  }
+
+  /**
+   * Schedules a {@code FAILED} job to run again right away, see {@code RETRY_JOB_SQL}.
+   *
+   * @param jobId the job
+   * @return whether the job was failed and is now scheduled
+   * @throws IllegalArgumentException if the job is an occurrence of a recurring job
+   */
+  public boolean retryJob(UUID jobId) {
+    return history.change(
+        db -> {
+          Optional<StateAndAttempts> job = db.one(RETRY_JOB_SQL, StateAndAttempts::from, jobId);
+          if (job.isPresent()) {
+            history.record(
+                db, Change.job(jobId, job.get().state(), job.get().attempts(), null, "retried"));
+            return true;
+          }
+          Optional<String> recurringType =
+              db.one(FIND_RECURRING_TYPE_SQL, row -> row.string(1), jobId);
+          if (recurringType.isPresent()) {
+            throw new IllegalArgumentException(
+                "Job "
+                    + jobId
+                    + " is an occurrence of recurring job "
+                    + recurringType.get()
+                    + " and cannot be retried; its next occurrence runs as scheduled");
+          }
+          return false;
+        },
+        e -> new BikeschedException("Retrying bikesched job " + jobId + " failed", e));
   }
 
   /** The state and attempt count of a job after a change. */

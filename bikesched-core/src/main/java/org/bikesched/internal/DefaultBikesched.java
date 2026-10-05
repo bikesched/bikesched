@@ -502,6 +502,22 @@ public final class DefaultBikesched implements Bikesched {
     return requested;
   }
 
+  @Override
+  public boolean retry(UUID jobId) {
+    Objects.requireNonNull(jobId, "jobId");
+    if (closed.get()) {
+      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
+    }
+    initializer.ensureInitialized();
+    boolean retried = database.jobs().retryJob(jobId);
+    if (retried) {
+      LOG.info("Failed job {} scheduled to be retried", jobId);
+    } else {
+      LOG.debug("Job {} cannot be retried: it does not exist or has not failed", jobId);
+    }
+    return retried;
+  }
+
   /** Publishes an event built by an {@link EventBuilder}. */
   private List<ReceivedEvent> publish(
       String eventName,
@@ -643,7 +659,7 @@ public final class DefaultBikesched implements Bikesched {
       List<DefaultJob> jobs = List.of();
       try {
         jobs =
-            database.jobs().claimJobs(nodeId, limit).stream()
+            database.jobs().claimJobs(nodeId, handlers.keySet(), limit).stream()
                 .map(claimed -> new DefaultJob(database, claimed))
                 .toList();
       } finally {

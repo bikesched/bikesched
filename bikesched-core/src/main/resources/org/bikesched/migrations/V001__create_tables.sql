@@ -72,8 +72,9 @@ create table bikesched_jobs (
         check (char_length(recurrence) between 1 and 200)
 );
 
--- Polling index: only due-able jobs, in claim order.
-create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at)
+-- Polling index: only due-able jobs, in claim order. job_type lets the claim skip jobs of types
+-- the node has no handlers for on index entries.
+create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at, job_type)
     where state in ('SCHEDULED', 'WAITING', 'COMPENSATING');
 
 -- Recurring jobs (identified by their job type): at most one pending occurrence each. Finishing an

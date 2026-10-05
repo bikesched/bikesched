@@ -2,6 +2,7 @@ package org.bikesched;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.ThreadLocalRandom;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobFailure;
 
@@ -51,7 +52,9 @@ public interface RetryBackoff {
 
   /**
    * Doubles the delay with every failed attempt, starting with {@code initialDelay} after the first
-   * one and capped at {@code maxDelay}: e.g. 5s, 10s, 20s, 40s, ... up to the maximum.
+   * one and capped at {@code maxDelay}: e.g. 5s, 10s, 20s, 40s, ... up to the maximum. Each delay
+   * is randomly shortened by up to half (jitter), e.g. 10s becomes 5 to 10s, so jobs that failed
+   * together (e.g. during an outage) don't all retry at the same moment.
    *
    * @param initialDelay the delay after the first failed attempt, positive
    * @param maxDelay the longest delay, at least {@code initialDelay}
@@ -76,7 +79,8 @@ public interface RetryBackoff {
       for (int i = 1; i < failedAttempt && delay.compareTo(maxDelay) < 0; i++) {
         delay = delay.multipliedBy(2);
       }
-      return delay.compareTo(maxDelay) > 0 ? maxDelay : delay;
+      long nanos = (delay.compareTo(maxDelay) > 0 ? maxDelay : delay).toNanos();
+      return Duration.ofNanos(nanos - ThreadLocalRandom.current().nextLong(nanos / 2 + 1));
     };
   }
 

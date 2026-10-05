@@ -23,23 +23,24 @@ class RetryBackoffTest {
   }
 
   @Test
-  void exponentialDoublesUpToTheMaximum() {
+  void exponentialDoublesUpToTheMaximumWithJitter() {
     var backoff = RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(1));
-    assertThat(IntStream.rangeClosed(1, 7).mapToObj(backoff::delay))
-        .containsExactly(
-            Duration.ofSeconds(5),
-            Duration.ofSeconds(10),
-            Duration.ofSeconds(20),
-            Duration.ofSeconds(40),
-            Duration.ofMinutes(1),
-            Duration.ofMinutes(1),
-            Duration.ofMinutes(1));
+    long[] maxSeconds = {5, 10, 20, 40, 60, 60, 60};
+    for (int attempt = 1; attempt <= maxSeconds.length; attempt++) {
+      Duration max = Duration.ofSeconds(maxSeconds[attempt - 1]);
+      int failedAttempt = attempt;
+      assertThat(IntStream.range(0, 100).mapToObj(_ -> backoff.delay(failedAttempt)))
+          .allSatisfy(delay -> assertThat(delay).isBetween(max.dividedBy(2), max))
+          .as("jittered")
+          .doesNotHaveDuplicates();
+    }
   }
 
   @Test
   void exponentialDoesNotOverflowForHighAttempts() {
     var backoff = RetryBackoff.exponential(Duration.ofMillis(1), Duration.ofHours(1));
-    assertThat(backoff.delay(Integer.MAX_VALUE)).isEqualTo(Duration.ofHours(1));
+    assertThat(backoff.delay(Integer.MAX_VALUE))
+        .isBetween(Duration.ofMinutes(30), Duration.ofHours(1));
   }
 
   @Test

@@ -119,6 +119,18 @@ if (provider.isBusy()) {
 An explicit failure wins over an exception thrown afterwards and over a timeout; cancelling the job
 wins over failing it.
 
+A `FAILED` job can be retried once the cause is fixed, as long as it hasn't been deleted after the
+[job retention](#job-retention):
+
+```java
+bikesched.retry(jobId);   // false if the job does not exist or has not failed
+```
+
+It is scheduled right away with all its attempts again and continues where it failed: completed
+steps return their stored results (compensated steps run again). The job history records the
+retry. Occurrences of recurring jobs can't be retried (`IllegalArgumentException`); the next
+occurrence runs anyway.
+
 ## Cancellation
 
 ```java

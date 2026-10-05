@@ -21,3 +21,5 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0013](0013-statement-timeout-as-query-timeout.md) | Statement timeout as JDBC query timeout | Accepted |
 | [0014](0014-opt-in-hard-timeout.md) | Opt-in hard timeout for handlers that ignore their timeout | Accepted |
 | [0015](0015-snapshots-to-github-packages.md) | Snapshots published to GitHub Packages with maven-publish | Accepted |
+| [0016](0016-claim-only-handled-job-types.md) | Nodes claim only job types they handle | Accepted |
+| [0017](0017-retry-failed-jobs.md) | Retrying failed jobs keeps their completed steps | Accepted |

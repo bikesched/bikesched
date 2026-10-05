@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +33,7 @@ class JobStoreTest extends AbstractStoreTest {
                     + "' and state = 'SCHEDULED' and attempts = 0 and locked_by is null "
                     + "and timeout_millis = 90000"))
         .isEqualTo(1);
-    assertThat(database.jobs().claimJobs(node, 10))
+    assertThat(claimJobs(node, 10))
         .singleElement()
         .satisfies(
             job -> {
@@ -51,7 +52,7 @@ class JobStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-1");
     insertJobs(1, 0, "now()");
 
-    assertThat(database.jobs().claimJobs(node, 10))
+    assertThat(claimJobs(node, 10))
         .singleElement()
         .satisfies(job -> assertThat(job.timeout()).isNull());
     assertThatThrownBy(() -> execute("update bikesched_jobs set timeout_millis = 0"))
@@ -60,14 +61,77 @@ class JobStoreTest extends AbstractStoreTest {
   }
 
   @Test
-  void claimJobsClaimsJobsOfAnyType() throws SQLException {
+  void claimJobsClaimsOnlyJobsOfTheGivenTypes() throws SQLException {
     UUID node = registerNode("node-1");
-    insertJobs(1, 0, "now()"); // type 'test'
-    execute("insert into bikesched_jobs (id, job_type) values (gen_random_uuid(), 'other')");
+    insertJobs(2, 0, "now()"); // type 'test'
+    execute(
+        "insert into bikesched_jobs (id, job_type, priority) values (gen_random_uuid(), 'new', 9)");
 
-    assertThat(database.jobs().claimJobs(node, 10))
+    assertThat(database.jobs().claimJobs(node, Set.of("test", "other"), 10))
         .extracting(JobStore.ClaimedJob::type)
-        .containsExactlyInAnyOrder("test", "other");
+        .containsExactly("test", "test");
+    assertThat(count("job_type = 'new' and state = 'SCHEDULED' and attempts = 0"))
+        .as("left to nodes with a handler")
+        .isOne();
+    assertThat(database.jobs().claimJobs(node, Set.of(), 10)).isEmpty();
+  }
+
+  @Test
+  void retryJobSchedulesFailedJobsAgain() throws SQLException {
+    UUID failed = UUID.randomUUID();
+    UUID compensated = UUID.randomUUID();
+    UUID occurrence = UUID.randomUUID();
+    UUID succeeded = UUID.randomUUID();
+    execute(
+        "insert into bikesched_jobs (id, job_type, state, attempts, last_error, finished_at,"
+            + " compensated_state, compensation_attempts, cancel_requested_at, recurrence) values"
+            + " ('"
+            + failed
+            + "', 'test', 'FAILED', 3, 'boom', now(), null, 0, now(), null),"
+            + " ('"
+            + compensated
+            + "', 'test', 'FAILED', 3, 'boom', now(), 'FAILED', 1, null, null),"
+            + " ('"
+            + occurrence
+            + "', 'daily', 'FAILED', 3, 'boom', now(), null, 0, null, 'every PT1H'),"
+            + " (gen_random_uuid(), 'daily', 'SCHEDULED', 0, null, null, null, 0, null, 'every PT1H'),"
+            + " ('"
+            + succeeded
+            + "', 'test', 'SUCCEEDED', 1, null, now(), null, 0, null, null)");
+
+    assertThat(database.jobs().retryJob(failed)).isTrue();
+    assertThat(database.jobs().retryJob(compensated)).isTrue();
+    assertThatThrownBy(() -> database.jobs().retryJob(occurrence))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(
+            "Job "
+                + occurrence
+                + " is an occurrence of recurring job daily and cannot be retried; its next"
+                + " occurrence runs as scheduled");
+    assertThat(database.jobs().retryJob(succeeded)).isFalse();
+    assertThat(database.jobs().retryJob(failed)).as("already retried").isFalse();
+
+    assertThat(
+            count(
+                "id in ('"
+                    + failed
+                    + "', '"
+                    + compensated
+                    + "')"
+                    + " and state = 'SCHEDULED' and attempts = 0 and scheduled_at <= now()"
+                    + " and finished_at is null and compensated_state is null"
+                    + " and compensation_attempts = 0 and cancel_requested_at is null"
+                    + " and last_error = 'boom'"))
+        .isEqualTo(2);
+    assertThat(count("id = '" + occurrence + "' and state = 'FAILED'")).isOne();
+    assertThat(
+            countRows(
+                "bikesched_job_history",
+                "job_id = '"
+                    + failed
+                    + "' and state = 'SCHEDULED' and attempt = 0"
+                    + " and node_id is null and detail = 'retried'"))
+        .isOne();
   }
 
   @Test
@@ -81,12 +145,12 @@ class JobStoreTest extends AbstractStoreTest {
             + node
             + "', gen_random_uuid())"); // already running
 
-    List<JobStore.ClaimedJob> first = database.jobs().claimJobs(node, 10);
-    List<JobStore.ClaimedJob> second = database.jobs().claimJobs(node, 10);
+    List<JobStore.ClaimedJob> first = claimJobs(node, 10);
+    List<JobStore.ClaimedJob> second = claimJobs(node, 10);
 
     assertThat(first).hasSize(10);
     assertThat(second).hasSize(2).doesNotContainAnyElementsOf(first);
-    assertThat(database.jobs().claimJobs(node, 10)).isEmpty();
+    assertThat(claimJobs(node, 10)).isEmpty();
     assertThat(first)
         .allSatisfy(
             job -> {
@@ -104,10 +168,8 @@ class JobStoreTest extends AbstractStoreTest {
     insertJobs(3, 0, "now()");
     insertJobs(2, 5, "now()");
 
-    assertThat(database.jobs().claimJobs(node, 2))
-        .extracting(JobStore.ClaimedJob::priority)
-        .containsExactly(5, 5);
-    assertThat(database.jobs().claimJobs(node, 10))
+    assertThat(claimJobs(node, 2)).extracting(JobStore.ClaimedJob::priority).containsExactly(5, 5);
+    assertThat(claimJobs(node, 10))
         .extracting(JobStore.ClaimedJob::priority)
         .containsExactly(0, 0, 0);
   }
@@ -117,7 +179,7 @@ class JobStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-1");
     UUID otherNode = registerNode("node-2");
     insertJobs(1, 0, "now()");
-    JobStore.ClaimedJob job = database.jobs().claimJobs(node, 10).getFirst();
+    JobStore.ClaimedJob job = claimJobs(node, 10).getFirst();
 
     assertThat(database.jobs().completeJob(job.id(), staleLock(otherNode))).isFalse();
     assertThat(database.jobs().completeJob(job.id(), job.lock())).isTrue();
@@ -131,7 +193,7 @@ class JobStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-1");
     UUID otherNode = registerNode("node-2");
     insertJobs(2, 0, "now()");
-    List<JobStore.ClaimedJob> jobs = database.jobs().claimJobs(node, 10);
+    List<JobStore.ClaimedJob> jobs = claimJobs(node, 10);
 
     assertThat(database.jobs().cancelJob(jobs.get(0).id(), staleLock(otherNode), "nope")).isFalse();
     assertThat(database.jobs().cancelJob(jobs.get(0).id(), jobs.get(0).lock(), "no longer needed"))
@@ -151,7 +213,7 @@ class JobStoreTest extends AbstractStoreTest {
   void failJobCanSetNewMaxAttemptsAndDelayTheRetry() throws SQLException {
     UUID node = registerNode("node-1");
     insertJobs(2, 0, "now()");
-    List<JobStore.ClaimedJob> jobs = database.jobs().claimJobs(node, 10);
+    List<JobStore.ClaimedJob> jobs = claimJobs(node, 10);
 
     var retried =
         database
@@ -168,7 +230,7 @@ class JobStoreTest extends AbstractStoreTest {
                     + jobs.get(0).id()
                     + "' and max_attempts = 5 and last_error = 'busy' and finished_at is null"))
         .isEqualTo(1);
-    assertThat(database.jobs().claimJobs(node, 10)).as("not due before the delay").isEmpty();
+    assertThat(claimJobs(node, 10)).as("not due before the delay").isEmpty();
 
     var failed =
         database
@@ -190,7 +252,7 @@ class JobStoreTest extends AbstractStoreTest {
     UUID otherNode = registerNode("node-2");
     insertJobs(1, 0, "now()");
 
-    JobStore.ClaimedJob first = database.jobs().claimJobs(node, 10).getFirst();
+    JobStore.ClaimedJob first = claimJobs(node, 10).getFirst();
     assertThat(
             database
                 .jobs()
@@ -204,14 +266,14 @@ class JobStoreTest extends AbstractStoreTest {
                 .failJob(first.id(), lock(first.id()), "boom 1", null, null)
                 .map(JobStore.FailedJob::state))
         .contains("SCHEDULED");
-    database.jobs().claimJobs(node, 10);
+    claimJobs(node, 10);
     assertThat(
             database
                 .jobs()
                 .failJob(first.id(), lock(first.id()), "boom 2", null, null)
                 .map(JobStore.FailedJob::state))
         .contains("SCHEDULED");
-    JobStore.ClaimedJob third = database.jobs().claimJobs(node, 10).getFirst();
+    JobStore.ClaimedJob third = claimJobs(node, 10).getFirst();
     assertThat(third.attempts()).isEqualTo(3);
     assertThat(
             database
@@ -225,7 +287,7 @@ class JobStoreTest extends AbstractStoreTest {
                 "state = 'FAILED' and attempts = 3 and last_error = 'boom 3' and locked_by is null "
                     + "and finished_at is not null"))
         .isEqualTo(1);
-    assertThat(database.jobs().claimJobs(node, 10)).isEmpty();
+    assertThat(claimJobs(node, 10)).isEmpty();
   }
 
   @Test
@@ -233,8 +295,8 @@ class JobStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-1");
     UUID otherNode = registerNode("node-2");
     insertJobs(5, 0, "now()");
-    database.jobs().claimJobs(node, 3);
-    database.jobs().claimJobs(otherNode, 1);
+    claimJobs(node, 3);
+    claimJobs(otherNode, 1);
 
     assertThat(database.jobs().releaseJobs(node)).isEqualTo(3);
     assertThat(count("state = 'SCHEDULED' and locked_by is null")).isEqualTo(4);

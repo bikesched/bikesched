@@ -60,9 +60,7 @@ class EventStoreTest extends AbstractStoreTest {
         .as("scheduled right away, the attempt is not used up")
         .isEqualTo(1);
     // The next attempt replays the wait and gets the event.
-    assertThat(database.jobs().claimJobs(node, 100))
-        .extracting(JobStore.ClaimedJob::id)
-        .contains(job.id());
+    assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).contains(job.id());
     assertThat(
             database.events().awaitEvent(job.id(), lock(job.id()), "wait", "paid", "race-1", null))
         .isEqualTo(new EventStore.EventWait("RECEIVED", "{\"amount\": 1}", null));
@@ -86,9 +84,7 @@ class EventStoreTest extends AbstractStoreTest {
 
     assertThat(suspended).isEqualTo(new EventStore.SuspendedJob(true, null));
     assertThat(stateAndSchedule(job.id())).isEqualTo("WAITING infinity");
-    assertThat(database.jobs().claimJobs(node, 100))
-        .extracting(JobStore.ClaimedJob::id)
-        .doesNotContain(job.id());
+    assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).doesNotContain(job.id());
 
     assertThat(database.events().publishEvent("paid", "suspend-1", null, KEPT))
         .containsExactly(new ReceivedEvent(job.id(), "wait"));
@@ -197,9 +193,7 @@ class EventStoreTest extends AbstractStoreTest {
     assertThat(stateAndSchedule(job.id())).startsWith("WAITING 20");
 
     Thread.sleep(300);
-    assertThat(database.jobs().claimJobs(node, 100))
-        .extracting(JobStore.ClaimedJob::id)
-        .contains(job.id());
+    assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).contains(job.id());
     assertThat(
             database
                 .events()
@@ -349,9 +343,7 @@ class EventStoreTest extends AbstractStoreTest {
 
   /** Claims the (due) job, as the poller does. */
   private static void claim(UUID jobId) {
-    assertThat(database.jobs().claimJobs(node, 100))
-        .extracting(JobStore.ClaimedJob::id)
-        .contains(jobId);
+    assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).contains(jobId);
   }
 
   private static JobStore.ClaimedJob claimNewJob(String type) {
@@ -362,7 +354,7 @@ class EventStoreTest extends AbstractStoreTest {
             jobId,
             new NewJob(
                 "event-db-" + type, null, java.time.Instant.now().minusSeconds(1), 1000, 3, null));
-    return database.jobs().claimJobs(node, 100).stream()
+    return claimJobs(node, 100).stream()
         .filter(job -> job.id().equals(jobId))
         .findFirst()
         .orElseThrow();

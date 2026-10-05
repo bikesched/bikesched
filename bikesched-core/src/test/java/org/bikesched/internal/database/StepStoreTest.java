@@ -14,7 +14,7 @@ class StepStoreTest extends AbstractStoreTest {
   void stepLifecycleStoresResultAndCountsAttempts() throws SQLException {
     UUID node = registerNode("node-1");
     insertJobs(1, 0, "now()");
-    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+    UUID jobId = claimJobs(node, 1).getFirst().id();
 
     assertThat(database.steps().findCompletedStep(jobId, "a")).isEmpty();
     assertThat(database.steps().startStep(jobId, lock(jobId), "a")).contains(1);
@@ -53,7 +53,7 @@ class StepStoreTest extends AbstractStoreTest {
   void completeStepRejectsInvalidJson() throws SQLException {
     UUID node = registerNode("node-1");
     insertJobs(1, 0, "now()");
-    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+    UUID jobId = claimJobs(node, 1).getFirst().id();
     database.steps().startStep(jobId, lock(jobId), "a");
 
     assertThatThrownBy(() -> database.steps().completeStep(jobId, lock(jobId), "a", "not json"))
@@ -66,7 +66,7 @@ class StepStoreTest extends AbstractStoreTest {
   void runningStepIsLockedByItsNode() throws SQLException {
     UUID node = registerNode("node-1");
     insertJobs(1, 0, "now()");
-    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+    UUID jobId = claimJobs(node, 1).getFirst().id();
 
     database.steps().startStep(jobId, lock(jobId), "a");
     assertThat(countSteps("name = 'a' and state = 'RUNNING' and locked_by = '" + node + "'"))
@@ -84,7 +84,7 @@ class StepStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-1");
     UUID other = registerNode("node-2");
     insertJobs(1, 0, "now()");
-    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+    UUID jobId = claimJobs(node, 1).getFirst().id();
     JobLock mine = lock(jobId);
     database.steps().startStep(jobId, mine, "a");
     database.steps().startStep(jobId, mine, "b");
@@ -118,13 +118,13 @@ class StepStoreTest extends AbstractStoreTest {
   void stepWritesOfAnEarlierClaimOfTheSameNodeAreRejected() throws SQLException {
     UUID node = registerNode("node-1");
     insertJobs(1, 0, "now()");
-    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+    UUID jobId = claimJobs(node, 1).getFirst().id();
     JobLock first = lock(jobId);
     database.steps().startStep(jobId, first, "a");
     database.steps().startStep(jobId, first, "b");
     database.steps().completeStep(jobId, first, "b", null, true);
     assertThat(database.jobs().releaseJobs(node)).isOne();
-    JobStore.ClaimedJob again = database.jobs().claimJobs(node, 1).getFirst();
+    JobStore.ClaimedJob again = claimJobs(node, 1).getFirst();
     assertThat(again.id()).isEqualTo(jobId);
     assertThat(again.lock().nodeId()).isEqualTo(first.nodeId());
     assertThat(again.lock().token()).isNotEqualTo(first.token());
@@ -161,7 +161,7 @@ class StepStoreTest extends AbstractStoreTest {
   void stepWritesOfAnEndedJobAreRejected() throws SQLException {
     UUID node = registerNode("node-1");
     insertJobs(1, 0, "now()");
-    UUID jobId = database.jobs().claimJobs(node, 1).getFirst().id();
+    UUID jobId = claimJobs(node, 1).getFirst().id();
     JobLock ended = lock(jobId);
     execute(
         "update bikesched_jobs set state = 'CANCELLED', locked_by = null, lock_token = null,"
