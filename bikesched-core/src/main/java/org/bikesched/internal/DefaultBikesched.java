@@ -178,14 +178,9 @@ public final class DefaultBikesched implements Bikesched {
 
   @Override
   public Node startPolling() {
-    if (closed.get()) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-    }
-    initializer.ensureInitialized(); // not under the lifecycle lock: close() must not wait for it
+    ensureReady(); // not under the lifecycle lock: close() must not wait for it
     synchronized (lifecycle) {
-      if (closed.get()) {
-        throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-      }
+      requireOpen();
       if (nodeId != null) {
         return node;
       }
@@ -355,13 +350,33 @@ public final class DefaultBikesched implements Bikesched {
       };
 
   /**
+   * Checks that this node is open.
+   *
+   * @throws IllegalStateException if this node is closed
+   */
+  private void requireOpen() {
+    if (closed.get()) {
+      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
+    }
+  }
+
+  /**
+   * Prepares an access to the database: checks that this node is open and migrates the schema on
+   * first use.
+   *
+   * @throws IllegalStateException if this node is closed
+   */
+  private void ensureReady() {
+    requireOpen();
+    initializer.ensureInitialized();
+  }
+
+  /**
    * Checks that this node is open and the job type has a handler, registering the given one first
    * if there is none yet.
    */
   private void requireHandler(String type, JobHandler handler) {
-    if (closed.get()) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-    }
+    requireOpen();
     if (handler != null) {
       if (handlers.putIfAbsent(type, handler) == null) {
         LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);
@@ -385,7 +400,7 @@ public final class DefaultBikesched implements Bikesched {
     requireHandler(type, handler);
     Instant now = Instant.now();
     Instant first = firstRun != null ? firstRun : job.nextRun(now, now);
-    initializer.ensureInitialized();
+    ensureReady();
     var registration = database.jobs().registerRecurringJob(job.occurrence(first));
     recurringJobs.put(type, job);
     String recurrence = job.recurrence().description();
@@ -417,7 +432,7 @@ public final class DefaultBikesched implements Bikesched {
   public boolean removeRecurringJob(String type) {
     requireValidType(type);
     boolean registered = recurringJobs.remove(type) != null;
-    initializer.ensureInitialized();
+    ensureReady();
     int deleted = database.jobs().deletePendingOccurrences(type);
     LOG.info(
         "Removed recurring job {}{}{}",
@@ -432,7 +447,7 @@ public final class DefaultBikesched implements Bikesched {
     String type = job.type();
     requireHandler(type, handler);
     UUID jobId = UUID.randomUUID();
-    initializer.ensureInitialized();
+    ensureReady();
     if (connection == null) {
       database.jobs().insertJob(jobId, job);
     } else {
@@ -468,30 +483,21 @@ public final class DefaultBikesched implements Bikesched {
   @Override
   public Optional<JobInfo> findJob(UUID jobId) {
     Objects.requireNonNull(jobId, "jobId");
-    if (closed.get()) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-    }
-    initializer.ensureInitialized();
+    ensureReady();
     return database.jobs().findJob(jobId).map(JobInfo.class::cast);
   }
 
   @Override
   public List<JobHistoryEntry> findJobHistory(UUID jobId) {
     Objects.requireNonNull(jobId, "jobId");
-    if (closed.get()) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-    }
-    initializer.ensureInitialized();
+    ensureReady();
     return database.history().findHistory(jobId);
   }
 
   @Override
   public boolean cancel(UUID jobId, String message) {
     Objects.requireNonNull(jobId, "jobId");
-    if (closed.get()) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-    }
-    initializer.ensureInitialized();
+    ensureReady();
     boolean requested = database.jobs().requestCancel(jobId, message);
     if (requested) {
       LOG.info("Cancellation of job {} requested{}", jobId, message == null ? "" : ": " + message);
@@ -505,10 +511,7 @@ public final class DefaultBikesched implements Bikesched {
   @Override
   public boolean retry(UUID jobId) {
     Objects.requireNonNull(jobId, "jobId");
-    if (closed.get()) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-    }
-    initializer.ensureInitialized();
+    ensureReady();
     boolean retried = database.jobs().retryJob(jobId);
     if (retried) {
       LOG.info("Failed job {} scheduled to be retried", jobId);
@@ -525,10 +528,7 @@ public final class DefaultBikesched implements Bikesched {
       String payload,
       Duration eventRetention,
       Connection connection) {
-    if (closed.get()) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-    }
-    initializer.ensureInitialized();
+    ensureReady();
     Duration retention = eventRetention != null ? eventRetention : settings.eventRetention();
     List<ReceivedEvent> received =
         connection == null
