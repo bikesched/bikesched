@@ -1,0 +1,23 @@
+# Architecture decision records
+
+Significant design decisions of bikesched, one file per decision, numbered in order, in the
+format of Michael Nygard (Status, Context, Decision, Consequences), see
+[ADR 0001](0001-record-architecture-decisions.md). Copy [the template](template.md) for a new one.
+
+| ADR | Title | Status |
+|---|---|---|
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
+| [0002](0002-own-sql-migrations.md) | Own SQL migrations instead of a migration framework | Accepted |
+| [0003](0003-internal-packages-enforced-by-archunit.md) | Implementation in internal packages, enforced by ArchUnit | Accepted |
+| [0004](0004-typed-job-and-event-types.md) | Typed job and event types next to the string-based API | Accepted |
+| [0005](0005-recurring-jobs-via-schedule-recurrence.md) | Recurring jobs via schedule(Recurrence) | Accepted |
+| [0006](0006-text-columns-with-length-checks.md) | Text columns with length checks; messages truncated | Accepted |
+| [0007](0007-job-history-in-separate-table.md) | Job history in a separate, opt-in table | Accepted |
+| [0008](0008-event-expiry-fixed-at-publish.md) | Event expiry fixed when publishing | Accepted |
+| [0009](0009-step-writes-fenced-by-job-lock.md) | Step writes fenced by the job's lock | Accepted |
+| [0010](0010-lock-token-per-claim.md) | A lock token per claim instead of a version column | Accepted |
+| [0011](0011-received-event-steps.md) | Received event steps store the mapped result | Accepted |
+| [0012](0012-job-retention-by-default.md) | Ended jobs deleted after a retention by default | Accepted |
+| [0013](0013-statement-timeout-as-query-timeout.md) | Statement timeout as JDBC query timeout | Accepted |
+| [0014](0014-opt-in-hard-timeout.md) | Opt-in hard timeout for handlers that ignore their timeout | Accepted |
+| [0015](0015-snapshots-to-github-packages.md) | Snapshots published to GitHub Packages with maven-publish | Accepted |

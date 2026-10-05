@@ -154,8 +154,13 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 ## Documentation
 
-- `ideas.md` (repository root) collects possible future improvements; remove an entry once it is
+- `IDEAS.md` (repository root) collects possible future improvements; remove an entry once it is
   implemented or decided against.
+- `docs/decisions/` holds the Architecture Decision Records (`NNNN-short-title.md`, Nygard format:
+  Status, Context, Decision, Consequences; copy `template.md`). A significant design decision
+  (schema, API shape, a rejected alternative worth remembering) gets a new ADR in the same change,
+  listed in `docs/decisions/README.md`. Accepted ADRs are not rewritten: a changed decision gets a
+  new ADR, and the old one's status becomes "Superseded by ADR NNNN".
 - `README.md` stays minimal: pitch, feature list, quick start, links into `docs/`, examples and
   build instructions. Details go into `docs/`, one page per concept, linked from `docs/index.md`:
   `jobs.md` (scheduling, handlers, `Job` method table, failures, cancellation, timeouts), `steps.md`
@@ -172,4 +177,6 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 Small messages: one subject line plus a few `-` bullets of user-visible changes since the last
 commit. Always `git fetch` first and rebase local commits onto `origin/main` if it moved (e.g.
-merged Renovate PRs), then commit and push, only as a fast-forward.
+merged Renovate PRs), then commit and push, only as a fast-forward. A green local `./gradlew build`
+is enough before pushing; only after changes to `.github/workflows/` wait for the GitHub Actions run
+(`gh run watch`) and check that it succeeds.
