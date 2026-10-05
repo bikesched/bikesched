@@ -101,6 +101,12 @@ public class BikeschedSpec internal constructor() {
    */
   public var statementTimeout: Duration? = null
 
+  /**
+   * How long after its timeout an attempt whose handler ignores the interrupt is abandoned (see
+   * `BikeschedBuilder.hardTimeoutGrace`); defaults to no hard timeout.
+   */
+  public var hardTimeoutGrace: Duration? = null
+
   internal fun build(): Bikesched {
     val builder = Bikesched.builder()
     dataSource?.let(builder::dataSource)
@@ -119,6 +125,7 @@ public class BikeschedSpec internal constructor() {
     jobRetention?.let { builder.jobRetention(it.toJavaDuration()) }
     jobCleanUpInterval?.let { builder.jobCleanUpInterval(it.toJavaDuration()) }
     statementTimeout?.let { builder.statementTimeout(it.toJavaDuration()) }
+    hardTimeoutGrace?.let { builder.hardTimeoutGrace(it.toJavaDuration()) }
     return builder.build()
   }
 }

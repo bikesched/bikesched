@@ -39,6 +39,8 @@ import org.bikesched.internal.util.ValidationUtil;
  * @param jobCleanUpInterval interval between job clean-ups ({@link JobCleanUp})
  * @param statementTimeout maximum duration of a database statement; {@code null} to leave it to the
  *     data source
+ * @param hardTimeoutGrace how long after its timeout an attempt whose handler ignores the interrupt
+ *     is abandoned; {@code null} for no hard timeout
  */
 public record Settings(
     String nodeName,
@@ -57,7 +59,8 @@ public record Settings(
     Duration jobHistoryCleanUpInterval,
     Duration jobRetention,
     Duration jobCleanUpInterval,
-    Duration statementTimeout) {
+    Duration statementTimeout,
+    Duration hardTimeoutGrace) {
 
   /** Validates the settings. */
   public Settings {

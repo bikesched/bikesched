@@ -227,7 +227,29 @@ while (!encoder.isDone(task)) {
 ```
 
 Interrupting only stops handlers that react to it, e.g. blocking calls like `Thread.sleep` or I/O
-on virtual threads.
+on virtual threads. A handler stuck in code that ignores the interrupt keeps its attempt `RUNNING`
+and its concurrency slot until it returns. With a hard timeout, the node gives up on it after a
+grace period:
+
+```java
+Bikesched bikesched = Bikesched.builder().dataSource(dataSource)
+        .defaultJobTimeout(Duration.ofMinutes(5))
+        .hardTimeoutGrace(Duration.ofSeconds(30))
+        .build();
+```
+
+- If the handler has not returned 30 seconds after the timeout interrupted it, the attempt is
+  abandoned: it is recorded as failed like a timed out attempt (retries and compensation apply as
+  usual), its slot is freed for other jobs, and the stack trace of its thread is logged once, to
+  show where it is stuck.
+- The thread cannot be stopped and keeps running. Its later step writes are rejected (its claim of
+  the job ended), and once it returns its outcome is discarded. The log counts abandoned threads
+  still running on the node; many of them point to a handler that needs fixing.
+- Only attempts with a timeout (their own or `defaultJobTimeout`) have a hard timeout.
+- It is off by default: an abandoned attempt and its retry can run at the same time, repeating
+  side effects outside the database, and abandoned threads keep the resources they hold (e.g.
+  database connections). If you use timeouts and your handlers are idempotent (see
+  [Idempotency keys](steps.md#idempotency-keys)), set it, e.g. to 30 seconds to a few minutes.
 
 ---
 

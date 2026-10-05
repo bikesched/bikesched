@@ -45,8 +45,9 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   - `internal.json`: `RawJsonMapper` (the default mapper, passes JSON strings through)
   - `internal.node`: `NodeHeartbeat`, `NodeCleanUp` (releases jobs of dead nodes, removes them)
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
-    event waits via `DefaultEventWait`), `RecurringJob`, `RecurringJobRepair`, `HistoryCleanUp`,
-    `JobCleanUp`
+    event waits via `DefaultEventWait`), `JobAttempt` (timeout timer), `HardTimeout` (abandons
+    attempts that ignore their timeout), `JobSlot`, `RecurringJob`, `RecurringJobRepair`,
+    `HistoryCleanUp`, `JobCleanUp`
   - `internal.event`: `DefaultEventBuilder`, `DefaultEvent`, `EventCleanUp`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
     (`ValidationUtil`: name and key checks matching the schema's length constraints, message

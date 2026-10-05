@@ -52,6 +52,7 @@ public final class BikeschedBuilder {
   private Duration jobRetention = DEFAULT_JOB_RETENTION;
   private Duration jobCleanUpInterval = DEFAULT_JOB_CLEAN_UP_INTERVAL;
   private Duration statementTimeout; // null: left to the data source
+  private Duration hardTimeoutGrace; // null: no hard timeout
 
   BikeschedBuilder() {}
 
@@ -297,6 +298,24 @@ public final class BikeschedBuilder {
     return this;
   }
 
+  /**
+   * Abandons attempts whose handler ignores the interrupt of its timeout (optional, default off):
+   * if the handler has not returned this long after the attempt's timeout (its own or {@link
+   * #defaultJobTimeout(Duration)}) interrupted it, the attempt is recorded as failed like a timed
+   * out one (retries and compensation apply as usual), its concurrency slot is freed and the stack
+   * trace of its thread is logged. The thread itself cannot be stopped and keeps running; its later
+   * step writes are rejected, and its outcome is not recorded once it returns. Only applies to
+   * attempts with a timeout.
+   *
+   * @param grace how long after the timeout to wait for the handler, positive
+   * @return this builder
+   */
+  public BikeschedBuilder hardTimeoutGrace(Duration grace) {
+    Objects.requireNonNull(grace, "grace");
+    this.hardTimeoutGrace = requirePositive(grace, "hardTimeoutGrace");
+    return this;
+  }
+
   /** Heartbeat interval; package-private so tests can speed it up. */
   BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
     this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -359,7 +378,8 @@ public final class BikeschedBuilder {
             jobHistoryCleanUpInterval,
             jobRetention,
             jobCleanUpInterval,
-            statementTimeout);
+            statementTimeout,
+            hardTimeoutGrace);
     return Internals.create(settings, dataSource, jsonMapper);
   }
 

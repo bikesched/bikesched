@@ -6,6 +6,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.job.Job;
 import org.slf4j.Logger;
@@ -15,26 +16,57 @@ import org.slf4j.MDC;
 /**
  * The running attempt of a job and its timeout timer, shared between the job's thread, the timeout
  * thread and the handler ({@link Job#updateTimeout(Duration)}). Synchronized so the timer can never
- * interrupt the job's thread after the handler returned, i.e. while it records the outcome.
+ * interrupt the job's thread after the handler returned, i.e. while it records the outcome, and so
+ * exactly one of the job's thread ({@link #finish()}) and the hard timeout ends the attempt.
  */
 final class JobAttempt {
 
   private static final Logger LOG = LoggerFactory.getLogger(JobProcessor.class);
 
+  /** How an attempt ended, see {@link #finish()}. */
+  enum End {
+    /** The handler returned (or threw) in time. */
+    RETURNED,
+    /** The handler returned (or threw) after the timeout interrupted it. */
+    TIMED_OUT,
+    /** The hard timeout abandoned the attempt before the handler returned; record nothing. */
+    ABANDONED
+  }
+
   private final Job job;
   private final Thread thread;
   private final ScheduledExecutorService timers;
   private final String nodeId;
+  private final Duration hardTimeoutGrace;
+  private final Consumer<JobAttempt> onAbandoned;
   private Duration timeout;
   private ScheduledFuture<?> timer;
   private boolean finished;
   private boolean timedOut;
+  private boolean abandoned;
 
-  JobAttempt(Job job, Thread thread, ScheduledExecutorService timers, String nodeId) {
+  /**
+   * @param job the job
+   * @param thread the thread running the handler
+   * @param timers runs the timers
+   * @param nodeId the node, for logging
+   * @param hardTimeoutGrace how long after the timeout the attempt is abandoned if its handler has
+   *     not returned; {@code null} to wait for the handler however long it takes
+   * @param onAbandoned called (on the timer thread) once the attempt was abandoned
+   */
+  JobAttempt(
+      Job job,
+      Thread thread,
+      ScheduledExecutorService timers,
+      String nodeId,
+      Duration hardTimeoutGrace,
+      Consumer<JobAttempt> onAbandoned) {
     this.job = Objects.requireNonNull(job, "job");
     this.thread = Objects.requireNonNull(thread, "thread");
     this.timers = Objects.requireNonNull(timers, "timers");
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
+    this.hardTimeoutGrace = hardTimeoutGrace;
+    this.onAbandoned = Objects.requireNonNull(onAbandoned, "onAbandoned");
   }
 
   /**
@@ -55,11 +87,7 @@ final class JobAttempt {
       timer.cancel(false);
     }
     this.timeout = timeout;
-    try {
-      timer = timers.schedule(this::timeOut, timeout.toNanos(), TimeUnit.NANOSECONDS);
-    } catch (RejectedExecutionException e) {
-      timer = null; // closing: the job executor's shutdown interrupts long-running jobs instead
-    }
+    timer = schedule(this::timeOut, timeout);
   }
 
   /** The timeout currently enforced, or {@code null} if none. */
@@ -67,7 +95,15 @@ final class JobAttempt {
     return timeout;
   }
 
-  /** Called by the timer: marks the attempt timed out and interrupts it, unless it finished. */
+  /** The thread running the handler. */
+  Thread thread() {
+    return thread;
+  }
+
+  /**
+   * Called by the timer: marks the attempt timed out and interrupts it, unless it finished; with a
+   * hard timeout, also starts its timer.
+   */
   private void timeOut() {
     Duration exceeded;
     synchronized (this) {
@@ -77,6 +113,9 @@ final class JobAttempt {
       timedOut = true;
       exceeded = timeout;
       thread.interrupt();
+      if (hardTimeoutGrace != null) {
+        timer = schedule(this::hardTimeOut, hardTimeoutGrace);
+      }
     }
     try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId);
         var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
@@ -91,16 +130,39 @@ final class JobAttempt {
     }
   }
 
+  /** Called by the hard timeout's timer: abandons the attempt, unless its handler returned. */
+  private void hardTimeOut() {
+    synchronized (this) {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      abandoned = true;
+    }
+    onAbandoned.accept(this);
+  }
+
   /**
-   * Called by the job's thread once the handler returned or threw: stops the timer.
+   * Called by the job's thread once the handler returned or threw: stops the timers.
    *
-   * @return whether the attempt timed out
+   * @return how the attempt ended; {@link End#ABANDONED} if the hard timeout ended it first
    */
-  synchronized boolean finish() {
+  synchronized End finish() {
+    if (abandoned) {
+      return End.ABANDONED;
+    }
     finished = true;
     if (timer != null) {
       timer.cancel(false);
     }
-    return timedOut;
+    return timedOut ? End.TIMED_OUT : End.RETURNED;
+  }
+
+  private ScheduledFuture<?> schedule(Runnable task, Duration delay) {
+    try {
+      return timers.schedule(task, delay.toNanos(), TimeUnit.NANOSECONDS);
+    } catch (RejectedExecutionException e) {
+      return null; // closing: the job executor's shutdown interrupts long-running jobs instead
+    }
   }
 }

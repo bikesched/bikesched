@@ -57,6 +57,7 @@ public final class JobProcessor {
   private final Duration defaultJobTimeout;
   private final Duration defaultEventTimeout;
   private final RetryBackoff retryBackoff;
+  private final HardTimeout hardTimeout;
 
   /**
    * @param database the database
@@ -70,6 +71,7 @@ public final class JobProcessor {
    * @param defaultEventTimeout timeout of waits for events without one of their own, {@code null}
    *     for none
    * @param retryBackoff delay of the retry after a failed attempt
+   * @param hardTimeout abandons attempts that ignore their timeout, {@code null} for none
    */
   public JobProcessor(
       Database database,
@@ -80,7 +82,8 @@ public final class JobProcessor {
       ScheduledExecutorService timeoutExecutor,
       Duration defaultJobTimeout,
       Duration defaultEventTimeout,
-      RetryBackoff retryBackoff) {
+      RetryBackoff retryBackoff,
+      HardTimeout hardTimeout) {
     this.database = Objects.requireNonNull(database, "database");
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
@@ -90,6 +93,43 @@ public final class JobProcessor {
     this.defaultJobTimeout = defaultJobTimeout;
     this.defaultEventTimeout = defaultEventTimeout;
     this.retryBackoff = Objects.requireNonNull(retryBackoff, "retryBackoff");
+    this.hardTimeout = hardTimeout;
+  }
+
+  /**
+   * Starts an attempt of the job on the current thread: its timeout (the job's own or the node
+   * default, if any) and, with a hard timeout, abandoning it if it ignores the timeout.
+   */
+  private JobAttempt startAttempt(DefaultJob job, JobSlot slot) {
+    var attempt =
+        new JobAttempt(
+            job,
+            Thread.currentThread(),
+            timeoutExecutor,
+            nodeId.toString(),
+            hardTimeout == null ? null : hardTimeout.grace(),
+            abandoned ->
+                hardTimeout.abandon(
+                    job, abandoned, slot, failure -> recordAbandoned(job, failure)));
+    Duration timeout = job.timeout().orElse(defaultJobTimeout);
+    if (timeout != null) {
+      attempt.startTimeout(timeout);
+    }
+    job.attach(attempt);
+    job.defaultEventTimeout(defaultEventTimeout);
+    return attempt;
+  }
+
+  /**
+   * Records an attempt abandoned by the hard timeout as failed, like a timed-out attempt (on the
+   * hard timeout's recorder thread, while the handler's thread may still run).
+   */
+  private void recordAbandoned(DefaultJob job, Exception failure) {
+    String outcome =
+        job.isCompensating()
+            ? recordCompensationFailure(job, null, failure)
+            : recordFailure(job, failure);
+    LOG.debug("Recorded the abandoned attempt of job {}: {}", job.id(), outcome);
   }
 
   /**
@@ -111,10 +151,16 @@ public final class JobProcessor {
     return "abandoned, the job was released";
   }
 
-  /** Runs the job and logs the recorded outcome. */
-  public void process(DefaultJob job) {
+  /**
+   * Runs the job and logs the recorded outcome.
+   *
+   * @param job the claimed job
+   * @param slot the job's slot; released here only if the hard timeout abandons the attempt, the
+   *     caller releases it afterwards in any case
+   */
+  public void process(DefaultJob job, JobSlot slot) {
     long start = System.nanoTime();
-    String outcome = runAndRecord(job);
+    String outcome = runAndRecord(job, slot);
     LOG.debug(
         "Processed job {} of type {} (attempt {}) in {} ms: {}",
         job.id(),
@@ -130,9 +176,9 @@ public final class JobProcessor {
    *
    * @return a description of the recorded outcome, for logging
    */
-  private String runAndRecord(DefaultJob job) {
+  private String runAndRecord(DefaultJob job, JobSlot slot) {
     if (job.isCompensating()) {
-      return compensate(job);
+      return compensate(job, slot);
     }
     if (job.cancelRequested()) {
       return recordCancellation(job, job.cancelRequestMessage(), false);
@@ -153,13 +199,7 @@ public final class JobProcessor {
                   + "' on bikesched node "
                   + nodeName));
     }
-    Duration timeout = job.timeout().orElse(defaultJobTimeout);
-    var attempt = new JobAttempt(job, Thread.currentThread(), timeoutExecutor, nodeId.toString());
-    if (timeout != null) {
-      attempt.startTimeout(timeout);
-    }
-    job.attach(attempt);
-    job.defaultEventTimeout(defaultEventTimeout);
+    JobAttempt attempt = startAttempt(job, slot);
     Exception failure = null;
     try {
       LOG.debug(
@@ -176,10 +216,13 @@ public final class JobProcessor {
     } catch (Exception e) {
       failure = e;
     }
-    boolean timedOut = attempt.finish(); // no interrupt can arrive after this
+    JobAttempt.End end = attempt.finish(); // no interrupt can arrive after this
     // Clear a pending interrupt (timeout, shutdown or the handler's own): this thread still has
     // to record the outcome, and blocking I/O of an interrupted virtual thread fails.
     Thread.interrupted();
+    if (end == JobAttempt.End.ABANDONED) {
+      return hardTimeout.returned(job, failure);
+    }
     if (job.isLockLost()) {
       return abandon(job, failure);
     }
@@ -222,7 +265,7 @@ public final class JobProcessor {
             failure);
       }
       return recordSuspension(job, job.suspension());
-    } else if (timedOut) {
+    } else if (end == JobAttempt.End.TIMED_OUT) {
       return recordFailure(
           job, new BikeschedException("Job timed out after " + attempt.timeout(), failure));
     } else if (failure != null) {
@@ -323,7 +366,7 @@ public final class JobProcessor {
    * of its completed steps until the first step that has not completed, then runs them, latest step
    * first, and records the outcome.
    */
-  private String compensate(DefaultJob job) {
+  private String compensate(DefaultJob job, JobSlot slot) {
     JobHandler handler = handlers.apply(job.type());
     if (handler == null) {
       LOG.error(
@@ -342,13 +385,7 @@ public final class JobProcessor {
                   + "' on bikesched node "
                   + nodeName));
     }
-    Duration timeout = job.timeout().orElse(defaultJobTimeout);
-    var attempt = new JobAttempt(job, Thread.currentThread(), timeoutExecutor, nodeId.toString());
-    if (timeout != null) {
-      attempt.startTimeout(timeout);
-    }
-    job.attach(attempt);
-    job.defaultEventTimeout(defaultEventTimeout);
+    JobAttempt attempt = startAttempt(job, slot);
     String compensatingStep = null;
     Exception failure = null;
     int compensated = 0;
@@ -381,8 +418,11 @@ public final class JobProcessor {
     } catch (Exception e) {
       failure = e;
     }
-    boolean timedOut = attempt.finish(); // no interrupt can arrive after this
+    JobAttempt.End end = attempt.finish(); // no interrupt can arrive after this
     Thread.interrupted(); // see runAndRecord
+    if (end == JobAttempt.End.ABANDONED) {
+      return hardTimeout.returned(job, failure);
+    }
     if (job.isLockLost()) {
       return abandon(job, failure);
     }
@@ -390,7 +430,7 @@ public final class JobProcessor {
       return recordCompensationFailure(
           job,
           compensatingStep,
-          timedOut
+          end == JobAttempt.End.TIMED_OUT
               ? new BikeschedException("Compensation timed out after " + attempt.timeout(), failure)
               : failure);
     }

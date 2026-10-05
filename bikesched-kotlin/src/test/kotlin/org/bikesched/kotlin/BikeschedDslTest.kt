@@ -30,6 +30,7 @@ class BikeschedDslTest {
       jobRetention = 30.days
       jobCleanUpInterval = 10.minutes
       statementTimeout = 30.seconds
+      hardTimeoutGrace = 30.seconds
     }
       .use { bikesched ->
         assertThat(bikesched.node().name()).isEqualTo("dsl-node")

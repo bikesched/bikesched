@@ -33,9 +33,11 @@ import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.BaseJobBuilder;
 import org.bikesched.internal.job.DefaultJob;
 import org.bikesched.internal.job.DefaultJobBuilder;
+import org.bikesched.internal.job.HardTimeout;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.job.JobProcessor;
+import org.bikesched.internal.job.JobSlot;
 import org.bikesched.internal.job.RecurringJob;
 import org.bikesched.internal.job.RecurringJobRepair;
 import org.bikesched.internal.node.NodeCleanUp;
@@ -217,7 +219,10 @@ public final class DefaultBikesched implements Bikesched {
               timeoutExecutor,
               settings.defaultJobTimeout(),
               settings.defaultEventTimeout(),
-              settings.retryBackoff());
+              settings.retryBackoff(),
+              settings.hardTimeoutGrace() == null
+                  ? null
+                  : new HardTimeout(settings.hardTimeoutGrace(), jobExecutor, id, nodeName));
       var heartbeat = new NodeHeartbeat(database, id, nodeName);
       var nodeCleanUp = new NodeCleanUp(database, id, nodeName, settings.nodeTimeout());
       var recurringJobRepair = new RecurringJobRepair(database, recurringJobs::values);
@@ -655,22 +660,26 @@ public final class DefaultBikesched implements Bikesched {
     }
   }
 
-  /** Runs a claimed job on its own virtual thread; the job's slot is held until it ends. */
+  /**
+   * Runs a claimed job on its own virtual thread; the job's slot is held until it ends (or the hard
+   * timeout abandons it).
+   */
   private void dispatch(DefaultJob job) {
+    var slot = new JobSlot(jobSlots);
     try {
       jobExecutor.execute(
           () -> {
             try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId));
                 var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
                 var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
-              processor.process(job);
+              processor.process(job, slot);
             } finally {
-              jobSlots.release();
+              slot.release();
             }
           });
     } catch (RejectedExecutionException e) {
       // Shutting down: the job stays RUNNING in the database and is released in close().
-      jobSlots.release();
+      slot.release();
     }
   }
 

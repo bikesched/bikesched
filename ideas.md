@@ -16,20 +16,6 @@ completion, failure, cancellation, suspension and compensation outcomes.
 - Periodically release this node's own `RUNNING` jobs that are no longer running in memory, after
   a grace period for freshly claimed jobs (so a job the poller just claimed is not released).
 
-### Hard timeout for handlers that ignore interrupts
-
-A job timeout only interrupts the handler's thread. A handler stuck in non-interruptible code keeps
-its slot and its `RUNNING` row forever, and the heartbeat protects it.
-
-- Builder option `hardTimeoutGrace(Duration)`, off by default.
-- If the handler has not returned that long after its timeout fired: record the attempt as failed
-  with a timeout error (normal retry and compensation rules apply), free the slot and log the
-  thread's stack trace once.
-- The thread cannot be killed and keeps running; its later step writes are rejected by the step
-  locks (the job is no longer `RUNNING` on the node).
-- Count abandoned threads (see [Metrics](#metrics)); optionally stop claiming jobs while there are
-  too many.
-
 ### Poller watchdog
 
 With no or a long statement timeout, a hanging connection blocks the single poller thread while the
