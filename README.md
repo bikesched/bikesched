@@ -1,6 +1,14 @@
+<p align="center">
+  <img src="docs/logo.svg" alt="bikesched logo: a pelican riding a bicycle with clock wheels, carrying a bag of jobs" width="200" height="200">
+</p>
+
 # bikesched
 
 **A Java based, PostgreSQL first job scheduler with minimal dependencies**
+
+> [!NOTE]
+> bikesched is at a super early stage (`0.1.0-SNAPSHOT`) and can break at any time: APIs and the
+> database schema may change without notice and without migrations.
 
 bikesched stores jobs in PostgreSQL and lets every connected application instance (*node*) work on
 them. Nodes claim due jobs with `SELECT … FOR UPDATE SKIP LOCKED`, so many nodes can share one
@@ -21,10 +29,6 @@ small:
 | `bikesched-core` | the scheduler; depends on the PostgreSQL driver and the SLF4J API only |
 | `bikesched-jackson` | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
 | `bikesched-kotlin` | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
-
-> [!NOTE]
-> bikesched is at an early stage (`0.1.0-SNAPSHOT`) and not published to a Maven repository yet.
-> APIs and the database schema may still change without migrations.
 
 ## Features
 
