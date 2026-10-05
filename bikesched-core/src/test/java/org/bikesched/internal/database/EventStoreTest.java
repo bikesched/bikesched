@@ -60,7 +60,7 @@ class EventStoreTest extends AbstractStoreTest {
         .extracting(JobStore.ClaimedJob::id)
         .contains(job.id());
     assertThat(database.events().awaitEvent(job.id(), node, "wait", "paid", "race-1", null))
-        .isEqualTo(new EventStore.EventWait("SUCCEEDED", "{\"amount\": 1}", null));
+        .isEqualTo(new EventStore.EventWait("RECEIVED", "{\"amount\": 1}", null));
   }
 
   @Test
@@ -90,7 +90,7 @@ class EventStoreTest extends AbstractStoreTest {
     JobStore.ClaimedJob job = claimNewJob("early");
 
     assertThat(database.events().awaitEvent(job.id(), node, "wait", "paid", "early-1", null))
-        .isEqualTo(new EventStore.EventWait("SUCCEEDED", "\"early\"", null));
+        .isEqualTo(new EventStore.EventWait("RECEIVED", "\"early\"", null));
   }
 
   @Test
@@ -101,10 +101,7 @@ class EventStoreTest extends AbstractStoreTest {
     JobStore.ClaimedJob job = claimNewJob("latest");
 
     assertThat(
-            database
-                .events()
-                .awaitEvent(job.id(), node, "wait", "status", "latest-1", null)
-                .payload())
+            database.events().awaitEvent(job.id(), node, "wait", "status", "latest-1", null).json())
         .isEqualTo("\"second\"");
   }
 
@@ -129,7 +126,7 @@ class EventStoreTest extends AbstractStoreTest {
           .isInstanceOf(TimeoutException.class);
 
       connection.commit();
-      assertThat(wait.get(5, TimeUnit.SECONDS).state()).isEqualTo("SUCCEEDED");
+      assertThat(wait.get(5, TimeUnit.SECONDS).state()).isEqualTo("RECEIVED");
     }
   }
 
@@ -234,12 +231,86 @@ class EventStoreTest extends AbstractStoreTest {
     assertThat(database.events().publishEvent("ping", "zero-1", "\"now\"", Duration.ZERO))
         .extracting(ReceivedEvent::jobId)
         .containsExactly(waiting.id());
+    // Claimed now: claimNewJob below claims every due job.
+    claim(waiting.id());
 
     JobStore.ClaimedJob later = claimNewJob("zero-later");
     assertThat(
             database.events().awaitEvent(later.id(), node, "wait", "ping", "zero-1", null).state())
         .isEqualTo("WAITING");
+    assertThat(database.events().deleteExpiredEvents())
+        .as("kept while the received step has not mapped it")
+        .isZero();
+
+    assertThat(database.events().awaitEvent(waiting.id(), node, "wait", "ping", "zero-1", null))
+        .isEqualTo(new EventStore.EventWait("RECEIVED", "\"now\"", null));
+    database.steps().completeEventStep(waiting.id(), node, "wait", "\"mapped\"");
     assertThat(database.events().deleteExpiredEvents()).isOne();
+  }
+
+  @Test
+  void receivedStepStoresTheMappedResultAndNoLongerNeedsTheEvent() throws Exception {
+    JobStore.ClaimedJob job = claimNewJob("mapped");
+    database.events().awaitEvent(job.id(), node, "wait", "paid", "mapped-1", null);
+    database.events().suspendJob(job.id(), node, "wait", "paid", "mapped-1");
+
+    database.events().publishEvent("paid", "mapped-1", "{\"amount\": 7}", Duration.ZERO);
+    assertThat(
+            countSteps(
+                "job_id = '"
+                    + job.id()
+                    + "' and state = 'RECEIVED' and event_id is not null and result is null"))
+        .as("only the event is referenced, its payload is not copied")
+        .isOne();
+
+    claim(job.id());
+    assertThat(database.events().awaitEvent(job.id(), node, "wait", "paid", "mapped-1", null))
+        .as("the payload of the referenced event, to be mapped")
+        .isEqualTo(new EventStore.EventWait("RECEIVED", "{\"amount\": 7}", null));
+    database.steps().completeEventStep(job.id(), node, "wait", "{\"cents\": 700}");
+
+    assertThat(database.events().awaitEvent(job.id(), node, "wait", "paid", "mapped-1", null))
+        .as("later runs get the stored result")
+        .isEqualTo(new EventStore.EventWait("SUCCEEDED", "{\"cents\": 700}", null));
+    assertThat(database.events().deleteExpiredEvents()).isOne();
+    assertThat(database.events().awaitEvent(job.id(), node, "wait", "paid", "mapped-1", null))
+        .as("the stored result does not need the event")
+        .isEqualTo(new EventStore.EventWait("SUCCEEDED", "{\"cents\": 700}", null));
+  }
+
+  @Test
+  void eventReceivedRightAwayIsMappedLikeAPublishedOne() throws Exception {
+    database.events().publishEvent("paid", "right-away-1", "\"early\"", KEPT);
+    JobStore.ClaimedJob job = claimNewJob("right-away");
+
+    assertThat(database.events().awaitEvent(job.id(), node, "wait", "paid", "right-away-1", null))
+        .isEqualTo(new EventStore.EventWait("RECEIVED", "\"early\"", null));
+    assertThat(countSteps("job_id = '" + job.id() + "' and state = 'RECEIVED'")).isOne();
+    database.steps().completeEventStep(job.id(), node, "wait", null);
+    assertThat(countSteps("job_id = '" + job.id() + "' and state = 'SUCCEEDED' and result is null"))
+        .isOne();
+  }
+
+  @Test
+  void cancellingAJobReleasesTheEventOfItsReceivedStep() throws Exception {
+    JobStore.ClaimedJob job = claimNewJob("cancel-received");
+    database.events().awaitEvent(job.id(), node, "wait", "paid", "cancel-1", null);
+    database.events().suspendJob(job.id(), node, "wait", "paid", "cancel-1");
+    database.events().publishEvent("paid", "cancel-1", "\"x\"", Duration.ZERO);
+    assertThat(database.events().deleteExpiredEvents()).isZero();
+
+    claim(job.id());
+    database.jobs().cancelJob(job.id(), node, "stop");
+
+    assertThat(countSteps("job_id = '" + job.id() + "' and state = 'CANCELLED'")).isOne();
+    assertThat(database.events().deleteExpiredEvents()).isOne();
+  }
+
+  /** Claims the (due) job, as the poller does. */
+  private static void claim(UUID jobId) {
+    assertThat(database.jobs().claimJobs(node, 100))
+        .extracting(JobStore.ClaimedJob::id)
+        .contains(jobId);
   }
 
   private static JobStore.ClaimedJob claimNewJob(String type) {

@@ -5,7 +5,7 @@ import org.bikesched.BikeschedBuilder;
 import org.bikesched.BikeschedException;
 
 /**
- * Thrown by {@link EventWait#receive(EventHandler)} when a wait without its own {@link
+ * Thrown by {@link EventWait#receive(Class, EventHandler)} when a wait without its own {@link
  * EventWait#timeout(java.time.Duration, TimeoutHandler) timeout} exceeded the node's {@link
  * BikeschedBuilder#defaultEventTimeout(java.time.Duration) default event timeout}. The job then
  * fails without further attempts ({@code FAILED}, with this exception's message as {@code

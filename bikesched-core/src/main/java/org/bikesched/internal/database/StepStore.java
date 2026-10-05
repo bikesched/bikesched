@@ -82,13 +82,21 @@ public final class StepStore {
              where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
           .formatted(JOB_LOCKED);
 
+  // Stores the result of an event step whose job mapped the received event.
+  private static final String COMPLETE_EVENT_STEP_SQL =
+      """
+            update bikesched_steps set state = 'SUCCEEDED', result = ?::jsonb, finished_at = now()
+             where job_id = ? and name = ? and state = 'RECEIVED' and %s"""
+          .formatted(JOB_LOCKED);
+
   private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED;
 
   /**
    * A step as stored.
    *
    * @param state its state, e.g. {@code SUCCEEDED}, {@code WAITING} or {@code TIMED_OUT}
-   * @param result its stored result (an event step: the received event's payload) as JSON text
+   * @param result its stored result (an event step: the result its job mapped the event to) as JSON
+   *     text
    * @param attempts its number of attempts
    */
   public record StoredStep(String state, String result, int attempts) {}
@@ -202,6 +210,32 @@ public final class StepStore {
           int updated =
               db.update(COMPLETE_STEP_SQL, result, compensable, jobId, name, nodeId, jobId, nodeId);
           if (updated > 0) {
+            history.record(db, Change.step(jobId, name, "SUCCEEDED", nodeId, null));
+          } else {
+            requireJobLock(db, jobId, nodeId);
+          }
+          return null;
+        },
+        e ->
+            new BikeschedException(
+                "Storing the result of step '" + name + "' of bikesched job " + jobId + " failed",
+                e));
+  }
+
+  /**
+   * Marks a {@code RECEIVED} event step {@code SUCCEEDED} and stores the result its job mapped the
+   * event to; the event is no longer needed for it (see {@link EventStore#deleteExpiredEvents()}).
+   *
+   * @param jobId the job id
+   * @param nodeId the node running the job
+   * @param name the step name
+   * @param result the result as JSON text, may be {@code null}
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public void completeEventStep(UUID jobId, UUID nodeId, String name, String result) {
+    history.change(
+        db -> {
+          if (db.update(COMPLETE_EVENT_STEP_SQL, result, jobId, name, jobId, nodeId) > 0) {
             history.record(db, Change.step(jobId, name, "SUCCEEDED", nodeId, null));
           } else {
             requireJobLock(db, jobId, nodeId);

@@ -12,7 +12,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.JsonMapper;
-import org.bikesched.event.Event;
+import org.bikesched.event.EventHandler;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.TypedEventWait;
@@ -396,37 +396,42 @@ public final class DefaultJob implements Job {
     R call() throws Exception;
   }
 
-  /** Runs the call with the step name in the logging context (event and timeout handlers). */
-  <R> R inStep(String stepName, StepCall<R> call) throws Exception {
-    Runnable restoreStepName = putStepName(stepName);
-    try {
-      return call.call();
-    } finally {
-      restoreStepName.run();
-    }
-  }
-
   /** The step the handler suspended the job at, {@code null} if it did not wait for an event. */
   JobSuspended.Suspension suspension() {
     return suspension;
   }
 
   /**
-   * Waits for an event as a step: returns it if received (now or in an earlier run), {@code null}
-   * if the wait timed out, or suspends the job by throwing {@link JobSuspended}. The names were
-   * validated by {@link #waitForEvent(String, String, String)}.
+   * Waits for an event as a step and returns the step's result: the result stored when the event
+   * was mapped (in this or an earlier run), the event mapped now (stored as the step's result), the
+   * timeout handler's result if the wait timed out, or suspends the job by throwing {@link
+   * JobSuspended}. The names were validated by {@link #waitForEvent(String, String, String)}.
+   *
+   * @param read reads the stored result (JSON text, may be {@code null}) back on later runs; also
+   *     produces the result from the payload without a handler
+   * @param handler maps the received event to the result; {@code null}: the event's payload is
+   *     stored as it is and read with {@code read}
+   * @param onTimeout produces the result if the wait timed out; runs on every run that reaches the
+   *     timed-out wait, its result is not stored
    */
-  Event receiveEvent(String stepName, String eventName, String eventKey, Duration timeout) {
+  <T> T awaitEvent(
+      String stepName,
+      String eventName,
+      String eventKey,
+      Duration timeout,
+      Function<String, ? extends T> read,
+      EventHandler<? extends T> handler,
+      StepCall<? extends T> onTimeout)
+      throws Exception {
     Runnable restoreStepName = putStepName(stepName);
     try {
       if (compensating) {
-        // Replay only: return what the wait stored, never start or time out a wait.
+        // Replay only: return what the wait stored, never start, map or time out a wait.
         var step = database.steps().findStep(id, stepName);
         String state = step.map(StepStore.StoredStep::state).orElse("");
         return switch (state) {
-          case "SUCCEEDED" ->
-              new DefaultEvent(eventName, eventKey, step.get().result(), database.jsonMapper());
-          case "TIMED_OUT" -> null;
+          case "SUCCEEDED" -> read.apply(step.get().result());
+          case "TIMED_OUT" -> onTimeout.call();
           default -> throw new CompensationReplayEnded(stepName);
         };
       }
@@ -436,8 +441,16 @@ public final class DefaultJob implements Job {
                   database.events().awaitEvent(id, nodeId, stepName, eventName, eventKey, timeout));
       switch (wait.state()) {
         case "SUCCEEDED" -> {
-          LOG.debug("Step {} of job {} received event {}/{}", stepName, id, eventName, eventKey);
-          return new DefaultEvent(eventName, eventKey, wait.payload(), database.jsonMapper());
+          LOG.debug(
+              "Step {} of job {} already received event {}/{}, reusing its result",
+              stepName,
+              id,
+              eventName,
+              eventKey);
+          return read.apply(wait.json());
+        }
+        case "RECEIVED" -> {
+          return handleEvent(stepName, eventName, eventKey, wait.json(), read, handler);
         }
         case "TIMED_OUT" -> {
           LOG.debug(
@@ -446,7 +459,7 @@ public final class DefaultJob implements Job {
               id,
               eventName,
               eventKey);
-          return null;
+          return onTimeout.call();
         }
         default -> {
           var waiting =
@@ -465,6 +478,38 @@ public final class DefaultJob implements Job {
     } finally {
       restoreStepName.run();
     }
+  }
+
+  /**
+   * Maps a received event with the handler and stores the result. If the handler throws, the step
+   * stays {@code RECEIVED} and the next attempt maps the event again.
+   */
+  private <T> T handleEvent(
+      String stepName,
+      String eventName,
+      String eventKey,
+      String payload,
+      Function<String, ? extends T> read,
+      EventHandler<? extends T> handler)
+      throws Exception {
+    LOG.debug("Step {} of job {} received event {}/{}", stepName, id, eventName, eventKey);
+    T result;
+    String json;
+    if (handler == null) {
+      result = read.apply(payload);
+      json = payload;
+    } else {
+      result =
+          handler.handle(new DefaultEvent(eventName, eventKey, payload, database.jsonMapper()));
+      json = result == null ? null : database.jsonMapper().toJson(result);
+    }
+    fenced(() -> database.steps().completeEventStep(id, nodeId, stepName, json));
+    return result;
+  }
+
+  /** Reads a stored result (JSON text, may be {@code null}) as the given type. */
+  <T> Function<String, T> reader(Class<T> type) {
+    return json -> json == null ? null : database.jsonMapper().fromJson(json, type);
   }
 
   private <T> T executeStep(

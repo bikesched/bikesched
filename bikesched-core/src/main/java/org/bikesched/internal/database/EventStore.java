@@ -41,10 +41,14 @@ public final class EventStore {
             select pg_advisory_xact_lock(
                        hashtextextended('bikesched-event:' || jsonb_build_array(?::text, ?::text)::text, 0))""";
 
+  // The step's stored result, or for a RECEIVED step the payload of its event (and whether that
+  // still exists: the event clean-up keeps it while the step is RECEIVED).
   private static final String FIND_EVENT_STEP_SQL =
       """
-            select state, result::text, event_name, event_key, wait_until, wait_until <= now()
-              from bikesched_steps where job_id = ? and name = ? for update""";
+            select s.state, case when s.state = 'RECEIVED' then e.payload::text else s.result::text end,
+                   s.event_name, s.event_key, s.wait_until, s.wait_until <= now(), e.id is not null
+              from bikesched_steps s left join bikesched_events e on e.id = s.event_id
+             where s.job_id = ? and s.name = ? for update of s""";
 
   private static final String LATEST_EVENT_SQL =
       """
@@ -54,10 +58,8 @@ public final class EventStore {
 
   private static final String RECEIVE_EVENT_STEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, state, result, attempts, event_name, event_key, event_id, finished_at)
-            values (?, ?, 'SUCCEEDED', ?::jsonb, 1, ?, ?, ?, now())
-            on conflict (job_id, name) do update
-               set state = 'SUCCEEDED', result = excluded.result, event_id = excluded.event_id, finished_at = now()""";
+            insert into bikesched_steps (job_id, name, state, attempts, event_name, event_key, event_id)
+            values (?, ?, 'RECEIVED', 1, ?, ?, ?)""";
 
   private static final String WAIT_EVENT_STEP_SQL =
       """
@@ -93,15 +95,16 @@ public final class EventStore {
             insert into bikesched_events (id, event_name, event_key, payload, expires_at)
             values (?, ?, ?, ?::jsonb, now() + ? * interval '1 millisecond')""";
 
-  // Completes all steps waiting for the event with its payload and resumes their WAITING jobs.
-  // Jobs that are still RUNNING (suspending right now, or resumed by their deadline) are left
-  // alone: SUSPEND_JOB_SQL resp. the handler's wait then find the step completed. Returns per step
-  // whether its job was resumed, and the job's attempt count.
+  // Marks all steps waiting for the event RECEIVED (their job's next run maps the event and stores
+  // the result) and resumes their WAITING jobs. Jobs that are still RUNNING (suspending right now,
+  // or resumed by their deadline) are left alone: SUSPEND_JOB_SQL resp. the handler's wait then
+  // find the step received. Returns per step whether its job was resumed, and the job's attempt
+  // count.
   private static final String RESUME_WAITING_STEPS_SQL =
       """
             with received as (
                 update bikesched_steps
-                   set state = 'SUCCEEDED', result = ?::jsonb, event_id = ?, finished_at = now()
+                   set state = 'RECEIVED', event_id = ?
                  where event_name = ? and event_key = ? and state = 'WAITING'
                 returning job_id, name),
             resumed as (
@@ -113,19 +116,25 @@ public final class EventStore {
             select r.job_id, r.name, x.id is not null, coalesce(x.attempts, 0)
               from received r left join resumed x on x.id = r.job_id""";
 
+  // Expired events, except those RECEIVED steps still need (their job has not mapped them yet).
   private static final String DELETE_EVENTS_SQL =
       """
-            delete from bikesched_events where expires_at <= now()""";
+            delete from bikesched_events e
+             where e.expires_at <= now()
+               and not exists (select 1 from bikesched_steps s
+                                where s.event_id = e.id and s.state = 'RECEIVED')""";
 
   /**
    * The outcome of waiting for an event.
    *
-   * @param state {@code SUCCEEDED} (received, see {@code payload}), {@code TIMED_OUT} or {@code
-   *     WAITING}
-   * @param payload the received event's payload as JSON text, may be {@code null}
+   * @param state {@code RECEIVED} (the event arrived, see {@code json}; the job maps it and stores
+   *     the result with {@link StepStore#completeEventStep}), {@code SUCCEEDED} (mapped before, see
+   *     {@code json}), {@code TIMED_OUT} or {@code WAITING}
+   * @param json {@code RECEIVED}: the event's payload, {@code SUCCEEDED}: the stored result; JSON
+   *     text, may be {@code null}
    * @param waitUntil the deadline of a {@code WAITING} step, {@code null} if none
    */
-  public record EventWait(String state, String payload, Instant waitUntil) {}
+  public record EventWait(String state, String json, Instant waitUntil) {}
 
   /**
    * A job after suspending it.
@@ -137,9 +146,10 @@ public final class EventStore {
   public record SuspendedJob(boolean waiting, Instant waitUntil) {}
 
   /**
-   * Waits for an event as a step of a job: returns the step's earlier outcome (received or timed
-   * out) if any, receives the latest published event with that name and key, or marks the step
-   * {@code WAITING}. Runs in one transaction holding the event's advisory lock.
+   * Waits for an event as a step of a job: returns the step's earlier outcome (received, mapped or
+   * timed out) if any, receives the latest published event with that name and key (the step becomes
+   * {@code RECEIVED}), or marks the step {@code WAITING}. Runs in one transaction holding the
+   * event's advisory lock.
    *
    * @param jobId the job id
    * @param nodeId the node running the job
@@ -173,7 +183,8 @@ public final class EventStore {
                           row.string(3),
                           row.string(4),
                           row.instant(5),
-                          row.bool(6)),
+                          row.bool(6),
+                          row.bool(7)),
                   jobId,
                   stepName);
           if (step.isPresent()) {
@@ -195,6 +206,17 @@ public final class EventStore {
             }
             switch (found.state()) {
               case "SUCCEEDED" -> {
+                return new EventWait(found.state(), found.result(), null);
+              }
+              case "RECEIVED" -> {
+                if (!found.eventExists()) {
+                  throw new IllegalStateException(
+                      "The event received by step '"
+                          + stepName
+                          + "' of job "
+                          + jobId
+                          + " no longer exists");
+                }
                 return new EventWait(found.state(), found.result(), null);
               }
               case "TIMED_OUT" -> {
@@ -219,17 +241,16 @@ public final class EventStore {
           if (published.isPresent()) {
             String payload = published.get().payload();
             UUID eventId = published.get().id();
-            db.update(
-                RECEIVE_EVENT_STEP_SQL, jobId, stepName, payload, eventName, eventKey, eventId);
+            db.update(RECEIVE_EVENT_STEP_SQL, jobId, stepName, eventName, eventKey, eventId);
             history.record(
                 db,
                 Change.step(
                     jobId,
                     stepName,
-                    "SUCCEEDED",
+                    "RECEIVED",
                     null,
                     "received event " + eventId + " right away"));
-            return new EventWait("SUCCEEDED", payload, null);
+            return new EventWait("RECEIVED", payload, null);
           }
           EventWait waiting =
               db.one(
@@ -313,8 +334,8 @@ public final class EventStore {
   }
 
   /**
-   * Publishes an event: stores it and completes all steps waiting for it, resuming their jobs. Runs
-   * in bikesched's own transaction holding the event's advisory lock.
+   * Publishes an event: stores it and marks all steps waiting for it {@code RECEIVED}, resuming
+   * their jobs. Runs in bikesched's own transaction holding the event's advisory lock.
    *
    * @param eventName the event name
    * @param eventKey the event key
@@ -377,7 +398,6 @@ public final class EventStore {
         db.list(
             RESUME_WAITING_STEPS_SQL,
             row -> new Resumption(row.uuid(1), row.string(2), row.bool(3), row.integer(4)),
-            payload,
             eventId,
             eventName,
             eventKey);
@@ -387,7 +407,7 @@ public final class EventStore {
           Change.step(
               resumption.jobId(),
               resumption.stepName(),
-              "SUCCEEDED",
+              "RECEIVED",
               null,
               "received event " + eventId));
       if (resumption.jobResumed()) {
@@ -405,7 +425,8 @@ public final class EventStore {
   }
 
   /**
-   * Deletes expired events (their retention has passed).
+   * Deletes expired events (their retention has passed), except those that {@code RECEIVED} steps
+   * still need: their jobs have not mapped them yet.
    *
    * @return the number of deleted events
    */
@@ -428,12 +449,16 @@ public final class EventStore {
   /** A row of {@code RESUME_WAITING_STEPS_SQL}: a step that received the event. */
   private record Resumption(UUID jobId, String stepName, boolean jobResumed, int attempts) {}
 
-  /** A row of {@code FIND_EVENT_STEP_SQL}: a step (event step or regular step) of a job. */
+  /**
+   * A row of {@code FIND_EVENT_STEP_SQL}: a step (event step or regular step) of a job; {@code
+   * result} is the payload of the received event for a {@code RECEIVED} step.
+   */
   private record EventStep(
       String state,
       String result,
       String eventName,
       String eventKey,
       Instant waitUntil,
-      boolean deadlinePassed) {}
+      boolean deadlinePassed,
+      boolean eventExists) {}
 }

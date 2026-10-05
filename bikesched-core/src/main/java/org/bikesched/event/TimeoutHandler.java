@@ -18,8 +18,7 @@ public interface TimeoutHandler<T> {
    * fallback result or decide what happens to the job (e.g. {@link Job#cancel(String)}); put side
    * effects into {@link Job#step(String, Class, StepHandler) steps}.
    *
-   * @return the result returned by {@link EventWait.Timed#receive(EventHandler)}, may be {@code
-   *     null}
+   * @return the result returned by {@link EventWait.Timed#receive(Class)}, may be {@code null}
    * @throws Exception to fail the job's attempt
    */
   T handle() throws Exception;

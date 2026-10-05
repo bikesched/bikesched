@@ -103,22 +103,25 @@ class JobHistoryTest extends AbstractBikeschedTest {
               "RUNNING",
               "await:WAITING",
               "WAITING",
-              "await:SUCCEEDED",
+              "await:RECEIVED",
               "SCHEDULED",
               "RUNNING",
+              "await:SUCCEEDED",
               "SUCCEEDED");
       // Suspending gives back the attempt; resuming counts a new one.
       assertThat(history)
           .extracting(JobHistoryEntry::attempt)
-          .containsExactly(0, 1, 1, 0, 0, 0, 1, 1);
+          .containsExactly(0, 1, 1, 0, 0, 0, 1, 1, 1);
       assertThat(history.get(2).detail()).isEqualTo("waiting for event " + event + "/order-1");
       assertThat(history.get(3).detail()).isEqualTo("suspended at step 'await'");
-      // The step stores the event it received; publishing is no node's change.
+      // The step references the event it received; publishing is no node's change, storing the
+      // mapped result on the next run is.
       String eventId = eventId(jobId, "await");
       assertThat(history.get(4).detail()).isEqualTo("received event " + eventId);
       assertThat(history.get(5).detail()).isEqualTo("resumed by event " + eventId);
       assertThat(history.get(4).nodeId()).isNull();
       assertThat(history.get(5).nodeId()).isNull();
+      assertThat(history.get(7).nodeId()).isNotNull();
       assertThat(countRows("bikesched_events", "id = '" + eventId + "'")).isEqualTo(1);
     }
   }

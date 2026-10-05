@@ -175,9 +175,10 @@ A job that waited for an event and was retried once could show:
 | `charge` | `SUCCEEDED` | 2 | node-b | |
 | `await` | `WAITING` | 2 | node-b | `waiting for event paid/order-1` |
 | | `WAITING` | 1 | node-b | `suspended at step 'await'` |
-| `await` | `SUCCEEDED` | 1 | | `received event 3f2a…` |
+| `await` | `RECEIVED` | 1 | | `received event 3f2a…` |
 | | `SCHEDULED` | 1 | | `resumed by event 3f2a…` |
 | | `RUNNING` | 2 | node-a | |
+| `await` | `SUCCEEDED` | 2 | node-a | |
 | | `SUCCEEDED` | 2 | node-a | |
 
 - Entries without a step name are changes of the job, the others of a step. `state` is the new

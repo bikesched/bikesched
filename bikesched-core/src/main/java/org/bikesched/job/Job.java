@@ -172,13 +172,13 @@ public interface Job {
   boolean isCompensating();
 
   /**
-   * Starts waiting for an event, as a durable step; {@link EventWait#receive(EventHandler)} returns
-   * it once the event published with the given name and key was received. If it has not been
-   * published yet, the job's attempt ends in {@code receive} (it does not return) and the job is
-   * suspended in state {@code WAITING}, using no thread and no concurrency slot. Once someone
+   * Starts waiting for an event, as a durable step; {@link EventWait#receive(Class, EventHandler)}
+   * returns it once the event published with the given name and key was received. If it has not
+   * been published yet, the job's attempt ends in {@code receive} (it does not return) and the job
+   * is suspended in state {@code WAITING}, using no thread and no concurrency slot. Once someone
    * {@link Bikesched#newEvent(String, String) publishes} the event, the job is scheduled again and
    * its handler runs again from the start: completed steps are skipped, and {@code receive} now
-   * passes the event to the event handler and returns its result.
+   * maps the event with the event handler, stores the result like a step's and returns it.
    *
    * <pre>{@code
    * bikesched.registerJobHandler("order", job -> {
@@ -186,7 +186,7 @@ public interface Job {
    *     job.step("create-invoice", Invoice.class, step -> billing.createInvoice(order));
    *     Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
    *             .timeout(Duration.ofDays(3), () -> Payment.missing())   // optional
-   *             .receive(event -> event.payload(Payment.class));
+   *             .receive(Payment.class);
    *     job.step("ship", Void.class, step -> {
    *         shipping.ship(order, payment);
    *         return null;
@@ -200,9 +200,11 @@ public interface Job {
    * <p>Events published before the job starts waiting are not lost: they are kept for their {@link
    * org.bikesched.event.EventBuilder#retention(Duration) retention} (default {@link
    * BikeschedBuilder#eventRetention(Duration)}), and the step receives the latest one right away.
-   * An event is delivered to every step waiting for it. The received event is stored with the step;
-   * the event handler runs whenever {@code receive} returns (see {@link
-   * EventHandler#handle(Event)}), and if it throws, the job's attempt fails.
+   * An event is delivered to every step waiting for it. Receiving marks the step {@code RECEIVED};
+   * the job's next run maps the event with the event handler (see {@link
+   * EventHandler#handle(Event)}) and stores the result, which later runs return without mapping
+   * again. If the event handler throws, the job's attempt fails and the next one maps the event
+   * again; the event is kept until then.
    *
    * <p>Because the job's handler runs again after the wait, code outside of steps must be cheap and
    * deterministic, and steps and waits must be called with the same names in the same order on

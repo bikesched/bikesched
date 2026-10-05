@@ -89,10 +89,12 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
 -- job can skip steps that already succeeded. Event steps (event_name/event_key set) wait for an
--- event instead: WAITING until it is published (result = its payload, event_id = the event) or
--- wait_until has passed.
+-- event instead: WAITING until it is published or wait_until has passed (TIMED_OUT). Publishing
+-- marks the step RECEIVED (event_id = the event); the job's next run maps the event with its event
+-- handler and stores the result: SUCCEEDED. A RECEIVED step keeps its event from being deleted.
 -- A compensable step (declared with a compensation) is COMPENSATED once its compensation ran.
--- Cancelling a job marks its unfinished steps (WAITING, or RUNNING after a crash) CANCELLED.
+-- Cancelling a job marks its unfinished steps (WAITING, RECEIVED, or RUNNING after a crash)
+-- CANCELLED.
 -- A RUNNING step is locked by the node running it (locked_by). Every step write also requires the
 -- job to be RUNNING on that node, so a node whose job was released (e.g. after missed heartbeats)
 -- can no longer change its steps.
@@ -113,12 +115,14 @@ create table bikesched_steps (
     finished_at timestamptz,
     primary key (job_id, name),
     constraint bikesched_steps_state_check
-        check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'TIMED_OUT', 'COMPENSATED',
-                         'CANCELLED')),
+        check (state in ('RUNNING', 'WAITING', 'RECEIVED', 'SUCCEEDED', 'FAILED', 'TIMED_OUT',
+                         'COMPENSATED', 'CANCELLED')),
     constraint bikesched_steps_event_check
         check ((event_name is null) = (event_key is null)
-               and (event_name is not null or (wait_until is null and state not in ('WAITING', 'TIMED_OUT')))
-               and (event_id is null or event_name is not null)),
+               and (event_name is not null
+                    or (wait_until is null and state not in ('WAITING', 'RECEIVED', 'TIMED_OUT')))
+               and (event_id is null or event_name is not null)
+               and (state <> 'RECEIVED' or event_id is not null)),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by is not null)),
     constraint bikesched_steps_name_check
@@ -130,6 +134,10 @@ create table bikesched_steps (
 -- Matching published events to the steps waiting for them.
 create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_key)
     where state = 'WAITING';
+
+-- Keeping events that RECEIVED steps still need (event clean-up).
+create index bikesched_steps_received_idx on bikesched_steps (event_id)
+    where state = 'RECEIVED';
 
 -- Published events, kept until expires_at (published_at + the event's retention): a step that starts
 -- waiting for an event that was already published receives the latest unexpired one right away, so
@@ -150,7 +158,7 @@ create table bikesched_events (
 
 create index bikesched_events_name_key_idx on bikesched_events (event_name, event_key, published_at desc);
 
--- Deleting expired events.
+-- Deleting expired events (unless a RECEIVED step still needs them).
 create index bikesched_events_expires_at_idx on bikesched_events (expires_at);
 
 -- Job history (only written by nodes with the history enabled): one row per change of a job
@@ -171,8 +179,9 @@ create table bikesched_job_history (
     constraint bikesched_job_history_state_check
         check (step_name is null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
                                                'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED')
-               or step_name is not null and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
-                                                      'TIMED_OUT', 'COMPENSATED', 'CANCELLED')),
+               or step_name is not null and state in ('RUNNING', 'WAITING', 'RECEIVED', 'SUCCEEDED',
+                                                      'FAILED', 'TIMED_OUT', 'COMPENSATED',
+                                                      'CANCELLED')),
     constraint bikesched_job_history_step_name_check
         check (char_length(step_name) between 1 and 200)
 );

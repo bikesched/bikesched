@@ -44,7 +44,15 @@ class EventTest extends AbstractBikeschedTest {
                     String payment =
                         job.waitForEvent("await-payment", "payment-received", "order-1")
                             .receive(
-                                event -> event.name() + "/" + event.key() + " " + event.payload());
+                                String.class,
+                                event ->
+                                    "{\"from\": \""
+                                        + event.name()
+                                        + "/"
+                                        + event.key()
+                                        + "\", \"payment\": "
+                                        + event.payload()
+                                        + "}");
                     received.add(payment);
                   })
               .schedule();
@@ -68,7 +76,57 @@ class EventTest extends AbstractBikeschedTest {
     }
     assertThat(runs).as("handler ran again after the wait").hasValue(2);
     assertThat(invoices).as("completed step not executed again").hasValue(1);
-    assertThat(received).containsExactly("payment-received/order-1 {\"amount\": 42}");
+    assertThat(received)
+        .containsExactly("{\"from\": \"payment-received/order-1\", \"payment\": {\"amount\": 42}}");
+  }
+
+  @Test
+  void eventHandlerRunsOnceAndLaterRunsGetItsStoredResult() throws Exception {
+    var mappings = new AtomicInteger();
+    List<String> results = new CopyOnWriteArrayList<>();
+    try (Bikesched bikesched = node("node-event-mapped-once")) {
+      UUID jobId =
+          bikesched
+              .newJob("event-mapped-once")
+              .handler(
+                  job -> {
+                    String first =
+                        job.waitForEvent("first", "step-done", "mapped-1")
+                            .receive(
+                                String.class,
+                                event -> {
+                                  mappings.incrementAndGet();
+                                  return "\"mapped " + event.key() + "\"";
+                                });
+                    results.add(first);
+                    job.waitForEvent("second", "step-done", "mapped-2").receive(String.class);
+                  })
+              .schedule();
+      awaitState(jobId, "WAITING");
+
+      bikesched.newEvent("step-done", "mapped-1").payload("\"one\"").publish();
+      await()
+          .untilAsserted(
+              () ->
+                  assertThat(
+                          countRows(
+                              "bikesched_steps",
+                              "job_id = '" + jobId + "' and name = 'second' and state = 'WAITING'"))
+                      .isOne());
+      bikesched.newEvent("step-done", "mapped-2").payload("\"two\"").publish();
+      awaitState(jobId, "SUCCEEDED");
+
+      assertThat(mappings).as("mapped once, then replayed from the stored result").hasValue(1);
+      assertThat(results).containsExactly("\"mapped mapped-1\"", "\"mapped mapped-1\"");
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '"
+                      + jobId
+                      + "' and name = 'first' and state = 'SUCCEEDED'"
+                      + " and result = '\"mapped mapped-1\"'::jsonb and event_id is not null"))
+          .isOne();
+    }
   }
 
   @Test
@@ -133,7 +191,7 @@ class EventTest extends AbstractBikeschedTest {
                     String approval =
                         job.waitForEvent("approval", "approved", "timeout-1")
                             .timeout(Duration.ofMillis(300), () -> "timed out")
-                            .receive(Event::payload);
+                            .receive(String.class);
                     results.add(approval);
                     if (approval.equals("timed out")) {
                       job.cancel("not approved in time");
@@ -290,6 +348,7 @@ class EventTest extends AbstractBikeschedTest {
                   job ->
                       job.waitForEvent("wait", "done", "handler-1")
                           .receive(
+                              String.class,
                               event -> {
                                 if (calls.incrementAndGet() == 1) {
                                   throw new IllegalStateException("boom");
