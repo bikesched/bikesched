@@ -79,6 +79,53 @@ module, would make the problems above visible in production.
 - Failure tests: database restart in the middle of a job (would expose the outcome-recording issue
   above), a node pausing longer than the node timeout, a hanging connection.
 
+## API
+
+### Waiting for a typed event without `receive()`
+
+`job.waitForEvent(step, eventType, key)` returns a `TypedEventWait<T>` that still has to be
+completed with `receive()`. For the common case, waiting should directly return the event's payload,
+typed by the event type, as the result of the wait step:
+
+```java
+Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, orderId);   // no receive()
+```
+
+- Needs its own method name (e.g. `awaitEvent`): an overload of `waitForEvent` with the same
+  parameters cannot differ in its return type.
+- Optionally an overload with a timeout (`Duration`), returning `null` or throwing
+  `EventTimeoutException` when it passes.
+- Stored like today, as the event step's `result`, so replays return the same value.
+- `waitForEvent(...).timeout(...).receive()` stays for waits with a timeout handler.
+
+### Steps inside steps
+
+A step handler can currently call `job.step(...)` (or wait for an event) itself; nothing prevents
+it. The semantics are unclear: the inner step completes durably even if the outer step then
+fails, a retry runs the outer step again but skips the inner one, and a wait inside a step would
+suspend the job while the outer step is still `RUNNING`.
+
+- Either allow nesting and document it (inner steps are independent durable steps), or
+- guard it with a flag on the job that is set while a step runs, so that creating a step, a step
+  builder or an event wait inside a step throws an `IllegalStateException`.
+
+### Fallbacks in event timeout handlers
+
+Verify whether timeout handlers work for fallbacks, e.g.: a Stripe webhook has not arrived yet, so
+fetch the payment by its id from Stripe, or if it is not available yet either, try again in 5
+minutes.
+
+- The timeout handler runs again on every replay after the deadline, so a fetch inside it is
+  repeated; it would need to be a step, inside the handler (see
+  [Steps inside steps](#steps-inside-steps)) or after the wait.
+- "Try again in 5 minutes": the wait step stays `TIMED_OUT`, so waiting again needs a new step
+  name, or the job fails the attempt with `job.fail().retryAfter(Duration.ofMinutes(5))`, which uses
+  up an attempt and runs the fallback again.
+- A webhook arriving after the timeout is not delivered to the timed-out step; it is kept for the
+  event retention period, so a later wait (new step name) still receives it.
+- Outcome: a documented pattern with a test, or API support (e.g. a timeout handler that can wait
+  again).
+
 ## Website
 
 ### Project site on bikesched.org
