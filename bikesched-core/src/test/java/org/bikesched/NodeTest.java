@@ -134,10 +134,10 @@ class NodeTest extends AbstractBikeschedTest {
     // A job the crashed previous instance was still running (scheduled in the future so the
     // new instance's poller doesn't immediately execute it after the release).
     execute(
-        "insert into bikesched_jobs (id, job_type, state, locked_by, scheduled_at) values "
-            + "(gen_random_uuid(), 'orphan-restart', 'RUNNING', '"
+        "insert into bikesched_jobs (id, job_type, state, locked_by, lock_token, scheduled_at)"
+            + " values (gen_random_uuid(), 'orphan-restart', 'RUNNING', '"
             + staleId
-            + "', now() + interval '1 hour')");
+            + "', gen_random_uuid(), now() + interval '1 hour')");
 
     try (Bikesched bikesched =
         Bikesched.builder().dataSource(dataSource).nodeName("node-restarted").build()) {
@@ -170,10 +170,10 @@ class NodeTest extends AbstractBikeschedTest {
               + deadNode
               + "', 'node-dead', now() - interval '1 minute')");
       execute(
-          "insert into bikesched_jobs (id, job_type, state, locked_by) select gen_random_uuid(), "
-              + "'orphan', 'RUNNING', '"
+          "insert into bikesched_jobs (id, job_type, state, locked_by, lock_token)"
+              + " select gen_random_uuid(), 'orphan', 'RUNNING', '"
               + deadNode
-              + "' from generate_series(1, 2)");
+              + "', gen_random_uuid() from generate_series(1, 2)");
 
       // Released by the node clean-up, then claimed and executed by this node's poller; the dead
       // node itself is removed once its jobs no longer reference it.

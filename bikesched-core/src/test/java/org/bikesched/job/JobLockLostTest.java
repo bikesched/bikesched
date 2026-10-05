@@ -47,7 +47,8 @@ class JobLockLostTest extends AbstractBikeschedTest {
       assertThat(firstStepDone.await(10, TimeUnit.SECONDS)).isTrue();
       // Released, as by the node clean-up of another node, and not due again during the test.
       execute(
-          "update bikesched_jobs set state = 'SCHEDULED', locked_by = null, locked_at = null,"
+          "update bikesched_jobs set state = 'SCHEDULED', locked_by = null, lock_token = null,"
+              + " locked_at = null,"
               + " scheduled_at = now() + interval '1 day' where id = '"
               + jobId
               + "'");
@@ -61,7 +62,8 @@ class JobLockLostTest extends AbstractBikeschedTest {
                           m ->
                               m.startsWith("Job " + jobId + " of type " + type)
                                   && m.endsWith("abandoning attempt 1 without recording it")));
-      assertThat(secondStepFailure.get()).hasMessageContaining("is no longer running on node");
+      assertThat(secondStepFailure.get())
+          .hasMessageContaining("is no longer running in this attempt's claim");
       assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 1"))
           .as("left as released, not SUCCEEDED")
           .isEqualTo(1);

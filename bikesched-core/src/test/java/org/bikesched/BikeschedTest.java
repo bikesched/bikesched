@@ -149,10 +149,10 @@ class BikeschedTest extends AbstractBikeschedTest {
         Bikesched.builder().dataSource(dataSource).nodeName("node-releasing").build();
     // Simulate a job claimed by this node whose processing never finished.
     execute(
-        "insert into bikesched_jobs (id, job_type, state, locked_by) "
+        "insert into bikesched_jobs (id, job_type, state, locked_by, lock_token) "
             + "values (gen_random_uuid(), 'stuck', 'RUNNING', '"
             + bikesched.node().id().orElseThrow()
-            + "')");
+            + "', gen_random_uuid())");
 
     bikesched.close();
 

@@ -5,9 +5,10 @@ import java.util.UUID;
 import org.bikesched.BikeschedException;
 
 /**
- * Thrown by step writes when the job is no longer {@code RUNNING} on the writing node: it was
- * released (e.g. after missed heartbeats) and may already run elsewhere. Ends the handler of the
- * stale attempt instead of letting it change steps another node now owns.
+ * Thrown by step writes when the job is no longer {@code RUNNING} under the writing attempt's claim
+ * ({@link JobLock}): it was released (e.g. after missed heartbeats) and may already run elsewhere,
+ * or in a newer attempt on the same node. Ends the handler of the stale attempt instead of letting
+ * it change steps that a newer claim now owns.
  */
 public final class JobLockLostException extends BikeschedException {
 
@@ -21,8 +22,9 @@ public final class JobLockLostException extends BikeschedException {
     super(
         "Bikesched job "
             + jobId
-            + " is no longer running on node "
+            + " is no longer running in this attempt's claim by node "
             + nodeId
-            + " (it was released, e.g. after missed heartbeats); stopping this attempt");
+            + " (it was released, e.g. after missed heartbeats, and may run elsewhere or in a newer"
+            + " attempt); stopping this attempt");
   }
 }

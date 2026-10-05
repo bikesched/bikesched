@@ -84,9 +84,9 @@ public final class EventStore {
                    scheduled_at = case when s.state = 'WAITING' and j.cancel_requested_at is null
                                        then coalesce(s.wait_until, 'infinity')
                                        else now() end,
-                   attempts = j.attempts - 1, locked_by = null, locked_at = null, updated_at = now()
+                   attempts = j.attempts - 1, locked_by = null, lock_token = null, locked_at = null, updated_at = now()
               from bikesched_steps s
-             where j.id = ? and j.locked_by = ? and j.state = 'RUNNING'
+             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING'
                and s.job_id = j.id and s.name = ?
             returning j.state, s.wait_until, j.attempts""";
 
@@ -152,7 +152,7 @@ public final class EventStore {
    * event's advisory lock.
    *
    * @param jobId the job id
-   * @param nodeId the node running the job
+   * @param lock the lock of the job's claim (node and token)
    * @param stepName the step name
    * @param eventName the event name
    * @param eventKey the event key
@@ -164,14 +164,14 @@ public final class EventStore {
    */
   public EventWait awaitEvent(
       UUID jobId,
-      UUID nodeId,
+      JobLock lock,
       String stepName,
       String eventName,
       String eventKey,
       Duration timeout) {
     return access.inTransaction(
         db -> {
-          StepStore.requireJobLock(db, jobId, nodeId);
+          StepStore.requireJobLock(db, jobId, lock);
           lockEvent(db, eventName, eventKey);
           Optional<EventStep> step =
               db.one(
@@ -295,14 +295,14 @@ public final class EventStore {
    * SUSPEND_JOB_SQL}. Runs in one transaction holding the event's advisory lock.
    *
    * @param jobId the job id
-   * @param nodeId the node that claimed the job
+   * @param lock the lock of the job's claim (node and token)
    * @param stepName the waiting step
    * @param eventName the event the step waits for
    * @param eventKey the event key
    * @return the job after suspending; empty if the job is not running on this node (anymore)
    */
   public Optional<SuspendedJob> suspendJob(
-      UUID jobId, UUID nodeId, String stepName, String eventName, String eventKey) {
+      UUID jobId, JobLock lock, String stepName, String eventName, String eventKey) {
     return access.inTransaction(
         db -> {
           lockEvent(db, eventName, eventKey);
@@ -311,7 +311,7 @@ public final class EventStore {
                   SUSPEND_JOB_SQL,
                   row -> new Suspension(row.string(1), row.instant(2), row.integer(3)),
                   jobId,
-                  nodeId,
+                  lock.token(),
                   stepName);
           if (suspended.isEmpty()) {
             return Optional.<SuspendedJob>empty();
@@ -323,7 +323,7 @@ public final class EventStore {
                   jobId,
                   suspension.state(),
                   suspension.attempts(),
-                  nodeId,
+                  lock.nodeId(),
                   suspension.state().equals("WAITING")
                       ? "suspended at step '" + stepName + "'"
                       : "suspended at step '" + stepName + "', due again right away"));

@@ -13,10 +13,11 @@ import org.bikesched.internal.util.ValidationUtil;
  * EventStore}). Changes are recorded in the {@link HistoryStore job history}, if enabled.
  * Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  *
- * <p>Every write is fenced by the job's lock: it only takes effect while the job is {@code RUNNING}
- * on the writing node, checked in the same statement. A write that finds the job released throws a
- * {@link JobLockLostException}. A running step is also locked by its node ({@code locked_by}), so
- * only the node that started an attempt of a step can complete or fail it.
+ * <p>Every write is fenced by the job's lock ({@link JobLock}): it only takes effect while the job
+ * is {@code RUNNING} with the lock token of the writing attempt's claim, checked in the same
+ * statement. A write that finds the job released (or claimed again since) throws a {@link
+ * JobLockLostException}. A running step is also locked by its node ({@code locked_by}), so only the
+ * node that started an attempt of a step can complete or fail it.
  */
 public final class StepStore {
 
@@ -28,13 +29,14 @@ public final class StepStore {
     this.history = Objects.requireNonNull(history, "history");
   }
 
-  // The fence of every step write: the job is running on the writing node (job id, node id). The
+  // The fence of every step write: the job is running with the writing attempt's lock token (job
+  // id, token). The
   // share lock makes a concurrent release (an update of the job row) wait for the write's
   // transaction, so the check stays true until the write is committed.
   private static final String JOB_LOCKED =
       """
             exists (select 1 from bikesched_jobs
-                     where id = ? and locked_by = ? and state = 'RUNNING' for share)""";
+                     where id = ? and lock_token = ? and state = 'RUNNING' for share)""";
 
   private static final String FIND_STEP_SQL =
       """
@@ -156,22 +158,29 @@ public final class StepStore {
    * earlier attempt did not succeed, sets it back to {@code RUNNING} and counts the attempt.
    *
    * @param jobId the job id
-   * @param nodeId the node running the job
+   * @param lock the lock of the job's claim (node and token)
    * @param name the step name
    * @return the attempt number of the step, or empty if the step has already succeeded
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public Optional<Integer> startStep(UUID jobId, UUID nodeId, String name) {
+  public Optional<Integer> startStep(UUID jobId, JobLock lock, String name) {
     return history.change(
         db -> {
           Optional<Integer> attempt =
-              db.one(START_STEP_SQL, row -> row.integer(1), jobId, name, nodeId, jobId, nodeId);
+              db.one(
+                  START_STEP_SQL,
+                  row -> row.integer(1),
+                  jobId,
+                  name,
+                  lock.nodeId(),
+                  jobId,
+                  lock.token());
           if (attempt.isEmpty()) {
-            requireJobLock(db, jobId, nodeId);
+            requireJobLock(db, jobId, lock);
             return attempt;
           }
           String detail = attempt.get() > 1 ? "step attempt " + attempt.get() : null;
-          history.record(db, Change.step(jobId, name, "RUNNING", nodeId, detail));
+          history.record(db, Change.step(jobId, name, "RUNNING", lock.nodeId(), detail));
           return attempt;
         },
         e ->
@@ -183,20 +192,20 @@ public final class StepStore {
    * Marks a running step {@code SUCCEEDED} and stores its result.
    *
    * @param jobId the job id
-   * @param nodeId the node running the job
+   * @param lock the lock of the job's claim (node and token)
    * @param name the step name
    * @param result the result as JSON text, may be {@code null}
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void completeStep(UUID jobId, UUID nodeId, String name, String result) {
-    completeStep(jobId, nodeId, name, result, false);
+  public void completeStep(UUID jobId, JobLock lock, String name, String result) {
+    completeStep(jobId, lock, name, result, false);
   }
 
   /**
    * Marks a running step {@code SUCCEEDED} and stores its result.
    *
    * @param jobId the job id
-   * @param nodeId the node running the job
+   * @param lock the lock of the job's claim (node and token)
    * @param name the step name
    * @param result the result as JSON text, may be {@code null}
    * @param compensable whether the step has a compensation: a cancelled or permanently failed job
@@ -204,15 +213,23 @@ public final class StepStore {
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public void completeStep(
-      UUID jobId, UUID nodeId, String name, String result, boolean compensable) {
+      UUID jobId, JobLock lock, String name, String result, boolean compensable) {
     history.change(
         db -> {
           int updated =
-              db.update(COMPLETE_STEP_SQL, result, compensable, jobId, name, nodeId, jobId, nodeId);
+              db.update(
+                  COMPLETE_STEP_SQL,
+                  result,
+                  compensable,
+                  jobId,
+                  name,
+                  lock.nodeId(),
+                  jobId,
+                  lock.token());
           if (updated > 0) {
-            history.record(db, Change.step(jobId, name, "SUCCEEDED", nodeId, null));
+            history.record(db, Change.step(jobId, name, "SUCCEEDED", lock.nodeId(), null));
           } else {
-            requireJobLock(db, jobId, nodeId);
+            requireJobLock(db, jobId, lock);
           }
           return null;
         },
@@ -227,18 +244,18 @@ public final class StepStore {
    * event to; the event is no longer needed for it (see {@link EventStore#deleteExpiredEvents()}).
    *
    * @param jobId the job id
-   * @param nodeId the node running the job
+   * @param lock the lock of the job's claim (node and token)
    * @param name the step name
    * @param result the result as JSON text, may be {@code null}
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void completeEventStep(UUID jobId, UUID nodeId, String name, String result) {
+  public void completeEventStep(UUID jobId, JobLock lock, String name, String result) {
     history.change(
         db -> {
-          if (db.update(COMPLETE_EVENT_STEP_SQL, result, jobId, name, jobId, nodeId) > 0) {
-            history.record(db, Change.step(jobId, name, "SUCCEEDED", nodeId, null));
+          if (db.update(COMPLETE_EVENT_STEP_SQL, result, jobId, name, jobId, lock.token()) > 0) {
+            history.record(db, Change.step(jobId, name, "SUCCEEDED", lock.nodeId(), null));
           } else {
-            requireJobLock(db, jobId, nodeId);
+            requireJobLock(db, jobId, lock);
           }
           return null;
         },
@@ -252,17 +269,17 @@ public final class StepStore {
    * Marks a succeeded step {@code COMPENSATED} once its compensation ran.
    *
    * @param jobId the job id
-   * @param nodeId the node compensating the job
+   * @param lock the lock of the job's claim (node and token)
    * @param name the step name
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void compensateStep(UUID jobId, UUID nodeId, String name) {
+  public void compensateStep(UUID jobId, JobLock lock, String name) {
     history.change(
         db -> {
-          if (db.update(COMPENSATE_STEP_SQL, jobId, name, jobId, nodeId) > 0) {
-            history.record(db, Change.step(jobId, name, "COMPENSATED", nodeId, null));
+          if (db.update(COMPENSATE_STEP_SQL, jobId, name, jobId, lock.token()) > 0) {
+            history.record(db, Change.step(jobId, name, "COMPENSATED", lock.nodeId(), null));
           } else {
-            requireJobLock(db, jobId, nodeId);
+            requireJobLock(db, jobId, lock);
           }
           return null;
         },
@@ -280,20 +297,22 @@ public final class StepStore {
    * Records that compensating a step failed; it is compensated again in the next attempt.
    *
    * @param jobId the job id
-   * @param nodeId the node compensating the job
+   * @param lock the lock of the job's claim (node and token)
    * @param name the step name
    * @param error description of the failure, stored as the step's {@code last_error}
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void failCompensation(UUID jobId, UUID nodeId, String name, String error) {
+  public void failCompensation(UUID jobId, JobLock lock, String name, String error) {
     history.change(
         db -> {
           String message = ValidationUtil.truncateMessage(error);
-          if (db.update(FAIL_COMPENSATION_SQL, message, jobId, name, jobId, nodeId) > 0) {
+          if (db.update(FAIL_COMPENSATION_SQL, message, jobId, name, jobId, lock.token()) > 0) {
             history.record(
-                db, Change.step(jobId, name, "SUCCEEDED", nodeId, "compensation failed: " + error));
+                db,
+                Change.step(
+                    jobId, name, "SUCCEEDED", lock.nodeId(), "compensation failed: " + error));
           } else {
-            requireJobLock(db, jobId, nodeId);
+            requireJobLock(db, jobId, lock);
           }
           return null;
         },
@@ -311,19 +330,20 @@ public final class StepStore {
    * Marks a running step {@code FAILED}.
    *
    * @param jobId the job id
-   * @param nodeId the node running the job
+   * @param lock the lock of the job's claim (node and token)
    * @param name the step name
    * @param error description of the failure, stored as {@code last_error}
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void failStep(UUID jobId, UUID nodeId, String name, String error) {
+  public void failStep(UUID jobId, JobLock lock, String name, String error) {
     history.change(
         db -> {
           String message = ValidationUtil.truncateMessage(error);
-          if (db.update(FAIL_STEP_SQL, message, jobId, name, nodeId, jobId, nodeId) > 0) {
-            history.record(db, Change.step(jobId, name, "FAILED", nodeId, error));
+          if (db.update(FAIL_STEP_SQL, message, jobId, name, lock.nodeId(), jobId, lock.token())
+              > 0) {
+            history.record(db, Change.step(jobId, name, "FAILED", lock.nodeId(), error));
           } else {
-            requireJobLock(db, jobId, nodeId);
+            requireJobLock(db, jobId, lock);
           }
           return null;
         },
@@ -343,9 +363,9 @@ public final class StepStore {
    *
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  static void requireJobLock(Sql db, UUID jobId, UUID nodeId) throws SQLException {
-    if (!db.one(IS_JOB_LOCKED_SQL, row -> row.bool(1), jobId, nodeId).orElse(false)) {
-      throw new JobLockLostException(jobId, nodeId);
+  static void requireJobLock(Sql db, UUID jobId, JobLock lock) throws SQLException {
+    if (!db.one(IS_JOB_LOCKED_SQL, row -> row.bool(1), jobId, lock.token()).orElse(false)) {
+      throw new JobLockLostException(jobId, lock.nodeId());
     }
   }
 }

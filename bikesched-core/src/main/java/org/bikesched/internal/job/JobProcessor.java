@@ -45,7 +45,7 @@ public final class JobProcessor {
 
   // Outcomes of processing a job that could not be recorded as such, for the debug log.
   private static final String NOT_RUNNING =
-      "not recorded, the job was no longer running on this node";
+      "not recorded, the job was no longer running in this attempt's claim";
   private static final String NOT_RECORDED = "not recorded, see the warning above";
 
   private final Database database;
@@ -93,9 +93,9 @@ public final class JobProcessor {
   }
 
   /**
-   * Ends an attempt whose job was released while it ran (a step write found it no longer running on
-   * this node, see {@link DefaultJob#isLockLost()}): records nothing, the job belongs to whichever
-   * node claims it next.
+   * Ends an attempt whose job was released while it ran (a step write found it no longer running in
+   * the attempt's claim, see {@link DefaultJob#isLockLost()}): records nothing, the job belongs to
+   * whichever claim comes next.
    */
   private String abandon(DefaultJob job, Exception failure) {
     LOG.warn(
@@ -230,9 +230,10 @@ public final class JobProcessor {
     } else {
       try {
         NewJob next = nextOccurrence(job);
-        var completed = database.jobs().completeJob(job.id(), nodeId, next);
+        var completed = database.jobs().completeJob(job.id(), job.lock(), next);
         if (completed.isEmpty()) {
-          LOG.warn("Job {} was no longer running on this node when completing it", job.id());
+          LOG.warn(
+              "Job {} was no longer running in this attempt's claim when completing it", job.id());
           return NOT_RUNNING;
         }
         return "SUCCEEDED" + nextOccurrenceOutcome(next, completed.get());
@@ -251,13 +252,13 @@ public final class JobProcessor {
               .events()
               .suspendJob(
                   job.id(),
-                  nodeId,
+                  job.lock(),
                   suspension.stepName(),
                   suspension.eventName(),
                   suspension.eventKey());
       if (suspended.isEmpty()) {
         LOG.warn(
-            "Job {} of type {} waits for {} but was no longer running on this node",
+            "Job {} of type {} waits for {} but was no longer running in this attempt's claim",
             job.id(),
             job.type(),
             event);
@@ -285,7 +286,7 @@ public final class JobProcessor {
   private String recordCancellation(DefaultJob job, String message, boolean byHandler) {
     try {
       NewJob next = nextOccurrence(job);
-      var cancelled = database.jobs().cancelJob(job.id(), nodeId, message, byHandler, next);
+      var cancelled = database.jobs().cancelJob(job.id(), job.lock(), message, byHandler, next);
       if (cancelled.isPresent()) {
         boolean compensating = cancelled.get().compensating();
         LOG.info(
@@ -302,7 +303,7 @@ public final class JobProcessor {
             : "CANCELLED" + nextOccurrenceOutcome(next, cancelled.get().nextOccurrenceScheduled());
       } else {
         LOG.warn(
-            "Job {} of type {} was cancelled but no longer running on this node",
+            "Job {} of type {} was cancelled but no longer running in this attempt's claim",
             job.id(),
             job.type());
         return NOT_RUNNING;
@@ -399,9 +400,11 @@ public final class JobProcessor {
   private String recordCompensated(DefaultJob job, int compensated) {
     try {
       NewJob next = nextOccurrence(job);
-      var ended = database.jobs().completeCompensation(job.id(), nodeId, next);
+      var ended = database.jobs().completeCompensation(job.id(), job.lock(), next);
       if (ended.isEmpty()) {
-        LOG.warn("Job {} was no longer compensating on this node when completing it", job.id());
+        LOG.warn(
+            "Job {} was no longer compensating in this attempt's claim when completing it",
+            job.id());
         return NOT_RUNNING;
       }
       LOG.info(
@@ -428,11 +431,11 @@ public final class JobProcessor {
     Duration retryAfter = backoffDelay(job, job.compensationAttempts());
     try {
       NewJob next = nextOccurrence(job);
-      var failed = database.jobs().failCompensation(job.id(), nodeId, error, retryAfter, next);
+      var failed = database.jobs().failCompensation(job.id(), job.lock(), error, retryAfter, next);
       if (failed.isEmpty()) {
         LOG.warn(
-            "Compensating job {} of type {} failed and it was no longer compensating on this node:"
-                + " {}",
+            "Compensating job {} of type {} failed and it was no longer compensating in this"
+                + " attempt's claim: {}",
             job.id(),
             job.type(),
             error,
@@ -548,10 +551,11 @@ public final class JobProcessor {
     }
     try {
       NewJob next = nextOccurrence(job);
-      var failed = database.jobs().failJob(job.id(), nodeId, error, maxAttempts, retryAfter, next);
+      var failed =
+          database.jobs().failJob(job.id(), job.lock(), error, maxAttempts, retryAfter, next);
       if (failed.isEmpty()) {
         LOG.warn(
-            "Job {} of type {} failed and was no longer running on this node: {}",
+            "Job {} of type {} failed and was no longer running in this attempt's claim: {}",
             job.id(),
             job.type(),
             error,

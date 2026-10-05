@@ -61,12 +61,40 @@ abstract class AbstractStoreTest {
 
   static void insertRunningJobs(UUID node, int count) throws SQLException {
     execute(
-        "insert into bikesched_jobs (id, job_type, state, locked_by, locked_at) select gen_random_uuid(), "
-            + "'test', 'RUNNING', '"
+        "insert into bikesched_jobs (id, job_type, state, locked_by, lock_token, locked_at) select"
+            + " gen_random_uuid(), 'test', 'RUNNING', '"
             + node
-            + "', now() from generate_series(1, "
+            + "', gen_random_uuid(), now() from generate_series(1, "
             + count
             + ")");
+  }
+
+  /**
+   * The lock of the job's current claim, as the claiming node holds it.
+   *
+   * @throws IllegalStateException if the job is not running
+   */
+  static JobLock lock(UUID jobId) {
+    try (var connection = dataSource.getConnection();
+        var select =
+            connection.prepareStatement(
+                "select locked_by, lock_token from bikesched_jobs"
+                    + " where id = ? and state = 'RUNNING'")) {
+      select.setObject(1, jobId);
+      try (var rs = select.executeQuery()) {
+        if (!rs.next()) {
+          throw new IllegalStateException("job " + jobId + " is not running");
+        }
+        return new JobLock(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class));
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  /** A lock of the node that does not match any claim, e.g. of a claim that was released. */
+  static JobLock staleLock(UUID nodeId) {
+    return new JobLock(nodeId, UUID.randomUUID());
   }
 
   static UUID registerNode(String name) {

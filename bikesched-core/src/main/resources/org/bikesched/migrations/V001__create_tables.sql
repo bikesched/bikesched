@@ -46,6 +46,7 @@ create table bikesched_jobs (
     cancel_requested_at   timestamptz,          -- Bikesched.cancel(jobId): cancelled on its next claim
     cancel_message        text,
     locked_by    uuid        references bikesched_nodes (id),
+    lock_token   uuid,                          -- new for every claim: fences the claim's writes
     locked_at    timestamptz,
     last_error   text,
     created_at   timestamptz not null default now(),
@@ -63,7 +64,8 @@ create table bikesched_jobs (
     constraint bikesched_jobs_timeout_check
         check (timeout_millis > 0),
     constraint bikesched_jobs_lock_check
-        check ((state = 'RUNNING') = (locked_by is not null)),
+        check ((state = 'RUNNING') = (locked_by is not null)
+               and (locked_by is null) = (lock_token is null)),
     constraint bikesched_jobs_job_type_check
         check (char_length(job_type) between 1 and 200),
     constraint bikesched_jobs_recurrence_check
@@ -96,8 +98,9 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 -- Cancelling a job marks its unfinished steps (WAITING, RECEIVED, or RUNNING after a crash)
 -- CANCELLED.
 -- A RUNNING step is locked by the node running it (locked_by). Every step write also requires the
--- job to be RUNNING on that node, so a node whose job was released (e.g. after missed heartbeats)
--- can no longer change its steps.
+-- job to be RUNNING with the lock_token of the attempt making the write, so an attempt whose job
+-- was released (e.g. after missed heartbeats) can no longer change its steps, even if the same
+-- node has claimed the job again since.
 create table bikesched_steps (
     job_id      uuid        not null references bikesched_jobs (id) on delete cascade,
     name        text        not null,

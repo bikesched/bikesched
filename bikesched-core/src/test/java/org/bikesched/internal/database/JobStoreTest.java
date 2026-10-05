@@ -76,10 +76,10 @@ class JobStoreTest extends AbstractStoreTest {
     insertJobs(12, 0, "now() - interval '1 minute'");
     insertJobs(1, 0, "now() + interval '1 hour'"); // not due yet
     execute(
-        "insert into bikesched_jobs (id, job_type, state, locked_by) values "
+        "insert into bikesched_jobs (id, job_type, state, locked_by, lock_token) values "
             + "(gen_random_uuid(), 'test', 'RUNNING', '"
             + node
-            + "')"); // already running
+            + "', gen_random_uuid())"); // already running
 
     List<JobStore.ClaimedJob> first = database.jobs().claimJobs(node, 10);
     List<JobStore.ClaimedJob> second = database.jobs().claimJobs(node, 10);
@@ -119,9 +119,9 @@ class JobStoreTest extends AbstractStoreTest {
     insertJobs(1, 0, "now()");
     JobStore.ClaimedJob job = database.jobs().claimJobs(node, 10).getFirst();
 
-    assertThat(database.jobs().completeJob(job.id(), otherNode)).isFalse();
-    assertThat(database.jobs().completeJob(job.id(), node)).isTrue();
-    assertThat(database.jobs().completeJob(job.id(), node)).isFalse();
+    assertThat(database.jobs().completeJob(job.id(), staleLock(otherNode))).isFalse();
+    assertThat(database.jobs().completeJob(job.id(), job.lock())).isTrue();
+    assertThat(database.jobs().completeJob(job.id(), job.lock())).isFalse();
     assertThat(count("state = 'SUCCEEDED' and locked_by is null and finished_at is not null"))
         .isEqualTo(1);
   }
@@ -133,10 +133,11 @@ class JobStoreTest extends AbstractStoreTest {
     insertJobs(2, 0, "now()");
     List<JobStore.ClaimedJob> jobs = database.jobs().claimJobs(node, 10);
 
-    assertThat(database.jobs().cancelJob(jobs.get(0).id(), otherNode, "nope")).isFalse();
-    assertThat(database.jobs().cancelJob(jobs.get(0).id(), node, "no longer needed")).isTrue();
-    assertThat(database.jobs().cancelJob(jobs.get(0).id(), node, "again")).isFalse();
-    assertThat(database.jobs().cancelJob(jobs.get(1).id(), node, null)).isTrue();
+    assertThat(database.jobs().cancelJob(jobs.get(0).id(), staleLock(otherNode), "nope")).isFalse();
+    assertThat(database.jobs().cancelJob(jobs.get(0).id(), jobs.get(0).lock(), "no longer needed"))
+        .isTrue();
+    assertThat(database.jobs().cancelJob(jobs.get(0).id(), jobs.get(0).lock(), "again")).isFalse();
+    assertThat(database.jobs().cancelJob(jobs.get(1).id(), lock(jobs.get(1).id()), null)).isTrue();
 
     assertThat(
             count(
@@ -155,7 +156,7 @@ class JobStoreTest extends AbstractStoreTest {
     var retried =
         database
             .jobs()
-            .failJob(jobs.get(0).id(), node, "busy", 5, Duration.ofMinutes(10))
+            .failJob(jobs.get(0).id(), lock(jobs.get(0).id()), "busy", 5, Duration.ofMinutes(10))
             .orElseThrow();
     assertThat(retried.state()).isEqualTo("SCHEDULED");
     assertThat(retried.maxAttempts()).isEqualTo(5);
@@ -172,7 +173,7 @@ class JobStoreTest extends AbstractStoreTest {
     var failed =
         database
             .jobs()
-            .failJob(jobs.get(1).id(), node, "give up", 1, Duration.ofMinutes(10))
+            .failJob(jobs.get(1).id(), lock(jobs.get(1).id()), "give up", 1, Duration.ofMinutes(10))
             .orElseThrow();
     assertThat(failed.state()).as("no attempts left: retryAfter is ignored").isEqualTo("FAILED");
     assertThat(
@@ -193,21 +194,21 @@ class JobStoreTest extends AbstractStoreTest {
     assertThat(
             database
                 .jobs()
-                .failJob(first.id(), otherNode, "boom", null, null)
+                .failJob(first.id(), staleLock(otherNode), "boom", null, null)
                 .map(JobStore.FailedJob::state))
         .as("not claimed by that node")
         .isEmpty();
     assertThat(
             database
                 .jobs()
-                .failJob(first.id(), node, "boom 1", null, null)
+                .failJob(first.id(), lock(first.id()), "boom 1", null, null)
                 .map(JobStore.FailedJob::state))
         .contains("SCHEDULED");
     database.jobs().claimJobs(node, 10);
     assertThat(
             database
                 .jobs()
-                .failJob(first.id(), node, "boom 2", null, null)
+                .failJob(first.id(), lock(first.id()), "boom 2", null, null)
                 .map(JobStore.FailedJob::state))
         .contains("SCHEDULED");
     JobStore.ClaimedJob third = database.jobs().claimJobs(node, 10).getFirst();
@@ -215,7 +216,7 @@ class JobStoreTest extends AbstractStoreTest {
     assertThat(
             database
                 .jobs()
-                .failJob(first.id(), node, "boom 3", null, null)
+                .failJob(first.id(), lock(first.id()), "boom 3", null, null)
                 .map(JobStore.FailedJob::state))
         .contains("FAILED");
 

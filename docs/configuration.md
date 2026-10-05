@@ -32,9 +32,11 @@ remove the node after another 30 seconds. The heartbeat itself only updates the 
 clean-ups run on their own thread and intervals, so they never delay it.
 
 A node whose heartbeat was missed (e.g. after a long GC pause or a network partition) may still be
-running jobs that other nodes have released meanwhile. Its step writes are fenced: each one only
-takes effect while the job is still `RUNNING` on that node, and a running step is locked by its node
-(`bikesched_steps.locked_by`). The first step, event wait or compensation the stale attempt reaches
+running jobs that other nodes have released meanwhile. Its writes are fenced: every claim of a job
+gets a new lock token (`bikesched_jobs.lock_token`), and each step write, event wait or state change
+of an attempt only takes effect while the job is still `RUNNING` with that attempt's token. This
+also holds if the same node has claimed the job again since; a running step is additionally locked
+by its node (`bikesched_steps.locked_by`). The first step, event wait or compensation the stale attempt reaches
 fails, and the node abandons the attempt without recording an outcome, logging a warning; this
 holds even if the handler catches the exception. Work done outside steps is not covered.
 
