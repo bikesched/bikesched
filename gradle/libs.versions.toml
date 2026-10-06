@@ -24,6 +24,10 @@ nanojson = "1.10"
 hikaricp = "7.1.0"
 awaitility = "4.3.0"
 micrometer = "1.17.1"
+# Spring Framework version managed by the Spring Boot version above; keep in sync when bumping it
+# (only needed for the optional spring-tx dependency).
+spring-framework = "7.0.9"
+spring-boot = "4.1.1"
 archunit = "1.5.1"
 
 # bikesched-jackson (jackson-module-kotlin: bikesched-kotlin tests only)
@@ -46,6 +50,11 @@ nanojson = { module = "com.grack:nanojson", version.ref = "nanojson" }
 hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
 micrometer-core = { module = "io.micrometer:micrometer-core", version.ref = "micrometer" }
+spring-boot-autoconfigure = { module = "org.springframework.boot:spring-boot-autoconfigure", version.ref = "spring-boot" }
+spring-tx = { module = "org.springframework:spring-tx", version.ref = "spring-framework" }
+spring-jdbc = { module = "org.springframework:spring-jdbc", version.ref = "spring-framework" }
+spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc", version.ref = "spring-boot" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test", version.ref = "spring-boot" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 
 jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }

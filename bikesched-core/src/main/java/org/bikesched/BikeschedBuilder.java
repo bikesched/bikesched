@@ -25,7 +25,7 @@ public final class BikeschedBuilder {
 
   static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(5);
   static final Duration DEFAULT_NODE_TIMEOUT = Duration.ofSeconds(30);
-  static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(1);
+  static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(5);
   static final Duration DEFAULT_EVENT_RETENTION = Duration.ofDays(7);
   static final Duration DEFAULT_NODE_CLEAN_UP_INTERVAL = Duration.ofSeconds(15);
   static final Duration DEFAULT_EVENT_CLEAN_UP_INTERVAL = Duration.ofHours(1);
@@ -330,23 +330,43 @@ public final class BikeschedBuilder {
     return this;
   }
 
-  /** Heartbeat interval; package-private so tests can speed it up. */
-  BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
+  /**
+   * Interval between the heartbeats this node writes while it polls; must be shorter than {@link
+   * #nodeTimeout(Duration)}. Lower values detect a crashed node sooner at the cost of one write per
+   * interval; defaults to 5 seconds.
+   *
+   * @param heartbeatInterval the interval, positive
+   * @return this builder
+   */
+  public BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
     this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
     return this;
   }
 
   /**
-   * Time without heartbeat after which a node is considered dead; package-private so tests can
-   * speed it up.
+   * Time without heartbeat after which a node is considered dead: its running jobs are released and
+   * its name may be taken over. Must be longer than {@link #heartbeatInterval(Duration)} (tolerate
+   * the interval plus a missed heartbeat, e.g. several intervals for nodes with long GC pauses);
+   * defaults to 30 seconds.
+   *
+   * @param nodeTimeout the timeout, positive and longer than the heartbeat interval
+   * @return this builder
    */
-  BikeschedBuilder nodeTimeout(Duration nodeTimeout) {
+  public BikeschedBuilder nodeTimeout(Duration nodeTimeout) {
     this.nodeTimeout = requirePositive(nodeTimeout, "nodeTimeout");
     return this;
   }
 
-  /** Job poll interval; package-private so tests can speed it up. */
-  BikeschedBuilder pollInterval(Duration pollInterval) {
+  /**
+   * Interval between two polls for due jobs. Together with the job's scheduled time it bounds how
+   * long a freshly scheduled job waits before a node claims it (at most one interval), and it is
+   * the load every node puts on the job table, so it scales with the number of nodes: the default
+   * is 5 seconds.
+   *
+   * @param pollInterval the interval, positive
+   * @return this builder
+   */
+  public BikeschedBuilder pollInterval(Duration pollInterval) {
     this.pollInterval = requirePositive(pollInterval, "pollInterval");
     return this;
   }
@@ -372,6 +392,14 @@ public final class BikeschedBuilder {
   public Bikesched build() {
     if (dataSource == null) {
       throw new IllegalStateException("dataSource is required");
+    }
+    if (nodeTimeout.compareTo(heartbeatInterval) <= 0) {
+      throw new IllegalArgumentException(
+          "nodeTimeout ("
+              + nodeTimeout
+              + ") must be longer than heartbeatInterval ("
+              + heartbeatInterval
+              + "), otherwise a healthy node's jobs are released");
     }
     String name = nodeName != null ? nodeName : localHostName();
     var settings =

@@ -118,6 +118,57 @@ class JobHandlersScanTest {
     public void second() {}
   }
 
+  public interface MailApi {
+    void send(Mail mail);
+  }
+
+  /** Implements an interface, so the class can be proxied with a JDK dynamic proxy. */
+  public static class MailJobsApi implements MailApi {
+    @JobHandler(type = "fallback-type")
+    public void send(Mail mail) {}
+  }
+
+  @Test
+  void scansAClassWithoutBindingIt() {
+    List<AnnotatedJobHandler> handlers = JobHandlers.scan(ValidHandlers.class);
+
+    assertThat(handlers)
+        .extracting(AnnotatedJobHandler::type)
+        .containsExactly("job", "job-and-payload", "none", "payload", "payload-and-job");
+    assertThat(handlers).allMatch(handler -> !handler.isBound());
+    assertThat(handlers)
+        .allMatch(handler -> handler.method().getDeclaringClass() == ValidHandlers.class);
+  }
+
+  @Test
+  void aJdkProxyHidesItsTargetClassesAnnotations() {
+    MailApi proxy =
+        (MailApi)
+            java.lang.reflect.Proxy.newProxyInstance(
+                MailApi.class.getClassLoader(), new Class<?>[] {MailApi.class}, (_, _, _) -> null);
+
+    assertThat(JobHandlers.scan(proxy.getClass())).as("the proxy class").isEmpty();
+    assertThat(JobHandlers.scan(MailJobsApi.class))
+        .extracting(AnnotatedJobHandler::type)
+        .containsExactly("fallback-type");
+    assertThat(JobHandlers.hasAnnotatedMethods(MailJobsApi.class)).isTrue();
+    assertThat(JobHandlers.hasAnnotatedMethods(MailApi.class)).isFalse();
+  }
+
+  public static class MailJobsSub extends MailJobsApi {}
+
+  @Test
+  void bindingReturnsABoundCopyAndFindsTheMethodOnTheTargetClass() {
+    AnnotatedJobHandler unbound = JobHandlers.scan(MailJobsApi.class).getFirst();
+
+    AnnotatedJobHandler bound = unbound.bindTo(new MailJobsSub());
+
+    assertThat(unbound.isBound()).as("the scanned handler is unchanged").isFalse();
+    assertThat(bound.isBound()).isTrue();
+    assertThat(bound.type()).isEqualTo(unbound.type());
+    assertThat(bound.method()).isEqualTo(unbound.method());
+  }
+
   @Test
   void rejectsInvalidMethods() {
     assertInvalid(new ThreeParameters(), "has more than two parameters");

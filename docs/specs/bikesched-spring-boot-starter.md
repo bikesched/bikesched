@@ -503,11 +503,13 @@ Without a `MeterRegistry` (no `micrometer-core`, or metrics not registered) noth
       : bikesched.newJob(type);
   ```
 
-  Design decision for v1: provide this as an explicit helper
-  (`BikeschedTransactions.schedule(bikesched, dataSource, type)`) rather than rewriting every
-  builder call; an AOP/`@Transactional`-intercepting variant is explicitly out of scope. The helper
-  is documented with its caveat: `DataSourceUtils.getConnection` must be released by the surrounding
-  transaction, and the insert is rolled back with it.
+  Design decision for v1: provide this as a small utility,
+  `BikeschedTransactions.transactionalConnection(dataSource)`, which returns the caller's
+  transaction-bound connection (or {@code null} without one) rather than wrapping the builder — the
+  caller passes that connection to `connection(Connection)` itself. An AOP/`@Transactional`-intercepting
+  variant is explicitly out of scope. The utility is documented with its caveat:
+  `DataSourceUtils.getConnection` must be released by the surrounding transaction, and the insert is
+  rolled back with it.
 
 ## 9. Diagnostics
 

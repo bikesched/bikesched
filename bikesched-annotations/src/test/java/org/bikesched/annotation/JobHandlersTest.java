@@ -93,6 +93,81 @@ class JobHandlersTest {
             "send-mail a@x attempt 1", "log-mail b@x", "ping", "flaky attempt 2");
   }
 
+  public interface MailApi {
+    void send(Mail mail);
+  }
+
+  /** Implements an interface, so the bean can be proxied with a JDK dynamic proxy. */
+  public static class ProxiedMailJobs implements MailApi {
+    final List<String> calls = new CopyOnWriteArrayList<>();
+
+    @JobHandler(type = "proxied-mail")
+    public void send(Mail mail) {
+      calls.add("send " + mail.to());
+    }
+  }
+
+  @Test
+  void aProxiedBeansHandlerIsInvokedThroughTheProxy() {
+    var jobs = new ProxiedMailJobs();
+    var throughProxy = new CopyOnWriteArrayList<String>();
+    MailApi proxy =
+        (MailApi)
+            java.lang.reflect.Proxy.newProxyInstance(
+                MailApi.class.getClassLoader(),
+                new Class<?>[] {MailApi.class},
+                (instance, method, args) -> {
+                  throughProxy.add(method.getName());
+                  return method.invoke(jobs, args);
+                });
+    try (Bikesched bikesched = node()) {
+      assertThat(JobHandlers.register(bikesched, proxy, ProxiedMailJobs.class))
+          .extracting(AnnotatedJobHandler::type)
+          .containsExactly("proxied-mail");
+
+      UUID jobId =
+          bikesched
+              .newJob(JobType.of("proxied-mail", Mail.class))
+              .payload(new Mail("c@x"))
+              .schedule();
+      await()
+          .atMost(Duration.ofSeconds(15))
+          .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState.SUCCEEDED::equals);
+    }
+    assertThat(throughProxy).as("the proxy, not the target, was called").containsExactly("send");
+    assertThat(jobs.calls).containsExactly("send c@x");
+  }
+
+  @Test
+  void anUnboundHandlerCannotBeRegistered() {
+    AnnotatedJobHandler unbound = JobHandlers.scan(MailJobs.class).getFirst();
+    try (Bikesched bikesched = node()) {
+      assertThatThrownBy(() -> unbound.registerOn(bikesched))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("is not bound to a target");
+    }
+  }
+
+  @Test
+  void aDuplicateRegistrationNamesTheSource() {
+    try (Bikesched bikesched = node()) {
+      JobHandlers.scan(MailJobs.class)
+          .forEach(
+              handler -> handler.bindTo(new MailJobs()).registerOn(bikesched, "bean mailJobs"));
+      assertThatThrownBy(
+              () ->
+                  JobHandlers.scan(MailJobs.class)
+                      .forEach(
+                          handler ->
+                              handler
+                                  .bindTo(new MailJobs())
+                                  .registerOn(bikesched, "bean otherMailJobs")))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("already registered")
+          .hasMessageContaining("(declared by bean otherMailJobs)");
+    }
+  }
+
   @Test
   void payloadTypeIsCheckedLikeForTypedHandlers() {
     try (Bikesched bikesched = node()) {
@@ -111,6 +186,7 @@ class JobHandlersTest {
     return Bikesched.builder()
         .dataSource(DATA_SOURCE)
         .nodeName("annotations-" + UUID.randomUUID())
+        .pollInterval(Duration.ofMillis(50))
         .jsonMapper(new JacksonJsonMapper())
         .build();
   }

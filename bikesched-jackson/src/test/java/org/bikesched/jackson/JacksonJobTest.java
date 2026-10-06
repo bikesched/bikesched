@@ -50,6 +50,7 @@ class JacksonJobTest {
         Bikesched.builder()
             .dataSource(DATA_SOURCE)
             .nodeName("jackson-" + UUID.randomUUID())
+            .pollInterval(Duration.ofMillis(50))
             .jsonMapper(new JacksonJsonMapper())
             .build()) {
       bikesched.registerJobHandler(

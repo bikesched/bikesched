@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
@@ -32,6 +33,7 @@ class OutcomeRecordingRetryTest extends AbstractBikeschedTest {
             Bikesched.builder()
                 .dataSource(failures)
                 .nodeName("node-record-retry-" + UUID.randomUUID())
+                .pollInterval(Duration.ofMillis(50))
                 .build()) {
       failures.failNextJobThreadConnections(1);
       UUID jobId =
@@ -56,6 +58,7 @@ class OutcomeRecordingRetryTest extends AbstractBikeschedTest {
             Bikesched.builder()
                 .dataSource(failures)
                 .nodeName("node-record-give-up-" + UUID.randomUUID())
+                .pollInterval(Duration.ofMillis(50))
                 .build()) {
       failures.failNextJobThreadConnections(3);
       UUID jobId =

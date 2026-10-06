@@ -304,6 +304,17 @@ public interface Bikesched extends AutoCloseable {
   Node startPolling();
 
   /**
+   * Migrates the schema — creating the tables if they are missing and upgrading them if they are
+   * out of date — without registering a node, sending heartbeats or polling for jobs; only needed
+   * explicitly to fail fast at startup, since the first database access migrates anyway.
+   *
+   * @throws IllegalStateException if this instance is closed
+   * @throws BikeschedException if the migration fails, e.g. because the database is not available
+   *     or its schema is newer than this library
+   */
+  void migrate();
+
+  /**
    * Returns this instance's node; it has an id only once polling was started.
    *
    * @return the node

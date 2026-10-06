@@ -36,6 +36,7 @@ class MicrometerNodeTest {
         Bikesched.builder()
             .dataSource(DATA_SOURCE)
             .nodeName("micrometer-" + UUID.randomUUID())
+            .pollInterval(Duration.ofMillis(50))
             .jobListener(new MicrometerJobListener(registry))
             .build()) {
       bikesched.registerJobHandler(type, _ -> {});

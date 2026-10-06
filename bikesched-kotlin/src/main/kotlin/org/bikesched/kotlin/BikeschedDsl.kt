@@ -50,6 +50,25 @@ public class BikeschedSpec internal constructor() {
   public var autoStartPolling: Boolean? = null
 
   /**
+   * Interval between two polls for due jobs (see `BikeschedBuilder.pollInterval`); defaults to 5
+   * seconds.
+   */
+  public var pollInterval: Duration? = null
+
+  /**
+   * Interval between the heartbeats this node writes while it polls (see
+   * `BikeschedBuilder.heartbeatInterval`); defaults to 5 seconds.
+   */
+  public var heartbeatInterval: Duration? = null
+
+  /**
+   * Time without heartbeat after which a node is considered dead (see
+   * `BikeschedBuilder.nodeTimeout`); defaults to 30 seconds, must be longer than
+   * [heartbeatInterval].
+   */
+  public var nodeTimeout: Duration? = null
+
+  /**
    * Maps payloads and step results to and from JSON; without one, only strings that already contain
    * JSON are accepted. See `bikesched-jackson` for Jackson.
    */
@@ -121,6 +140,9 @@ public class BikeschedSpec internal constructor() {
     nodeName?.let(builder::nodeName)
     maxConcurrentJobs?.let(builder::maxConcurrentJobs)
     autoStartPolling?.let(builder::autoStartPolling)
+    pollInterval?.let { builder.pollInterval(it.toJavaDuration()) }
+    heartbeatInterval?.let { builder.heartbeatInterval(it.toJavaDuration()) }
+    nodeTimeout?.let { builder.nodeTimeout(it.toJavaDuration()) }
     jsonMapper?.let(builder::jsonMapper)
     defaultJobTimeout?.let { builder.defaultJobTimeout(it.toJavaDuration()) }
     defaultEventTimeout?.let { builder.defaultEventTimeout(it.toJavaDuration()) }

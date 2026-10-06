@@ -49,6 +49,7 @@ class EventExampleTest {
     return Bikesched.builder()
         .dataSource(DATA_SOURCE)
         .nodeName("event-" + UUID.randomUUID())
+        .pollInterval(Duration.ofMillis(50))
         .jsonMapper(new JacksonJsonMapper())
         .build();
   }

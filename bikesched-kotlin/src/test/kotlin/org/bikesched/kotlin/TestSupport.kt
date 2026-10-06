@@ -4,6 +4,7 @@ package org.bikesched.kotlin
 import java.time.Duration
 import java.util.UUID
 import javax.sql.DataSource
+import kotlin.time.Duration.Companion.milliseconds
 import org.awaitility.Awaitility
 import org.bikesched.Bikesched
 import org.bikesched.jackson.JacksonJsonMapper
@@ -42,6 +43,7 @@ val kotlinJsonMapper: JacksonJsonMapper =
 fun testNode(name: String): Bikesched = bikesched {
   dataSource = TestDatabase.dataSource
   nodeName = "$name-${UUID.randomUUID()}"
+  pollInterval = 50.milliseconds
   jsonMapper = kotlinJsonMapper
 }
 

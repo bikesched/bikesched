@@ -39,6 +39,7 @@ class CinemaTest {
         Bikesched.builder()
             .dataSource(DATA_SOURCE)
             .nodeName("cinema-" + UUID.randomUUID())
+            .pollInterval(Duration.ofMillis(50))
             .jsonMapper(new JacksonJsonMapper())
             .build()) {
       bikesched.registerJobHandler(

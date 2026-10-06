@@ -1,0 +1,5 @@
+# Failure analyzers for the messages a misconfigured bikesched node would otherwise print as
+# stack traces.
+org.springframework.boot.diagnostics.FailureAnalyzer=\
+org.bikesched.spring.DataSourceSelectionFailureAnalyzer,\
+org.bikesched.spring.HandlerRegistrationFailureAnalyzer

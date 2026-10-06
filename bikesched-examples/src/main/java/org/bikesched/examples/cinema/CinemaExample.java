@@ -8,8 +8,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.examples.util.DatabaseUtil;
-import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
 
 /**
@@ -27,12 +26,7 @@ public final class CinemaExample {
   private CinemaExample() {}
 
   static void main() {
-    try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(DatabaseUtil.composeDatabase())
-            .nodeName("cinema-example")
-            .jsonMapper(new JacksonJsonMapper())
-            .build()) {
+    try (Bikesched bikesched = BikeschedUtil.bikesched("cinema-example")) {
 
       // The handler carries its job type: no separate type argument.
       bikesched.registerJobHandler(new TicketOrderHandler());

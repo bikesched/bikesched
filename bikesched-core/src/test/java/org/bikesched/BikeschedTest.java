@@ -40,6 +40,74 @@ class BikeschedTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void nodeTimeoutMustBeLongerThanTheHeartbeatInterval() {
+    assertThatThrownBy(
+            () ->
+                Bikesched.builder()
+                    .dataSource(dataSource)
+                    .heartbeatInterval(Duration.ofSeconds(5))
+                    .nodeTimeout(Duration.ofSeconds(5))
+                    .build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(
+            "nodeTimeout (PT5S) must be longer than heartbeatInterval (PT5S), otherwise a healthy"
+                + " node's jobs are released");
+  }
+
+  @Test
+  void pollHeartbeatAndNodeTimeoutAreConfigurable() throws Exception {
+    try (Bikesched bikesched =
+        Bikesched.builder()
+            .dataSource(dataSource)
+            .nodeName("node-timings-" + UUID.randomUUID())
+            .pollInterval(Duration.ofMillis(50))
+            .heartbeatInterval(Duration.ofMillis(100))
+            .nodeTimeout(Duration.ofSeconds(5))
+            .build()) {
+      String type = "timings-" + UUID.randomUUID();
+      bikesched.registerJobHandler(type, _ -> {});
+      UUID jobId = bikesched.newJob(type).schedule();
+      awaitState(jobId, "SUCCEEDED");
+      assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo(bikesched.node().name());
+    }
+  }
+
+  @Test
+  void migrateCreatesTheSchemaWithoutPollingOrRegisteringANode() throws Exception {
+    String nodeName = "node-migrate-" + UUID.randomUUID();
+    try (Bikesched bikesched =
+        Bikesched.builder()
+            .dataSource(dataSource)
+            .nodeName(nodeName)
+            .autoStartPolling(false)
+            .build()) {
+      assertThat(bikesched.node().isPolling()).isFalse();
+
+      bikesched.migrate();
+
+      assertThat(bikesched.findJob(UUID.randomUUID())).isEmpty();
+      assertThat(countRows("bikesched_nodes", "name = '" + nodeName + "'"))
+          .as("not registered")
+          .isZero();
+      assertThat(bikesched.node().isPolling()).isFalse();
+    }
+  }
+
+  @Test
+  void migrateFailsOnceClosed() {
+    Bikesched bikesched =
+        Bikesched.builder()
+            .dataSource(dataSource)
+            .nodeName("node-migrate-closed-" + UUID.randomUUID())
+            .autoStartPolling(false)
+            .build();
+    bikesched.close();
+    assertThatThrownBy(bikesched::migrate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("is closed");
+  }
+
+  @Test
   void nodeNameMustNotBeBlank() {
     assertThatThrownBy(() -> Bikesched.builder().nodeName(" "))
         .isInstanceOf(IllegalArgumentException.class);

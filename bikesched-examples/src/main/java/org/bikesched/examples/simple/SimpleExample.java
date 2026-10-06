@@ -6,8 +6,7 @@ import static org.awaitility.Awaitility.await;
 import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.examples.util.DatabaseUtil;
-import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
 
@@ -41,11 +40,7 @@ public final class SimpleExample {
   }
 
   static void main() {
-    try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(DatabaseUtil.composeDatabase())
-            .jsonMapper(new JacksonJsonMapper())
-            .build()) {
+    try (Bikesched bikesched = BikeschedUtil.bikesched("simple-example")) {
 
       // Schedule a job.
       UUID jobId = new SimpleExample(bikesched).scheduleJob();

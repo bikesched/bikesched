@@ -9,8 +9,7 @@ import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.annotation.JobHandlers;
 import org.bikesched.examples.annotation.MailJobs.Mail;
-import org.bikesched.examples.util.DatabaseUtil;
-import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
 
@@ -43,11 +42,7 @@ public final class AnnotationExample {
   }
 
   static void main() {
-    try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(DatabaseUtil.composeDatabase())
-            .jsonMapper(new JacksonJsonMapper())
-            .build()) {
+    try (Bikesched bikesched = BikeschedUtil.bikesched("annotation-example")) {
 
       // Schedule the jobs.
       List<UUID> jobIds = new AnnotationExample(bikesched).scheduleJobs();

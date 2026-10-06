@@ -8,8 +8,7 @@ import java.util.List;
 import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.event.EventType;
-import org.bikesched.examples.util.DatabaseUtil;
-import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
 
@@ -86,11 +85,7 @@ public final class EventExample {
   }
 
   static void main() {
-    try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(DatabaseUtil.composeDatabase())
-            .jsonMapper(new JacksonJsonMapper())
-            .build()) {
+    try (Bikesched bikesched = BikeschedUtil.bikesched("event-example")) {
 
       var example = new EventExample(bikesched);
 

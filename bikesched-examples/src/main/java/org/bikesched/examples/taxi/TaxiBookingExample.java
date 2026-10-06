@@ -7,8 +7,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.examples.util.DatabaseUtil;
-import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.examples.util.BikeschedUtil;
 
 /**
  * Books taxi rides end to end against the Postgres from {@code compose.yaml} ({@code docker compose
@@ -39,12 +38,7 @@ public final class TaxiBookingExample {
     var payments = new SimulatedPaymentService();
     var notifications = new SimulatedPushNotifications();
 
-    try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(DatabaseUtil.composeDatabase())
-            .nodeName("taxi-example")
-            .jsonMapper(new JacksonJsonMapper())
-            .build()) {
+    try (Bikesched bikesched = BikeschedUtil.bikesched("taxi-example")) {
 
       TaxiBooking booking =
           TaxiBooking.register(

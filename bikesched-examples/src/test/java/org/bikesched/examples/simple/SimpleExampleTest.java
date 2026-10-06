@@ -23,6 +23,7 @@ class SimpleExampleTest {
         Bikesched.builder()
             .dataSource(DATA_SOURCE)
             .nodeName("simple-" + UUID.randomUUID())
+            .pollInterval(Duration.ofMillis(50))
             .jsonMapper(new JacksonJsonMapper())
             .build()) {
 

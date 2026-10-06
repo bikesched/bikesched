@@ -248,6 +248,11 @@ public final class DefaultBikesched implements Bikesched {
         type.name(), type.payloadType(), database.jsonMapper(), jobScheduler);
   }
 
+  @Override
+  public void migrate() {
+    ensureReady();
+  }
+
   /**
    * Prepares an access to the database: checks that this node is open and migrates the schema on
    * first use.

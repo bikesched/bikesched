@@ -24,6 +24,7 @@ class AnnotationExampleTest {
         Bikesched.builder()
             .dataSource(DATA_SOURCE)
             .nodeName("annotation-" + UUID.randomUUID())
+            .pollInterval(Duration.ofMillis(50))
             .jsonMapper(new JacksonJsonMapper())
             .build()) {
 
