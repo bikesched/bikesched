@@ -131,7 +131,7 @@ public final class DefaultBikesched implements Bikesched {
     var bikesched = new DefaultBikesched(database, settings);
     if (settings.autoStartPolling()) {
       try {
-        bikesched.startPolling();
+        bikesched.start();
       } catch (RuntimeException e) {
         bikesched.close(); // its executors
         throw e;
@@ -139,14 +139,14 @@ public final class DefaultBikesched implements Bikesched {
     } else {
       LOG.info(
           "bikesched node {} created; it registers, sends heartbeats and polls for jobs once"
-              + " startPolling() is called",
+              + " start() is called",
           bikesched.nodeName);
     }
     return bikesched;
   }
 
   @Override
-  public Node startPolling() {
+  public Node start() {
     ensureReady(); // not under the lifecycle lock: close() must not wait for it
     synchronized (lifecycle) {
       node.requireOpen();

@@ -164,16 +164,16 @@ class BikeschedTest extends AbstractBikeschedTest {
           .as("not claimed while polling is off")
           .isEqualTo(1);
 
-      Node node = bikesched.startPolling();
+      Node node = bikesched.start();
 
-      assertThat(bikesched.startPolling()).as("no effect while already polling").isSameAs(node);
+      assertThat(bikesched.start()).as("no effect while already polling").isSameAs(node);
       assertThat(node.isPolling()).isTrue();
       assertThat(ran.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
     }
   }
 
   @Test
-  void startPollingAfterCloseFails() throws Exception {
+  void startAfterCloseFails() throws Exception {
     Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
@@ -183,7 +183,7 @@ class BikeschedTest extends AbstractBikeschedTest {
     bikesched.close();
 
     assertThat(bikesched.node().isPolling()).isFalse();
-    assertThatThrownBy(bikesched::startPolling).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(bikesched::start).isInstanceOf(IllegalStateException.class);
     assertThat(bikesched.node().id()).as("never registered").isEmpty();
   }
 

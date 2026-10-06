@@ -78,7 +78,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
         bikesched.newJob(jobType).schedule();
       }
 
-      bikesched.startPolling();
+      bikesched.start();
 
       await()
           .atMost(Duration.ofMillis(1500))
@@ -118,7 +118,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
       for (int i = 0; i < count; i++) {
         slowJob.schedule();
       }
-      bikesched.startPolling();
+      bikesched.start();
       await()
           .atMost(Duration.ofSeconds(20))
           .untilAsserted(

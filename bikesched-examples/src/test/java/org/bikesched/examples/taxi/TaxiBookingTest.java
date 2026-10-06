@@ -130,7 +130,7 @@ class TaxiBookingTest {
     TaxiBooking booking =
         TaxiBooking.register(
             bikesched, broker, payments, notifications, driverTimeout, Duration.ofMinutes(1));
-    bikesched.startPolling();
+    bikesched.start();
     return booking;
   }
 

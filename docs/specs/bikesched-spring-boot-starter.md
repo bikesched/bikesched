@@ -112,7 +112,7 @@ public class BikeschedAutoConfiguration {
 | `Bikesched` | `@ConditionalOnClass(Bikesched)`, `@ConditionalOnBean(DataSource)`, `@ConditionalOnMissingBean` | built with `autoStartPolling(false)`; Spring detects its `close()` as the destroy method, so it is destroyed before the `DataSource` it depends on |
 | `DataSourceSelector` | — | resolves *which* `DataSource` (§4.1); deliberately not a `DataSource` bean, so it never becomes a candidate for other auto-configurations |
 | `BikeschedProperties` | `@EnableConfigurationProperties` | §7.1 |
-| `BikeschedLifecycle` (`SmartLifecycle`) | `@ConditionalOnBean(Bikesched)` | migrates and starts polling with the application (§6); deliberately *not* conditional on `bikesched.polling.enabled`, so migration runs for scheduling-only instances too |
+| `BikeschedLifecycle` (`SmartLifecycle`) | `@ConditionalOnBean(Bikesched)` | migrates and starts polling with the application (§6); deliberately *not* conditional on `bikesched.auto-start.enabled`, so migration runs for scheduling-only instances too |
 | `JobHandlerBeanPostProcessor` | `static @Bean` (so Spring registers it early enough) | collects candidate beans (§5) |
 | `JobHandlerBeans` (holder) | `static @Bean` of the same configuration, so both the BPP and the `Bikesched` factory see one instance | §5.2 |
 | `JsonMapper` | nested `JacksonConfiguration` (`@ConditionalOnClass(JacksonJsonMapper)`) + `@ConditionalOnMissingBean(JsonMapper)` | from the context's `ObjectMapper` if there is one, else `JacksonJsonMapper`'s own (§7.3) |
@@ -206,10 +206,10 @@ the duplicate-type message), but the starter does not pass it: `JobHandlerBeans`
 ### 5.3 Registration semantics
 
 - **No database access.** `registerJobHandler` only touches the node's in-memory registry
-  (`JobRegistry`), so handlers can be registered before `startPolling()` and while polling is
+  (`JobRegistry`), so handlers can be registered before `start()` and while polling is
   running. This is what makes the holder approach work.
 - **Before polling.** Registration happens in the `bikesched` factory method, i.e. before
-  `SmartLifecycle.start()` calls `startPolling()`. Polling claims only registered job types, so a node
+  `SmartLifecycle.start()` calls `start()`. Polling claims only registered job types, so a node
   never claims work it cannot run.
 - **Duplicates.** Two methods of one class handling the same job type are rejected by `scan`; across
   beans, `registerJobHandler` throws and the starter rethrows with the bean name, so a copy-pasted
@@ -228,8 +228,8 @@ the duplicate-type message), but the starter does not pass it: `JobHandlerBeans`
 ```java
 @Override public void start() {
   if (properties.migrateOnStartupEnabled()) bikesched.migrate();
-  if (!properties.pollingEnabled()) { LOG.info("… not registered, call startPolling() …"); return; }
-  bikesched.startPolling();
+  if (!properties.autoStartEnabled()) { LOG.info("… not registered, call start() …"); return; }
+  bikesched.start();
   running = true;
 }
 @Override public void stop() { jobHandlerBeans.nodeClosed(); running = false; } // close() by the bean's destroy method
@@ -238,11 +238,11 @@ the duplicate-type message), but the starter does not pass it: `JobHandlerBeans`
 - **Build** with `autoStartPolling(false)`: such a node registers itself with no database at all —
   no node row, no heartbeat, no migration — it only schedules. (This changed in core while
   implementing the starter: `build()` with polling disabled used to register the node immediately;
-  now `startPolling()` does the registration.)
+  now `start()` does the registration.)
 - **Start** from `SmartLifecycle.start()` (during `finishRefresh()`, before `ApplicationReadyEvent`),
   after every other lifecycle bean (web server, Flyway/Liquibase on a lifecycle, executors) is up.
-  Polling is skipped when `bikesched.polling.enabled=false`; the application then calls
-  `startPolling()` itself (e.g. from its own `ApplicationRunner` after seeding).
+  Polling is skipped when `bikesched.auto-start.enabled=false`; the application then calls
+  `start()` itself (e.g. from its own `ApplicationRunner` after seeding).
 - **Migration is fail-fast and independent of polling**: `bikesched.migrate()` runs at startup when
   `bikesched.migrate-on-startup=true` (the default) *even when this instance never polls*, so a
   scheduling-only application also learns about a missing table, a `V001` checksum mismatch or an
@@ -250,11 +250,11 @@ the duplicate-type message), but the starter does not pass it: `JobHandlerBeans`
   "keep `true` for both". Deployments that must start before their database is reachable set
   `bikesched.migrate-on-startup=false` and keep the lazy behaviour (migration on first use).
   This is why the lifecycle bean is `@ConditionalOnBean(Bikesched)` only, not
-  `@ConditionalOnProperty(polling.enabled)`.
+  `@ConditionalOnProperty(auto-start.enabled)`.
 - **Stop**: `Bikesched.close()` is called by Spring's destruction phase (destroy-method detection),
   *before* the `DataSource` it depends on; `stop()` only flags the holder so late beans are skipped
   (§5.1). Waiting for running jobs is `close()`'s behaviour, bounded by the job timeouts.
-- **Multiple contexts / refresh**: `startPolling()` is idempotent (returns the node once registered).
+- **Multiple contexts / refresh**: `start()` is idempotent (returns the node once registered).
 - **Several nodes in one JVM**: each context creates its own node; names must differ (§7.1.1), and
   "A live bikesched node named 'x' is already registered" is the intended guard.
 
@@ -276,7 +276,7 @@ maps kebab-case to the components.
 | `bikesched.heartbeat-interval` | `heartbeatInterval(Duration)` | 5 seconds |
 | `bikesched.node-timeout` | `nodeTimeout(Duration)` | 30 seconds |
 | `bikesched.max-concurrent-jobs` | `maxConcurrentJobs(int)` | 10 |
-| `bikesched.polling.enabled` | `autoStartPolling(boolean)` (inverted) | `true` |
+| `bikesched.auto-start.enabled` | `autoStartPolling(boolean)` (inverted) | `true` |
 | `bikesched.default-job-timeout` | `defaultJobTimeout(Duration)` | none |
 | `bikesched.default-event-timeout` | `defaultEventTimeout(Duration)` | none |
 | `bikesched.retry-backoff.fixed` / `.exponential.{initial,max}` | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` |
@@ -400,7 +400,7 @@ happens.
 - One startup log at info from the factory: node name, number of registered `@JobHandler` methods,
   listener count, `JsonMapper` class ("the default JSON mapper (JSON strings only)" without one);
   debug per registered handler (job type, bean, method); `BikeschedLifecycle` logs the migration
-  (debug), the polling start (info, with node id) and the `polling.enabled=false` case (info, what
+  (debug), the polling start (info, with node id) and the `auto-start.enabled=false` case (info, what
   to call to start later); a late bean after `nodeClosed()` is a debug log (§5.1).
 - Errors that fail the context: duplicate job type / invalid `@JobHandler` signature
   (`HandlerRegistrationException`, naming bean and method, §5.3), the `DataSource` selection
@@ -435,7 +435,7 @@ happens.
    core tests; the runner gets the plain test `DataSource` bean, so `spring-boot-starter-jdbc` is
    not needed on the test classpath): no `DataSource` → no `Bikesched` bean; `DataSource` present →
    `Bikesched` bean whose node is registered and polling after refresh;
-   `bikesched.polling.enabled=false` → node `isPolling() == false`; a user-defined `Bikesched` bean
+   `bikesched.auto-start.enabled=false` → node `isPolling() == false`; a user-defined `Bikesched` bean
    wins; a `BikeschedCustomizer` is applied; `bikesched.*` properties bind (relaxed names,
    `Duration` suffixes, nested `retry-backoff`, `poll-interval`); a `retry-backoff` setting both
    `fixed` and `exponential` fails; several `DataSource` candidates without the property → the
@@ -451,7 +451,7 @@ happens.
    the bean; invalid signature → naming the method; a `@Lazy` bean created after startup registers
    and its job runs.
 3. **Lifecycle** — `LifecycleTest`: context close → the node's `bikesched_nodes` row is gone
-   (destroyed before the `DataSource`); `polling.enabled=false` → the schema *is* migrated but no
+   (destroyed before the `DataSource`); `auto-start.enabled=false` → the schema *is* migrated but no
    node row is registered (§6's fail-fast-without-polling); `migrate-on-startup=false` against a
    fresh database → no tables at startup, the first scheduled job migrates lazily.
 4. **Listeners and metrics** — `ListenersAndMetricsTest`: two `JobListener` beans both receive calls;
@@ -476,7 +476,7 @@ happens.
 1. `bikesched-core`: public `pollInterval`, `heartbeatInterval`, `nodeTimeout` builder options;
    `DEFAULT_POLL_INTERVAL` 1s → 5s; `nodeTimeout > heartbeatInterval` validation in `build()`.
 2. `bikesched-core`: `Bikesched.migrate()`, the migration-only entry point for the fail-fast startup
-   (§6); `autoStartPolling(false)` nodes do no database work until `startPolling()` (§6).
+   (§6); `autoStartPolling(false)` nodes do no database work until `start()` (§6).
 3. `bikesched-kotlin`: the three DSL properties for parity.
 4. `bikesched-annotations`: `JobHandlers.scan(Class)`, `hasAnnotatedMethods(Class)`,
    `AnnotatedJobHandler.bindTo(Object)` — proxy-safe scanning and binding (§5.2) — with tests.
@@ -556,8 +556,8 @@ caught publishing/consumption mistakes.
 
 | Question | Decision |
 |---|---|
-| `migrate-on-startup` with `polling.enabled=false` (draft §13.2.1) | fail-fast stays unconditional: migration runs at startup even for scheduling-only instances; `migrate-on-startup=false` opts out (§6) |
-| `autoStartPolling(false)` semantics | the node registers with no database until `startPolling()` — previously it registered at `build()` (§6) |
+| `migrate-on-startup` with `auto-start.enabled=false` (draft §13.2.1) | fail-fast stays unconditional: migration runs at startup even for scheduling-only instances; `migrate-on-startup=false` opts out (§6) |
+| `autoStartPolling(false)` semantics | the node registers with no database until `start()` — previously it registered at `build()` (§6) |
 | Default node name | `<spring.application.name>-<host name>`, not the application name alone: replicas must not collide (§7.1.1) |
 | Properties representation | one immutable `@ConfigurationProperties` record with boxed fields, `applyTo(builder)` applying only set values; no mutable class, no separate `RetryBackoffProperties` (§7.1) |
 | Bean name in the duplicate message | via the starter's `HandlerRegistrationException`, not a `registerOn(Bikesched, String)` overload in annotations (§5.2) |

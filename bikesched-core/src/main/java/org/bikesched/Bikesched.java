@@ -301,7 +301,7 @@ public interface Bikesched extends AutoCloseable {
    * @throws BikeschedException if the migration fails, e.g. because the database is not available,
    *     or a live node with the same name is registered
    */
-  Node startPolling();
+  Node start();
 
   /**
    * Migrates the schema — creating the tables if they are missing and upgrading them if they are

@@ -232,9 +232,9 @@ class RecurringJobTest extends AbstractBikeschedTest {
               .schedule(Recurrence.every(Duration.ofHours(1)));
       execute("delete from bikesched_jobs where id = '" + occurrence + "'");
 
-      bikesched.startPolling();
+      bikesched.start();
       assertThat(count("job_type = 'recurring-repair' and state = 'SCHEDULED'"))
-          .as("repaired before startPolling() returns")
+          .as("repaired before start() returns")
           .isOne();
 
       // Only once per node lifetime: a later missing occurrence is not recreated.
@@ -330,7 +330,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
               .schedule(flaky, Instant.now().plus(Duration.ofHours(1)));
       execute("delete from bikesched_jobs where id = '" + occurrence + "'");
 
-      bikesched.startPolling();
+      bikesched.start();
       assertThat(count("job_type = 'recurring-retry'")).as("first attempt failed").isZero();
 
       awaitCount("job_type = 'recurring-retry' and state = 'SCHEDULED'", 1);

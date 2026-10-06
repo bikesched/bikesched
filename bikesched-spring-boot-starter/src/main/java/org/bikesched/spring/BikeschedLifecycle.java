@@ -10,7 +10,7 @@ import org.springframework.context.SmartLifecycle;
 /**
  * Starts the node with the application and stops it with the context: {@link #start()} migrates the
  * schema (unless {@code bikesched.migrate-on-startup=false}) and starts polling (unless {@code
- * bikesched.polling.enabled=false}), {@link #stop()} only marks the node as no longer running —
+ * bikesched.auto-start.enabled=false}), {@link #stop()} only marks the node as no longer running —
  * closing it is the {@code Bikesched} bean's destroy method, which makes Spring close the node
  * before the {@code DataSource} it was built from.
  *
@@ -39,15 +39,15 @@ final class BikeschedLifecycle implements SmartLifecycle {
       bikesched.migrate();
       LOG.debug("bikesched migrated and validated the schema of node {}", bikesched.node().name());
     }
-    if (!properties.pollingEnabled()) {
+    if (!properties.autoStartEnabled()) {
       LOG.info(
-          "bikesched polls with no node: bikesched.polling.enabled is false, so node {} is not"
-              + " registered, executes no jobs and sends no heartbeats; call startPolling() to"
+          "bikesched polls with no node: bikesched.auto-start.enabled is false, so node {} is not"
+              + " registered, executes no jobs and sends no heartbeats; call start() to"
               + " start it",
           bikesched.node().name());
       return;
     }
-    Node node = bikesched.startPolling();
+    Node node = bikesched.start();
     running = true;
     LOG.info("bikesched node {} ({}) polls for jobs", node.name(), node.id().orElse(null));
   }

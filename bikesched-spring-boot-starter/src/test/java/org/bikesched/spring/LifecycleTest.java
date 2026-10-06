@@ -48,7 +48,7 @@ class LifecycleTest extends AbstractSpringTest {
     String nodeName = unique("no-poll-node");
     runner()
         .withBean("dataSource", DataSource.class, () -> dataSource())
-        .withPropertyValues("bikesched.node-name=" + nodeName, "bikesched.polling.enabled=false")
+        .withPropertyValues("bikesched.node-name=" + nodeName, "bikesched.auto-start.enabled=false")
         .run(context -> assertThat(context.getBean(Bikesched.class).node().isPolling()).isFalse());
     assertThat(countRows("bikesched_nodes", "name = '" + nodeName + "'"))
         .as("no node was registered")
@@ -64,7 +64,7 @@ class LifecycleTest extends AbstractSpringTest {
         .withPropertyValues(
             "bikesched.node-name=" + unique("lazy-migrate-node"),
             "bikesched.migrate-on-startup=false",
-            "bikesched.polling.enabled=false")
+            "bikesched.auto-start.enabled=false")
         .run(
             context -> {
               assertThat(fresh.tableExists("bikesched_jobs"))

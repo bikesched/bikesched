@@ -24,7 +24,7 @@ import org.bikesched.internal.util.ValidationUtil;
  * @param pollInterval interval between job polls
  * @param maxConcurrentJobs maximum number of jobs executed at the same time on this node
  * @param autoStartPolling whether job polling starts when the node is built; otherwise it starts
- *     with {@link Bikesched#startPolling()}
+ *     with {@link Bikesched#start()}
  * @param defaultJobTimeout maximum duration of a job attempt for jobs without a timeout of their
  *     own; {@code null} for none
  * @param retryBackoff delay of the retry after a failed attempt

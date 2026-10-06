@@ -50,7 +50,7 @@ class NodeTest extends AbstractBikeschedTest {
       assertThat(bikesched.node().isPolling()).isFalse();
       assertThat(countRows("bikesched_nodes", "name = 'node-registers-later'")).isZero();
 
-      Node node = bikesched.startPolling();
+      Node node = bikesched.start();
 
       assertThat(node).isSameAs(bikesched.node());
       assertThat(node.isPolling()).isTrue();
@@ -78,12 +78,12 @@ class NodeTest extends AbstractBikeschedTest {
     assertThat(logs.messages())
         .contains(
             "bikesched node node-never-polled created; it registers, sends heartbeats and polls"
-                + " for jobs once startPolling() is called",
+                + " for jobs once start() is called",
             "bikesched node node-never-polled closed (it never polled, so it was not registered)");
   }
 
   @Test
-  void startPollingFailsIfALiveNodeHasTheName() {
+  void startFailsIfALiveNodeHasTheName() {
     try (Bikesched polling =
             Bikesched.builder().dataSource(dataSource).nodeName("node-taken").build();
         Bikesched idle =
@@ -92,7 +92,7 @@ class NodeTest extends AbstractBikeschedTest {
                 .nodeName("node-taken")
                 .autoStartPolling(false)
                 .build()) {
-      assertThatThrownBy(idle::startPolling)
+      assertThatThrownBy(idle::start)
           .isInstanceOf(BikeschedException.class)
           .hasMessage(
               "A live bikesched node named 'node-taken' is already registered; node names must"

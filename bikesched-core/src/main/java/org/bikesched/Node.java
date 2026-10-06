@@ -22,7 +22,7 @@ public interface Node {
    * Returns the node's id once it polls for jobs. A node restarted under the name of a dead node
    * takes over that node's id.
    *
-   * @return the node id, empty until {@link Bikesched#startPolling()} was called
+   * @return the node id, empty until {@link Bikesched#start()} was called
    */
   Optional<UUID> id();
 

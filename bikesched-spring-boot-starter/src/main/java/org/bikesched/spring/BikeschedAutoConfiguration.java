@@ -168,7 +168,7 @@ public class BikeschedAutoConfiguration {
 
   /**
    * Starts and stops the node with the context. Not conditional on {@code
-   * bikesched.polling.enabled} on purpose: the schema is migrated and validated even when this
+   * bikesched.auto-start.enabled} on purpose: the schema is migrated and validated even when this
    * instance only schedules jobs.
    *
    * @param bikesched the node

@@ -66,7 +66,7 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
         for (int i = 0; i < JOBS; i++) {
           newJob.payload("{\"n\": " + i + "}").schedule();
         }
-        nodes.forEach(Bikesched::startPolling);
+        nodes.forEach(Bikesched::start);
 
         await()
             .atMost(Duration.ofSeconds(30))

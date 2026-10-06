@@ -97,8 +97,8 @@ sends heartbeats and polls. On shutdown, Spring closes the node before destroyin
 it uses: unfinished jobs are released and running handlers awaited (bounded by their timeouts), so
 another node takes over.
 
-- `bikesched.polling.enabled=false` builds a node that schedules only: it registers with no
-  database, executes nothing and sends no heartbeats. Call `startPolling()` yourself later if such
+- `bikesched.auto-start.enabled=false` builds a node that schedules only: it registers with no
+  database, executes nothing and sends no heartbeats. Call `start()` yourself later if such
   an instance should also work.
 - `bikesched.migrate-on-startup=true` (the default) migrates and validates the schema at startup,
   **even when this instance never polls** — a missing table, a checksum mismatch or an unreachable
@@ -121,7 +121,7 @@ keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and f
 | `bikesched.heartbeat-interval` | 5 seconds | |
 | `bikesched.node-timeout` | 30 seconds | must be longer than the heartbeat interval (validated) |
 | `bikesched.max-concurrent-jobs` | 10 | |
-| `bikesched.polling.enabled` | `true` | see Lifecycle |
+| `bikesched.auto-start.enabled` | `true` | see Lifecycle |
 | `bikesched.default-job-timeout` | none | |
 | `bikesched.default-event-timeout` | none | |
 | `bikesched.retry-backoff.fixed` or `bikesched.retry-backoff.exponential.{initial,max}` | none | mutually exclusive; other combinations fail the context |

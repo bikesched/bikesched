@@ -101,9 +101,9 @@ public final class BikeschedBuilder {
   /**
    * Sets whether the node starts polling for jobs as soon as it is built (optional, default {@code
    * true}). With {@code false} jobs can be scheduled and events published, but the node is not
-   * registered, executes no jobs and sends no heartbeats until {@link Bikesched#startPolling()} is
-   * called, e.g. once all job handlers are registered, or never for an instance that only schedules
-   * jobs. Until then its {@link Node#id() id} is empty.
+   * registered, executes no jobs and sends no heartbeats until {@link Bikesched#start()} is called,
+   * e.g. once all job handlers are registered, or never for an instance that only schedules jobs.
+   * Until then its {@link Node#id() id} is empty.
    *
    * <p>With {@code false}, {@link #build()} also does not access the database: the schema is
    * migrated on first use, i.e. when polling starts or a job is scheduled or an event published, so
@@ -380,9 +380,9 @@ public final class BikeschedBuilder {
 
   /**
    * Creates the {@link Bikesched} instance: applies pending schema migrations and, unless disabled
-   * via {@link #autoStartPolling(boolean)}, {@linkplain Bikesched#startPolling() starts polling},
-   * which registers the node and starts its heartbeat. With polling disabled, this method does not
-   * access the database: the migration runs on first use instead.
+   * via {@link #autoStartPolling(boolean)}, {@linkplain Bikesched#start() starts polling}, which
+   * registers the node and starts its heartbeat. With polling disabled, this method does not access
+   * the database: the migration runs on first use instead.
    *
    * @return the new instance
    * @throws IllegalStateException if no data source was set

@@ -20,7 +20,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     exponential:
  *       initial: 5s
  *       max: 10m
- *   polling:
+ *   auto-start:
  *     enabled: false               # e.g. a web instance that only schedules jobs
  * }</pre>
  *
@@ -54,7 +54,7 @@ public record BikeschedProperties(
     String nodeName,
     String dataSource,
     Boolean migrateOnStartup,
-    Polling polling,
+    AutoStart autoStart,
     Metrics metrics,
     Integer maxConcurrentJobs,
     Duration pollInterval,
@@ -74,12 +74,12 @@ public record BikeschedProperties(
     Duration hardTimeoutGrace) {
 
   /**
-   * Whether the node polls for jobs with the application.
+   * Whether the node starts automatically with the application.
    *
    * @param enabled {@code false} to build the node without registering it: it executes no jobs,
-   *     sends no heartbeats and only schedules jobs; call {@code startPolling()} to start it later
+   *     sends no heartbeats and only schedules jobs; call {@code start()} to start it later
    */
-  public record Polling(Boolean enabled) {}
+  public record AutoStart(Boolean enabled) {}
 
   /**
    * Micrometer integration.
@@ -165,9 +165,9 @@ public record BikeschedProperties(
     return migrateOnStartup == null || migrateOnStartup;
   }
 
-  /** Whether the node polls for jobs with the application; defaults to {@code true}. */
-  boolean pollingEnabled() {
-    return polling == null || polling.enabled() == null || polling.enabled();
+  /** Whether the node starts with the application; defaults to {@code true}. */
+  boolean autoStartEnabled() {
+    return autoStart == null || autoStart.enabled() == null || autoStart.enabled();
   }
 
   /** Whether an automatic {@code MicrometerJobListener} is registered; defaults to {@code true}. */

@@ -48,7 +48,8 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
     runner()
         .withBean("dataSource", DataSource.class, () -> dataSource())
         .withPropertyValues(
-            "bikesched.node-name=" + unique("conditions-node"), "bikesched.polling.enabled=false")
+            "bikesched.node-name=" + unique("conditions-node"),
+            "bikesched.auto-start.enabled=false")
         .run(context -> assertThat(context.getBean(Bikesched.class).node().isPolling()).isFalse());
   }
 
@@ -63,7 +64,7 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
             .build()) {
       runner()
           .withBean("dataSource", DataSource.class, () -> dataSource())
-          .withPropertyValues("bikesched.polling.enabled=false")
+          .withPropertyValues("bikesched.auto-start.enabled=false")
           .withBean("bikesched", Bikesched.class, () -> userNode)
           .run(context -> assertThat(context.getBean(Bikesched.class)).isSameAs(userNode));
     }

@@ -29,7 +29,7 @@ class DatabaseUnavailableTest extends AbstractBikeschedTest {
             .nodeName("node-database-down")
             .autoStartPolling(false)
             .build()) {
-      assertThatThrownBy(bikesched::startPolling)
+      assertThatThrownBy(bikesched::start)
           .as("the database is still down")
           .isInstanceOf(BikeschedException.class);
       assertThat(bikesched.node().isPolling()).isFalse();
@@ -39,7 +39,7 @@ class DatabaseUnavailableTest extends AbstractBikeschedTest {
 
       database.available = true;
       bikesched.newJob("database-down").handler(job -> {}).schedule(); // initializes on retry
-      Node node = bikesched.startPolling();
+      Node node = bikesched.start();
 
       assertThat(node.isPolling()).isTrue();
       assertThat(nodeName(node.id().orElseThrow())).isEqualTo("node-database-down");
