@@ -9,6 +9,11 @@
 > [!NOTE]
 > bikesched is at a super early stage (`0.1.0-SNAPSHOT`) and can break at any time: APIs and the
 > database schema may change without notice and without migrations.
+>
+> It is also a first experiment in building a library heavily with AI coding agents; hence the
+> logo, a nod to Simon Willison's
+> [pelican riding a bicycle](https://simonwillison.net/2024/Oct/25/pelicans-on-a-bicycle/) LLM
+> benchmark.
 
 bikesched stores jobs in PostgreSQL and lets every connected application instance (*node*) work on
 them. Nodes claim due jobs with `SELECT … FOR UPDATE SKIP LOCKED`, so many nodes can share one

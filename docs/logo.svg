@@ -7,8 +7,8 @@
 
     <!-- clock wheels -->
     <g fill="none" stroke="#1a1a1a" stroke-width="6">
-      <circle cx="50" cy="150" r="30"/>
-      <circle cx="150" cy="150" r="30"/>
+      <circle cx="50" cy="150" r="30" fill="#fde8ee" fill-opacity="0.3"/>
+      <circle cx="150" cy="150" r="30" fill="#fde8ee" fill-opacity="0.3"/>
       <path d="M50 150l-4.6-10M50 150l14.6-6.5M150 150l-4.6-10M150 150l14.6-6.5" stroke-width="5"/>
     </g>
 
