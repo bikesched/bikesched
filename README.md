@@ -19,15 +19,20 @@ bikesched stores jobs in PostgreSQL and lets every connected application instanc
 them. Nodes claim due jobs with `SELECT … FOR UPDATE SKIP LOCKED`, so many nodes can share one
 database without stepping on each other and without any coordinator besides PostgreSQL.
 
-It is inspired by libraries like [db-scheduler](https://github.com/kagkarlsson/db-scheduler),
-[JobRunr](https://www.jobrunr.io) and [Quartz](https://www.quartz-scheduler.org), but deliberately
-small:
+It is inspired by job schedulers like [db-scheduler](https://github.com/kagkarlsson/db-scheduler),
+[JobRunr](https://www.jobrunr.io), [Quartz](https://www.quartz-scheduler.org) and
+[River](https://riverqueue.com) and by durable execution engines like
+[Inngest](https://www.inngest.com) and [Restate](https://restate.dev), but deliberately small:
 
 - **Two runtime dependencies**: the PostgreSQL JDBC driver and the SLF4J API. No framework, no
   migration tool, no JSON library.
 - **PostgreSQL first**: jobs, durable steps, events and nodes live in plain tables (`bikesched_*`);
   the schema is created and migrated on first use.
 - **Java 26**, jobs run on virtual threads.
+
+bikesched is not a workflow engine: there are no process models (BPMN), no visual modelling and no
+orchestration across services. If you need that, look at
+[Camunda](https://camunda.com), [Temporal](https://temporal.io) or similar tools.
 
 | Module | Contents |
 |---|---|
