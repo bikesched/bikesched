@@ -4,6 +4,7 @@ import javax.sql.DataSource
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 import org.bikesched.Bikesched
+import org.bikesched.JobListener
 import org.bikesched.JsonMapper
 import org.bikesched.RetryBackoff
 
@@ -107,6 +108,12 @@ public class BikeschedSpec internal constructor() {
    */
   public var hardTimeoutGrace: Duration? = null
 
+  /**
+   * Observes the jobs this node runs, e.g. `MicrometerJobListener` from `bikesched-micrometer` (see
+   * `BikeschedBuilder.jobListener`); defaults to none.
+   */
+  public var jobListener: JobListener? = null
+
   internal fun build(): Bikesched {
     val builder = Bikesched.builder()
     dataSource?.let(builder::dataSource)
@@ -126,6 +133,7 @@ public class BikeschedSpec internal constructor() {
     jobCleanUpInterval?.let { builder.jobCleanUpInterval(it.toJavaDuration()) }
     statementTimeout?.let { builder.statementTimeout(it.toJavaDuration()) }
     hardTimeoutGrace?.let { builder.hardTimeoutGrace(it.toJavaDuration()) }
+    jobListener?.let(builder::jobListener)
     return builder.build()
   }
 }

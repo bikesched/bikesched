@@ -40,6 +40,7 @@ orchestration across services. If you need that, look at
 | `bikesched-jackson` | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
 | `bikesched-kotlin` | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
 | `bikesched-annotations` | job handlers declared as `@JobHandler` methods, see [Annotations](docs/annotations.md) |
+| `bikesched-micrometer` | Micrometer meters for claims and attempts, see [Metrics](docs/metrics.md) |
 
 ## Features
 
@@ -119,7 +120,7 @@ All dependency and tool versions are managed in `gradle/libs.versions.toml`.
 ## Snapshots
 
 Every successful build of `main` publishes the current snapshot (`org.bikesched:bikesched-core`,
-`bikesched-jackson`, `bikesched-kotlin`, `bikesched-annotations`, version `0.1.0-SNAPSHOT`) to GitHub Packages. Reading
+`bikesched-jackson`, `bikesched-kotlin`, `bikesched-annotations`, `bikesched-micrometer`, version `0.1.0-SNAPSHOT`) to GitHub Packages. Reading
 from GitHub Packages requires a GitHub token with the `read:packages` scope, even for public
 packages:
 

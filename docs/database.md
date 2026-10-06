@@ -56,4 +56,4 @@ release waits for them.
 
 ---
 
-Previous: [Annotations](annotations.md) · [Documentation index](index.md)
+Previous: [Metrics](metrics.md) · [Documentation index](index.md)

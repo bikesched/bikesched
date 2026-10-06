@@ -23,6 +23,7 @@ testcontainers = "2.0.5"
 nanojson = "1.10"
 hikaricp = "7.1.0"
 awaitility = "4.3.0"
+micrometer = "1.17.1"
 archunit = "1.5.1"
 
 # bikesched-jackson (jackson-module-kotlin: bikesched-kotlin tests only)
@@ -44,6 +45,7 @@ testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgr
 nanojson = { module = "com.grack:nanojson", version.ref = "nanojson" }
 hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
+micrometer-core = { module = "io.micrometer:micrometer-core", version.ref = "micrometer" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 
 jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }

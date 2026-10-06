@@ -52,5 +52,5 @@ Recurring jobs are not supported by the annotation yet.
 
 ---
 
-Next: [Database](database.md) · Previous: [Kotlin](kotlin.md) ·
+Next: [Metrics](metrics.md) · Previous: [Kotlin](kotlin.md) ·
 [Documentation index](index.md)

@@ -7,10 +7,14 @@ import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Function;
 import org.bikesched.BikeschedException;
+import org.bikesched.JobListener;
 import org.bikesched.RetryBackoff;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.job.Job;
+import org.bikesched.job.JobAttemptOutcome;
+import org.bikesched.job.JobAttemptResult;
+import org.bikesched.job.JobClaim;
 import org.bikesched.job.JobHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,16 +41,39 @@ import org.slf4j.LoggerFactory;
  * compensations run, ending the job (or retrying the compensation, see {@link Job#newStep(String,
  * Class)}).
  *
+ * <p>Each processed claim is reported to the {@link JobListener}: {@code onJobClaimed} before,
+ * {@code onAttemptEnded} once the outcome is recorded.
+ *
  * <p>Thread-safe; holds no per-job state.
  */
 public final class JobProcessor {
 
   private static final Logger LOG = LoggerFactory.getLogger(JobProcessor.class);
 
-  // Outcomes of processing a job that could not be recorded as such, for the debug log.
-  private static final String NOT_RUNNING =
-      "not recorded, the job was no longer running in this attempt's claim";
-  private static final String NOT_RECORDED = "not recorded, see the warning above";
+  // Outcomes of processing a job that could not be recorded as such.
+  private static final Outcome NOT_RUNNING =
+      new Outcome(
+          JobAttemptOutcome.NOT_RECORDED,
+          "not recorded, the job was no longer running in this attempt's claim");
+  private static final Outcome NOT_RECORDED =
+      new Outcome(JobAttemptOutcome.NOT_RECORDED, "not recorded, see the warning above");
+
+  /**
+   * The recorded outcome of an attempt.
+   *
+   * @param kind what was recorded; {@code null} for an abandoned attempt whose thread returned,
+   *     which was reported when it was abandoned
+   * @param description a description, for the debug log
+   */
+  private record Outcome(JobAttemptOutcome kind, String description) {}
+
+  /** A claim being processed, started at {@code startNanos} ({@link System#nanoTime()}). */
+  private record Started(JobClaim claim, long startNanos) {
+
+    Duration elapsed() {
+      return Duration.ofNanos(System.nanoTime() - startNanos);
+    }
+  }
 
   private final Database database;
   private final UUID nodeId;
@@ -58,6 +85,7 @@ public final class JobProcessor {
   private final Duration defaultEventTimeout;
   private final RetryBackoff retryBackoff;
   private final HardTimeout hardTimeout;
+  private final JobListener listener;
 
   /**
    * @param database the database
@@ -72,6 +100,7 @@ public final class JobProcessor {
    *     for none
    * @param retryBackoff delay of the retry after a failed attempt
    * @param hardTimeout abandons attempts that ignore their timeout, {@code null} for none
+   * @param listener observes the processed jobs
    */
   public JobProcessor(
       Database database,
@@ -83,7 +112,8 @@ public final class JobProcessor {
       Duration defaultJobTimeout,
       Duration defaultEventTimeout,
       RetryBackoff retryBackoff,
-      HardTimeout hardTimeout) {
+      HardTimeout hardTimeout,
+      JobListener listener) {
     this.database = Objects.requireNonNull(database, "database");
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
@@ -94,13 +124,14 @@ public final class JobProcessor {
     this.defaultEventTimeout = defaultEventTimeout;
     this.retryBackoff = Objects.requireNonNull(retryBackoff, "retryBackoff");
     this.hardTimeout = hardTimeout;
+    this.listener = Objects.requireNonNull(listener, "listener");
   }
 
   /**
    * Starts an attempt of the job on the current thread: its timeout (the job's own or the node
    * default, if any) and, with a hard timeout, abandoning it if it ignores the timeout.
    */
-  private JobAttempt startAttempt(DefaultJob job, JobSlot slot) {
+  private JobAttempt startAttempt(DefaultJob job, JobSlot slot, Started started) {
     var attempt =
         new JobAttempt(
             job,
@@ -110,7 +141,7 @@ public final class JobProcessor {
             hardTimeout == null ? null : hardTimeout.grace(),
             abandoned ->
                 hardTimeout.abandon(
-                    job, abandoned, slot, failure -> recordAbandoned(job, failure)));
+                    job, abandoned, slot, failure -> recordAbandoned(job, failure, started)));
     Duration timeout = job.timeout().orElse(defaultJobTimeout);
     if (timeout != null) {
       attempt.startTimeout(timeout);
@@ -124,12 +155,17 @@ public final class JobProcessor {
    * Records an attempt abandoned by the hard timeout as failed, like a timed-out attempt (on the
    * hard timeout's recorder thread, while the handler's thread may still run).
    */
-  private void recordAbandoned(DefaultJob job, Exception failure) {
-    String outcome =
+  private void recordAbandoned(DefaultJob job, Exception failure, Started started) {
+    Outcome outcome =
         job.isCompensating()
             ? recordCompensationFailure(job, null, failure)
             : recordFailure(job, failure);
-    LOG.debug("Recorded the abandoned attempt of job {}: {}", job.id(), outcome);
+    notifyListener(
+        job,
+        () ->
+            listener.onAttemptEnded(
+                new JobAttemptResult(started.claim(), outcome.kind(), started.elapsed(), true)));
+    LOG.debug("Recorded the abandoned attempt of job {}: {}", job.id(), outcome.description());
   }
 
   /**
@@ -137,7 +173,7 @@ public final class JobProcessor {
    * the attempt's claim, see {@link DefaultJob#isLockLost()}): records nothing, the job belongs to
    * whichever claim comes next.
    */
-  private String abandon(DefaultJob job, Exception failure) {
+  private Outcome abandon(DefaultJob job, Exception failure) {
     LOG.warn(
         "Job {} of type {} is no longer running on bikesched node {} ({}): it was released, e.g."
             + " after missed heartbeats, and may run on another node; abandoning attempt {}"
@@ -148,7 +184,7 @@ public final class JobProcessor {
         nodeId,
         job.attempts(),
         failure);
-    return "abandoned, the job was released";
+    return new Outcome(JobAttemptOutcome.NOT_RECORDED, "abandoned, the job was released");
   }
 
   /**
@@ -159,26 +195,57 @@ public final class JobProcessor {
    *     caller releases it afterwards in any case
    */
   public void process(DefaultJob job, JobSlot slot) {
-    long start = System.nanoTime();
-    String outcome = runAndRecord(job, slot);
-    LOG.debug(
-        "Processed job {} of type {} (attempt {}) in {} ms: {}",
+    var started = new Started(claim(job), System.nanoTime());
+    notifyListener(job, () -> listener.onJobClaimed(started.claim()));
+    Outcome outcome = NOT_RECORDED;
+    try {
+      outcome = runAndRecord(job, slot, started);
+    } finally {
+      Duration elapsed = started.elapsed();
+      if (outcome.kind() == null) {
+        notifyListener(job, () -> listener.onAbandonedAttemptReturned(started.claim()));
+      } else {
+        var result = new JobAttemptResult(started.claim(), outcome.kind(), elapsed, false);
+        notifyListener(job, () -> listener.onAttemptEnded(result));
+      }
+      LOG.debug(
+          "Processed job {} of type {} (attempt {}) in {} ms: {}",
+          job.id(),
+          job.type(),
+          job.attempts(),
+          elapsed.toMillis(),
+          outcome.description());
+    }
+  }
+
+  private static JobClaim claim(DefaultJob job) {
+    Duration delay = Duration.between(job.scheduledAt(), Instant.now());
+    return new JobClaim(
         job.id(),
         job.type(),
-        job.attempts(),
-        Duration.ofNanos(System.nanoTime() - start).toMillis(),
-        outcome);
+        job.isCompensating() ? job.compensationAttempts() : job.attempts(),
+        job.isCompensating(),
+        delay.isNegative() ? Duration.ZERO : delay);
+  }
+
+  /** Calls the listener; its exceptions must not affect processing. */
+  private static void notifyListener(DefaultJob job, Runnable call) {
+    try {
+      call.run();
+    } catch (RuntimeException e) {
+      LOG.warn("Job listener failed for job {}, ignoring it", job.id(), e);
+    }
   }
 
   /**
    * Runs the job's handler (verified here because claiming is not filtered by job type) and records
    * the outcome.
    *
-   * @return a description of the recorded outcome, for logging
+   * @return the recorded outcome
    */
-  private String runAndRecord(DefaultJob job, JobSlot slot) {
+  private Outcome runAndRecord(DefaultJob job, JobSlot slot, Started started) {
     if (job.isCompensating()) {
-      return compensate(job, slot);
+      return compensate(job, slot, started);
     }
     if (job.cancelRequested()) {
       return recordCancellation(job, job.cancelRequestMessage(), false);
@@ -199,7 +266,7 @@ public final class JobProcessor {
                   + "' on bikesched node "
                   + nodeName));
     }
-    JobAttempt attempt = startAttempt(job, slot);
+    JobAttempt attempt = startAttempt(job, slot, started);
     Exception failure = null;
     try {
       LOG.debug(
@@ -221,7 +288,7 @@ public final class JobProcessor {
     // to record the outcome, and blocking I/O of an interrupted virtual thread fails.
     Thread.interrupted();
     if (end == JobAttempt.End.ABANDONED) {
-      return hardTimeout.returned(job, failure);
+      return new Outcome(null, hardTimeout.returned(job, failure));
     }
     if (job.isLockLost()) {
       return abandon(job, failure);
@@ -279,7 +346,9 @@ public final class JobProcessor {
               "Job {} was no longer running in this attempt's claim when completing it", job.id());
           return NOT_RUNNING;
         }
-        return "SUCCEEDED" + nextOccurrenceOutcome(next, completed.get());
+        return new Outcome(
+            JobAttemptOutcome.SUCCEEDED,
+            "SUCCEEDED" + nextOccurrenceOutcome(next, completed.get()));
       } catch (RuntimeException e) {
         LOG.warn("Completing job {} failed", job.id(), e);
         return NOT_RECORDED;
@@ -287,7 +356,7 @@ public final class JobProcessor {
     }
   }
 
-  private String recordSuspension(DefaultJob job, JobSuspended.Suspension suspension) {
+  private Outcome recordSuspension(DefaultJob job, JobSuspended.Suspension suspension) {
     String event = "event " + suspension.eventName() + "/" + suspension.eventKey();
     try {
       var suspended =
@@ -308,14 +377,18 @@ public final class JobProcessor {
         return NOT_RUNNING;
       }
       if (!suspended.get().waiting()) {
-        return "RESCHEDULED, " + event + " was published while suspending the job";
+        return new Outcome(
+            JobAttemptOutcome.WAITING,
+            "RESCHEDULED, " + event + " was published while suspending the job");
       }
       Instant waitUntil = suspended.get().waitUntil();
-      return "WAITING for "
-          + event
-          + " in step "
-          + suspension.stepName()
-          + (waitUntil == null ? "" : " until " + waitUntil);
+      return new Outcome(
+          JobAttemptOutcome.WAITING,
+          "WAITING for "
+              + event
+              + " in step "
+              + suspension.stepName()
+              + (waitUntil == null ? "" : " until " + waitUntil));
     } catch (RuntimeException e) {
       LOG.warn("Suspending job {} failed", job.id(), e);
       return NOT_RECORDED;
@@ -326,7 +399,7 @@ public final class JobProcessor {
    * Records the cancellation of a job: by its handler ({@code byHandler}), or on request right
    * after claiming it, without running the handler (which does not use up an attempt).
    */
-  private String recordCancellation(DefaultJob job, String message, boolean byHandler) {
+  private Outcome recordCancellation(DefaultJob job, String message, boolean byHandler) {
     try {
       NewJob next = nextOccurrence(job);
       var cancelled = database.jobs().cancelJob(job.id(), job.lock(), message, byHandler, next);
@@ -342,8 +415,11 @@ public final class JobProcessor {
             message == null ? "" : ": " + message,
             compensating ? ", compensating its steps" : "");
         return compensating
-            ? "COMPENSATING after cancellation"
-            : "CANCELLED" + nextOccurrenceOutcome(next, cancelled.get().nextOccurrenceScheduled());
+            ? new Outcome(JobAttemptOutcome.COMPENSATING, "COMPENSATING after cancellation")
+            : new Outcome(
+                JobAttemptOutcome.CANCELLED,
+                "CANCELLED"
+                    + nextOccurrenceOutcome(next, cancelled.get().nextOccurrenceScheduled()));
       } else {
         LOG.warn(
             "Job {} of type {} was cancelled but no longer running in this attempt's claim",
@@ -357,7 +433,7 @@ public final class JobProcessor {
     }
   }
 
-  private String recordFailure(DefaultJob job, Exception failure) {
+  private Outcome recordFailure(DefaultJob job, Exception failure) {
     return recordFailure(job, failure.toString(), failure, null, null);
   }
 
@@ -366,7 +442,7 @@ public final class JobProcessor {
    * of its completed steps until the first step that has not completed, then runs them, latest step
    * first, and records the outcome.
    */
-  private String compensate(DefaultJob job, JobSlot slot) {
+  private Outcome compensate(DefaultJob job, JobSlot slot, Started started) {
     JobHandler handler = handlers.apply(job.type());
     if (handler == null) {
       LOG.error(
@@ -385,7 +461,7 @@ public final class JobProcessor {
                   + "' on bikesched node "
                   + nodeName));
     }
-    JobAttempt attempt = startAttempt(job, slot);
+    JobAttempt attempt = startAttempt(job, slot, started);
     String compensatingStep = null;
     Exception failure = null;
     int compensated = 0;
@@ -421,7 +497,7 @@ public final class JobProcessor {
     JobAttempt.End end = attempt.finish(); // no interrupt can arrive after this
     Thread.interrupted(); // see runAndRecord
     if (end == JobAttempt.End.ABANDONED) {
-      return hardTimeout.returned(job, failure);
+      return new Outcome(null, hardTimeout.returned(job, failure));
     }
     if (job.isLockLost()) {
       return abandon(job, failure);
@@ -437,7 +513,7 @@ public final class JobProcessor {
     return recordCompensated(job, compensated);
   }
 
-  private String recordCompensated(DefaultJob job, int compensated) {
+  private Outcome recordCompensated(DefaultJob job, int compensated) {
     try {
       NewJob next = nextOccurrence(job);
       var ended = database.jobs().completeCompensation(job.id(), job.lock(), next);
@@ -453,11 +529,13 @@ public final class JobProcessor {
           job.type(),
           compensated,
           ended.get().state());
-      return "COMPENSATED "
-          + compensated
-          + " step(s), "
-          + ended.get().state()
-          + nextOccurrenceOutcome(next, ended.get().nextOccurrenceScheduled());
+      return new Outcome(
+          JobAttemptOutcome.COMPENSATED,
+          "COMPENSATED "
+              + compensated
+              + " step(s), "
+              + ended.get().state()
+              + nextOccurrenceOutcome(next, ended.get().nextOccurrenceScheduled()));
     } catch (RuntimeException e) {
       LOG.warn("Completing the compensation of job {} failed", job.id(), e);
       return NOT_RECORDED;
@@ -465,7 +543,7 @@ public final class JobProcessor {
   }
 
   /** Records a failed compensation attempt; {@code step} is the failed compensation, if any. */
-  private String recordCompensationFailure(DefaultJob job, String step, Exception failure) {
+  private Outcome recordCompensationFailure(DefaultJob job, String step, Exception failure) {
     String error =
         step == null ? failure.toString() : "Compensating step '" + step + "' failed: " + failure;
     Duration retryAfter = backoffDelay(job, job.compensationAttempts());
@@ -490,8 +568,10 @@ public final class JobProcessor {
             job.compensationAttempts(),
             error,
             failure);
-        return "COMPENSATION_FAILED"
-            + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled());
+        return new Outcome(
+            JobAttemptOutcome.COMPENSATION_FAILED,
+            "COMPENSATION_FAILED"
+                + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled()));
       } else {
         String when =
             retryAfter == null ? "as soon as possible" : "at " + failed.get().scheduledAt();
@@ -505,12 +585,14 @@ public final class JobProcessor {
             when,
             error,
             failure);
-        return "COMPENSATING again (attempt "
-            + (job.compensationAttempts() + 1)
-            + " of "
-            + failed.get().maxAttempts()
-            + ") "
-            + when;
+        return new Outcome(
+            JobAttemptOutcome.COMPENSATION_RETRYING,
+            "COMPENSATING again (attempt "
+                + (job.compensationAttempts() + 1)
+                + " of "
+                + failed.get().maxAttempts()
+                + ") "
+                + when);
       }
     } catch (RuntimeException e) {
       e.addSuppressed(failure);
@@ -584,7 +666,7 @@ public final class JobProcessor {
    * Records a failed attempt; {@code maxAttempts} and {@code retryAfter} override the job's maximum
    * number of attempts and the delay of the next attempt if not {@code null}.
    */
-  private String recordFailure(
+  private Outcome recordFailure(
       DefaultJob job, String error, Throwable cause, Integer maxAttempts, Duration retryAfter) {
     if (retryAfter == null) {
       retryAfter = backoffDelay(job);
@@ -609,7 +691,8 @@ public final class JobProcessor {
             job.attempts(),
             error,
             cause);
-        return "COMPENSATING after attempt " + job.attempts();
+        return new Outcome(
+            JobAttemptOutcome.COMPENSATING, "COMPENSATING after attempt " + job.attempts());
       } else if (!failed.get().retried()) {
         LOG.error(
             "Job {} of type {} failed permanently after {} attempt(s): {}",
@@ -618,7 +701,9 @@ public final class JobProcessor {
             job.attempts(),
             error,
             cause);
-        return "FAILED" + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled());
+        return new Outcome(
+            JobAttemptOutcome.FAILED,
+            "FAILED" + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled()));
       } else {
         String when =
             retryAfter == null ? "as soon as possible" : "at " + failed.get().scheduledAt();
@@ -631,12 +716,14 @@ public final class JobProcessor {
             when,
             error,
             cause);
-        return "RESCHEDULED for attempt "
-            + (job.attempts() + 1)
-            + " of "
-            + failed.get().maxAttempts()
-            + " "
-            + when;
+        return new Outcome(
+            JobAttemptOutcome.RETRYING,
+            "RESCHEDULED for attempt "
+                + (job.attempts() + 1)
+                + " of "
+                + failed.get().maxAttempts()
+                + " "
+                + when);
       }
     } catch (RuntimeException e) {
       if (cause != null) {

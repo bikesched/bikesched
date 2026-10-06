@@ -7,6 +7,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.bikesched.JobListener
 import org.bikesched.job.JobState
 import org.junit.jupiter.api.Test
 
@@ -31,6 +32,7 @@ class BikeschedDslTest {
       jobCleanUpInterval = 10.minutes
       statementTimeout = 30.seconds
       hardTimeoutGrace = 30.seconds
+      jobListener = object : JobListener {}
     }
       .use { bikesched ->
         assertThat(bikesched.node().name()).isEqualTo("dsl-node")

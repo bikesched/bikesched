@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.Objects;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
+import org.bikesched.JobListener;
 import org.bikesched.RetryBackoff;
 import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.HistoryCleanUp;
@@ -41,6 +42,7 @@ import org.bikesched.internal.util.ValidationUtil;
  *     data source
  * @param hardTimeoutGrace how long after its timeout an attempt whose handler ignores the interrupt
  *     is abandoned; {@code null} for no hard timeout
+ * @param jobListener observes the jobs the node runs
  */
 public record Settings(
     String nodeName,
@@ -60,7 +62,8 @@ public record Settings(
     Duration jobRetention,
     Duration jobCleanUpInterval,
     Duration statementTimeout,
-    Duration hardTimeoutGrace) {
+    Duration hardTimeoutGrace,
+    JobListener jobListener) {
 
   /** Validates the settings. */
   public Settings {
@@ -69,6 +72,7 @@ public record Settings(
     Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     Objects.requireNonNull(pollInterval, "pollInterval");
     Objects.requireNonNull(retryBackoff, "retryBackoff");
+    Objects.requireNonNull(jobListener, "jobListener");
     Objects.requireNonNull(eventRetention, "eventRetention");
     Objects.requireNonNull(nodeCleanUpInterval, "nodeCleanUpInterval");
     Objects.requireNonNull(eventCleanUpInterval, "eventCleanUpInterval");

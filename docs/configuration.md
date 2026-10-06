@@ -22,6 +22,7 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 | `jobRetention(Duration)` | 7 days | deletes ended jobs (`SUCCEEDED`, `FAILED`, `CANCELLED`) with their steps once they finished longer ago, see [Job retention](jobs.md#job-retention) |
 | `jobCleanUpInterval(Duration)` | 1 hour | how often the node deletes ended jobs older than the retention |
 | `statementTimeout(Duration)` | data source | maximum duration of each database statement of the node, applied as JDBC query timeout (whole seconds, rounded up); a statement running longer is cancelled and fails like any other database error, see [Statement timeout](#statement-timeout) |
+| `jobListener(JobListener)` | none | observes claims and attempt outcomes, e.g. for [Metrics](metrics.md) |
 | `hardTimeoutGrace(Duration)` | off | abandons attempts whose handler ignores the interrupt of its timeout this long after the timeout, see [Timeouts](jobs.md#timeouts) |
 
 ## Nodes

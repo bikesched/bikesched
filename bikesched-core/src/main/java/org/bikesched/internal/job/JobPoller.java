@@ -106,7 +106,8 @@ public final class JobPoller {
             settings.retryBackoff(),
             settings.hardTimeoutGrace() == null
                 ? null
-                : new HardTimeout(settings.hardTimeoutGrace(), jobExecutor, id, nodeName));
+                : new HardTimeout(settings.hardTimeoutGrace(), jobExecutor, id, nodeName),
+            settings.jobListener());
     nodeId = id;
     long millis = settings.pollInterval().toMillis();
     pollerExecutor.scheduleWithFixedDelay(

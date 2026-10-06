@@ -25,3 +25,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0017](0017-retry-failed-jobs.md) | Retrying failed jobs keeps their completed steps | Accepted |
 | [0018](0018-event-payload-copied-into-steps.md) | Event payloads copied into steps, no event handlers | Accepted |
 | [0019](0019-annotations-module.md) | Job handler annotations in their own module | Accepted |
+| [0020](0020-job-listener-and-micrometer.md) | Job listener SPI with Micrometer in its own module | Accepted |

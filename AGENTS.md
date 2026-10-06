@@ -32,12 +32,13 @@ does; this file covers how to change it.
 | `bikesched-jackson` | `JacksonJsonMapper` (Java only, package `org.bikesched.jackson`); depends on core and `jackson-databind` (both `api`) |
 | `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core and the Kotlin stdlib only (tests use bikesched-jackson) |
 | `bikesched-annotations` | `@JobHandler` and `JobHandlers` (Java only, package `org.bikesched.annotation`): job handlers declared as annotated methods, invoked via `MethodHandle`; depends on core only (`api`; tests use bikesched-jackson) |
+| `bikesched-micrometer` | `MicrometerJobListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` SPI; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |
 | `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test using the shared `util.Database`), described in its own `README.md`; JSON via bikesched-jackson |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 
-- `org.bikesched`: entry point `Bikesched` + `BikeschedBuilder`, exceptions, SPIs (`JsonMapper`,
+- `org.bikesched`: entry point `Bikesched` + `BikeschedBuilder`, exceptions, SPIs (`JobListener`, `JsonMapper`,
   `RetryBackoff`), `BikeschedLogContext` (MDC keys).
 - `org.bikesched.job`, `org.bikesched.event`: public API, interfaces/records/enums/exceptions only.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
@@ -73,6 +74,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `TimeoutHandler`, `CompensationHandler`); they receive the context object (e.g.
   the `Step`), not just a value. Exception: `JobTypeHandler` adds `type()` for class-based handlers
   registered without a separate type argument.
+- Observers are `<X>Listener` SPIs with `on<Event>(record)` default no-op methods (`JobListener`),
+  called synchronously; their exceptions are logged and ignored. Each event passes one record, so
+  fields can be added without breaking implementations.
 - Everything handed to user code (job, builders, `JobFailure`, `EventWait`) is a public
   **interface**; implementations are `Default<X>` in `internal`.
 - Builders: one fluent path ending in a verb that performs the action (`newJob(type)…schedule()`,

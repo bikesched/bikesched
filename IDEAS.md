@@ -67,17 +67,17 @@ job ending `FAILED` or `COMPENSATION_FAILED`, e.g. to alert or move it to a dead
 handler cannot do this reliably itself: it does not run after a timeout, an abandoned attempt or a
 crash of its node.
 
-- Option: a listener SPI on the builder (`JobListener.onFailed(JobInfo)`), called after the commit
-  by the node recording the failure (at most once; lost if that node dies right after the commit).
-- Option: only through [Metrics](#metrics) and alerting on them.
-- Open: synchronous or on its own thread, other events (succeeded, cancelled), and how it relates to
-  the job history.
+- `JobListener.onAttemptEnded` reports `FAILED` and `COMPENSATION_FAILED` synchronously after the
+  commit, by the node recording it (lost if that node dies right after the commit); enough for
+  alerts via [Metrics](docs/metrics.md).
+- Open: a guaranteed hook (e.g. an outbox-like table or a dead-letter job type), and how it
+  relates to the job history.
 
 ### Metrics
 
-Nothing reports due jobs, the delay between due and claimed, attempt durations, failure rates or
-stuck `RUNNING` jobs. A small listener SPI in core, with optional Micrometer support in its own
-module, would make the problems above visible in production.
+`JobListener` and `bikesched-micrometer` cover what a node does itself (see
+[Metrics](docs/metrics.md)). Still missing: cluster-wide gauges such as due jobs, waiting jobs or
+`RUNNING` jobs older than their timeout, which need a (cheap, rate-limited) query.
 
 ## Testing
 

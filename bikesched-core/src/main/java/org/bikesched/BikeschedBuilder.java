@@ -53,6 +53,7 @@ public final class BikeschedBuilder {
   private Duration jobCleanUpInterval = DEFAULT_JOB_CLEAN_UP_INTERVAL;
   private Duration statementTimeout; // null: left to the data source
   private Duration hardTimeoutGrace; // null: no hard timeout
+  private JobListener jobListener = new JobListener() {};
 
   BikeschedBuilder() {}
 
@@ -316,6 +317,18 @@ public final class BikeschedBuilder {
     return this;
   }
 
+  /**
+   * Observes the jobs this node runs, e.g. {@code MicrometerJobListener} from {@code
+   * bikesched-micrometer} for metrics (optional, default none).
+   *
+   * @param jobListener the listener
+   * @return this builder
+   */
+  public BikeschedBuilder jobListener(JobListener jobListener) {
+    this.jobListener = Objects.requireNonNull(jobListener, "jobListener");
+    return this;
+  }
+
   /** Heartbeat interval; package-private so tests can speed it up. */
   BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
     this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
@@ -379,7 +392,8 @@ public final class BikeschedBuilder {
             jobRetention,
             jobCleanUpInterval,
             statementTimeout,
-            hardTimeoutGrace);
+            hardTimeoutGrace,
+            jobListener);
     return Internals.create(settings, dataSource, jsonMapper);
   }
 

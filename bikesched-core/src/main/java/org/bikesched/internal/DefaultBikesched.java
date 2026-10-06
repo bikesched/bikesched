@@ -104,7 +104,8 @@ public final class DefaultBikesched implements Bikesched {
                 settings.defaultJobTimeout(),
                 settings.defaultEventTimeout(),
                 settings.retryBackoff(),
-                settings.hardTimeoutGrace()),
+                settings.hardTimeoutGrace(),
+                settings.jobListener()),
             registry);
     this.heartbeatExecutor =
         Executors.newSingleThreadScheduledExecutor(
