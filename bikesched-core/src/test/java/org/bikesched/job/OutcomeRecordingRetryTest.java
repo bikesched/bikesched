@@ -50,15 +50,16 @@ class OutcomeRecordingRetryTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void anOutcomeThatCannotBeRecordedStaysRunning() throws Exception {
+  void anOutcomeThatCannotBeRecordedIsReleasedForRetry() throws Exception {
     var failures = new BlipInjectingDataSource(dataSource);
-    var logs = LogCapture.of(JobProcessor.class);
-    try (logs;
+    var processorLogs = LogCapture.of(JobProcessor.class);
+    try (processorLogs;
         Bikesched bikesched =
             Bikesched.builder()
                 .dataSource(failures)
                 .nodeName("node-record-give-up-" + UUID.randomUUID())
                 .pollInterval(Duration.ofMillis(50))
+                .nodeCleanUpInterval(Duration.ofMillis(50))
                 .build()) {
       failures.failNextJobThreadConnections(3);
       UUID jobId =
@@ -68,12 +69,9 @@ class OutcomeRecordingRetryTest extends AbstractBikeschedTest {
               .handler(_ -> {})
               .schedule();
 
-      Thread.sleep(2000); // the retries are exhausted and give up
-      assertThat(bikesched.findJob(jobId).orElseThrow().state())
-          .as("no outcome could be recorded")
-          .isEqualTo(JobState.RUNNING);
-      assertThat(count("id = '" + jobId + "' and state = 'RUNNING'")).isOne();
-      assertThat(logs.messages())
+      awaitState(jobId, "SUCCEEDED");
+      assertThat(count("id = '" + jobId + "' and state = 'RUNNING'")).isZero();
+      assertThat(processorLogs.messages())
           .anyMatch(m -> m.startsWith("Completing job " + jobId + " failed"));
       assertThat(failures.stillToFail()).isZero();
     }

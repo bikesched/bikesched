@@ -32,12 +32,15 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 
 Nodes send a heartbeat every 5 seconds and poll for due jobs every 5 seconds (both configurable,
 see [Builder options](#builder-options)), claiming at most 10
-jobs per poll and never more than they have free slots. A node without heartbeat for 30 seconds is
-considered dead: on their next node clean-up, other nodes release its running jobs for retry, and
-remove the node after another 30 seconds. A node only claims jobs of the types it has handlers for:
-during a rolling deploy, nodes of the old version leave jobs of new types to the new ones, and a
-job whose type no node handles stays `SCHEDULED`. The heartbeat itself only updates the node's row; the
-clean-ups run on their own thread and intervals, so they never delay it.
+jobs per poll and never more than they have free slots. When a poll fills its batch while slots are
+still free, the node polls again immediately; otherwise it waits for the next poll interval. A node
+without heartbeat for 30 seconds is considered dead: on their next node clean-up, other nodes
+release its running jobs for retry, and remove the node after another 30 seconds. If a node cannot
+record an attempt's outcome after its retries, its next node clean-up releases that inactive claim
+once it is at least one node-clean-up interval old. A node only claims jobs of the types it has
+handlers for: during a rolling deploy, nodes of the old version leave jobs of new types to the new
+ones, and a job whose type no node handles stays `SCHEDULED`. The heartbeat itself only updates the
+node's row; the clean-ups run on their own thread and intervals, so they never delay it.
 
 A node whose heartbeat was missed (e.g. after a long GC pause or a network partition) may still be
 running jobs that other nodes have released meanwhile. Its writes are fenced: every claim of a job

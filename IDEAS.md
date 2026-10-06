@@ -5,20 +5,6 @@ solution; remove an entry once it is implemented (or decided against).
 
 ## Reliability
 
-### Retry recording a job's outcome
-
-If recording an attempt's outcome fails (e.g. a database blip right after the handler returned),
-`JobProcessor` only logs a warning: the job stays `RUNNING`, locked by a node that is alive and
-heartbeating, so node clean-up never releases it. It is stuck until that node restarts. Applies to
-completion, failure, cancellation, suspension and compensation outcomes.
-
-- Done: recording is retried three times with a 200 ms delay (`internal.util.Retry`), for every
-  outcome; it stops early when the node is closing (interrupt).
-- Still open: periodically release this node's own `RUNNING` jobs that are no longer running in
-  memory, after a grace period for freshly claimed jobs (so a job the poller just claimed is not
-  released). Needed for a node whose database is unreachable for longer than the retries, and for
-  the abandoned threads of the hard timeout.
-
 ### Poller watchdog
 
 With no or a long statement timeout, a hanging connection blocks the single poller thread while the
@@ -26,12 +12,6 @@ heartbeat (own thread) keeps the node looking alive. A watchdog could log and re
 takes far longer than the poll interval.
 
 ## Performance
-
-### Poll again right away when more jobs are due
-
-Each poll claims at most `min(free slots, 10)` jobs and then waits the full `pollInterval`, even if
-more jobs are due: about 10 jobs per second per node with the defaults, regardless of
-`maxConcurrentJobs`. Poll again immediately when a poll filled its batch (and slots are free).
 
 ### LISTEN/NOTIFY
 

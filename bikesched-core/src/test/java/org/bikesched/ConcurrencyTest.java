@@ -61,6 +61,31 @@ class ConcurrencyTest extends AbstractBikeschedTest {
                     "bikesched node node-slow-limited \\(.*\\) is at capacity, skipping poll"));
   }
 
+  @Test
+  void immediatelyPollsAgainAfterFillingABatch() throws Exception {
+    String jobType = "full-batch-" + java.util.UUID.randomUUID();
+    var completed = new java.util.concurrent.atomic.AtomicInteger();
+    try (Bikesched bikesched =
+        Bikesched.builder()
+            .dataSource(dataSource)
+            .nodeName("node-" + jobType)
+            .pollInterval(Duration.ofSeconds(1))
+            .maxConcurrentJobs(20)
+            .autoStartPolling(false)
+            .build()) {
+      bikesched.registerJobHandler(jobType, _ -> completed.incrementAndGet());
+      for (int i = 0; i < 20; i++) {
+        bikesched.newJob(jobType).schedule();
+      }
+
+      bikesched.startPolling();
+
+      await()
+          .atMost(Duration.ofMillis(1500))
+          .untilAsserted(() -> assertThat(completed).hasValue(20));
+    }
+  }
+
   private static int runSlowJobs(String jobType, int count, Integer maxConcurrentJobs)
       throws Exception {
     var running = new java.util.concurrent.atomic.AtomicInteger();

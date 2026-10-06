@@ -306,6 +306,32 @@ class JobStoreTest extends AbstractStoreTest {
   }
 
   @Test
+  void releaseInactiveJobsLeavesActiveAndRecentlyClaimedJobsRunning() throws SQLException {
+    UUID node = registerNode("node-1");
+    insertJobs(3, 0, "now()");
+    List<JobStore.ClaimedJob> claimed = claimJobs(node, 3);
+    UUID active = claimed.getFirst().id();
+    UUID stale = claimed.get(1).id();
+    UUID recent = claimed.get(2).id();
+    execute(
+        "update bikesched_jobs set locked_at = now() - interval '1 minute' where id in ('"
+            + active
+            + "', '"
+            + stale
+            + "')");
+
+    assertThat(database.jobs().releaseInactiveJobs(node, Duration.ofSeconds(1), Set.of(active)))
+        .isOne();
+    assertThat(count("id = '" + stale + "' and state = 'SCHEDULED' and locked_by is null")).isOne();
+    assertThat(count("id = '" + active + "' and state = 'RUNNING' and locked_by = '" + node + "'"))
+        .as("active attempts are never released")
+        .isOne();
+    assertThat(count("id = '" + recent + "' and state = 'RUNNING' and locked_by = '" + node + "'"))
+        .as("fresh claims get their grace period")
+        .isOne();
+  }
+
+  @Test
   void releaseJobsOfDeadNodesOnlyTouchesNodesWithStaleHeartbeat() throws SQLException {
     UUID alive = registerNode("alive");
     UUID dead = registerNode("dead");

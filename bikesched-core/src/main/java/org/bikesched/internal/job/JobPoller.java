@@ -3,7 +3,10 @@ package org.bikesched.internal.job;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -11,6 +14,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.util.ExecutorUtil;
@@ -58,6 +62,7 @@ public final class JobPoller {
   private final ScheduledExecutorService pollerExecutor;
   private final ScheduledThreadPoolExecutor timeoutExecutor;
   private final ExecutorService jobExecutor;
+  private final Map<UUID, AtomicInteger> activeJobs = new ConcurrentHashMap<>();
 
   /** Set (once) by {@link #start(UUID)}, together with the processor; {@code null} until then. */
   private volatile UUID nodeId;
@@ -122,6 +127,24 @@ public final class JobPoller {
         TimeUnit.MILLISECONDS);
   }
 
+  /** Returns a stable snapshot of jobs whose attempts still run in memory. */
+  public Set<UUID> activeJobIds() {
+    return Set.copyOf(activeJobs.keySet());
+  }
+
+  private void trackActiveJob(UUID jobId) {
+    activeJobs.computeIfAbsent(jobId, _ -> new AtomicInteger()).incrementAndGet();
+  }
+
+  private void untrackActiveJob(UUID jobId) {
+    activeJobs.computeIfPresent(
+        jobId,
+        (_, count) -> {
+          count.decrementAndGet();
+          return count.get() == 0 ? null : count;
+        });
+  }
+
   /**
    * Stops polling and lets running jobs finish (up to the shutdown timeout, then interrupts them);
    * jobs still running stay {@code RUNNING} in the database for the caller to release.
@@ -134,12 +157,19 @@ public final class JobPoller {
   }
 
   private void poll() {
+    while (pollOnce()) {
+      // A full batch can mean more due work is waiting while slots remain free. Poll immediately
+      // instead of waiting for the next interval; the next partial batch resumes the normal delay.
+    }
+  }
+
+  private boolean pollOnce() {
     // Must never throw: an exception would silently cancel all future polls.
     try {
       int free = slots.availablePermits();
       if (free == 0) {
         LOG.debug("bikesched node {} ({}) is at capacity, skipping poll", nodeName, nodeId);
-        return;
+        return false;
       }
       if (registry.types().isEmpty()) {
         // Avoids polling right after startup, before the application had a chance to register its
@@ -148,7 +178,7 @@ public final class JobPoller {
             "bikesched node {} ({}) has no job handlers registered, skipping poll",
             nodeName,
             nodeId);
-        return;
+        return false;
       }
       int limit = Math.min(free, POLL_BATCH_SIZE);
       LOG.debug(
@@ -175,8 +205,10 @@ public final class JobPoller {
       for (DefaultJob job : jobs) {
         dispatch(job);
       }
+      return jobs.size() == limit;
     } catch (RuntimeException e) {
       LOG.warn("Polling for jobs failed on bikesched node {} ({})", nodeName, nodeId, e);
+      return false;
     }
   }
 
@@ -185,7 +217,8 @@ public final class JobPoller {
    * timeout abandons it).
    */
   private void dispatch(DefaultJob job) {
-    var slot = new JobSlot(slots);
+    trackActiveJob(job.id());
+    var slot = new JobSlot(slots, () -> untrackActiveJob(job.id()));
     try {
       jobExecutor.execute(
           () -> {

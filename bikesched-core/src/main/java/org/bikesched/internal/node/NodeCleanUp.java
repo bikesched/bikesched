@@ -4,7 +4,9 @@ package org.bikesched.internal.node;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NodeStore;
@@ -31,18 +33,30 @@ public final class NodeCleanUp {
   private final UUID nodeId;
   private final String nodeName;
   private final Duration nodeTimeout;
+  private final Duration inactiveJobGrace;
+  private final Supplier<Set<UUID>> activeJobIds;
 
   /**
    * @param database the database
    * @param nodeId the node doing the clean-up; never treated as dead
    * @param nodeName its name, for logging
    * @param nodeTimeout a node without heartbeat for this long is considered dead
+   * @param inactiveJobGrace minimum claim age before recovering inactive jobs of this node
+   * @param activeJobIds jobs whose attempts still run in memory
    */
-  public NodeCleanUp(Database database, UUID nodeId, String nodeName, Duration nodeTimeout) {
+  public NodeCleanUp(
+      Database database,
+      UUID nodeId,
+      String nodeName,
+      Duration nodeTimeout,
+      Duration inactiveJobGrace,
+      Supplier<Set<UUID>> activeJobIds) {
     this.database = Objects.requireNonNull(database, "database");
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
     this.nodeTimeout = Objects.requireNonNull(nodeTimeout, "nodeTimeout");
+    this.inactiveJobGrace = Objects.requireNonNull(inactiveJobGrace, "inactiveJobGrace");
+    this.activeJobIds = Objects.requireNonNull(activeJobIds, "activeJobIds");
   }
 
   /**
@@ -50,8 +64,26 @@ public final class NodeCleanUp {
    * scheduled executor, so every part logs and swallows its own failures.
    */
   public void run() {
+    releaseInactiveJobs();
     releaseJobsOfDeadNodes();
     deleteDeadNodes();
+  }
+
+  /** Releases stale jobs of this live node once their attempt has ended in memory. */
+  private void releaseInactiveJobs() {
+    try {
+      int released =
+          database.jobs().releaseInactiveJobs(nodeId, inactiveJobGrace, activeJobIds.get());
+      if (released > 0) {
+        LOG.warn(
+            "Released {} inactive job(s) of bikesched node {} ({}) after no outcome was recorded",
+            released,
+            nodeName,
+            nodeId);
+      }
+    } catch (RuntimeException e) {
+      LOG.warn("Releasing inactive jobs failed on bikesched node {} ({})", nodeName, nodeId, e);
+    }
   }
 
   /** Puts jobs of nodes without heartbeat for the node timeout back to SCHEDULED. */

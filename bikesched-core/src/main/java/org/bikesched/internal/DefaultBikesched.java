@@ -174,7 +174,14 @@ public final class DefaultBikesched implements Bikesched {
             id);
       }
       var heartbeat = new NodeHeartbeat(database, id, nodeName);
-      var nodeCleanUp = new NodeCleanUp(database, id, nodeName, settings.nodeTimeout());
+      var nodeCleanUp =
+          new NodeCleanUp(
+              database,
+              id,
+              nodeName,
+              settings.nodeTimeout(),
+              settings.nodeCleanUpInterval(),
+              jobPoller::activeJobIds);
       var recurringJobRepair = new RecurringJobRepair(database, registry::recurringJobs);
       var eventCleanUp = new EventCleanUp(database, id, nodeName);
       node.registered(id);

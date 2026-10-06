@@ -235,6 +235,19 @@ public final class JobStore {
              where locked_by = ? and state = 'RUNNING'
             returning id, state, attempts""";
 
+  // Releases a node's own jobs whose attempt has ended in memory without recording an outcome.
+  // Recently claimed and still-active jobs are excluded, so an attempt cannot be released while it
+  // may still write its outcome.
+  private static final String RELEASE_INACTIVE_JOBS_SQL =
+      """
+            update bikesched_jobs
+               set state = case when compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
+                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+             where locked_by = ? and state = 'RUNNING'
+               and locked_at < now() - make_interval(secs => ?)
+               and id <> all(?::uuid[])
+            returning id, state, attempts""";
+
   // Releases RUNNING jobs (back to SCHEDULED, or COMPENSATING) of nodes whose heartbeat is older
   // than the timeout (excluding the calling node); returns one row per released job with its dead
   // node. Concurrent callers on other nodes are safe: the second one blocks on the row locks and
@@ -907,6 +920,36 @@ public final class JobStore {
           return released.size();
         },
         e -> new BikeschedException("Releasing jobs of bikesched node " + nodeId + " failed", e));
+  }
+
+  /**
+   * Releases this node's stale, no-longer-active jobs after an outcome could not be recorded.
+   *
+   * @param nodeId the node owning the jobs
+   * @param grace the minimum age of a claim that may be recovered
+   * @param activeJobIds jobs with attempts still running in memory
+   * @return the number of released jobs
+   */
+  public int releaseInactiveJobs(UUID nodeId, Duration grace, Collection<UUID> activeJobIds) {
+    return history.change(
+        db -> {
+          List<Change> released =
+              db.list(
+                  RELEASE_INACTIVE_JOBS_SQL,
+                  row ->
+                      Change.job(
+                          row.uuid(1),
+                          row.string(2),
+                          row.integer(3),
+                          nodeId,
+                          "released after its outcome could not be recorded"),
+                  nodeId,
+                  Sql.seconds(grace),
+                  Sql.array("uuid", activeJobIds.toArray()));
+          history.record(db, released);
+          return released.size();
+        },
+        e -> new BikeschedException("Releasing inactive bikesched jobs failed", e));
   }
 
   /**

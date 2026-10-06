@@ -13,18 +13,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class JobSlot {
 
   private final Semaphore slots;
+  private final Runnable onRelease;
   private final AtomicBoolean released = new AtomicBoolean();
 
   /**
    * @param slots the node's slots, one of which was acquired for this job
+   * @param onRelease runs once when the slot is released
    */
-  public JobSlot(Semaphore slots) {
+  public JobSlot(Semaphore slots, Runnable onRelease) {
     this.slots = Objects.requireNonNull(slots, "slots");
+    this.onRelease = Objects.requireNonNull(onRelease, "onRelease");
   }
 
   /** Releases the slot; does nothing if it was released before. */
   public void release() {
     if (released.compareAndSet(false, true)) {
+      onRelease.run();
       slots.release();
     }
   }
