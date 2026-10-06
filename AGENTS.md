@@ -43,9 +43,11 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   Members used across these packages are `public`; dependencies only point downwards:
   - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `Settings`
   - `internal.json`: `RawJsonMapper` (the default mapper, passes JSON strings through)
-  - `internal.node`: `NodeHeartbeat`, `NodeCleanUp` (releases jobs of dead nodes, removes them)
+  - `internal.node`: `DefaultNode` (the node's name, id and closed state), `NodeHeartbeat`,
+    `NodeCleanUp` (releases jobs of dead nodes, removes them)
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
-    event waits via `DefaultEventWait`), `JobPoller` (claiming and running jobs: poller, job
+    event waits via `DefaultEventWait`), `JobScheduler` (stores built jobs, registers and removes
+    recurring jobs), `JobPoller` (claiming and running jobs: poller, job
     slots, job threads, timeouts; configured by `JobPollerSettings`), `JobRegistry` (handlers,
     recurring jobs and payload types of a node), `JobAttempt` (timeout timer), `HardTimeout` (abandons
     attempts that ignore their timeout), `JobSlot`, `RecurringJob`, `RecurringJobRepair`,

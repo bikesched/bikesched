@@ -2,7 +2,6 @@ package org.bikesched.internal;
 
 import java.sql.Connection;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -12,7 +11,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedException;
 import org.bikesched.BikeschedLogContext;
@@ -22,18 +20,17 @@ import org.bikesched.event.EventType;
 import org.bikesched.event.ReceivedEvent;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.DatabaseInitializer;
-import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.event.DefaultEventBuilder;
 import org.bikesched.internal.event.EventCleanUp;
-import org.bikesched.internal.job.BaseJobBuilder;
 import org.bikesched.internal.job.DefaultJobBuilder;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.job.JobPoller;
 import org.bikesched.internal.job.JobPollerSettings;
 import org.bikesched.internal.job.JobRegistry;
-import org.bikesched.internal.job.RecurringJob;
+import org.bikesched.internal.job.JobScheduler;
 import org.bikesched.internal.job.RecurringJobRepair;
+import org.bikesched.internal.node.DefaultNode;
 import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.internal.node.NodeHeartbeat;
 import org.bikesched.internal.util.ExecutorUtil;
@@ -43,7 +40,6 @@ import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
-import org.bikesched.job.Recurrence;
 import org.bikesched.job.TypedJobHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,17 +76,13 @@ public final class DefaultBikesched implements Bikesched {
   private final String nodeName;
   private final JobRegistry registry = new JobRegistry();
   private final JobPoller jobPoller;
+  private final JobScheduler jobScheduler;
   private final ScheduledExecutorService heartbeatExecutor;
   private final ScheduledThreadPoolExecutor cleanUpExecutor;
-  private final Node node = new DefaultNode();
+  private final DefaultNode node;
 
   /** Guards starting to poll against closing, so a node never registers after it was closed. */
   private final Object lifecycle = new Object();
-
-  private final AtomicBoolean closed = new AtomicBoolean();
-
-  /** Set (once) when polling starts; {@code null} until then. */
-  private volatile UUID nodeId;
 
   /** Called before every database access of the API (polling, scheduling, publishing events). */
   private final DatabaseInitializer initializer;
@@ -100,6 +92,8 @@ public final class DefaultBikesched implements Bikesched {
     this.initializer = new DatabaseInitializer(database);
     this.settings = settings;
     this.nodeName = settings.nodeName();
+    this.node = new DefaultNode(nodeName);
+    this.jobScheduler = new JobScheduler(database, registry, nodeName, this::ensureReady);
     this.jobPoller =
         new JobPoller(
             database,
@@ -153,8 +147,8 @@ public final class DefaultBikesched implements Bikesched {
   public Node startPolling() {
     ensureReady(); // not under the lifecycle lock: close() must not wait for it
     synchronized (lifecycle) {
-      requireOpen();
-      if (nodeId != null) {
+      node.requireOpen();
+      if (node.id().isPresent()) {
         return node;
       }
       UUID id =
@@ -181,7 +175,7 @@ public final class DefaultBikesched implements Bikesched {
       var nodeCleanUp = new NodeCleanUp(database, id, nodeName, settings.nodeTimeout());
       var recurringJobRepair = new RecurringJobRepair(database, registry::recurringJobs);
       var eventCleanUp = new EventCleanUp(database, id, nodeName);
-      nodeId = id;
+      node.registered(id);
       // Once per node lifetime, before anything is scheduled; retried until it succeeds.
       repairRecurringJobs(recurringJobRepair);
       // A polling node claims jobs, so it must heartbeat: otherwise other nodes would consider it
@@ -219,30 +213,6 @@ public final class DefaultBikesched implements Bikesched {
     return node;
   }
 
-  /** The {@link Node} view of this instance. */
-  private final class DefaultNode implements Node {
-
-    @Override
-    public String name() {
-      return nodeName;
-    }
-
-    @Override
-    public Optional<UUID> id() {
-      return Optional.ofNullable(nodeId);
-    }
-
-    @Override
-    public boolean isPolling() {
-      return nodeId != null && !closed.get();
-    }
-
-    @Override
-    public String toString() {
-      return "Node[name=" + nodeName + ", id=" + nodeId + "]";
-    }
-  }
-
   @Override
   public Bikesched registerJobHandler(String type, JobHandler handler) {
     requireValidType(type);
@@ -266,39 +236,14 @@ public final class DefaultBikesched implements Bikesched {
   @Override
   public JobBuilder<Object> newJob(String type) {
     requireValidType(type);
-    return new DefaultJobBuilder<>(type, Object.class, database.jsonMapper(), scheduler);
+    return new DefaultJobBuilder<>(type, Object.class, database.jsonMapper(), jobScheduler);
   }
 
   @Override
   public <T> JobBuilder<T> newJob(JobType<T> type) {
     registry.requirePayloadType(type);
     return new DefaultJobBuilder<>(
-        type.name(), type.payloadType(), database.jsonMapper(), scheduler);
-  }
-
-  /** Stores the jobs built by the job builders. */
-  private final BaseJobBuilder.Scheduler scheduler =
-      new BaseJobBuilder.Scheduler() {
-        @Override
-        public UUID schedule(NewJob job, JobHandler handler, Connection connection) {
-          return scheduleJob(job, handler, connection);
-        }
-
-        @Override
-        public UUID scheduleRecurring(RecurringJob job, JobHandler handler, Instant firstRun) {
-          return scheduleRecurringJob(job, handler, firstRun);
-        }
-      };
-
-  /**
-   * Checks that this node is open.
-   *
-   * @throws IllegalStateException if this node is closed
-   */
-  private void requireOpen() {
-    if (closed.get()) {
-      throw new IllegalStateException("bikesched node " + nodeName + " is closed");
-    }
+        type.name(), type.payloadType(), database.jsonMapper(), jobScheduler);
   }
 
   /**
@@ -308,95 +253,14 @@ public final class DefaultBikesched implements Bikesched {
    * @throws IllegalStateException if this node is closed
    */
   private void ensureReady() {
-    requireOpen();
+    node.requireOpen();
     initializer.ensureInitialized();
-  }
-
-  /**
-   * Checks that this node is open and the job type has a handler, registering the given one first
-   * if there is none yet.
-   */
-  private void requireHandler(String type, JobHandler handler) {
-    requireOpen();
-    if (handler != null) {
-      if (registry.register(type, handler)) {
-        LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);
-      } else {
-        LOG.debug("Handler for job type {} already registered, keeping it", type);
-      }
-    }
-    registry.requireHandler(type);
-  }
-
-  /** Registers a recurring job, see {@link JobBuilder#schedule(Recurrence)}. */
-  private UUID scheduleRecurringJob(RecurringJob job, JobHandler handler, Instant firstRun) {
-    String type = job.type();
-    requireHandler(type, handler);
-    Instant now = Instant.now();
-    Instant first = firstRun != null ? firstRun : job.nextRun(now, now);
-    ensureReady();
-    var registration = database.jobs().registerRecurringJob(job.occurrence(first));
-    registry.addRecurringJob(job);
-    String recurrence = job.recurrence().description();
-    if (registration.created()) {
-      LOG.info(
-          "Registered recurring job {} ({}), first occurrence at {}",
-          type,
-          recurrence,
-          registration.scheduledAt());
-    } else if (registration.previousRecurrence() != null) {
-      LOG.info(
-          "Recurrence of recurring job {} changed from '{}' to '{}', next occurrence moved to {}",
-          type,
-          registration.previousRecurrence(),
-          recurrence,
-          registration.scheduledAt());
-    } else {
-      LOG.info(
-          "Registered recurring job {} ({}), pending occurrence {} at {}",
-          type,
-          recurrence,
-          registration.state(),
-          registration.scheduledAt());
-    }
-    return registration.jobId();
   }
 
   @Override
   public boolean removeRecurringJob(String type) {
     requireValidType(type);
-    boolean registered = registry.removeRecurringJob(type);
-    ensureReady();
-    int deleted = database.jobs().deletePendingOccurrences(type);
-    LOG.info(
-        "Removed recurring job {}{}{}",
-        type,
-        registered ? " from this node" : "",
-        deleted > 0 ? ", deleted its pending occurrence" : ", no pending occurrence to delete");
-    return deleted > 0;
-  }
-
-  /** Stores a job built by a {@link JobBuilder}; registers its handler first if given and new. */
-  private UUID scheduleJob(NewJob job, JobHandler handler, Connection connection) {
-    String type = job.type();
-    requireHandler(type, handler);
-    UUID jobId = UUID.randomUUID();
-    ensureReady();
-    if (connection == null) {
-      database.jobs().insertJob(jobId, job);
-    } else {
-      database.jobs().insertJob(connection, jobId, job);
-    }
-    LOG.debug(
-        "Scheduled job {} of type {} at {} (priority {}, max {} attempt(s), timeout {}){}",
-        jobId,
-        type,
-        job.scheduledAt(),
-        job.priority(),
-        job.maxAttempts(),
-        job.timeout() == null ? "node default" : job.timeout(),
-        connection == null ? "" : " in the caller's transaction");
-    return jobId;
+    return jobScheduler.removeRecurringJob(type);
   }
 
   @Override
@@ -492,10 +356,10 @@ public final class DefaultBikesched implements Bikesched {
   public void close() {
     UUID id;
     synchronized (lifecycle) {
-      if (!closed.compareAndSet(false, true)) {
+      if (!node.close()) {
         return;
       }
-      id = nodeId;
+      id = node.id().orElse(null);
     }
     jobPoller.close();
     ExecutorUtil.shutdownAndAwait(cleanUpExecutor, "clean-up");
@@ -522,7 +386,9 @@ public final class DefaultBikesched implements Bikesched {
     long millis = interval.toMillis();
     executor.scheduleWithFixedDelay(
         () -> {
-          try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId))) {
+          try (var _ =
+              MDC.putCloseable(
+                  BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
             task.run();
           }
         },
@@ -552,7 +418,9 @@ public final class DefaultBikesched implements Bikesched {
   private void scheduleOnce(ScheduledExecutorService executor, Runnable task, Duration delay) {
     executor.schedule(
         () -> {
-          try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId))) {
+          try (var _ =
+              MDC.putCloseable(
+                  BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
             task.run();
           }
         },

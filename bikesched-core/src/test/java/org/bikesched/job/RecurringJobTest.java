@@ -12,6 +12,7 @@ import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
 import org.bikesched.LogCapture;
 import org.bikesched.internal.DefaultBikesched;
+import org.bikesched.internal.job.JobScheduler;
 import org.bikesched.internal.job.RecurringJobRepair;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -70,7 +71,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
 
   @Test
   void changedScheduleMovesThePendingOccurrence() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobScheduler.class);
     try (logs;
         Bikesched bikesched = node("node-recurring-change")) {
       bikesched
