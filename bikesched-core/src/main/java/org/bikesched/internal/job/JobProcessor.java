@@ -244,7 +244,8 @@ public final class JobProcessor {
   }
 
   /**
-   * Runs the job's handler (verified here because claiming is not filtered by job type) and records
+   * Decides what the claimed job needs — the compensation of its steps, the cancellation it asked
+   * for, or its handler (verified here because claiming is not filtered by job type) — and records
    * the outcome.
    *
    * @return the recorded outcome
@@ -272,6 +273,18 @@ public final class JobProcessor {
                   + "' on bikesched node "
                   + nodeName));
     }
+    return runAttempt(job, slot, started, handler);
+  }
+
+  /**
+   * Runs the handler in one attempt and hands what it did to {@link #recordOutcome}. The attempt's
+   * timer and, with a hard timeout, the abandoning of attempts that ignore it are set up by {@link
+   * #startAttempt}; the pending interrupt is cleared afterwards, because this thread still has to
+   * record the outcome and blocking I/O of an interrupted virtual thread fails.
+   *
+   * @return the recorded outcome
+   */
+  private Outcome runAttempt(DefaultJob job, JobSlot slot, Started started, JobHandler handler) {
     JobAttempt attempt = startAttempt(job, slot, started);
     Exception failure = null;
     try {
@@ -299,7 +312,20 @@ public final class JobProcessor {
     if (job.isLockLost()) {
       return abandon(job, failure);
     }
+    return recordOutcome(job, failure, end, attempt);
+  }
 
+  /**
+   * Records the outcome the attempt ended with, by precedence when the handler did several things
+   * (see the class comment).
+   *
+   * @param failure the exception the handler threw, {@code null} if it returned or suspended
+   * @param end how the attempt ended
+   * @param attempt the attempt, for the timeout of a timed out one
+   * @return the recorded outcome
+   */
+  private Outcome recordOutcome(
+      DefaultJob job, Exception failure, JobAttempt.End end, JobAttempt attempt) {
     if (job.isCancelled()) {
       if (failure != null) {
         // The handler's decision to cancel wins over the failure: no retry.
