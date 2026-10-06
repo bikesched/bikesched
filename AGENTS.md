@@ -170,6 +170,13 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 - `IDEAS.md` (repository root) collects possible future improvements; remove an entry once it is
   implemented or decided against.
+- `docs/specs/` holds design specs written before an implementation lands, one file per feature
+  (`bikesched-spring-boot-starter.md`, named after the module). A spec states the goal, the module
+  and dependencies, the design with rejected alternatives, a test plan and implementation steps, and
+  its open questions; settle the open questions first, then implement. Keep the spec updated while
+  implementing instead of writing it up afterwards, and link it from the README section of the
+  module once it exists. The user-facing page in `docs/` and the ADR are written with the
+  implementation, not with the spec. Specs are internal: they are not linked from `docs/index.md`.
 - `docs/decisions/` holds the Architecture Decision Records (`NNNN-short-title.md`, Nygard format:
   Status, Context, Decision, Consequences; copy `template.md`). A significant design decision
   (schema, API shape, a rejected alternative worth remembering) gets a new ADR in the same change,
