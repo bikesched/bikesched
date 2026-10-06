@@ -38,7 +38,8 @@ and without any coordinator besides PostgreSQL.
 5. [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
    logging
 6. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
-7. [Database](database.md): tables, indexes and migrations
+7. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
+8. [Database](database.md): tables, indexes and migrations
 
 The [examples](../bikesched-examples/README.md) show the concepts working together. The
 [decision records](decisions/README.md) explain why bikesched works the way it does.

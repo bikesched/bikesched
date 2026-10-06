@@ -7,6 +7,8 @@ dependencies {
     // Payloads, events and step results are records, mapped to JSON with bikesched-jackson
     // (brings bikesched-core and Jackson).
     implementation(project(":bikesched-jackson"))
+    // @JobHandler methods (annotation example).
+    implementation(project(":bikesched-annotations"))
     implementation(libs.postgresql)
     implementation(libs.slf4j.api)
     // Waits for job outcomes in the examples' main classes.
@@ -34,6 +36,15 @@ tasks.register<JavaExec>("runEvent") {
     description = "Runs the event example against the docker compose Postgres."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "org.bikesched.examples.event.EventExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
+// ./gradlew :bikesched-examples:runAnnotation: job handlers declared as annotated methods.
+tasks.register<JavaExec>("runAnnotation") {
+    group = "application"
+    description = "Runs the annotation example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.annotation.AnnotationExample"
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
 

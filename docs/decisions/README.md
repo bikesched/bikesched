@@ -24,3 +24,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0016](0016-claim-only-handled-job-types.md) | Nodes claim only job types they handle | Accepted |
 | [0017](0017-retry-failed-jobs.md) | Retrying failed jobs keeps their completed steps | Accepted |
 | [0018](0018-event-payload-copied-into-steps.md) | Event payloads copied into steps, no event handlers | Accepted |
+| [0019](0019-annotations-module.md) | Job handler annotations in their own module | Accepted |

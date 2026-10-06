@@ -34,6 +34,7 @@ small:
 | `bikesched-core` | the scheduler; depends on the PostgreSQL driver and the SLF4J API only |
 | `bikesched-jackson` | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
 | `bikesched-kotlin` | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
+| `bikesched-annotations` | job handlers declared as `@JobHandler` methods, see [Annotations](docs/annotations.md) |
 
 ## Features
 
@@ -113,7 +114,7 @@ All dependency and tool versions are managed in `gradle/libs.versions.toml`.
 ## Snapshots
 
 Every successful build of `main` publishes the current snapshot (`org.bikesched:bikesched-core`,
-`bikesched-jackson`, `bikesched-kotlin`, version `0.1.0-SNAPSHOT`) to GitHub Packages. Reading
+`bikesched-jackson`, `bikesched-kotlin`, `bikesched-annotations`, version `0.1.0-SNAPSHOT`) to GitHub Packages. Reading
 from GitHub Packages requires a GitHub token with the `read:packages` scope, even for public
 packages:
 

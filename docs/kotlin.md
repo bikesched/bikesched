@@ -66,5 +66,5 @@ handler gets `null`.
 
 ---
 
-Next: [Database](database.md) · Previous: [Configuration](configuration.md) ·
+Next: [Annotations](annotations.md) · Previous: [Configuration](configuration.md) ·
 [Documentation index](index.md)

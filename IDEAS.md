@@ -162,18 +162,16 @@ A Spring Boot integration `bikesched-spring` (auto-configuration plus starter) t
 
 ```java
 @Component
-@BikeschedJob("send-invoice")
-class SendInvoiceHandler implements TypedJobHandler<Invoice> {
-  public void handle(Job job, Invoice invoice) { … }
+class InvoiceJobs {
+  @JobHandler(type = "send-invoice")
+  public void sendInvoice(Job job, Invoice invoice) { … }
 }
 ```
 
-- Discovery: beans implementing `JobTypeHandler` are registered as they are (they know their
-  type); beans annotated with a type name (and a handler interface) as well. Possibly also
-  annotated methods (`@BikeschedJob("…") void sendInvoice(Job job, Invoice invoice)`), like
-  `@Scheduled`/`@EventListener`. The annotation needs a name that does not clash with
-  `org.bikesched.job.Job` (e.g. `@BikeschedJob` or `@JobHandler`).
-- Recurring jobs declared on the handler (`@BikeschedJob(value = "…", cron = "…")`, with
+- Discovery: `@JobHandler` methods of beans, via `JobHandlers` from
+  [bikesched-annotations](docs/annotations.md) (resolving the target class of AOP proxies), and
+  beans implementing `JobTypeHandler`.
+- Recurring jobs declared on the annotation (e.g. `@JobHandler(type = "…", cron = "…")`, with
   [bikesched-cron](#bikesched-cron)) and registered on startup.
 - Auto-configuration: the context's `DataSource`, the Jackson `ObjectMapper` (via
   bikesched-jackson) as `JsonMapper`, the builder options as `bikesched.*` properties, and a

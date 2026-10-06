@@ -31,6 +31,7 @@ does; this file covers how to change it.
 | `bikesched-core` | the library; runtime dependencies: PostgreSQL JDBC driver and `slf4j-api` only |
 | `bikesched-jackson` | `JacksonJsonMapper` (Java only, package `org.bikesched.jackson`); depends on core and `jackson-databind` (both `api`) |
 | `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core and the Kotlin stdlib only (tests use bikesched-jackson) |
+| `bikesched-annotations` | `@JobHandler` and `JobHandlers` (Java only, package `org.bikesched.annotation`): job handlers declared as annotated methods, invoked via `MethodHandle`; depends on core only (`api`; tests use bikesched-jackson) |
 | `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test using the shared `util.Database`), described in its own `README.md`; JSON via bikesched-jackson |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
 

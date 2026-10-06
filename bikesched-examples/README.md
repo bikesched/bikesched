@@ -11,6 +11,7 @@ by [`bikesched-jackson`](../docs/configuration.md#jackson).
 ```shell
 docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:runSimple   # one handler, one job; honors POSTGRES_PORT, like docker compose
+./gradlew :bikesched-examples:runAnnotation  # job handlers as @JobHandler methods
 ./gradlew :bikesched-examples:runEvent    # two jobs waiting for an event, published right away and 3s later
 ./gradlew :bikesched-examples:run         # taxi booking
 ./gradlew :bikesched-examples:runCinema   # cinema tickets
@@ -60,6 +61,30 @@ service again. Without one, the event is published before the job starts waiting
 receives it right away (see [Events](../docs/events.md)).
 
 `EventExampleTest` runs both variants and checks that the delayed job waits and then succeeds.
+
+## Annotation
+
+Package [`org.bikesched.examples.annotation`](src/main/java/org/bikesched/examples/annotation): job
+handlers declared as methods with `@JobHandler` (module `bikesched-annotations`). Each method takes
+the `Job`, the payload (here a `Mail` record), both or neither:
+
+```java
+public final class MailJobs {
+    @JobHandler(type = "send-mail")
+    public void sendMail(Job job, Mail mail) { … }
+
+    @JobHandler(type = "archive-mail")
+    public void archiveMail(Mail mail) { … }
+
+    @JobHandler(type = "check-mailbox")
+    public void checkMailbox() { … }
+}
+
+JobHandlers.register(bikesched, new MailJobs());
+```
+
+`AnnotationExample` schedules one job of each type; `AnnotationExampleTest` checks that they
+succeed.
 
 ## Taxi booking
 
