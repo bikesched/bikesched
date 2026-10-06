@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * bikesched: a PostgreSQL-backed job scheduler shared by all connected nodes.
  *

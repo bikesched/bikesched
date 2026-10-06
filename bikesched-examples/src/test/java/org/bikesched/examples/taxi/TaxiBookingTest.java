@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package org.bikesched.examples.taxi;
 
 import static org.assertj.core.api.Assertions.assertThat;

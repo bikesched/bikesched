@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package org.bikesched.micrometer;
 
 import io.micrometer.core.instrument.Counter;

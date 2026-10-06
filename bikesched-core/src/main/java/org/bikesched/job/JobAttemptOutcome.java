@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
 /** What was recorded for an attempt, see {@link JobAttemptResult}. */

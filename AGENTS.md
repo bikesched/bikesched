@@ -16,6 +16,9 @@ does; this file covers how to change it.
   `-Werror` too; also check the build log for warnings, not only failures.
 - Local database: `docker compose up -d` (prefix `POSTGRES_PORT=5433` if 5432 is taken), then
   run an example, e.g. `./gradlew :bikesched-examples:runSimple`.
+- Source files start with `// SPDX-License-Identifier: Apache-2.0`; Spotless adds it (and
+  `spotlessCheck` fails without it). The license is Apache 2.0 (`LICENSE`, `NOTICE`); the name
+  and logo are covered by `TRADEMARKS.md` (ADR 0021).
 - Every version (libraries, Gradle plugins, Java, the project version) lives in
   `gradle/libs.versions.toml`; no version literals in `.kts` files. Use the latest stable releases.
 - CI: `.github/workflows/build.yml` runs `./gradlew build` on every pull request and push to

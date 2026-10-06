@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Jobs of the bikesched implementation: the job builders, job execution ({@code JobProcessor},
  * {@code DefaultJob}) with durable steps, compensation and event waits, and recurring jobs. Not

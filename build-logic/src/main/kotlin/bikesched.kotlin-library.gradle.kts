@@ -41,6 +41,7 @@ tasks.named<JavaCompile>("compileJava") {
 spotless {
     kotlin {
         ktfmt(libs.findVersion("ktfmt").get().requiredVersion).googleStyle()
+        licenseHeader("// SPDX-License-Identifier: Apache-2.0")
     }
 }
 

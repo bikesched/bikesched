@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package org.bikesched.examples.cinema;
 
 import java.io.PrintStream;

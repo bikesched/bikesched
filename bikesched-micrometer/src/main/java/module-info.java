@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Micrometer metrics for bikesched: {@link org.bikesched.micrometer.MicrometerJobListener} records
  * the jobs a node runs in a {@code MeterRegistry}.

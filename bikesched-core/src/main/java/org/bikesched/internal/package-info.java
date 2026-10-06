@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * The bikesched implementation: the node ({@code DefaultBikesched}) with its settings, heartbeat
  * and node clean-up. Jobs, events and database access live in the subpackages {@code job}, {@code

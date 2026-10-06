@@ -22,10 +22,13 @@ tasks.withType<JavaCompile>().configureEach {
 
 // Formatting: `spotlessCheck` runs as part of `check`, `spotlessApply` fixes violations.
 // Use the google-java-format IntelliJ plugin with the same version for identical IDE formatting.
+// Every source file starts with the SPDX license header; Spotless skips package-info.java and
+// module-info.java, which carry it by hand.
 spotless {
     java {
         googleJavaFormat(libs.findVersion("google-java-format").get().requiredVersion)
         formatAnnotations()
+        licenseHeader("// SPDX-License-Identifier: Apache-2.0")
     }
 }
 
