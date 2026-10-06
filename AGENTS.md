@@ -197,8 +197,11 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 ## Commits
 
-Small messages: one subject line plus a few `-` bullets of user-visible changes since the last
-commit. Always `git fetch` first and rebase local commits onto `origin/main` if it moved (e.g.
-merged Renovate PRs), then commit and push, only as a fast-forward. A green local `./gradlew build`
-is enough before pushing; only after changes to `.github/workflows/` wait for the GitHub Actions run
-(`gh run watch`) and check that it succeeds.
+Use [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
+`<type>[optional scope][!]: <description>`, with a blank line before an optional body and footers.
+Use an appropriate type (`feat`, `fix`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, etc.);
+mark breaking changes with `!` or a `BREAKING CHANGE:` footer. Keep the description concise and add a
+few `-` bullets in the body for user-visible changes. Always `git fetch` first and rebase local
+commits onto `origin/main` if it moved (e.g. merged Renovate PRs), then commit and push, only as a
+fast-forward. A green local `./gradlew build` is enough before pushing; only after changes to
+`.github/workflows/` wait for the GitHub Actions run (`gh run watch`) and check that it succeeds.
