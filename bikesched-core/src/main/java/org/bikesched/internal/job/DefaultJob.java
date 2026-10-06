@@ -389,6 +389,12 @@ public final class DefaultJob implements Job {
         waitForEvent(stepName, eventType.name(), eventKey), eventType.payloadType());
   }
 
+  @Override
+  public <T> T awaitEvent(String stepName, EventType<T> eventType, String eventKey) {
+    Objects.requireNonNull(eventType, "eventType");
+    return waitForEvent(stepName, eventType.name(), eventKey).receive(eventType.payloadType());
+  }
+
   /** A call run with the step name in the logging context. */
   @FunctionalInterface
   interface StepCall<R> {
@@ -410,7 +416,7 @@ public final class DefaultJob implements Job {
    * @param onTimeout produces the result if the wait timed out; runs on every run that reaches the
    *     timed-out wait, its result is not stored
    */
-  <T> T awaitEvent(
+  <T> T awaitEventStep(
       String stepName,
       String eventName,
       String eventKey,

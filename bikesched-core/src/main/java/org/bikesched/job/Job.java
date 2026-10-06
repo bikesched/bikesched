@@ -231,6 +231,8 @@ public interface Job {
    *         .receive();
    * }</pre>
    *
+   * <p>Without a timeout, {@link #awaitEvent(String, EventType, String)} is shorter.
+   *
    * @param stepName the step name, unique within the job, at most 200 characters
    * @param eventType the event's name and payload class
    * @param eventKey identifies the event instance waited for, e.g. an order id, at most 500
@@ -240,6 +242,35 @@ public interface Job {
    * @throws IllegalArgumentException if the step name is blank
    */
   <T> TypedEventWait<T> waitForEvent(String stepName, EventType<T> eventType, String eventKey);
+
+  /**
+   * Waits for an event of an {@link EventType} and returns its payload, mapped to the type's
+   * payload class; short for {@code waitForEvent(stepName, eventType, eventKey).receive()}:
+   *
+   * <pre>{@code
+   * Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, order.id());
+   * }</pre>
+   *
+   * <p>The wait is a durable step like with {@link #waitForEvent(String, String, String)}: if the
+   * event has not been published yet, the job's attempt ends here (the method does not return) and
+   * the job is suspended until it is; later runs of the handler return the payload stored with the
+   * step. The node's {@link BikeschedBuilder#defaultEventTimeout(Duration) default event timeout}
+   * applies, if any; for a timeout of its own with a fallback result, use {@link
+   * #waitForEvent(String, EventType, String)}.
+   *
+   * @param stepName the step name, unique within the job, at most 200 characters
+   * @param eventType the event's name and payload class
+   * @param eventKey identifies the event instance waited for, e.g. an order id, at most 500
+   *     characters
+   * @param <T> the payload type
+   * @return the payload, {@code null} if the event has none
+   * @throws org.bikesched.event.EventTimeoutException if the wait exceeded the node's default event
+   *     timeout; the job fails
+   * @throws IllegalStateException if the step name is used for another step of the job
+   * @throws BikeschedException if the step cannot be read or stored
+   * @throws IllegalArgumentException if the step name is blank
+   */
+  <T> T awaitEvent(String stepName, EventType<T> eventType, String eventKey);
 
   /**
    * Marks this job as cancelled. Once the handler returns, bikesched sets the job to {@code

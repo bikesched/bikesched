@@ -40,6 +40,56 @@ class EventTypeTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void awaitEventReturnsThePayloadWithoutReceive() throws Exception {
+    EventType<Payment> paid = EventType.of(unique("paid"), Payment.class);
+    String type = unique("await-event");
+    var runs = new java.util.concurrent.atomic.AtomicInteger();
+    var received = new CompletableFuture<Payment>();
+    try (Bikesched bikesched = node("node-await-event")) {
+      UUID jobId =
+          bikesched
+              .newJob(type)
+              .handler(
+                  job -> {
+                    runs.incrementAndGet();
+                    received.complete(job.awaitEvent("await", paid, "order-2"));
+                  })
+              .schedule();
+      awaitState(jobId, "WAITING");
+
+      bikesched.newEvent(paid, "order-2").payload(new Payment("order-2", 250)).publish();
+
+      assertThat(received.get(10, TimeUnit.SECONDS)).isEqualTo(new Payment("order-2", 250));
+      awaitState(jobId, "SUCCEEDED");
+      assertThat(runs).as("suspended, then resumed by the event").hasValue(2);
+    }
+  }
+
+  @Test
+  void awaitEventFailsTheJobAfterTheDefaultEventTimeout() throws Exception {
+    EventType<Payment> paid = EventType.of(unique("paid"), Payment.class);
+    String type = unique("await-event-timeout");
+    try (Bikesched bikesched =
+        testNode("node-await-event-timeout")
+            .jsonMapper(new PaymentJsonMapper())
+            .defaultEventTimeout(Duration.ofMillis(300))
+            .build()) {
+      UUID jobId =
+          bikesched.newJob(type).handler(job -> job.awaitEvent("await", paid, "never")).schedule();
+
+      awaitState(jobId, "FAILED");
+      assertThat(
+              count(
+                  "id = '"
+                      + jobId
+                      + "' and last_error like 'Waiting for event "
+                      + paid.name()
+                      + "/never in step ''await'' timed out after PT0.3S%'"))
+          .isOne();
+    }
+  }
+
+  @Test
   void typedWaitReturnsTheTimeoutResultOnceTheDeadlinePassed() throws Exception {
     EventType<Payment> paid = EventType.of(unique("paid-late"), Payment.class);
     String type = unique("typed-timeout");

@@ -37,7 +37,7 @@ final class DefaultEventWait implements EventWait {
     Duration defaultTimeout = job.defaultEventTimeout();
     return unchecked(
         () ->
-            job.awaitEvent(
+            job.awaitEventStep(
                 stepName,
                 eventName,
                 eventKey,
@@ -77,7 +77,7 @@ final class DefaultEventWait implements EventWait {
     @Override
     public T receive(Class<? extends T> payloadType) throws Exception {
       Objects.requireNonNull(payloadType, "payloadType");
-      return wait.job.<T>awaitEvent(
+      return wait.job.<T>awaitEventStep(
           wait.stepName,
           wait.eventName,
           wait.eventKey,

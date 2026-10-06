@@ -5,7 +5,8 @@ import java.time.Duration;
 /**
  * A wait for an event of an {@link EventType}, returned by {@code Job.waitForEvent(String,
  * EventType, String)}: like {@link EventWait}, but {@link #receive()} returns the payload mapped to
- * the type's payload class.
+ * the type's payload class. Without a timeout, {@code Job.awaitEvent(String, EventType, String)}
+ * returns the payload directly.
  *
  * @param <T> the payload type
  */

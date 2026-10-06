@@ -89,23 +89,6 @@ module, would make the problems above visible in production.
 
 ## API
 
-### Waiting for a typed event without `receive()`
-
-`job.waitForEvent(step, eventType, key)` returns a `TypedEventWait<T>` that still has to be
-completed with `receive()`. For the common case, waiting should directly return the event's payload,
-typed by the event type, as the result of the wait step:
-
-```java
-Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, orderId);   // no receive()
-```
-
-- Needs its own method name (e.g. `awaitEvent`): an overload of `waitForEvent` with the same
-  parameters cannot differ in its return type.
-- Optionally an overload with a timeout (`Duration`), returning `null` or throwing
-  `EventTimeoutException` when it passes.
-- Stored like today, as the event step's `result`, so replays return the same value.
-- `waitForEvent(...).timeout(...).receive()` stays for waits with a timeout handler.
-
 ### Steps inside steps
 
 A step handler can currently call `job.step(...)` (or wait for an event) itself; nothing prevents

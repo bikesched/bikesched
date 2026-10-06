@@ -10,7 +10,7 @@ import org.bikesched.internal.util.ValidationUtil;
  * <pre>{@code
  * static final EventType<Payment> PAYMENT_RECEIVED = EventType.of("payment-received", Payment.class);
  *
- * Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id()).receive();
+ * Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, order.id());
  * bikesched.newEvent(PAYMENT_RECEIVED, order.id()).payload(payment).publish();
  * }</pre>
  *

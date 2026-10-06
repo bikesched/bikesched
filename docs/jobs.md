@@ -93,6 +93,7 @@ A handler receives the `Job` being executed:
 | `step(name, Class, handler)` | run a durable step, see [Durable steps](steps.md#durable-steps) |
 | `newStep(name, Class)` | build a step with a compensation, see [Compensation](steps.md#compensation) |
 | `waitForEvent(step, name, key)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](events.md) |
+| `awaitEvent(step, eventType, key)` | wait for an event and return its typed payload, see [Typed events](events.md#typed-events) |
 | `cancel()`, `cancel(message)` | cancel the job, see [Cancellation](#cancellation) |
 | `fail()`, `fail(message)` | fail the attempt without throwing, see [Failures and retries](#failures-and-retries) |
 | `isCompensating()` | whether the handler is replayed to compensate the job |

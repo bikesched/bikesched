@@ -41,7 +41,7 @@ waits for that event:
 
 ```java
 UUID id = job.step("call-service", UUID.class, _ -> service.process(payload.id(), payload.delay()));
-EventPayload event = job.waitForEvent("await-event", EVENT_TYPE, id.toString()).receive();
+EventPayload event = job.awaitEvent("await-event", EVENT_TYPE, id.toString());
 ```
 
 The returned id is the step's stored result, so a later run of the handler waits for the same

@@ -87,11 +87,19 @@ waiting jobs:
 ```java
 static final EventType<Payment> PAYMENT_RECEIVED = EventType.of("payment-received", Payment.class);
 
-Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id())
-        .timeout(Duration.ofDays(3), () -> null)   // optional; the result type is already known
-        .receive();
+Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, order.id());
 
 bikesched.newEvent(PAYMENT_RECEIVED, order.id()).payload(payment).publish();   // payload(Payment) only
+```
+
+`awaitEvent` returns the payload directly, as the result of the wait step. For a
+[timeout](#timeouts) with a fallback, use `waitForEvent` with the type instead; `receive()` then
+needs no class:
+
+```java
+Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id())
+        .timeout(Duration.ofDays(3), () -> null)   // the result type is already known
+        .receive();
 ```
 
 Only the name is stored, so events published with the string-based API reach typed waits and vice

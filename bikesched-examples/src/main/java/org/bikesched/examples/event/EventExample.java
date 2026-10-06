@@ -69,7 +69,7 @@ public final class EventExample {
           // Step 2: wait for the event with that id. If it was already published, it is received
           // right away; otherwise (delay) the job is suspended until it is, and this handler runs
           // again from the start: step 1 returns its stored id without calling the service again.
-          EventPayload event = job.waitForEvent("await-event", EVENT_TYPE, id.toString()).receive();
+          EventPayload event = job.awaitEvent("await-event", EVENT_TYPE, id.toString());
           System.out.println("Job " + job.id() + " received: " + event);
         });
   }
