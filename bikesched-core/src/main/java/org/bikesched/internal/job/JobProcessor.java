@@ -12,6 +12,7 @@ import org.bikesched.JobListener;
 import org.bikesched.RetryBackoff;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NewJob;
+import org.bikesched.internal.util.Retry;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobAttemptOutcome;
 import org.bikesched.job.JobAttemptResult;
@@ -56,6 +57,10 @@ public final class JobProcessor {
       new Outcome(
           JobAttemptOutcome.NOT_RECORDED,
           "not recorded, the job was no longer running in this attempt's claim");
+
+  /** Recording an outcome writes through the claim's lock token, so it is safe to retry. */
+  private static final Retry RECORDING = Retry.of(3, Duration.ofMillis(200));
+
   private static final Outcome NOT_RECORDED =
       new Outcome(JobAttemptOutcome.NOT_RECORDED, "not recorded, see the warning above");
 
@@ -341,7 +346,10 @@ public final class JobProcessor {
     } else {
       try {
         NewJob next = nextOccurrence(job);
-        var completed = database.jobs().completeJob(job.id(), job.lock(), next);
+        var completed =
+            RECORDING.call(
+                "Completing job " + job.id() + " failed",
+                () -> database.jobs().completeJob(job.id(), job.lock(), next));
         if (completed.isEmpty()) {
           LOG.warn(
               "Job {} was no longer running in this attempt's claim when completing it", job.id());
@@ -361,14 +369,17 @@ public final class JobProcessor {
     String event = "event " + suspension.eventName() + "/" + suspension.eventKey();
     try {
       var suspended =
-          database
-              .events()
-              .suspendJob(
-                  job.id(),
-                  job.lock(),
-                  suspension.stepName(),
-                  suspension.eventName(),
-                  suspension.eventKey());
+          RECORDING.call(
+              "Suspending job " + job.id() + " failed",
+              () ->
+                  database
+                      .events()
+                      .suspendJob(
+                          job.id(),
+                          job.lock(),
+                          suspension.stepName(),
+                          suspension.eventName(),
+                          suspension.eventKey()));
       if (suspended.isEmpty()) {
         LOG.warn(
             "Job {} of type {} waits for {} but was no longer running in this attempt's claim",
@@ -403,7 +414,10 @@ public final class JobProcessor {
   private Outcome recordCancellation(DefaultJob job, String message, boolean byHandler) {
     try {
       NewJob next = nextOccurrence(job);
-      var cancelled = database.jobs().cancelJob(job.id(), job.lock(), message, byHandler, next);
+      var cancelled =
+          RECORDING.call(
+              "Cancelling job " + job.id() + " failed",
+              () -> database.jobs().cancelJob(job.id(), job.lock(), message, byHandler, next));
       if (cancelled.isPresent()) {
         boolean compensating = cancelled.get().compensating();
         LOG.info(
@@ -517,7 +531,10 @@ public final class JobProcessor {
   private Outcome recordCompensated(DefaultJob job, int compensated) {
     try {
       NewJob next = nextOccurrence(job);
-      var ended = database.jobs().completeCompensation(job.id(), job.lock(), next);
+      var ended =
+          RECORDING.call(
+              "Completing the compensation of job " + job.id() + " failed",
+              () -> database.jobs().completeCompensation(job.id(), job.lock(), next));
       if (ended.isEmpty()) {
         LOG.warn(
             "Job {} was no longer compensating in this attempt's claim when completing it",
@@ -550,7 +567,11 @@ public final class JobProcessor {
     Duration retryAfter = backoffDelay(job, job.compensationAttempts());
     try {
       NewJob next = nextOccurrence(job);
-      var failed = database.jobs().failCompensation(job.id(), job.lock(), error, retryAfter, next);
+      var failed =
+          RECORDING.call(
+              "Recording the failed compensation of job " + job.id() + " failed",
+              () ->
+                  database.jobs().failCompensation(job.id(), job.lock(), error, retryAfter, next));
       if (failed.isEmpty()) {
         LOG.warn(
             "Compensating job {} of type {} failed and it was no longer compensating in this"
@@ -669,13 +690,14 @@ public final class JobProcessor {
    */
   private Outcome recordFailure(
       DefaultJob job, String error, Throwable cause, Integer maxAttempts, Duration retryAfter) {
-    if (retryAfter == null) {
-      retryAfter = backoffDelay(job);
-    }
+    Duration retryIn = retryAfter == null ? backoffDelay(job) : retryAfter;
     try {
       NewJob next = nextOccurrence(job);
       var failed =
-          database.jobs().failJob(job.id(), job.lock(), error, maxAttempts, retryAfter, next);
+          RECORDING.call(
+              "Failing job " + job.id() + " failed",
+              () ->
+                  database.jobs().failJob(job.id(), job.lock(), error, maxAttempts, retryIn, next));
       if (failed.isEmpty()) {
         LOG.warn(
             "Job {} of type {} failed and was no longer running in this attempt's claim: {}",
@@ -706,8 +728,7 @@ public final class JobProcessor {
             JobAttemptOutcome.FAILED,
             "FAILED" + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled()));
       } else {
-        String when =
-            retryAfter == null ? "as soon as possible" : "at " + failed.get().scheduledAt();
+        String when = retryIn == null ? "as soon as possible" : "at " + failed.get().scheduledAt();
         LOG.warn(
             "Job {} of type {} failed (attempt {} of {}), it will be retried {}: {}",
             job.id(),

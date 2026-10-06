@@ -12,9 +12,12 @@ If recording an attempt's outcome fails (e.g. a database blip right after the ha
 heartbeating, so node clean-up never releases it. It is stuck until that node restarts. Applies to
 completion, failure, cancellation, suspension and compensation outcomes.
 
-- Retry recording the outcome a few times with a short backoff.
-- Periodically release this node's own `RUNNING` jobs that are no longer running in memory, after
-  a grace period for freshly claimed jobs (so a job the poller just claimed is not released).
+- Done: recording is retried three times with a 200 ms delay (`internal.util.Retry`), for every
+  outcome; it stops early when the node is closing (interrupt).
+- Still open: periodically release this node's own `RUNNING` jobs that are no longer running in
+  memory, after a grace period for freshly claimed jobs (so a job the poller just claimed is not
+  released). Needed for a node whose database is unreachable for longer than the retries, and for
+  the abandoned threads of the hard timeout.
 
 ### Poller watchdog
 
