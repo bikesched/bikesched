@@ -28,6 +28,15 @@ tasks.register<JavaExec>("runSimple") {
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
 
+// ./gradlew :bikesched-examples:runEvent: a job waiting for the event its service publishes.
+tasks.register<JavaExec>("runEvent") {
+    group = "application"
+    description = "Runs the event example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.event.EventExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
 // ./gradlew :bikesched-examples:runCinema: the cinema ticket example, same database as run.
 tasks.register<JavaExec>("runCinema") {
     group = "application"

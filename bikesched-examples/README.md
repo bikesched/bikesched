@@ -11,6 +11,7 @@ by [`bikesched-jackson`](../docs/configuration.md#jackson).
 ```shell
 docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:runSimple   # one handler, one job; honors POSTGRES_PORT, like docker compose
+./gradlew :bikesched-examples:runEvent    # two jobs waiting for an event, published right away and 3s later
 ./gradlew :bikesched-examples:run         # taxi booking
 ./gradlew :bikesched-examples:runCinema   # cinema tickets
 ./gradlew :bikesched-examples:test        # the example tests, against Testcontainers
@@ -29,6 +30,36 @@ bikesched.newJob(JOB_TYPE).payload(new JobPayload(UUID.randomUUID())).schedule()
 ```
 
 `SimpleExampleTest` runs the job and waits until it ended.
+
+## Event
+
+Package [`org.bikesched.examples.event`](src/main/java/org/bikesched/examples/event): one job with
+two steps. The first sends the payload's id to `EventService`, which returns an id of its own and
+publishes an event keyed by it, with both ids as payload (`EventPayload(id, jobId)`); the second
+waits for that event:
+
+```java
+UUID id = job.step("call-service", UUID.class, _ -> service.process(payload.id(), payload.delay()));
+EventPayload event = job.waitForEvent("await-event", EVENT_TYPE, id.toString()).receive();
+```
+
+The returned id is the step's stored result, so a later run of the handler waits for the same
+event.
+
+`scheduleJob(delay)` decides per job when the service publishes the event, and `main` schedules
+one of each:
+
+```java
+example.scheduleJob(null);                    // published right away: the wait receives it at once
+example.scheduleJob(Duration.ofSeconds(3));   // published 3 seconds later on another thread
+```
+
+With a delay, the job is suspended at the wait (`WAITING`, without a thread) and resumed by the
+event: its handler runs again from the start, and step 1 returns the stored id without calling the
+service again. Without one, the event is published before the job starts waiting, so the wait
+receives it right away (see [Events](../docs/events.md)).
+
+`EventExampleTest` runs both variants and checks that the delayed job waits and then succeeds.
 
 ## Taxi booking
 
