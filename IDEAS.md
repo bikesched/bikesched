@@ -62,8 +62,7 @@ admin UI, alerts and bulk `retry(...)`.
 
 ### Hook for permanently failed jobs
 
-Quartz has `JobListener`, db-scheduler a callback after the last retry. bikesched has no hook for a
-job ending `FAILED` or `COMPENSATION_FAILED`, e.g. to alert or move it to a dead-letter store. The
+bikesched has no hook for a job ending `FAILED` or `COMPENSATION_FAILED`, e.g. to alert or move it to a dead-letter store. The
 handler cannot do this reliably itself: it does not run after a timeout, an abandoned attempt or a
 crash of its node.
 
@@ -72,12 +71,6 @@ crash of its node.
   alerts via [Metrics](docs/metrics.md).
 - Open: a guaranteed hook (e.g. an outbox-like table or a dead-letter job type), and how it
   relates to the job history.
-
-### Metrics
-
-`JobListener` and `bikesched-micrometer` cover what a node does itself (see
-[Metrics](docs/metrics.md)). Still missing: cluster-wide gauges such as due jobs, waiting jobs or
-`RUNNING` jobs older than their timeout, which need a (cheap, rate-limited) query.
 
 ## Testing
 
@@ -165,7 +158,7 @@ class InvoiceJobs {
 - Transactions: scheduling jobs and publishing events inside a Spring transaction should use its
   connection (`DataSourceUtils.getConnection`), so they commit or roll back with it.
 - Optional later: Actuator health (node heartbeat) and metrics via Micrometer (see
-  [Metrics](#metrics)).
+  [Metrics](docs/metrics.md), `bikesched-micrometer`).
 - Target the latest Spring Boot; the module depends on Spring, core stays free of it.
 
 ## Website
