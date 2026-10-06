@@ -15,6 +15,7 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:runEvent    # two jobs waiting for an event, published right away and 3s later
 ./gradlew :bikesched-examples:run         # taxi booking
 ./gradlew :bikesched-examples:runCinema   # cinema tickets
+./gradlew :bikesched-examples:runSpring   # Spring Boot application wired by the starter
 ./gradlew :bikesched-examples:test        # the example tests, against Testcontainers
 ```
 
@@ -153,3 +154,48 @@ their results, so seats aren't reserved or cards charged twice.
 
 `CinemaExample` orders tickets for two customers and prints each step; `CinemaTest` checks the
 steps and their output.
+
+## Spring Boot
+
+Package [`org.bikesched.examples.spring`](src/main/java/org/bikesched/examples/spring): a Spring
+Boot application wired entirely by [`bikesched-spring-boot-starter`](../docs/spring.md) — no builder
+code, no `BikeschedUtil`; the starter builds the node from the context's `DataSource` and discovers
+the `@JobHandler` method. The scenario is deliberately **two microservices that share no data**
+(in one JVM here): `OrderService` and `FulfillmentService` talk only through a bikesched job payload
+and a keyed event, each owns its own JPA entity, and `Fulfillment` references the order by a plain
+`UUID` column — no foreign key, no association.
+
+```java
+@Service
+public class OrderService {
+  @Transactional
+  public UUID placeOrder(String customer, String item) {
+    Order order = orders.save(new Order(customer, item));
+    return bikesched.newJob(FULFILL_ORDER).payload(new FulfillOrder(order.getId()))
+        .connection(BikeschedTransactions.transactionalConnection(dataSource))   // job + order commit together
+        .schedule();
+  }
+
+  @JobHandler(type = "fulfill-order")                                             // found by the starter
+  public void fulfill(Job job, FulfillOrder command) throws Exception {
+    var fulfillmentId = job.step("fulfill", UUID.class, _ -> fulfillment.fulfill(command.orderId()));
+    job.awaitEvent("await-fulfillment", FULFILLMENT_FINISHED, fulfillmentId.toString());
+    orders.findById(command.orderId()).orElseThrow().markFulfilled(); // …
+  }
+}
+```
+
+`FulfillmentService` stores its `Fulfillment` and publishes the `fulfillment-finished` event on the
+same transaction, so the job only resumes once the fulfillment row exists. The `DataSource` is a
+plain `@Bean` from `DatabaseUtil.composeDatabase()` (like every other example's database, honoring
+`POSTGRES_PORT`), not `spring.datasource.*` properties.
+
+**Concepts shown:** auto-configuration and handler discovery ([Spring Boot](../docs/spring.md)),
+[transactional scheduling and event publishing](../docs/jobs.md#transactional-scheduling) from both
+"services", a [durable step](../docs/steps.md#durable-steps) whose result keys the
+[event wait](../docs/events.md) that suspends the job without a thread, and JPA entities coupled by
+UUID only.
+
+`SpringExampleApplication` places one order, waits for its job and closes the context, so
+`runSpring` terminates like the other examples; `SpringExampleTest` runs the same application
+against the shared Testcontainers database and checks the order, its fulfillment and the job.

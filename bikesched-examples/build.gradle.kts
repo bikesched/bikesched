@@ -9,6 +9,9 @@ dependencies {
     implementation(project(":bikesched-jackson"))
     // @JobHandler methods (annotation example).
     implementation(project(":bikesched-annotations"))
+    // The Spring Boot example (runSpring): the starter wires Bikesched, JPA persists the order.
+    implementation(project(":bikesched-spring-boot-starter"))
+    implementation(libs.spring.boot.starter.data.jpa)
     implementation(libs.postgresql)
     implementation(libs.slf4j.api)
     // Waits for job outcomes in the examples' main classes.
@@ -54,5 +57,14 @@ tasks.register<JavaExec>("runCinema") {
     description = "Runs the cinema ticket example against the docker compose Postgres."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "org.bikesched.examples.cinema.CinemaExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
+// ./gradlew :bikesched-examples:runSpring: a Spring Boot app, auto-configured by the starter.
+tasks.register<JavaExec>("runSpring") {
+    group = "application"
+    description = "Runs the Spring Boot example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.spring.SpringExampleApplication"
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
