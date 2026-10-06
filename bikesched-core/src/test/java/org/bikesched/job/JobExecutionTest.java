@@ -11,6 +11,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.LogCapture;
 import org.bikesched.internal.DefaultBikesched;
+import org.bikesched.internal.job.JobPoller;
 import org.bikesched.internal.job.JobProcessor;
 import org.junit.jupiter.api.Test;
 
@@ -19,7 +20,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
 
   @Test
   void pollerClaimsJobsInBatchesAndRunsHandlersOnVirtualThreads() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class, JobProcessor.class);
+    var logs = LogCapture.of(DefaultBikesched.class, JobPoller.class, JobProcessor.class);
     var handled = new java.util.concurrent.ConcurrentLinkedQueue<String>();
     try (logs;
         Bikesched bikesched = testNode("node-worker").build()) {
@@ -242,7 +243,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
 
   @Test
   void logContextContainsNodeIdAndJobId() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class, JobProcessor.class);
+    var logs = LogCapture.of(DefaultBikesched.class, JobPoller.class, JobProcessor.class);
     UUID nodeId;
     UUID jobId;
     var seenByHandler = new java.util.concurrent.CompletableFuture<java.util.Map<String, String>>();

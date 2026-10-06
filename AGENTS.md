@@ -41,16 +41,19 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 - `org.bikesched.job`, `org.bikesched.event`: public API, interfaces/records/enums/exceptions only.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
-  - `internal`: `DefaultBikesched` (wiring, lifecycle, polling), `Settings`
+  - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `Settings`
   - `internal.json`: `RawJsonMapper` (the default mapper, passes JSON strings through)
   - `internal.node`: `NodeHeartbeat`, `NodeCleanUp` (releases jobs of dead nodes, removes them)
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
-    event waits via `DefaultEventWait`), `JobAttempt` (timeout timer), `HardTimeout` (abandons
+    event waits via `DefaultEventWait`), `JobPoller` (claiming and running jobs: poller, job
+    slots, job threads, timeouts; configured by `JobPollerSettings`), `JobRegistry` (handlers,
+    recurring jobs and payload types of a node), `JobAttempt` (timeout timer), `HardTimeout` (abandons
     attempts that ignore their timeout), `JobSlot`, `RecurringJob`, `RecurringJobRepair`,
     `HistoryCleanUp`, `JobCleanUp`
   - `internal.event`: `DefaultEventBuilder`, `DefaultEvent`, `EventCleanUp`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
-    (`ValidationUtil`: name and key checks matching the schema's length constraints, message
+    (`ExecutorUtil`: shutting down executors; `ValidationUtil`: name and key checks matching the
+    schema's length constraints, message
     truncation)
   - `internal.database` (+ `.schema`): `Database`, `DatabaseAccess`, `Sql`, the stores and the rows
     they read and write (`NewJob`, `DefaultJobInfo`)

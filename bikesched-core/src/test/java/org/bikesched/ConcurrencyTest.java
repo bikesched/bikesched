@@ -5,7 +5,7 @@ import static org.awaitility.Awaitility.await;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import java.time.Duration;
-import org.bikesched.internal.DefaultBikesched;
+import org.bikesched.internal.job.JobPoller;
 import org.bikesched.job.JobBuilder;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +20,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
 
   @Test
   void claimsOnlyAsManyJobsAsThereAreFreeSlots() throws Exception {
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobPoller.class);
     try (logs) {
       assertThat(runSlowJobs("slow-limited", 12, 3)).isEqualTo(3);
     }

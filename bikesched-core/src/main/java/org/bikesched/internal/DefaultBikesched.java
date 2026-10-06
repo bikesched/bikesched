@@ -4,18 +4,13 @@ import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.TreeSet;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.bikesched.Bikesched;
@@ -31,17 +26,17 @@ import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.event.DefaultEventBuilder;
 import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.BaseJobBuilder;
-import org.bikesched.internal.job.DefaultJob;
 import org.bikesched.internal.job.DefaultJobBuilder;
-import org.bikesched.internal.job.HardTimeout;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
-import org.bikesched.internal.job.JobProcessor;
-import org.bikesched.internal.job.JobSlot;
+import org.bikesched.internal.job.JobPoller;
+import org.bikesched.internal.job.JobPollerSettings;
+import org.bikesched.internal.job.JobRegistry;
 import org.bikesched.internal.job.RecurringJob;
 import org.bikesched.internal.job.RecurringJobRepair;
 import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.internal.node.NodeHeartbeat;
+import org.bikesched.internal.util.ExecutorUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
@@ -70,45 +65,23 @@ import org.slf4j.MDC;
  *       {@link JobCleanUp} (deletes ended jobs after the job retention); also retries of the {@link
  *       RecurringJobRepair} (recreates missing occurrences of the node's recurring jobs), which
  *       runs once when polling starts
- *   <li>{@code bikesched-poller}: single scheduled thread claiming due jobs (skip locked) and
- *       handing them to the job executor
- *   <li>{@code bikesched-job-N}: one virtual thread per claimed job, processed by the {@link
- *       JobProcessor} (running the {@link JobHandler} registered for its type and recording the
- *       outcome)
- *   <li>{@code bikesched-timeouts}: single scheduled thread interrupting job attempts that exceed
- *       their timeout ({@link JobBuilder#timeout(Duration)}, {@link Settings#defaultJobTimeout()})
+ *   <li>the threads of the {@link JobPoller}, which claims and runs jobs while the node polls
  * </ul>
  *
- * <p>Concurrency limit: a semaphore holds one permit per job slot ({@link
- * Settings#maxConcurrentJobs()}). The poller claims at most {@code min(free slots,
- * POLL_BATCH_SIZE)} jobs and skips polling while no slot is free; each job returns its slot when it
- * ends. Jobs are therefore only claimed when they can start immediately and never wait in a local
- * queue while marked {@code RUNNING} in the database.
+ * <p>The job types the node knows (handlers, recurring jobs, payload classes) are in its {@link
+ * JobRegistry}.
  */
 public final class DefaultBikesched implements Bikesched {
-
-  /** Maximum number of jobs claimed per poll. */
-  static final int POLL_BATCH_SIZE = 10;
-
-  private static final Duration SHUTDOWN_TIMEOUT = Duration.ofSeconds(10);
 
   private static final Logger LOG = LoggerFactory.getLogger(DefaultBikesched.class);
 
   private final Database database;
   private final Settings settings;
   private final String nodeName;
-  private final Map<String, JobHandler> handlers = new ConcurrentHashMap<>();
-  private final Map<String, RecurringJob> recurringJobs = new ConcurrentHashMap<>();
-
-  /** Payload classes of the job types used with a {@link JobType} on this node, by name. */
-  private final Map<String, Class<?>> payloadTypes = new ConcurrentHashMap<>();
-
-  private final Semaphore jobSlots;
+  private final JobRegistry registry = new JobRegistry();
+  private final JobPoller jobPoller;
   private final ScheduledExecutorService heartbeatExecutor;
   private final ScheduledThreadPoolExecutor cleanUpExecutor;
-  private final ScheduledExecutorService pollerExecutor;
-  private final ScheduledThreadPoolExecutor timeoutExecutor;
-  private final ExecutorService jobExecutor;
   private final Node node = new DefaultNode();
 
   /** Guards starting to poll against closing, so a node never registers after it was closed. */
@@ -116,10 +89,8 @@ public final class DefaultBikesched implements Bikesched {
 
   private final AtomicBoolean closed = new AtomicBoolean();
 
-  /** Set (once) when polling starts, together with the processor; {@code null} until then. */
+  /** Set (once) when polling starts; {@code null} until then. */
   private volatile UUID nodeId;
-
-  private volatile JobProcessor processor;
 
   /** Called before every database access of the API (polling, scheduling, publishing events). */
   private final DatabaseInitializer initializer;
@@ -129,7 +100,18 @@ public final class DefaultBikesched implements Bikesched {
     this.initializer = new DatabaseInitializer(database);
     this.settings = settings;
     this.nodeName = settings.nodeName();
-    this.jobSlots = new Semaphore(settings.maxConcurrentJobs());
+    this.jobPoller =
+        new JobPoller(
+            database,
+            new JobPollerSettings(
+                settings.nodeName(),
+                settings.maxConcurrentJobs(),
+                settings.pollInterval(),
+                settings.defaultJobTimeout(),
+                settings.defaultEventTimeout(),
+                settings.retryBackoff(),
+                settings.hardTimeoutGrace()),
+            registry);
     this.heartbeatExecutor =
         Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().name("bikesched-heartbeat").daemon().factory());
@@ -138,15 +120,6 @@ public final class DefaultBikesched implements Bikesched {
             1, Thread.ofPlatform().name("bikesched-cleanup").daemon().factory());
     // close() must not wait for the one-time recurring job repair if it has not started yet.
     this.cleanUpExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
-    this.pollerExecutor =
-        Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().name("bikesched-poller").daemon().factory());
-    this.timeoutExecutor =
-        new ScheduledThreadPoolExecutor(
-            1, Thread.ofPlatform().name("bikesched-timeouts").daemon().factory());
-    this.timeoutExecutor.setRemoveOnCancelPolicy(true); // timers of jobs that finished in time
-    this.jobExecutor =
-        Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("bikesched-job-", 0).factory());
   }
 
   /**
@@ -204,23 +177,9 @@ public final class DefaultBikesched implements Bikesched {
             nodeName,
             id);
       }
-      processor =
-          new JobProcessor(
-              database,
-              id,
-              nodeName,
-              handlers::get,
-              recurringJobs::get,
-              timeoutExecutor,
-              settings.defaultJobTimeout(),
-              settings.defaultEventTimeout(),
-              settings.retryBackoff(),
-              settings.hardTimeoutGrace() == null
-                  ? null
-                  : new HardTimeout(settings.hardTimeoutGrace(), jobExecutor, id, nodeName));
       var heartbeat = new NodeHeartbeat(database, id, nodeName);
       var nodeCleanUp = new NodeCleanUp(database, id, nodeName, settings.nodeTimeout());
-      var recurringJobRepair = new RecurringJobRepair(database, recurringJobs::values);
+      var recurringJobRepair = new RecurringJobRepair(database, registry::recurringJobs);
       var eventCleanUp = new EventCleanUp(database, id, nodeName);
       nodeId = id;
       // Once per node lifetime, before anything is scheduled; retried until it succeeds.
@@ -242,7 +201,7 @@ public final class DefaultBikesched implements Bikesched {
       }
       var jobCleanUp = new JobCleanUp(database, id, nodeName, settings.jobRetention());
       scheduleWithFixedDelay(cleanUpExecutor, jobCleanUp::run, settings.jobCleanUpInterval());
-      scheduleWithFixedDelay(pollerExecutor, this::poll, settings.pollInterval());
+      jobPoller.start(id);
       LOG.info(
           "bikesched node {} ({}) registered, polling for jobs every {} (running up to {}"
               + " concurrently) and heartbeating every {}",
@@ -288,7 +247,7 @@ public final class DefaultBikesched implements Bikesched {
   public Bikesched registerJobHandler(String type, JobHandler handler) {
     requireValidType(type);
     Objects.requireNonNull(handler, "handler");
-    if (handlers.putIfAbsent(type, handler) != null) {
+    if (!registry.register(type, handler)) {
       throw new IllegalArgumentException(
           "A handler for job type '" + type + "' is already registered");
     }
@@ -299,7 +258,7 @@ public final class DefaultBikesched implements Bikesched {
   @Override
   public <T> Bikesched registerJobHandler(JobType<T> type, TypedJobHandler<? super T> handler) {
     Objects.requireNonNull(handler, "handler");
-    requirePayloadType(type);
+    registry.requirePayloadType(type);
     Class<T> payloadType = type.payloadType();
     return registerJobHandler(type.name(), job -> handler.handle(job, job.payload(payloadType)));
   }
@@ -312,27 +271,9 @@ public final class DefaultBikesched implements Bikesched {
 
   @Override
   public <T> JobBuilder<T> newJob(JobType<T> type) {
-    requirePayloadType(type);
+    registry.requirePayloadType(type);
     return new DefaultJobBuilder<>(
         type.name(), type.payloadType(), database.jsonMapper(), scheduler);
-  }
-
-  /**
-   * Remembers the payload class of a typed job type; rejects a second payload class for the same
-   * name on this node, which would make producers and handlers disagree on the payload.
-   */
-  private void requirePayloadType(JobType<?> type) {
-    Objects.requireNonNull(type, "type");
-    Class<?> known = payloadTypes.putIfAbsent(type.name(), type.payloadType());
-    if (known != null && known != type.payloadType()) {
-      throw new IllegalArgumentException(
-          "Job type '"
-              + type.name()
-              + "' is already used with payload type "
-              + known.getName()
-              + ", not "
-              + type.payloadType().getName());
-    }
   }
 
   /** Stores the jobs built by the job builders. */
@@ -378,20 +319,13 @@ public final class DefaultBikesched implements Bikesched {
   private void requireHandler(String type, JobHandler handler) {
     requireOpen();
     if (handler != null) {
-      if (handlers.putIfAbsent(type, handler) == null) {
+      if (registry.register(type, handler)) {
         LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);
       } else {
         LOG.debug("Handler for job type {} already registered, keeping it", type);
       }
     }
-    if (!handlers.containsKey(type)) {
-      throw new IllegalArgumentException(
-          "Unknown job type '"
-              + type
-              + "': no handler registered (known types: "
-              + new TreeSet<>(handlers.keySet())
-              + ")");
-    }
+    registry.requireHandler(type);
   }
 
   /** Registers a recurring job, see {@link JobBuilder#schedule(Recurrence)}. */
@@ -402,7 +336,7 @@ public final class DefaultBikesched implements Bikesched {
     Instant first = firstRun != null ? firstRun : job.nextRun(now, now);
     ensureReady();
     var registration = database.jobs().registerRecurringJob(job.occurrence(first));
-    recurringJobs.put(type, job);
+    registry.addRecurringJob(job);
     String recurrence = job.recurrence().description();
     if (registration.created()) {
       LOG.info(
@@ -431,7 +365,7 @@ public final class DefaultBikesched implements Bikesched {
   @Override
   public boolean removeRecurringJob(String type) {
     requireValidType(type);
-    boolean registered = recurringJobs.remove(type) != null;
+    boolean registered = registry.removeRecurringJob(type);
     ensureReady();
     int deleted = database.jobs().deletePendingOccurrences(type);
     LOG.info(
@@ -563,12 +497,9 @@ public final class DefaultBikesched implements Bikesched {
       }
       id = nodeId;
     }
-    shutdownAndAwait(pollerExecutor, "poller");
-    shutdownAndAwait(jobExecutor, "job executor");
-    timeoutExecutor
-        .shutdownNow(); // all jobs ended (or were abandoned): no timeouts left to enforce
-    shutdownAndAwait(cleanUpExecutor, "clean-up");
-    shutdownAndAwait(heartbeatExecutor, "heartbeat");
+    jobPoller.close();
+    ExecutorUtil.shutdownAndAwait(cleanUpExecutor, "clean-up");
+    ExecutorUtil.shutdownAndAwait(heartbeatExecutor, "heartbeat");
     if (id == null) {
       LOG.info("bikesched node {} closed (it never polled, so it was not registered)", nodeName);
       return;
@@ -627,90 +558,6 @@ public final class DefaultBikesched implements Bikesched {
         },
         delay.toMillis(),
         TimeUnit.MILLISECONDS);
-  }
-
-  private void poll() {
-    // Must never throw: an exception would silently cancel all future polls.
-    try {
-      int free = jobSlots.availablePermits();
-      if (free == 0) {
-        LOG.debug("bikesched node {} ({}) is at capacity, skipping poll", nodeName, nodeId);
-        return;
-      }
-      if (handlers.isEmpty()) {
-        // Avoids claiming (and failing) jobs right after startup, before the application
-        // had a chance to register its handlers.
-        LOG.debug(
-            "bikesched node {} ({}) has no job handlers registered, skipping poll",
-            nodeName,
-            nodeId);
-        return;
-      }
-      int limit = Math.min(free, POLL_BATCH_SIZE);
-      LOG.debug(
-          "bikesched node {} ({}) polling for up to {} job(s), {} free slot(s)",
-          nodeName,
-          nodeId,
-          limit,
-          free);
-      // Never blocks: only this (single) poller thread acquires, job threads only release,
-      // so the available permits can only have grown since they were read.
-      jobSlots.acquireUninterruptibly(limit);
-      List<DefaultJob> jobs = List.of();
-      try {
-        jobs =
-            database.jobs().claimJobs(nodeId, handlers.keySet(), limit).stream()
-                .map(claimed -> new DefaultJob(database, claimed))
-                .toList();
-      } finally {
-        jobSlots.release(limit - jobs.size()); // unused slots; all of them if claiming failed
-      }
-      if (!jobs.isEmpty()) {
-        LOG.debug("bikesched node {} ({}) claimed {} job(s)", nodeName, nodeId, jobs.size());
-      }
-      for (DefaultJob job : jobs) {
-        dispatch(job);
-      }
-    } catch (RuntimeException e) {
-      LOG.warn("Polling for jobs failed on bikesched node {} ({})", nodeName, nodeId, e);
-    }
-  }
-
-  /**
-   * Runs a claimed job on its own virtual thread; the job's slot is held until it ends (or the hard
-   * timeout abandons it).
-   */
-  private void dispatch(DefaultJob job) {
-    var slot = new JobSlot(jobSlots);
-    try {
-      jobExecutor.execute(
-          () -> {
-            try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId));
-                var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
-                var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
-              processor.process(job, slot);
-            } finally {
-              slot.release();
-            }
-          });
-    } catch (RejectedExecutionException e) {
-      // Shutting down: the job stays RUNNING in the database and is released in close().
-      slot.release();
-    }
-  }
-
-  private static void shutdownAndAwait(ExecutorService executor, String name) {
-    executor.shutdown();
-    try {
-      if (!executor.awaitTermination(SHUTDOWN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
-        LOG.warn(
-            "bikesched {} did not terminate within {}, interrupting it", name, SHUTDOWN_TIMEOUT);
-        executor.shutdownNow();
-      }
-    } catch (InterruptedException e) {
-      executor.shutdownNow();
-      Thread.currentThread().interrupt();
-    }
   }
 
   private static void requireValidType(String type) {
