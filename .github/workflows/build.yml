@@ -2,6 +2,11 @@
 # Javadoc and all tests. The tests start PostgreSQL with Testcontainers, which uses the Docker
 # daemon of the ubuntu-latest runner. After a successful build of main, the library modules are
 # published to GitHub Packages (the snapshot version from gradle/libs.versions.toml).
+#
+# Changes to Markdown files and SVG images only (docs, README, logo) skip the build: the build reads
+# none of them. The workflow still runs and the `changes` job decides, so a skipped `build` job
+# reports success and can be a required status check (with `paths-ignore` the check would never
+# report and such pull requests would wait forever).
 
 name: Build
 
@@ -19,7 +24,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Whether anything besides *.md and *.svg changed (pull requests: against the base branch, pushes:
+  # against the commit before the push).
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # the action lists a pull request's files via the API
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!**/*.svg'
+
   build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -52,7 +83,8 @@ jobs:
           path: '**/build/reports/tests/'
           retention-days: 7
 
-  # Only for pushes to main, after a successful build; pull requests never publish.
+  # Only for pushes to main, after a successful build (skipped with it); pull requests never
+  # publish.
   publish:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
