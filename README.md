@@ -41,6 +41,7 @@ orchestration across services. If you need that, look at
 | `bikesched-kotlin` | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
 | `bikesched-annotations` | job handlers declared as `@JobHandler` methods, see [Annotations](docs/annotations.md) |
 | `bikesched-micrometer` | Micrometer meters for claims and attempts, see [Metrics](docs/metrics.md) |
+| `bikesched-spring-boot-starter` | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/spring.md) |
 
 ## Features
 
@@ -90,13 +91,14 @@ The [documentation](docs/index.md) covers the concepts in detail:
 - [Events](docs/events.md)
 - [Configuration](docs/configuration.md): builder options, nodes, JSON mapping, logging
 - [Kotlin](docs/kotlin.md)
+- [Spring Boot](docs/spring.md): the auto-configured node
 - [Database](docs/database.md): tables, indexes and migrations
 
 ## Examples
 
-Runnable examples with tests, a taxi booking saga with event waits and compensation and a cinema
-ticket order with a `JobTypeHandler`, live in the [`bikesched-examples`](bikesched-examples/README.md)
-module.
+Runnable examples with tests — a taxi booking saga with event waits and compensation, a cinema
+ticket order with a `JobTypeHandler`, and a Spring Boot application whose node and handlers are
+wired by the starter — live in the [`bikesched-examples`](bikesched-examples/README.md) module.
 
 ## Building
 
@@ -120,7 +122,8 @@ All dependency and tool versions are managed in `gradle/libs.versions.toml`.
 ## Snapshots
 
 Every successful build of `main` publishes the current snapshot (`org.bikesched:bikesched-core`,
-`bikesched-jackson`, `bikesched-kotlin`, `bikesched-annotations`, `bikesched-micrometer`, version `0.1.0-SNAPSHOT`) to GitHub Packages. Reading
+`bikesched-jackson`, `bikesched-kotlin`, `bikesched-annotations`, `bikesched-micrometer`,
+`bikesched-spring-boot-starter`, version `0.1.0-SNAPSHOT`) to GitHub Packages. Reading
 from GitHub Packages requires a GitHub token with the `read:packages` scope, even for public
 packages:
 

@@ -27,3 +27,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0019](0019-annotations-module.md) | Job handler annotations in their own module | Accepted |
 | [0020](0020-job-listener-and-micrometer.md) | Job listener SPI with Micrometer in its own module | Accepted |
 | [0021](0021-apache-license-and-trademark-policy.md) | Apache License 2.0 with a trademark policy | Accepted |
+| [0022](0022-spring-integration-in-its-own-module.md) | Spring integration in its own module | Accepted |

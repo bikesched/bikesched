@@ -134,39 +134,6 @@ external library, so core stays free of the dependency and of a cron dialect of 
 - Daylight saving time: document how skipped and repeated local times behave, and test them.
 - Kotlin: probably no extra API, the recurrence is passed to `createRecurringJob` as is.
 
-### bikesched-spring-boot-starter
-
-A Spring Boot integration `bikesched-spring-boot-starter` (auto-configuration plus starter) that creates the
-`Bikesched` node from the application context and registers job handlers found as beans, e.g.:
-
-```java
-@Component
-class InvoiceJobs {
-  @JobHandler(type = "send-invoice")
-  public void sendInvoice(Job job, Invoice invoice) { … }
-}
-```
-
-- Discovery: `@JobHandler` methods of beans, via `JobHandlers` from
-  [bikesched-annotations](docs/annotations.md) (resolving the target class of AOP proxies), and
-  beans implementing `JobTypeHandler`.
-- Recurring jobs declared on the annotation (e.g. `@JobHandler(type = "…", cron = "…")`, with
-  [bikesched-cron](#bikesched-cron)) and registered on startup.
-- Auto-configuration: the context's `DataSource`, the Jackson `ObjectMapper` (via
-  bikesched-jackson) as `JsonMapper`, the builder options as `bikesched.*` properties, and a
-  `BikeschedBuilderCustomizer` bean for everything else. Build the node with
-  `autoStartPolling(false)`, register the handlers, then `startPolling()` with the context
-  (`SmartLifecycle`) and close it on shutdown; polling can be turned off per application (e.g.
-  `bikesched.polling.enabled=false` for a web app that only schedules jobs).
-- Transactions: scheduling jobs and publishing events inside a Spring transaction should use its
-  connection (`DataSourceUtils.getConnection`), so they commit or roll back with it.
-- Optional later: Actuator health (node heartbeat) and metrics via Micrometer (see
-  [Metrics](docs/metrics.md), `bikesched-micrometer`).
-- Target the latest Spring Boot; the module depends on Spring, core stays free of it.
-
-Specified in [`docs/specs/bikesched-spring-boot-starter.md`](docs/specs/bikesched-spring-boot-starter.md);
-remove this entry once that spec is implemented.
-
 ## Website
 
 ### Project site on bikesched.org

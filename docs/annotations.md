@@ -1,7 +1,8 @@
 # Annotations
 
 The module `bikesched-annotations` declares job handlers as methods annotated with `@JobHandler`,
-e.g. for dependency injection containers (a Spring integration is planned). It depends on
+e.g. for dependency injection containers — inside a Spring context the
+[bikesched-spring-boot-starter](spring.md) finds and registers them automatically. It depends on
 `bikesched-core` only.
 
 ```java

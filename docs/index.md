@@ -40,7 +40,8 @@ and without any coordinator besides PostgreSQL.
 6. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
 7. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
 8. [Metrics](metrics.md): `JobListener` and the Micrometer meters (`bikesched-micrometer`)
-9. [Database](database.md): tables, indexes and migrations
+9. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
+10. [Database](database.md): tables, indexes and migrations
 
 The [examples](../bikesched-examples/README.md) show the concepts working together. The
 [decision records](decisions/README.md) explain why bikesched works the way it does.

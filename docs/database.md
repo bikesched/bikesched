@@ -8,7 +8,9 @@ schema.
 The schema is created by bikesched's own minimal migrator on first use (no Flyway or Liquibase).
 Concurrent nodes are serialized with a PostgreSQL advisory lock; applied migrations are tracked with
 checksums in `bikesched_schema_migrations`. The migration scripts ship in the jar under
-`org/bikesched/migrations/`.
+`org/bikesched/migrations/`. `Bikesched.migrate()` runs the migration without registering the node
+or polling, so an application can validate the schema at startup instead of on first use — the
+Spring starter does this by default ([Spring Boot](spring.md)).
 
 > [!NOTE]
 > While bikesched is unreleased, schema changes are made to the first migration in place. A local

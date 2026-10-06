@@ -10,6 +10,9 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 | `nodeName(String)` | host name | unique node name; a dead node's name is taken over |
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
 | `autoStartPolling(boolean)` | `true` | with `false`, call `startPolling()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated on first use (`startPolling()`, scheduling a job, publishing an event), and retried on the next one if that fails |
+| `pollInterval(Duration)` | 5 seconds | delay between two polls for due jobs; a job scheduled "now" therefore starts within one interval. Lower it for sub-second reaction (at the cost of one table scan per node and interval), or raise it for idle clusters |
+| `heartbeatInterval(Duration)` | 5 seconds | interval between the node's heartbeats; must be shorter than `nodeTimeout` |
+| `nodeTimeout(Duration)` | 30 seconds | time without heartbeat after which other nodes consider the node dead and release its jobs; the builder rejects a value not longer than `heartbeatInterval` |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.fixed(Duration.ofSeconds(30))` or `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))` (doubling, each delay randomly shortened by up to half); a handler's `job.fail().retryAfter(…)` takes precedence |
 | `jsonMapper(JsonMapper)` | JSON strings only | maps payloads, step results and event payloads to and from JSON, see [JSON mapping](#json-mapping) |
@@ -27,7 +30,8 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 
 ## Nodes
 
-Nodes send a heartbeat every 5 seconds and poll for due jobs every second, claiming at most 10
+Nodes send a heartbeat every 5 seconds and poll for due jobs every 5 seconds (both configurable,
+see [Builder options](#builder-options)), claiming at most 10
 jobs per poll and never more than they have free slots. A node without heartbeat for 30 seconds is
 considered dead: on their next node clean-up, other nodes release its running jobs for retry, and
 remove the node after another 30 seconds. A node only claims jobs of the types it has handlers for:

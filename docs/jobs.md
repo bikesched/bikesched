@@ -19,7 +19,9 @@ UUID id = bikesched.newJob("report")
 
 A builder can be reused: every `schedule…` call stores a new job. `schedule(Recurrence)` registers a
 [recurring job](recurring-jobs.md) instead. Handlers can also be registered
-up front with `bikesched.registerJobHandler(type, handler)`.
+up front with `bikesched.registerJobHandler(type, handler)`. A job scheduled without a time is due
+immediately and picked up on the node's next poll — within the poll interval (5 seconds by default,
+see [Configuration](configuration.md#builder-options)) if no interval is lower.
 
 To check on a job later, look it up by its id:
 
