@@ -16,6 +16,7 @@ import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailure;
 import org.bikesched.job.StepHandler;
+import org.bikesched.job.listener.JobListener;
 
 /**
  * Builder for {@link Bikesched} instances, obtained via {@link Bikesched#builder()}. Not

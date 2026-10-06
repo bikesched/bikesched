@@ -3,8 +3,8 @@ package org.bikesched.internal.job;
 
 import java.time.Duration;
 import java.util.Objects;
-import org.bikesched.JobListener;
 import org.bikesched.RetryBackoff;
+import org.bikesched.job.listener.JobListener;
 
 /**
  * The node settings the {@link JobPoller} uses.

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-package org.bikesched;
+package org.bikesched.job.listener;
 
-import org.bikesched.job.JobAttemptResult;
-import org.bikesched.job.JobClaim;
+import org.bikesched.BikeschedBuilder;
 
 /**
  * Observes the jobs a node runs, e.g. for metrics ({@code bikesched-micrometer}); set with {@link
@@ -24,7 +23,7 @@ public interface JobListener {
 
   /**
    * Called once the outcome of an attempt was recorded (or could not be recorded, see {@link
-   * org.bikesched.job.JobAttemptOutcome#NOT_RECORDED}).
+   * org.bikesched.job.listener.JobAttemptOutcome#NOT_RECORDED}).
    *
    * @param result the attempt's result
    */

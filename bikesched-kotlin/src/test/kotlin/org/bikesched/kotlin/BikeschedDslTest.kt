@@ -8,8 +8,8 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.bikesched.JobListener
 import org.bikesched.job.JobState
+import org.bikesched.job.listener.JobListener
 import org.junit.jupiter.api.Test
 
 class BikeschedDslTest {

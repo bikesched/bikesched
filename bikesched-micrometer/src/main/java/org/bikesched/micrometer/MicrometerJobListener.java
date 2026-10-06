@@ -10,9 +10,9 @@ import io.micrometer.core.instrument.Timer;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.bikesched.JobListener;
-import org.bikesched.job.JobAttemptResult;
-import org.bikesched.job.JobClaim;
+import org.bikesched.job.listener.JobAttemptResult;
+import org.bikesched.job.listener.JobClaim;
+import org.bikesched.job.listener.JobListener;
 
 /**
  * Records the jobs a node runs as Micrometer meters:

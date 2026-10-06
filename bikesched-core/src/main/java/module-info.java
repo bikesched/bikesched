@@ -7,6 +7,7 @@
  *       node-wide settings like JSON mapping and retry backoff
  *   <li>{@link org.bikesched.job}: jobs, their handlers, durable steps, recurring schedules and the
  *       job builders
+ *   <li>{@link org.bikesched.job.listener}: job execution listener SPI and reported event types
  *   <li>{@link org.bikesched.event}: waiting for and publishing events
  * </ul>
  *
@@ -18,5 +19,6 @@ module org.bikesched {
 
   exports org.bikesched;
   exports org.bikesched.job;
+  exports org.bikesched.job.listener;
   exports org.bikesched.event;
 }

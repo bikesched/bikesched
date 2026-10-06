@@ -12,9 +12,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
-import org.bikesched.JobListener;
 import org.bikesched.LogCapture;
 import org.bikesched.internal.job.JobProcessor;
+import org.bikesched.job.listener.JobAttemptResult;
+import org.bikesched.job.listener.JobClaim;
+import org.bikesched.job.listener.JobListener;
 import org.junit.jupiter.api.Test;
 
 /** The {@link JobListener} sees every claim and the recorded outcome of each attempt. */

@@ -8,9 +8,9 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import org.bikesched.job.JobAttemptOutcome;
-import org.bikesched.job.JobAttemptResult;
-import org.bikesched.job.JobClaim;
+import org.bikesched.job.listener.JobAttemptOutcome;
+import org.bikesched.job.listener.JobAttemptResult;
+import org.bikesched.job.listener.JobClaim;
 import org.junit.jupiter.api.Test;
 
 /** The meters {@link MicrometerJobListener} records for the listener calls. */

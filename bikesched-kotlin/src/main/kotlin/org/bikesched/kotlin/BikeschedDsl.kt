@@ -5,9 +5,9 @@ import javax.sql.DataSource
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 import org.bikesched.Bikesched
-import org.bikesched.JobListener
 import org.bikesched.JsonMapper
 import org.bikesched.RetryBackoff
+import org.bikesched.job.listener.JobListener
 
 /** Marks the bikesched configuration DSL, see [bikesched]. */
 @DslMarker public annotation class BikeschedDsl

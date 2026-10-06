@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-package org.bikesched.job;
+package org.bikesched.job.listener;
 
 import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 
 /**
- * A job claimed by a node, reported to a {@link org.bikesched.JobListener}.
+ * A job claimed by a node, reported to a {@link org.bikesched.job.listener.JobListener}.
  *
  * @param jobId the job's id
  * @param jobType the job's type

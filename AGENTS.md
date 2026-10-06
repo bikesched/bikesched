@@ -43,9 +43,10 @@ does; this file covers how to change it.
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 
-- `org.bikesched`: entry point `Bikesched` + `BikeschedBuilder`, exceptions, SPIs (`JobListener`, `JsonMapper`,
+- `org.bikesched`: entry point `Bikesched` + `BikeschedBuilder`, exceptions, SPIs (`JsonMapper`,
   `RetryBackoff`), `BikeschedLogContext` (MDC keys).
-- `org.bikesched.job`, `org.bikesched.event`: public API, interfaces/records/enums/exceptions only.
+- `org.bikesched.job`, `org.bikesched.job.listener`, and `org.bikesched.event`: public API interfaces,
+  records, enums, and exceptions; listener SPI and its event types live in `org.bikesched.job.listener`.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
   - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `Settings`
@@ -79,7 +80,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `TimeoutHandler`, `CompensationHandler`); they receive the context object (e.g.
   the `Step`), not just a value. Exception: `JobTypeHandler` adds `type()` for class-based handlers
   registered without a separate type argument.
-- Observers are `<X>Listener` SPIs with `on<Event>(record)` default no-op methods (`JobListener`),
+- Observers are `<X>Listener` SPIs with `on<Event>(record)` default no-op methods (`job.listener.JobListener`),
   called synchronously; their exceptions are logged and ignored. Each event passes one record, so
   fields can be added without breaking implementations.
 - Everything handed to user code (job, builders, `JobFailure`, `EventWait`) is a public

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-package org.bikesched.job;
+package org.bikesched.job.listener;
 
 /** What was recorded for an attempt, see {@link JobAttemptResult}. */
 public enum JobAttemptOutcome {

@@ -5,13 +5,13 @@ import java.time.Duration;
 import java.util.Objects;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
-import org.bikesched.JobListener;
 import org.bikesched.RetryBackoff;
 import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.internal.util.ValidationUtil;
+import org.bikesched.job.listener.JobListener;
 
 /**
  * Validated configuration of a {@link DefaultBikesched} node, assembled by {@link

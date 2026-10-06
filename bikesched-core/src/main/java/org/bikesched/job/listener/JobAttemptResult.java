@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-package org.bikesched.job;
+package org.bikesched.job.listener;
 
 import java.time.Duration;
 import java.util.Objects;
 
 /**
- * The result of an attempt, reported to a {@link org.bikesched.JobListener}.
+ * The result of an attempt, reported to a {@link org.bikesched.job.listener.JobListener}.
  *
  * @param claim the attempt's claim
  * @param outcome what was recorded

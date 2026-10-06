@@ -3,9 +3,9 @@ package org.bikesched.spring;
 
 import java.util.List;
 import java.util.Objects;
-import org.bikesched.JobListener;
-import org.bikesched.job.JobAttemptResult;
-import org.bikesched.job.JobClaim;
+import org.bikesched.job.listener.JobAttemptResult;
+import org.bikesched.job.listener.JobClaim;
+import org.bikesched.job.listener.JobListener;
 
 /**
  * Passes every event to all {@link JobListener} beans of the context: the builder takes one
