@@ -31,8 +31,8 @@ create index bikesched_nodes_last_heartbeat_at_idx on bikesched_nodes (last_hear
 create table bikesched_jobs (
     id           uuid        primary key,
     job_type     text        not null,          -- identifies the handler that executes the job
-    payload      jsonb,
     state        text        not null default 'SCHEDULED',
+    payload      jsonb,
     priority     integer     not null default 0,
     scheduled_at timestamptz not null default now(),
     attempts     integer     not null default 0,
