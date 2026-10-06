@@ -139,3 +139,9 @@ dependencies {
     implementation("org.bikesched:bikesched-core:0.1.0-SNAPSHOT")
 }
 ```
+
+## License
+
+bikesched is licensed under the [Apache License 2.0](LICENSE): you may use, modify and embed it,
+also in commercial and closed-source products. The name and logo are trademarks, see the
+[trademark policy](TRADEMARKS.md) for how to refer to bikesched and how to name forks.

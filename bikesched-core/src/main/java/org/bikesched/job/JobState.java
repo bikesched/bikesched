@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
 /** The state of a job, see {@link JobInfo#state()}. */

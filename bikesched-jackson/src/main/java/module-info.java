@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Jackson integration for bikesched: {@link org.bikesched.jackson.JacksonJsonMapper} maps payloads,
  * step results and event payloads with Jackson 3.

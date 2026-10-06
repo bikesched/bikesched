@@ -19,6 +19,13 @@ publishing {
                 name = project.name
                 description = provider { project.description }
                 url = "https://github.com/sbuettner/bikesched"
+                licenses {
+                    license {
+                        name = "Apache-2.0"
+                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                        distribution = "repo"
+                    }
+                }
                 scm {
                     url = "https://github.com/sbuettner/bikesched"
                     connection = "scm:git:https://github.com/sbuettner/bikesched.git"

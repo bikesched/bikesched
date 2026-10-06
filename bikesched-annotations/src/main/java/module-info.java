@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Annotations for bikesched: {@link org.bikesched.annotation.JobHandler @JobHandler} declares job
  * handlers as methods, {@link org.bikesched.annotation.JobHandlers} finds and registers them.

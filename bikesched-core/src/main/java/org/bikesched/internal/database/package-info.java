@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Database access of the bikesched implementation: the stores ({@code JobStore}, {@code StepStore},
  * {@code EventStore}, {@code NodeStore}) with their JDBC statements, the {@code Sql} handle and

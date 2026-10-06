@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package org.bikesched.examples.simple;
 
 import static org.awaitility.Awaitility.await;
