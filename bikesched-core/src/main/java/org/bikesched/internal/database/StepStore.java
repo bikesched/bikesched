@@ -84,13 +84,6 @@ public final class StepStore {
              where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
           .formatted(JOB_LOCKED);
 
-  // Stores the result of an event step whose job mapped the received event.
-  private static final String COMPLETE_EVENT_STEP_SQL =
-      """
-            update bikesched_steps set state = 'SUCCEEDED', result = ?::jsonb, finished_at = now()
-             where job_id = ? and name = ? and state = 'RECEIVED' and %s"""
-          .formatted(JOB_LOCKED);
-
   private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED;
 
   /**
@@ -227,32 +220,6 @@ public final class StepStore {
                   jobId,
                   lock.token());
           if (updated > 0) {
-            history.record(db, Change.step(jobId, name, "SUCCEEDED", lock.nodeId(), null));
-          } else {
-            requireJobLock(db, jobId, lock);
-          }
-          return null;
-        },
-        e ->
-            new BikeschedException(
-                "Storing the result of step '" + name + "' of bikesched job " + jobId + " failed",
-                e));
-  }
-
-  /**
-   * Marks a {@code RECEIVED} event step {@code SUCCEEDED} and stores the result its job mapped the
-   * event to; the event is no longer needed for it (see {@link EventStore#deleteExpiredEvents()}).
-   *
-   * @param jobId the job id
-   * @param lock the lock of the job's claim (node and token)
-   * @param name the step name
-   * @param result the result as JSON text, may be {@code null}
-   * @throws JobLockLostException if the job is no longer running on the node
-   */
-  public void completeEventStep(UUID jobId, JobLock lock, String name, String result) {
-    history.change(
-        db -> {
-          if (db.update(COMPLETE_EVENT_STEP_SQL, result, jobId, name, jobId, lock.token()) > 0) {
             history.record(db, Change.step(jobId, name, "SUCCEEDED", lock.nodeId(), null));
           } else {
             requireJobLock(db, jobId, lock);

@@ -16,10 +16,11 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0008](0008-event-expiry-fixed-at-publish.md) | Event expiry fixed when publishing | Accepted |
 | [0009](0009-step-writes-fenced-by-job-lock.md) | Step writes fenced by the job's lock | Accepted |
 | [0010](0010-lock-token-per-claim.md) | A lock token per claim instead of a version column | Accepted |
-| [0011](0011-received-event-steps.md) | Received event steps store the mapped result | Accepted |
+| [0011](0011-received-event-steps.md) | Received event steps store the mapped result | Superseded by [0018](0018-event-payload-copied-into-steps.md) |
 | [0012](0012-job-retention-by-default.md) | Ended jobs deleted after a retention by default | Accepted |
 | [0013](0013-statement-timeout-as-query-timeout.md) | Statement timeout as JDBC query timeout | Accepted |
 | [0014](0014-opt-in-hard-timeout.md) | Opt-in hard timeout for handlers that ignore their timeout | Accepted |
 | [0015](0015-snapshots-to-github-packages.md) | Snapshots published to GitHub Packages with maven-publish | Accepted |
 | [0016](0016-claim-only-handled-job-types.md) | Nodes claim only job types they handle | Accepted |
 | [0017](0017-retry-failed-jobs.md) | Retrying failed jobs keeps their completed steps | Accepted |
+| [0018](0018-event-payload-copied-into-steps.md) | Event payloads copied into steps, no event handlers | Accepted |

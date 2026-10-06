@@ -52,7 +52,7 @@ unless it already has one; with a `payload` it gets the payload as its type, oth
 | Helper | Instead of |
 |---|---|
 | `bikesched { … }` | `Bikesched.builder()…build()` |
-| `job.payload<T>()`, `event.payload<T>()` | `payload(T.class)` |
+| `job.payload<T>()` | `payload(T.class)` |
 | `receive<T>()`, `receive<T>(timeout) { fallback }`, `receiveOrNull<T>(timeout)` on the Java `waitForEvent(step, name, key)` | `receive(T.class)`, `timeout(…, handler).receive(T.class)` |
 | `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `every(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
 | `findJobOrNull(id)`, `node.idOrNull` | `Optional` |

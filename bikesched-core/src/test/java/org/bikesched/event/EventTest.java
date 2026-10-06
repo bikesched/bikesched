@@ -43,16 +43,7 @@ class EventTest extends AbstractBikeschedTest {
                         step -> "{\"invoice\": " + invoices.incrementAndGet() + "}");
                     String payment =
                         job.waitForEvent("await-payment", "payment-received", "order-1")
-                            .receive(
-                                String.class,
-                                event ->
-                                    "{\"from\": \""
-                                        + event.name()
-                                        + "/"
-                                        + event.key()
-                                        + "\", \"payment\": "
-                                        + event.payload()
-                                        + "}");
+                            .receive(String.class);
                     received.add(payment);
                   })
               .schedule();
@@ -73,38 +64,38 @@ class EventTest extends AbstractBikeschedTest {
       assertThat(steps).containsExactly(new ReceivedEvent(jobId, "await-payment"));
       awaitState(jobId, "SUCCEEDED");
       assertThat(count("id = '" + jobId + "' and attempts = 1")).isEqualTo(1);
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '"
+                      + jobId
+                      + "' and name = 'await-payment' and state = 'SUCCEEDED'"
+                      + " and result = '{\"amount\": 42}'::jsonb"))
+          .as("payload copied into the step")
+          .isOne();
     }
     assertThat(runs).as("handler ran again after the wait").hasValue(2);
     assertThat(invoices).as("completed step not executed again").hasValue(1);
-    assertThat(received)
-        .containsExactly("{\"from\": \"payment-received/order-1\", \"payment\": {\"amount\": 42}}");
+    assertThat(received).containsExactly("{\"amount\": 42}");
   }
 
   @Test
-  void eventHandlerRunsOnceAndLaterRunsGetItsStoredResult() throws Exception {
-    var mappings = new AtomicInteger();
+  void receivedPayloadOutlivesTheEvent() throws Exception {
     List<String> results = new CopyOnWriteArrayList<>();
-    try (Bikesched bikesched = node("node-event-mapped-once")) {
+    try (Bikesched bikesched = node("node-event-copied")) {
       UUID jobId =
           bikesched
-              .newJob("event-mapped-once")
+              .newJob("event-copied")
               .handler(
                   job -> {
-                    String first =
-                        job.waitForEvent("first", "step-done", "mapped-1")
-                            .receive(
-                                String.class,
-                                event -> {
-                                  mappings.incrementAndGet();
-                                  return "\"mapped " + event.key() + "\"";
-                                });
-                    results.add(first);
-                    job.waitForEvent("second", "step-done", "mapped-2").receive(String.class);
+                    results.add(
+                        job.waitForEvent("first", "step-done", "copied-1").receive(String.class));
+                    job.waitForEvent("second", "step-done", "copied-2").receive(String.class);
                   })
               .schedule();
       awaitState(jobId, "WAITING");
 
-      bikesched.newEvent("step-done", "mapped-1").payload("\"one\"").publish();
+      bikesched.newEvent("step-done", "copied-1").payload("\"one\"").publish();
       await()
           .untilAsserted(
               () ->
@@ -113,19 +104,11 @@ class EventTest extends AbstractBikeschedTest {
                               "bikesched_steps",
                               "job_id = '" + jobId + "' and name = 'second' and state = 'WAITING'"))
                       .isOne());
-      bikesched.newEvent("step-done", "mapped-2").payload("\"two\"").publish();
+      execute("delete from bikesched_events where event_key = 'copied-1'"); // e.g. clean-up
+      bikesched.newEvent("step-done", "copied-2").payload("\"two\"").publish();
       awaitState(jobId, "SUCCEEDED");
 
-      assertThat(mappings).as("mapped once, then replayed from the stored result").hasValue(1);
-      assertThat(results).containsExactly("\"mapped mapped-1\"", "\"mapped mapped-1\"");
-      assertThat(
-              countRows(
-                  "bikesched_steps",
-                  "job_id = '"
-                      + jobId
-                      + "' and name = 'first' and state = 'SUCCEEDED'"
-                      + " and result = '\"mapped mapped-1\"'::jsonb and event_id is not null"))
-          .isOne();
+      assertThat(results).as("replayed from the step's copy").containsExactly("\"one\"", "\"one\"");
     }
   }
 
@@ -338,32 +321,28 @@ class EventTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void failingEventHandlerFailsTheAttemptAndGetsTheEventAgain() throws Exception {
-    var calls = new AtomicInteger();
-    try (Bikesched bikesched = node("node-event-handler-fails")) {
+  void attemptFailingAfterTheWaitGetsThePayloadAgainWithoutWaiting() throws Exception {
+    List<String> payloads = new CopyOnWriteArrayList<>();
+    try (Bikesched bikesched = node("node-event-then-fail")) {
       UUID jobId =
           bikesched
-              .newJob("event-handler-fails")
+              .newJob("event-then-fail")
               .handler(
-                  job ->
-                      job.waitForEvent("wait", "done", "handler-1")
-                          .receive(
-                              String.class,
-                              event -> {
-                                if (calls.incrementAndGet() == 1) {
-                                  throw new IllegalStateException("boom");
-                                }
-                                return event.payload();
-                              }))
+                  job -> {
+                    payloads.add(job.waitForEvent("wait", "done", "fail-1").receive(String.class));
+                    if (job.attempts() == 1) {
+                      throw new IllegalStateException("boom");
+                    }
+                  })
               .schedule();
       awaitState(jobId, "WAITING");
 
-      bikesched.newEvent("done", "handler-1").payload("1").publish();
+      bikesched.newEvent("done", "fail-1").payload("1").publish();
 
       awaitState(jobId, "SUCCEEDED");
       assertThat(count("id = '" + jobId + "' and attempts = 2")).isEqualTo(1);
     }
-    assertThat(calls).hasValue(2);
+    assertThat(payloads).containsExactly("1", "1");
   }
 
   /**

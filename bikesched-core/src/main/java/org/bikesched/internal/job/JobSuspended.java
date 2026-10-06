@@ -2,13 +2,12 @@ package org.bikesched.internal.job;
 
 import java.io.Serial;
 import java.time.Instant;
-import org.bikesched.event.EventHandler;
 import org.bikesched.event.EventWait;
 
 /**
- * Thrown by {@link EventWait#receive(Class, EventHandler)} to end the handler's attempt while the
- * job waits for an event; bikesched then suspends the job (state {@code WAITING}) and runs the
- * handler again once the event is published.
+ * Thrown by {@link EventWait#receive(Class)} to end the handler's attempt while the job waits for
+ * an event; bikesched then suspends the job (state {@code WAITING}) and runs the handler again once
+ * the event is published.
  *
  * <p>An {@link Error} rather than an exception, so a {@code catch (Exception e)} in the handler
  * does not swallow it by accident. Even if the handler catches it anyway, the job is suspended once

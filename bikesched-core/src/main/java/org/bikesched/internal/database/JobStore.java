@@ -138,7 +138,7 @@ public final class JobStore {
   private static final String CANCEL_STEPS_SQL =
       """
             update bikesched_steps set state = 'CANCELLED', locked_by = null, finished_at = now()
-             where job_id = ? and state in ('WAITING', 'RECEIVED', 'RUNNING')
+             where job_id = ? and state in ('WAITING', 'RUNNING')
                and exists (select 1 from bikesched_jobs
                             where id = ? and lock_token = ? and state = 'RUNNING' and compensated_state is null)
             returning name""";

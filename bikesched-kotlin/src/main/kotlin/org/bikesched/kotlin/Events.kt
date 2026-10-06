@@ -2,19 +2,10 @@ package org.bikesched.kotlin
 
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
-import org.bikesched.event.Event
 import org.bikesched.event.EventTimeoutException
 import org.bikesched.event.EventWait
 import org.bikesched.event.TimeoutHandler
 import org.bikesched.job.Job
-
-/**
- * Returns the event's payload mapped to [T] by the configured `JsonMapper`, see
- * `Event.payload(Class)`.
- *
- * @throws NullPointerException if the event has no payload and [T] is not nullable
- */
-public inline fun <reified T> Event.payload(): T = payload(T::class.java) as T
 
 /**
  * Receives the event's payload mapped to [T], waiting for it if needed (the job is suspended
@@ -51,7 +42,7 @@ public inline fun <reified T : Any> EventWait.receiveOrNull(timeout: Duration): 
  * Waits for an event as a durable step and returns its payload mapped to [T], see
  * `Job.waitForEvent(String, String, String)`. The job is suspended until the event arrives (or the
  * timeout passes) and its handler runs again from the start, completed steps and received events
- * returning their stored results:
+ * returning their stored results (a received event's payload is stored with the step):
  * ```
  * val payment = waitForEvent<Payment>(step = "await-payment", name = "payment-received", key = order.id)
  * val answer = waitForEvent<Answer?>(step = "await-answer", name = "answer", key = id, timeout = 1.hours) {

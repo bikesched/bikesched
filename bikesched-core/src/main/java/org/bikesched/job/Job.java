@@ -6,8 +6,6 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
-import org.bikesched.event.Event;
-import org.bikesched.event.EventHandler;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.TypedEventWait;
@@ -172,13 +170,13 @@ public interface Job {
   boolean isCompensating();
 
   /**
-   * Starts waiting for an event, as a durable step; {@link EventWait#receive(Class, EventHandler)}
-   * returns it once the event published with the given name and key was received. If it has not
-   * been published yet, the job's attempt ends in {@code receive} (it does not return) and the job
-   * is suspended in state {@code WAITING}, using no thread and no concurrency slot. Once someone
+   * Starts waiting for an event, as a durable step; {@link EventWait#receive(Class)} returns its
+   * payload once the event published with the given name and key was received. If it has not been
+   * published yet, the job's attempt ends in {@code receive} (it does not return) and the job is
+   * suspended in state {@code WAITING}, using no thread and no concurrency slot. Once someone
    * {@link Bikesched#newEvent(String, String) publishes} the event, the job is scheduled again and
    * its handler runs again from the start: completed steps are skipped, and {@code receive} now
-   * maps the event with the event handler, stores the result like a step's and returns it.
+   * returns the payload, which was stored with the step when the event arrived.
    *
    * <pre>{@code
    * bikesched.registerJobHandler("order", job -> {
@@ -200,11 +198,10 @@ public interface Job {
    * <p>Events published before the job starts waiting are not lost: they are kept for their {@link
    * org.bikesched.event.EventBuilder#retention(Duration) retention} (default {@link
    * BikeschedBuilder#eventRetention(Duration)}), and the step receives the latest one right away.
-   * An event is delivered to every step waiting for it. Receiving marks the step {@code RECEIVED};
-   * the job's next run maps the event with the event handler (see {@link
-   * EventHandler#handle(Event)}) and stores the result, which later runs return without mapping
-   * again. If the event handler throws, the job's attempt fails and the next one maps the event
-   * again; the event is kept until then.
+   * An event is delivered to every step waiting for it: each step stores a copy of its payload, so
+   * later runs return it even after the event was deleted. To derive something from the payload
+   * durably (e.g. with side effects), do it in a {@link #step(String, Class, StepHandler) step}
+   * after the wait; a pure conversion can simply run again on every run.
    *
    * <p>Because the job's handler runs again after the wait, code outside of steps must be cheap and
    * deterministic, and steps and waits must be called with the same names in the same order on

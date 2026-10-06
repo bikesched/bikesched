@@ -103,26 +103,22 @@ class JobHistoryTest extends AbstractBikeschedTest {
               "RUNNING",
               "await:WAITING",
               "WAITING",
-              "await:RECEIVED",
+              "await:SUCCEEDED",
               "SCHEDULED",
               "RUNNING",
-              "await:SUCCEEDED",
               "SUCCEEDED");
       // Suspending gives back the attempt; resuming counts a new one.
       assertThat(history)
           .extracting(JobHistoryEntry::attempt)
-          .containsExactly(0, 1, 1, 0, 0, 0, 1, 1, 1);
+          .containsExactly(0, 1, 1, 0, 0, 0, 1, 1);
       assertThat(history.get(2).detail()).isEqualTo("waiting for event " + event + "/order-1");
       assertThat(history.get(3).detail()).isEqualTo("suspended at step 'await'");
-      // The step references the event it received; publishing is no node's change, storing the
-      // mapped result on the next run is.
-      String eventId = eventId(jobId, "await");
+      // Publishing completes the step with the event's payload; it is no node's change.
+      String eventId = eventId(event);
       assertThat(history.get(4).detail()).isEqualTo("received event " + eventId);
       assertThat(history.get(5).detail()).isEqualTo("resumed by event " + eventId);
       assertThat(history.get(4).nodeId()).isNull();
       assertThat(history.get(5).nodeId()).isNull();
-      assertThat(history.get(7).nodeId()).isNotNull();
-      assertThat(countRows("bikesched_events", "id = '" + eventId + "'")).isEqualTo(1);
     }
   }
 
@@ -242,13 +238,11 @@ class JobHistoryTest extends AbstractBikeschedTest {
         .toList();
   }
 
-  private static String eventId(UUID jobId, String stepName) throws Exception {
+  private static String eventId(String eventName) throws Exception {
     try (var connection = dataSource.getConnection();
         var query =
-            connection.prepareStatement(
-                "select event_id from bikesched_steps where job_id = ? and name = ?")) {
-      query.setObject(1, jobId);
-      query.setString(2, stepName);
+            connection.prepareStatement("select id from bikesched_events where event_name = ?")) {
+      query.setString(1, eventName);
       try (var rs = query.executeQuery()) {
         assertThat(rs.next()).isTrue();
         return rs.getString(1);
