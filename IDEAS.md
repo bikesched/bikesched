@@ -76,6 +76,10 @@ suspend the job while the outer step is still `RUNNING`.
 - guard it with a flag on the job that is set while a step runs, so that creating a step, a step
   builder or an event wait inside a step throws an `IllegalStateException`.
 
+### Recurring job handlers in annotations
+
+Support declaring recurring job handlers with the `@JobHandler` annotation in `bikesched-annotations`, so annotated methods can register recurring jobs as well as regular job handlers.
+
 ### Fallbacks in event timeout handlers
 
 Verify whether timeout handlers work for fallbacks, e.g.: a Stripe webhook has not arrived yet, so

@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.bikesched.Bikesched;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobType;
+import org.bikesched.job.Recurrence;
 
 /**
  * A job handler found on a {@link JobHandler @JobHandler} method, see {@link
@@ -23,6 +24,7 @@ public final class AnnotatedJobHandler {
 
   private final String type;
   private final Class<?> payloadType;
+  private final Recurrence recurrence;
   private final Method method;
   private final int parameterCount;
   private final int jobIndex;
@@ -34,6 +36,7 @@ public final class AnnotatedJobHandler {
   AnnotatedJobHandler(
       String type,
       Class<?> payloadType,
+      Recurrence recurrence,
       Method method,
       int parameterCount,
       int jobIndex,
@@ -42,6 +45,7 @@ public final class AnnotatedJobHandler {
       MethodHandle invoker) {
     this.type = Objects.requireNonNull(type, "type");
     this.payloadType = payloadType;
+    this.recurrence = recurrence;
     this.method = Objects.requireNonNull(method, "method");
     this.parameterCount = parameterCount;
     this.jobIndex = jobIndex;
@@ -66,6 +70,15 @@ public final class AnnotatedJobHandler {
    */
   public Optional<Class<?>> payloadType() {
     return Optional.ofNullable(payloadType);
+  }
+
+  /**
+   * The recurring schedule declared by the annotation.
+   *
+   * @return the recurrence, empty for a one-off handler
+   */
+  public Optional<Recurrence> recurrence() {
+    return Optional.ofNullable(recurrence);
   }
 
   /**
@@ -115,6 +128,7 @@ public final class AnnotatedJobHandler {
     return new AnnotatedJobHandler(
         type,
         payloadType,
+        recurrence,
         method,
         parameterCount,
         jobIndex,
@@ -152,6 +166,13 @@ public final class AnnotatedJobHandler {
     } else {
       registerTyped(bikesched, JobType.of(type, payloadType));
     }
+    if (recurrence != null) {
+      if (payloadType == null) {
+        bikesched.newJob(type).schedule(recurrence);
+      } else {
+        scheduleTyped(bikesched, JobType.of(type, payloadType));
+      }
+    }
   }
 
   /**
@@ -174,6 +195,10 @@ public final class AnnotatedJobHandler {
 
   private <T> void registerTyped(Bikesched bikesched, JobType<T> jobType) {
     bikesched.registerJobHandler(jobType, this::invoke);
+  }
+
+  private <T> void scheduleTyped(Bikesched bikesched, JobType<T> jobType) {
+    bikesched.newJob(jobType).schedule(recurrence);
   }
 
   /** Calls the bound method; its exceptions are passed on unchanged. */

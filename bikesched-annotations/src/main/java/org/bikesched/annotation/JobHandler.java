@@ -36,4 +36,12 @@ public @interface JobHandler {
    * @return the job type
    */
   String type();
+
+  /**
+   * Optional recurring schedule. ISO-8601 durations (e.g. {@code PT5M}) are supported by default;
+   * additional formats can be provided with {@link ScheduleProvider} implementations.
+   *
+   * @return the schedule expression, empty for a one-off handler
+   */
+  String schedule() default "";
 }

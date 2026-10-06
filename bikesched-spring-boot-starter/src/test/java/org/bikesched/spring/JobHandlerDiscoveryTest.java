@@ -175,6 +175,16 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
             });
   }
 
+  @Test
+  void registersCronScheduledHandlers() {
+    CronJobs.handled.clear();
+    runner()
+        .withBean("dataSource", DataSource.class, () -> dataSource())
+        .withBean("cronJobs", CronJobs.class, CronJobs::new)
+        .withPropertyValues("bikesched.node-name=" + unique("cron-node"))
+        .run(context -> await().untilAsserted(() -> assertThat(CronJobs.handled).isNotEmpty()));
+  }
+
   /** A {@code @JobHandler} bean discovered and invoked with a record payload. */
   public static class MailJobs {
 
@@ -185,6 +195,17 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
     @JobHandler(type = "discover-mail")
     public void sendMail(Job job, Mail mail) {
       handled.add(mail.to());
+    }
+  }
+
+  /** A recurring handler using Spring's six-field cron format. */
+  public static class CronJobs {
+
+    public static final List<String> handled = new CopyOnWriteArrayList<>();
+
+    @JobHandler(type = "cron-job", schedule = "*/1 * * * * *")
+    public void handle() {
+      handled.add("ran");
     }
   }
 

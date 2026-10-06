@@ -40,7 +40,7 @@ the method and the problem, not when a job runs.
 | Method | Does |
 |---|---|
 | `JobHandlers.register(bikesched, target)` | registers all annotated methods of `target`; returns them |
-| `JobHandlers.scan(target)` | finds and checks them without registering; each `AnnotatedJobHandler` has `type()`, `payloadType()`, `method()` and `registerOn(bikesched)` |
+| `JobHandlers.scan(target)` | finds and checks them without registering; each `AnnotatedJobHandler` has `type()`, `payloadType()`, `recurrence()`, `method()` and `registerOn(bikesched)` |
 
 A method with a payload parameter is registered for `JobType.of(type, payloadClass)`, so the node
 rejects a typed job type with the same name and another payload class. Methods without one are
@@ -49,7 +49,11 @@ registered for the type's name, like `registerJobHandler(String, JobHandler)`.
 In a module path application, the method's package must be open to the module
 `org.bikesched.annotation` (or the class public in an exported package).
 
-Recurring jobs are not supported by the annotation yet.
+Recurring handlers can declare an ISO-8601 duration with `schedule`; for example,
+`@JobHandler(type = "cleanup", schedule = "PT1H")`. It is parsed with `Duration.parse()` and
+registered as a fixed-rate recurrence. Other schedule formats can be supplied directly to
+`JobHandlers.register(...)` or `JobHandlers.scan(...)` as `ScheduleProvider` arguments. An
+expression must be recognized by exactly one provider.
 
 ---
 

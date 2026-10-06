@@ -93,6 +93,25 @@ class JobHandlersTest {
             "send-mail a@x attempt 1", "log-mail b@x", "ping", "flaky attempt 2");
   }
 
+  public static class RecurringJobs {
+    final List<String> calls = new CopyOnWriteArrayList<>();
+
+    @JobHandler(type = "recurring-ping", schedule = "PT0.1S")
+    public void ping() {
+      calls.add("ping");
+    }
+  }
+
+  @Test
+  void annotatedRecurringHandlerRuns() {
+    var jobs = new RecurringJobs();
+    try (Bikesched bikesched = node()) {
+      JobHandlers.register(bikesched, jobs);
+      await().atMost(Duration.ofSeconds(15)).until(() -> !jobs.calls.isEmpty());
+    }
+    assertThat(jobs.calls).isNotEmpty();
+  }
+
   public interface MailApi {
     void send(Mail mail);
   }

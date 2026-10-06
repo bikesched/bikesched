@@ -6,6 +6,7 @@ import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.JobListener;
 import org.bikesched.JsonMapper;
+import org.bikesched.annotation.ScheduleProvider;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.JobTypeHandler;
 import org.bikesched.micrometer.MicrometerJobListener;
@@ -61,8 +62,19 @@ public class BikeschedAutoConfiguration {
    * @return the holder
    */
   @Bean
-  static JobHandlerBeans jobHandlerBeans(ObjectProvider<HandlerWarning> warnings) {
-    return new JobHandlerBeans(warnings);
+  static JobHandlerBeans jobHandlerBeans(
+      ObjectProvider<HandlerWarning> warnings, ObjectProvider<ScheduleProvider> scheduleProviders) {
+    return new JobHandlerBeans(warnings, scheduleProviders);
+  }
+
+  /**
+   * Supports Spring's six-field cron syntax on {@code @JobHandler} schedules.
+   *
+   * @return the cron schedule provider
+   */
+  @Bean
+  ScheduleProvider cronScheduleProvider() {
+    return new CronScheduleProvider();
   }
 
   /**

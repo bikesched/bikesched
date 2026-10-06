@@ -48,6 +48,20 @@ created. Duplicates fail startup with a message naming the bean and the method �
 downgrade this to a warning, and none intended. See [Annotations](annotations.md) for the method
 signature rules.
 
+**Recurring handlers**: the starter auto-configures a `ScheduleProvider` for Spring's six-field
+`CronExpression` syntax, so a handler can declare its schedule next to its type:
+
+```java
+@JobHandler(type = "purge-expired-sessions", schedule = "0 0 */6 * * *")
+public void purgeExpiredSessions() { … }
+```
+
+The schedule is evaluated in UTC and uses the expression itself as its stable recurrence
+description. Regular ISO-8601 duration schedules are also supported by `bikesched-annotations`, for
+example `@JobHandler(type = "refresh-cache", schedule = "PT15M")`; they are parsed with
+`Duration.parse()` and run at a fixed rate. Any `ScheduleProvider` bean is also used when annotated
+handlers are discovered, so an application can add its own schedule formats.
+
 **Transactional handlers**: a handler runs on a bikesched job thread, never inside an ambient
 transaction, so `@Transactional` with the default propagation `REQUIRED` simply starts a new one —
 `REQUIRES_NEW` written explicitly documents that intent. The starter logs a warning once per handler
@@ -146,5 +160,4 @@ events.
 
 ## Out of scope (v1)
 
-Cron/recurring declarations on `@JobHandler` (register recurring jobs programmatically as before),
-Actuator health indicators, and any interop with `@Scheduled` or Spring Batch.
+Actuator health indicators and any interop with `@Scheduled` or Spring Batch.

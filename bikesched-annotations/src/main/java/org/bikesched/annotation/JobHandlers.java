@@ -40,8 +40,22 @@ public final class JobHandlers {
    *     two methods handle the same type, or the node already has a handler for one of the types
    */
   public static List<AnnotatedJobHandler> register(Bikesched bikesched, Object target) {
+    return register(bikesched, target, new ScheduleProvider[0]);
+  }
+
+  /**
+   * Registers the {@link JobHandler @JobHandler} methods of the object on the node, using the given
+   * providers in addition to built-in and service-loaded schedule providers.
+   *
+   * @param bikesched the node
+   * @param target the object declaring the methods
+   * @param scheduleProviders additional schedule providers
+   * @return the registered handlers, ordered by job type
+   */
+  public static List<AnnotatedJobHandler> register(
+      Bikesched bikesched, Object target, ScheduleProvider... scheduleProviders) {
     Objects.requireNonNull(bikesched, "bikesched");
-    List<AnnotatedJobHandler> handlers = scan(target);
+    List<AnnotatedJobHandler> handlers = scan(target, scheduleProviders);
     handlers.forEach(handler -> handler.registerOn(bikesched));
     return handlers;
   }
@@ -60,9 +74,28 @@ public final class JobHandlers {
    */
   public static List<AnnotatedJobHandler> register(
       Bikesched bikesched, Object bean, Class<?> targetClass) {
+    return register(bikesched, bean, targetClass, new ScheduleProvider[0]);
+  }
+
+  /**
+   * Registers the {@link JobHandler @JobHandler} methods of {@code targetClass}, invoked through
+   * {@code bean}, using the given providers in addition to built-in and service-loaded schedule
+   * providers.
+   *
+   * @param bikesched the node
+   * @param bean the instance the methods are invoked on
+   * @param targetClass the class declaring the annotated methods
+   * @param scheduleProviders additional schedule providers
+   * @return the registered handlers, ordered by job type
+   */
+  public static List<AnnotatedJobHandler> register(
+      Bikesched bikesched,
+      Object bean,
+      Class<?> targetClass,
+      ScheduleProvider... scheduleProviders) {
     Objects.requireNonNull(bikesched, "bikesched");
     List<AnnotatedJobHandler> handlers =
-        scan(targetClass).stream().map(handler -> handler.bindTo(bean)).toList();
+        scan(targetClass, scheduleProviders).stream().map(handler -> handler.bindTo(bean)).toList();
     handlers.forEach(handler -> handler.registerOn(bikesched));
     return handlers;
   }
@@ -77,8 +110,23 @@ public final class JobHandlers {
    *     two methods handle the same type
    */
   public static List<AnnotatedJobHandler> scan(Object target) {
+    return scan(target, new ScheduleProvider[0]);
+  }
+
+  /**
+   * Finds the {@link JobHandler @JobHandler} methods of an object using the given providers in
+   * addition to built-in and service-loaded schedule providers.
+   *
+   * @param target the object declaring the methods
+   * @param scheduleProviders additional schedule providers
+   * @return its handlers, ordered by job type; empty if it has no annotated methods
+   */
+  public static List<AnnotatedJobHandler> scan(
+      Object target, ScheduleProvider... scheduleProviders) {
     Objects.requireNonNull(target, "target");
-    return scan(target.getClass()).stream().map(handler -> handler.bindTo(target)).toList();
+    return scan(target.getClass(), scheduleProviders).stream()
+        .map(handler -> handler.bindTo(target))
+        .toList();
   }
 
   /**
@@ -93,7 +141,21 @@ public final class JobHandlers {
    *     two methods handle the same type
    */
   public static List<AnnotatedJobHandler> scan(Class<?> targetClass) {
+    return scan(targetClass, new ScheduleProvider[0]);
+  }
+
+  /**
+   * Finds the {@link JobHandler @JobHandler} methods of a class using the given providers in
+   * addition to built-in and service-loaded schedule providers.
+   *
+   * @param targetClass the class declaring the methods
+   * @param scheduleProviders additional schedule providers
+   * @return its handlers, ordered by job type; empty if it has no annotated methods
+   */
+  public static List<AnnotatedJobHandler> scan(
+      Class<?> targetClass, ScheduleProvider... scheduleProviders) {
     Objects.requireNonNull(targetClass, "targetClass");
+    Objects.requireNonNull(scheduleProviders, "scheduleProviders");
     Map<String, AnnotatedJobHandler> byType = new HashMap<>();
     for (Class<?> type = targetClass; type != null; type = type.getSuperclass()) {
       for (Method method : type.getDeclaredMethods()) {
@@ -101,7 +163,8 @@ public final class JobHandlers {
         if (annotation == null || method.isBridge()) {
           continue;
         }
-        AnnotatedJobHandler handler = handler(method, annotation.type());
+        AnnotatedJobHandler handler =
+            handler(method, annotation.type(), annotation.schedule(), scheduleProviders);
         AnnotatedJobHandler other = byType.putIfAbsent(handler.type(), handler);
         if (other != null && !overrides(other.method(), method)) {
           throw new IllegalArgumentException(
@@ -145,7 +208,8 @@ public final class JobHandlers {
   }
 
   /** Validates an annotated method and describes it; the handler is not bound to an instance. */
-  private static AnnotatedJobHandler handler(Method method, String type) {
+  private static AnnotatedJobHandler handler(
+      Method method, String type, String schedule, ScheduleProvider... scheduleProviders) {
     if (type == null || type.isBlank()) {
       throw invalid(method, "has no job type");
     }
@@ -189,9 +253,15 @@ public final class JobHandlers {
         payloadIndex = i;
       }
     }
+    if (schedule == null) {
+      throw invalid(method, "has no schedule expression");
+    }
+    var recurrence =
+        schedule.isBlank() ? null : ScheduleProviders.parse(schedule, scheduleProviders);
     return new AnnotatedJobHandler(
         type,
         payloadIndex < 0 ? null : parameters[payloadIndex],
+        recurrence,
         method,
         parameters.length,
         jobIndex,
