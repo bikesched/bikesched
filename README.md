@@ -82,6 +82,40 @@ Every node sharing the database polls all due jobs, regardless of their type, so
 register the same handlers. A handler that throws fails the attempt; the job is retried until its
 maximum number of attempts is used up and then marked `FAILED`.
 
+This is where bikesched stops looking like a regular job scheduler: a handler can run **durable
+steps** and **wait for an event**, without holding a thread or re-doing work on retries or resumes:
+
+```java
+bikesched.registerJobHandler("order", job -> {
+    Order order = job.payload(Order.class);
+
+    // Creates a Stripe PaymentIntent; runs once, a retried or resumed job gets the id back instead
+    String paymentIntentId = job.step("create-payment-intent", String.class,
+            _ -> stripe.createPaymentIntent(order).id());
+
+    // Suspends (no thread held) until Stripe's webhook reports on this payment intent
+    PaymentUpdated webhook = job.waitForEvent("await-payment", "payment-intent-updated", paymentIntentId)
+            .receive(PaymentUpdated.class);
+
+    switch (webhook.status()) {
+        case SUCCEEDED -> job.step("mark-paid", Void.class,
+                _ -> { orders.markPaid(order, paymentIntentId); return null; });
+        case FAILED -> job.step("mark-failed", Void.class,
+                _ -> { orders.markFailed(order, paymentIntentId); return null; });
+    }
+});
+
+// in the Stripe webhook endpoint, possibly minutes or days later
+bikesched.newEvent("payment-intent-updated", webhookPayload.paymentIntentId())
+        .payload(webhookPayload)
+        .publish();
+```
+
+A plain job scheduler would need its own tables and glue code to carry `order` and
+`paymentIntentId` across that wait, to not create a second payment intent on a retry, and to
+resume on another node after a crash; here it's `job.step(...)` and `job.waitForEvent(...)`. See
+[Steps and compensation](docs/steps.md) and [Events](docs/events.md).
+
 ## Documentation
 
 The [documentation](docs/index.md) covers the concepts in detail:
