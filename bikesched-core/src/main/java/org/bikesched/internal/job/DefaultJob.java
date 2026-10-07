@@ -19,6 +19,7 @@ import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
 import org.bikesched.event.TypedEventWait;
+import org.bikesched.event.listener.EventListener;
 import org.bikesched.event.listener.EventSource;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.EventStore;
@@ -28,7 +29,7 @@ import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.event.DefaultStepEventBuilder;
-import org.bikesched.internal.event.EventNotifier;
+import org.bikesched.internal.event.EventListenerUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.Job;
@@ -61,7 +62,7 @@ public final class DefaultJob implements Job {
   private final Database database;
   private final JobScheduler scheduler;
   private final Duration defaultEventRetention;
-  private final EventNotifier eventNotifier;
+  private final EventListener eventListener;
   private final UUID id;
 
   /** The lock of this claim: the attempt's writes are fenced by it. */
@@ -109,16 +110,16 @@ public final class DefaultJob implements Job {
    * @param claimed the claimed job
    * @param defaultEventRetention the node's default event retention
    * @param scheduler checks the handlers of the child jobs it starts
-   * @param eventNotifier reports the events the job publishes
+   * @param eventListener observes the events the job publishes
    */
   public DefaultJob(
       Database database,
       JobStore.ClaimedJob claimed,
       Duration defaultEventRetention,
       JobScheduler scheduler,
-      EventNotifier eventNotifier) {
+      EventListener eventListener) {
     this.database = Objects.requireNonNull(database, "database");
-    this.eventNotifier = Objects.requireNonNull(eventNotifier, "eventNotifier");
+    this.eventListener = Objects.requireNonNull(eventListener, "eventListener");
     this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
     this.defaultEventRetention =
         Objects.requireNonNull(defaultEventRetention, "defaultEventRetention");
@@ -209,7 +210,8 @@ public final class DefaultJob implements Job {
                   retention == null ? defaultEventRetention : retention,
                   compensating);
       if (published.publication() != null) {
-        eventNotifier.published(eventName, EventSource.JOB, published.publication());
+        EventListenerUtil.notifyPublished(
+            eventListener, eventName, EventSource.JOB, published.publication());
       }
       return published.eventId();
     } finally {

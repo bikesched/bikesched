@@ -25,7 +25,7 @@ import org.bikesched.internal.database.DatabaseInitializer;
 import org.bikesched.internal.database.EventStore;
 import org.bikesched.internal.event.DefaultEventBuilder;
 import org.bikesched.internal.event.EventCleanUp;
-import org.bikesched.internal.event.EventNotifier;
+import org.bikesched.internal.event.EventListenerUtil;
 import org.bikesched.internal.job.DefaultJobBuilder;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
@@ -85,7 +85,6 @@ public final class DefaultBikesched implements Bikesched {
   private final ScheduledExecutorService heartbeatExecutor;
   private final ScheduledThreadPoolExecutor cleanUpExecutor;
   private final DefaultNode node;
-  private final EventNotifier eventNotifier;
 
   /** Guards starting to poll against closing, so a node never registers after it was closed. */
   private final Object lifecycle = new Object();
@@ -99,7 +98,6 @@ public final class DefaultBikesched implements Bikesched {
     this.settings = settings;
     this.nodeName = settings.nodeName();
     this.node = new DefaultNode(nodeName);
-    this.eventNotifier = new EventNotifier(settings.eventListener());
     this.jobScheduler =
         new JobScheduler(
             database,
@@ -120,7 +118,7 @@ public final class DefaultBikesched implements Bikesched {
                 settings.retryBackoff(),
                 settings.hardTimeoutGrace(),
                 settings.jobListener(),
-                eventNotifier),
+                settings.eventListener()),
             registry,
             jobScheduler);
     this.heartbeatExecutor =
@@ -372,7 +370,8 @@ public final class DefaultBikesched implements Bikesched {
         publication.received());
     if (connection == null) {
       // Events in the caller's transaction are not reported: it may still roll back.
-      eventNotifier.published(eventName, EventSource.NODE, publication);
+      EventListenerUtil.notifyPublished(
+          settings.eventListener(), eventName, EventSource.NODE, publication);
     }
     return publication.eventId();
   }

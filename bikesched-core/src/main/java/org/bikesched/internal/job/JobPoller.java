@@ -205,7 +205,7 @@ public final class JobPoller {
                             claimed,
                             settings.eventRetention(),
                             scheduler,
-                            settings.eventNotifier()))
+                            settings.eventListener()))
                 .toList();
       } finally {
         slots.release(limit - jobs.size()); // unused slots; all of them if claiming failed
