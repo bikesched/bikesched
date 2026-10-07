@@ -90,6 +90,35 @@ starts the interval when the previous occurrence ended.
   fixed rate nor a fixed delay, and the flag would do nothing for wall-clock schedules.
 - Outcome: interval jobs that never overlap their own next run and keep a gap after long runs.
 
+### Durable sleep in jobs
+
+Jobs can wait for an event without holding a thread, but not for time: a handler that has to pause
+for days (a trial period, a reminder before a booking) has to split itself into several jobs or wait
+for an event nobody publishes, with a timeout.
+
+- `job.sleep(stepName, Duration)` and `job.sleepUntil(stepName, Instant)` as durable steps: a step
+  without an event, `WAITING` with `wait_until` as the wake-up time; the job is `WAITING` and due
+  then, like an event wait with a deadline. No new table, state or column.
+- Internally a sealed `Suspension` (event wait or sleep) replaces the event-only record.
+- Spec with the design, rejected alternatives and open questions (step name, method names):
+  [`docs/specs/job-sleep.md`](docs/specs/job-sleep.md).
+- Outcome: long pauses inside one job, without threads, slots or extra jobs.
+
+### Publishing events from jobs
+
+A handler publishing with `bikesched.newEvent(…).publish()` publishes again on every run outside a
+step, and at least once inside one; a second publish reaches steps that started waiting in between.
+
+- `job.newEvent(name, key)` and `job.newEvent(EventType, key)` publish as a durable step: the event
+  and the step's completion are written in one transaction fenced by the job lock, so the event is
+  published exactly once per job; later runs return the stored result.
+- Both `newEvent` methods move to an interface (`EventPublisher`) that `Bikesched` and `Job`
+  extend; the returned builders differ only covariantly (`connection(…)` from `Bikesched`, a step
+  name from a job).
+- Spec with the builder options and open questions:
+  [`docs/specs/job-events.md`](docs/specs/job-events.md).
+- Outcome: reliable events from jobs, e.g. "order-shipped" for the jobs waiting on it.
+
 ### Fallbacks in event timeout handlers
 
 Verify whether timeout handlers work for fallbacks, e.g.: a Stripe webhook has not arrived yet, so
