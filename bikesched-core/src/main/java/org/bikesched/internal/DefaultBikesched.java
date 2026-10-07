@@ -116,7 +116,8 @@ public final class DefaultBikesched implements Bikesched {
                 settings.retryBackoff(),
                 settings.hardTimeoutGrace(),
                 settings.jobListener()),
-            registry);
+            registry,
+            jobScheduler);
     this.heartbeatExecutor =
         Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().name("bikesched-heartbeat").daemon().factory());

@@ -57,6 +57,8 @@ used to work there, and I'm still a fan) or similar tools.
 - **Recurring jobs** with fixed-rate, daily, weekly or custom schedules
 - **Events**: jobs wait for an event without holding a thread and resume when it is published
 - **Sleeping**: jobs pause for days with `job.sleep(…)` without holding a thread
+- **Child jobs**: jobs start other jobs exactly once and wait for their outcome and result without
+  holding a thread
 - Optional typed `JobType`/`EventType` constants, next to plain string names
 - Crash recovery: jobs of dead nodes are released and retried by others; a node that lost a job
   can no longer change its steps
@@ -129,6 +131,7 @@ The [documentation](docs/index.md) covers the concepts in detail:
 - [Steps and compensation](docs/steps.md)
 - [Recurring jobs](docs/recurring-jobs.md)
 - [Events](docs/events.md)
+- [Child jobs](docs/child-jobs.md): starting and waiting for child jobs, job results
 - [Configuration](docs/configuration.md): builder options, nodes, JSON mapping, logging
 - [Kotlin](docs/kotlin.md)
 - [Spring Boot](docs/spring.md): the auto-configured node

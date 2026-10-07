@@ -23,16 +23,20 @@ import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.JobLock;
 import org.bikesched.internal.database.JobLockLostException;
 import org.bikesched.internal.database.JobStore;
+import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.event.DefaultStepEventBuilder;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobFailure;
+import org.bikesched.job.JobResult;
+import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.Step;
 import org.bikesched.job.StepBuilder;
 import org.bikesched.job.StepHandler;
+import org.bikesched.job.StepJobBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -44,13 +48,15 @@ import org.slf4j.MDC;
  *
  * <p>A job claimed to be compensated runs its handler in compensation mode: steps and event waits
  * only return what they stored, completed steps register their compensations (latest first), and
- * the first one that has not completed ends the replay with {@link CompensationReplayEnded}.
+ * the first one that has not completed ends the replay with {@link CompensationReplayEnded}. A
+ * child job step counts as completed once the child was started.
  */
 public final class DefaultJob implements Job {
 
   private static final Logger LOG = LoggerFactory.getLogger(Job.class);
 
   private final Database database;
+  private final JobScheduler scheduler;
   private final Duration defaultEventRetention;
   private final UUID id;
 
@@ -70,6 +76,7 @@ public final class DefaultJob implements Job {
   private final int compensationAttempts;
   private final boolean cancelRequested;
   private final String cancelRequestMessage;
+  private final UUID parentJobId;
 
   /** Compensations registered while replaying for compensation, latest first. */
   private final Deque<PendingCompensation> compensations = new ConcurrentLinkedDeque<>();
@@ -78,26 +85,34 @@ public final class DefaultJob implements Job {
   private final StepGuard stepGuard;
 
   private final Set<String> eventPublishSteps = ConcurrentHashMap.newKeySet();
+  private final Set<String> childJobSteps = ConcurrentHashMap.newKeySet();
 
   // Set by the handler, read by bikesched after the handler returned (the handler may use other
   // threads).
   private volatile boolean cancelled;
   private volatile String cancelMessage;
   private volatile DefaultJobFailure failure;
+  private volatile Result result;
   private volatile JobSuspended.Suspension suspension;
   private volatile JobAttempt attempt;
   private volatile Duration defaultEventTimeout;
   private volatile boolean lockLost;
 
-  /** A job claimed by this node, accessing its steps and events through the database. */
-  public DefaultJob(Database database, JobStore.ClaimedJob claimed) {
-    this(database, claimed, Duration.ofDays(7));
-  }
-
-  /** Creates a claimed job with the node's default event retention. */
+  /**
+   * A job claimed by this node, accessing its steps and events through the database.
+   *
+   * @param database the database
+   * @param claimed the claimed job
+   * @param defaultEventRetention the node's default event retention
+   * @param scheduler checks the handlers of the child jobs it starts
+   */
   public DefaultJob(
-      Database database, JobStore.ClaimedJob claimed, Duration defaultEventRetention) {
+      Database database,
+      JobStore.ClaimedJob claimed,
+      Duration defaultEventRetention,
+      JobScheduler scheduler) {
     this.database = Objects.requireNonNull(database, "database");
+    this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
     this.defaultEventRetention =
         Objects.requireNonNull(defaultEventRetention, "defaultEventRetention");
     this.id = claimed.id();
@@ -115,6 +130,7 @@ public final class DefaultJob implements Job {
     this.compensationAttempts = claimed.compensationAttempts();
     this.cancelRequested = claimed.cancelRequested();
     this.cancelRequestMessage = claimed.cancelMessage();
+    this.parentJobId = claimed.parentJobId();
     this.stepGuard = new StepGuard(id);
   }
 
@@ -339,6 +355,215 @@ public final class DefaultJob implements Job {
   /** The failure the handler marked the attempt with, {@code null} if none. */
   DefaultJobFailure failure() {
     return failure;
+  }
+
+  /** A result set by the handler: JSON text, {@code null} for a {@code null} result. */
+  private record Result(String json) {}
+
+  @Override
+  public void complete(Object result) {
+    this.result = new Result(result == null ? null : database.jsonMapper().toJson(result));
+  }
+
+  /** The result set by the handler as JSON text, {@code null} if none. */
+  String resultJson() {
+    Result current = result;
+    return current == null ? null : current.json();
+  }
+
+  /** The job that started this one as a child, {@code null} if none. */
+  UUID parentJobId() {
+    return parentJobId;
+  }
+
+  @Override
+  public StepJobBuilder<Object> newJob(String type) {
+    ValidationUtil.requireName(type, "job type");
+    requireChildrenAllowed(type);
+    return new DefaultStepJobBuilder<>(this, type, Object.class, database.jsonMapper(), scheduler);
+  }
+
+  @Override
+  public <T> StepJobBuilder<T> newJob(JobType<T> type) {
+    Objects.requireNonNull(type, "type");
+    requireChildrenAllowed(type.name());
+    scheduler.requirePayloadType(type);
+    return new DefaultStepJobBuilder<>(
+        this, type.name(), type.payloadType(), database.jsonMapper(), scheduler);
+  }
+
+  private void requireChildrenAllowed(String type) {
+    stepGuard.requireNoneRunning("start a child job of type " + type);
+    if (recurrence != null) {
+      throw new IllegalStateException(
+          "Job "
+              + id
+              + " is an occurrence of recurring job "
+              + this.type
+              + " and cannot start child jobs: the next occurrence replaces it, so no single caller"
+              + " waits for its children");
+    }
+  }
+
+  /**
+   * Starts a child job as a step, see {@link JobStore#startChildJob}; built by {@link
+   * DefaultStepJobBuilder}.
+   *
+   * @param requestedStepName the step name, {@code null} for the default {@code start <type>}
+   * @param child the child's attributes
+   * @param compensation the step's compensation, receiving the child's id; {@code null} if none
+   * @return the child's id, the same on every run
+   */
+  UUID startChildJob(
+      String requestedStepName, NewJob child, CompensationHandler<? super UUID> compensation) {
+    String stepName = requestedStepName == null ? "start " + child.type() : requestedStepName;
+    if (requestedStepName == null
+        && stepName.codePointCount(0, stepName.length()) > ValidationUtil.MAX_NAME_LENGTH) {
+      throw new IllegalArgumentException(
+          "Default child job step name is longer than "
+              + ValidationUtil.MAX_NAME_LENGTH
+              + " characters; set stepName(…) explicitly");
+    }
+    stepGuard.requireNoneRunning("start a child job as step '" + stepName + "'");
+    if (!childJobSteps.add(stepName)) {
+      throw new IllegalStateException(
+          "Job "
+              + id
+              + " starts more than one child job with step name '"
+              + stepName
+              + "'; set a unique stepName(…) for each child");
+    }
+    Runnable restoreStepName = putStepName(stepName);
+    try {
+      if (compensating) {
+        // Replay only: return the started child, registering the compensation, never start one.
+        var step = database.steps().findChildJobStep(id, stepName);
+        step.ifPresent(
+            stored -> requireStepKind(stepName, stored.kind(), "CHILD_JOB", "a child job"));
+        if (step.isEmpty()) {
+          throw new CompensationReplayEnded(stepName);
+        }
+        UUID childJobId = step.get().childJobId();
+        if (compensation != null && !step.get().state().equals("COMPENSATED")) {
+          Step compensated = new Step(id, stepName, step.get().attempts());
+          compensations.push(
+              new PendingCompensation(
+                  stepName,
+                  () -> {
+                    compensation.handle(compensated, childJobId);
+                    return null;
+                  }));
+        }
+        return childJobId;
+      }
+      var started =
+          fenced(
+              () -> database.jobs().startChildJob(id, lock, stepName, child, compensation != null));
+      if (started.started()) {
+        LOG.debug(
+            "Step {} of job {} started child job {} of type {}",
+            stepName,
+            id,
+            started.id(),
+            child.type());
+      } else {
+        LOG.debug("Step {} of job {} already started child job {}", stepName, id, started.id());
+      }
+      return started.id();
+    } finally {
+      restoreStepName.run();
+    }
+  }
+
+  @Override
+  public <T> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType) {
+    return waitForChildJob(childJobId, resultType, null);
+  }
+
+  @Override
+  public <T> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType, Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout");
+    if (timeout.isNegative() || timeout.isZero()) {
+      throw new IllegalArgumentException("timeout must be positive: " + timeout);
+    }
+    return waitForChildJob(childJobId, resultType, timeout);
+  }
+
+  /**
+   * Waits for a child job: returns its outcome (stored with its step when it ended), the timed-out
+   * wait, or suspends the job by throwing {@link JobSuspended}.
+   */
+  private <T> JobResult<T> waitForChildJob(UUID childJobId, Class<T> resultType, Duration timeout) {
+    Objects.requireNonNull(childJobId, "childJobId");
+    Objects.requireNonNull(resultType, "resultType");
+    stepGuard.requireNoneRunning("wait for job " + childJobId);
+    if (compensating) {
+      // Replay only: return what the wait stored, never start or time out a wait.
+      var wait = database.steps().findChildWait(id, childJobId);
+      return switch (wait.state()) {
+        case "SUCCEEDED", "TIMED_OUT" -> jobResult(childJobId, wait, resultType);
+        default -> throw new CompensationReplayEnded(wait.stepName());
+      };
+    }
+    var wait = fenced(() -> database.steps().awaitChildJob(id, lock, childJobId, timeout));
+    Runnable restoreStepName = putStepName(wait.stepName());
+    try {
+      switch (wait.state()) {
+        case "SUCCEEDED", "TIMED_OUT" -> {
+          LOG.debug(
+              "Step {} of job {} {}",
+              wait.stepName(),
+              id,
+              wait.state().equals("SUCCEEDED")
+                  ? "received the outcome of job " + childJobId + ": " + wait.childState()
+                  : "timed out waiting for job " + childJobId);
+          return jobResult(childJobId, wait, resultType);
+        }
+        case "WAITING" -> {
+          var waiting =
+              new JobSuspended.JobSuspension(wait.stepName(), childJobId, wait.waitUntil());
+          suspension = waiting;
+          LOG.debug(
+              "Step {} of job {} waiting for job {}{}, suspending the job",
+              wait.stepName(),
+              id,
+              childJobId,
+              wait.waitUntil() == null ? "" : " until " + wait.waitUntil());
+          throw new JobSuspended(waiting);
+        }
+        default ->
+            throw new IllegalStateException(
+                "Step '"
+                    + wait.stepName()
+                    + "' of job "
+                    + id
+                    + " starting job "
+                    + childJobId
+                    + " is "
+                    + wait.state()
+                    + "; start the child again before waiting for it");
+      }
+    } finally {
+      restoreStepName.run();
+    }
+  }
+
+  /**
+   * The outcome of a child job as stored with its step ({@code SUCCEEDED} or {@code TIMED_OUT}).
+   */
+  private <T> JobResult<T> jobResult(UUID childJobId, StepStore.ChildWait wait, Class<T> type) {
+    if (wait.state().equals("TIMED_OUT")) {
+      return new JobResult.TimedOut<>(childJobId);
+    }
+    return switch (wait.childState()) {
+      case "SUCCEEDED" -> new JobResult.Succeeded<>(childJobId, reader(type).apply(wait.result()));
+      case "FAILED" -> new JobResult.Failed<>(childJobId, wait.error());
+      case "CANCELLED" -> new JobResult.Cancelled<>(childJobId, wait.error());
+      case "COMPENSATION_FAILED" -> new JobResult.CompensationFailed<>(childJobId, wait.error());
+      default ->
+          throw new IllegalStateException(
+              "Unknown state " + wait.childState() + " of child job " + childJobId);
+    };
   }
 
   @Override

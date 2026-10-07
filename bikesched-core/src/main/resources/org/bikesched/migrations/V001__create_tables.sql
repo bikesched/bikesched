@@ -23,11 +23,15 @@ create index bikesched_nodes_last_heartbeat_at_idx on bikesched_nodes (last_hear
 -- Jobs are claimed by nodes with:  ... where state in ('SCHEDULED', 'WAITING', 'COMPENSATING')
 --                                  and scheduled_at <= now()
 --                                  order by priority desc, scheduled_at for update skip locked
--- A WAITING job waits for an event (see bikesched_events) or sleeps; its scheduled_at is the
--- deadline of the wait ('infinity' if it waits without one) or the wake-up time of the sleep.
+-- A WAITING job waits for an event (see bikesched_events), for a child job or sleeps; its
+-- scheduled_at is the deadline of the wait ('infinity' if it waits without one) or the wake-up time
+-- of the sleep.
 -- A job that is cancelled or fails permanently after completing steps with a compensation is
 -- COMPENSATING (compensated_state: the state it ends in) until its compensations ran, or
 -- COMPENSATION_FAILED once they failed in max_attempts compensation attempts.
+-- A child job (parent_job_id set) was started by a step of its parent (kind CHILD_JOB); ending it
+-- completes that step with its outcome. parent_job_id only references the parent (no FK): the
+-- parent may be deleted after its retention while the child still runs.
 create table bikesched_jobs (
     id           uuid        primary key,
     type         text        not null,          -- identifies the handler that executes the job
@@ -45,6 +49,8 @@ create table bikesched_jobs (
     compensation_attempts integer not null default 0,
     cancel_requested_at   timestamptz,          -- Bikesched.cancel(jobId): cancelled on its next claim
     cancel_message        text,
+    result       jsonb,                         -- Job.complete(result); only set when SUCCEEDED
+    parent_job_id uuid,                         -- the job that started this one as a child
     locked_by    uuid        references bikesched_nodes (id),
     lock_token   uuid,                          -- new for every claim: fences the claim's writes
     locked_at    timestamptz,
@@ -69,7 +75,12 @@ create table bikesched_jobs (
     constraint bikesched_jobs_type_check
         check (char_length(type) between 1 and 200),
     constraint bikesched_jobs_recurrence_check
-        check (char_length(recurrence) between 1 and 200)
+        check (char_length(recurrence) between 1 and 200),
+    constraint bikesched_jobs_result_check
+        check (result is null or state = 'SUCCEEDED'),
+    -- Children are never recurring.
+    constraint bikesched_jobs_parent_check
+        check (parent_job_id is null or recurrence is null)
 );
 
 -- Polling index: only due-able jobs, in claim order. The type lets the claim skip jobs of types
@@ -99,7 +110,11 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 --   not depend on the event) or wait_until has passed (TIMED_OUT).
 -- - EVENT_PUBLISH: published the event event_name/event_key (event_id) exactly once; SUCCEEDED
 --   when created, in the transaction that published the event.
--- event_id only references the event (no FK): events are deleted after their retention.
+-- - CHILD_JOB: started the child job child_job_id exactly once; WAITING until the child ends
+--   (SUCCEEDED, child_state = its terminal state, result = its result, last_error = its error or
+--   cancel message) or the parent's wait for it times out at wait_until (TIMED_OUT).
+-- event_id only references the event (no FK): events are deleted after their retention; the same
+-- for child_job_id (children are deleted after the job retention).
 -- A compensable step (declared with a compensation) is COMPENSATED once its compensation ran.
 -- Cancelling a job marks its unfinished steps (WAITING, or RUNNING after a crash) CANCELLED.
 -- A RUNNING step is locked by the node running it (locked_by). Every step write also requires the
@@ -119,17 +134,19 @@ create table bikesched_steps (
     event_key   text,
     event_id    uuid,                   -- the event received or published (no FK: see above)
     wait_until  timestamptz,
+    child_job_id uuid,                  -- the child job started (no FK: see above)
+    child_state text,                   -- the child's terminal state, once it ended
     compensable boolean     not null default false,
     started_at  timestamptz not null default now(),
     finished_at timestamptz,
     primary key (job_id, name),
     constraint bikesched_steps_kind_check
-        check (kind in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH')),
+        check (kind in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB')),
     constraint bikesched_steps_state_check
         check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'TIMED_OUT', 'COMPENSATED',
                          'CANCELLED')),
     -- Event waits and publishes name their event; an event wait references the event once it
-    -- received it, a publish always; only event waits time out.
+    -- received it, a publish always; only event waits and child jobs time out.
     constraint bikesched_steps_event_check
         check ((event_name is not null) = (kind in ('EVENT_WAIT', 'EVENT_PUBLISH'))
                and (event_name is null) = (event_key is null)
@@ -138,12 +155,19 @@ create table bikesched_steps (
                        when 'EVENT_PUBLISH' then event_id is not null
                        else event_id is null
                    end
-               and (kind = 'EVENT_WAIT' or state <> 'TIMED_OUT')),
-    -- Only sleeps and event waits wait; a sleep needs its wake-up time. (An event wait without a
-    -- timeout waits without a deadline.)
+               and (kind in ('EVENT_WAIT', 'CHILD_JOB') or state <> 'TIMED_OUT')),
+    -- Child job steps reference their child; the child's state is set once it ended (kept when the
+    -- step is compensated afterwards).
+    constraint bikesched_steps_child_check
+        check ((child_job_id is not null) = (kind = 'CHILD_JOB')
+               and (child_state is null or kind = 'CHILD_JOB' and state in ('SUCCEEDED', 'COMPENSATED'))
+               and (kind <> 'CHILD_JOB' or state <> 'SUCCEEDED' or child_state is not null)
+               and child_state in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED')),
+    -- Only sleeps, event waits and child jobs wait; a sleep needs its wake-up time. (An event wait
+    -- or a wait for a child job without a timeout waits without a deadline.)
     constraint bikesched_steps_wait_check
-        check ((state <> 'WAITING' or kind in ('SLEEP', 'EVENT_WAIT'))
-               and (wait_until is null or kind in ('SLEEP', 'EVENT_WAIT'))
+        check ((state <> 'WAITING' or kind in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB'))
+               and (wait_until is null or kind in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB'))
                and (kind <> 'SLEEP' or wait_until is not null)),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by is not null)),
@@ -156,6 +180,10 @@ create table bikesched_steps (
 -- Matching published events to the steps waiting for them.
 create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_key)
     where kind = 'EVENT_WAIT' and state = 'WAITING';
+
+-- Finding the step of a child job that ended.
+create index bikesched_steps_child_job_idx on bikesched_steps (child_job_id)
+    where kind = 'CHILD_JOB' and state = 'WAITING';
 
 -- Published events, kept until expires_at (published_at + the event's retention): a step that starts
 -- waiting for an event that was already published receives the latest unexpired one right away, so

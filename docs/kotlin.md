@@ -31,7 +31,8 @@ bikesched.createRecurringJob(type = "cleanup", recurrence = every(1.hours)) { cl
 
 ## Functions
 
-`createJob`, `createRecurringJob`, `publishEvent` and `waitForEvent` take named arguments. Only the
+`createJob`, `createRecurringJob`, `publishEvent`, `waitForEvent` and `startJob` take named
+arguments. Only the
 type (resp. step, name and key) and the recurrence are required; omitted options keep the builder
 defaults:
 
@@ -44,6 +45,8 @@ defaults:
 | `Job.publishEvent(name, key, payload, retention, stepName)` | publishes once as a durable job step and returns the event's id, the same on every run |
 | `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result (e.g. `waitForEvent<Payment?>(…, timeout = 3.days) { null }`), without fallback the job fails permanently like with the default event timeout |
 | `step<T>(name, compensation) { … }` (in a handler) | runs a durable step; the optional `compensation = { step, result -> … }` undoes it if the job is cancelled or fails permanently |
+| `startJob(type, payload, stepName, at, delay, priority, maxAttempts, timeout, compensation)` (in a handler) | starts a [child job](child-jobs.md) once as a durable step and returns its id, the same on every run; the optional `compensation = { step, childId -> … }` e.g. cancels it |
+| `awaitJob<T>(childJobId, timeout)` (in a handler) | waits for a child job and returns its `JobResult<T>`; `JobResult.TimedOut` once the optional `timeout` passed |
 
 The optional trailing handler of `createJob` and `createRecurringJob` is registered for the type
 unless it already has one; with a `payload` it gets the payload as its type, otherwise only the

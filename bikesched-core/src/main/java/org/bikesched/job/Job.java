@@ -357,6 +357,123 @@ public interface Job extends EventPublisher {
   void sleepUntil(String stepName, Instant time);
 
   /**
+   * Starts building a child job, started exactly once as a durable step of this job: the first run
+   * stores the child and the step in one transaction, later runs return the same child's id without
+   * scheduling again. Wait for the child to end with {@link #waitForJob(UUID, Class)}:
+   *
+   * <pre>{@code
+   * bikesched.registerJobHandler("fulfil-order", job -> {
+   *     Order order = job.payload(Order.class);
+   *     UUID charge = job.newJob("charge").payload(order.payment()).stepName("charge").schedule();
+   *     UUID pack = job.newJob("pack").payload(order.items()).stepName("pack").schedule();
+   *     // both children run in parallel; the parent waits for each without a thread
+   *     Receipt receipt = job.waitForJob(charge, Receipt.class).orElseThrow();
+   *     Parcel parcel = job.waitForJob(pack, Parcel.class).orElseThrow();
+   *     job.complete(new Fulfilment(receipt, parcel));
+   * });
+   * }</pre>
+   *
+   * <p>The step's name defaults to {@code start <type>}. A parent may also end without waiting for
+   * its children. Cancelling the parent does not touch its children; give the step a {@link
+   * StepJobBuilder#compensateWith(CompensationHandler) compensation} to cancel them. There is no
+   * limit on the nesting depth or the number of children: a runaway job tree is a handler bug.
+   *
+   * @param type the child's job type
+   * @return a builder for the child
+   * @throws IllegalArgumentException if the type is blank
+   * @throws IllegalStateException if this job is an occurrence of a recurring job, or if called
+   *     while a step handler or compensation of the job runs
+   */
+  StepJobBuilder<Object> newJob(String type);
+
+  /**
+   * Starts building a child job of a {@link JobType}, like {@link #newJob(String)}, with its
+   * payload of the type's payload class.
+   *
+   * @param type the child's job type and payload class
+   * @param <T> the payload type
+   * @return a builder for the child
+   * @throws IllegalArgumentException if the type's name is already used with another payload class
+   * @throws IllegalStateException if this job is an occurrence of a recurring job, or if called
+   *     while a step handler or compensation of the job runs
+   */
+  <T> StepJobBuilder<T> newJob(JobType<T> type);
+
+  /**
+   * Waits for a child job started with {@link #newJob(String)} to end and returns its outcome, with
+   * its result (see {@link #complete(Object)}) mapped to {@code resultType}. If the child has not
+   * ended yet, the job's attempt ends here (the method does not return) and the job is suspended in
+   * state {@code WAITING}, using no thread and no concurrency slot, until the child ends; then its
+   * handler runs again from the start, and this method returns the outcome stored with the child's
+   * step.
+   *
+   * <pre>{@code
+   * UUID charge = job.newJob("charge").payload(payment).schedule();
+   * switch (job.waitForJob(charge, Receipt.class)) {
+   *     case JobResult.Succeeded<Receipt>(var id, Receipt receipt) -> ship(receipt);
+   *     case JobResult.Failed<Receipt> f -> job.cancel("payment failed: " + f.error());
+   *     default -> job.fail("payment not charged");
+   * }
+   * }</pre>
+   *
+   * <p>A failed child does not fail its parent: the parent decides ({@link JobResult#orElseThrow()}
+   * turns any other outcome into an exception). To wait for several children, start them all, then
+   * wait for one after the other: children that ended already return right away. Waiting does not
+   * use up an attempt; like waiting for an event, it reruns the code outside of steps, and the same
+   * rules apply (see {@link #waitForEvent(String, String, String)}). The child's outcome stays with
+   * the step after the child was deleted (job retention).
+   *
+   * @param childJobId the id {@link StepJobBuilder#schedule()} returned
+   * @param resultType the type of the child's result
+   * @param <T> the type of the child's result
+   * @return the child's outcome; never {@link JobResult.TimedOut}
+   * @throws IllegalArgumentException if the id is not one of this job's children
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
+   * @throws BikeschedException if the step cannot be read or stored
+   */
+  <T> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType);
+
+  /**
+   * Waits for a child job like {@link #waitForJob(UUID, Class)}, at most for {@code timeout}
+   * counted from the first wait: the deadline stored on the first wait wins, later runs ignore the
+   * argument. Once it has passed with the child still running, the wait returns {@link
+   * JobResult.TimedOut}, also on every later run; the child keeps running (cancel it with {@code
+   * Bikesched.cancel} if needed) and its end no longer changes the outcome.
+   *
+   * @param childJobId the id {@link StepJobBuilder#schedule()} returned
+   * @param resultType the type of the child's result
+   * @param timeout how long to wait at most, positive
+   * @param <T> the type of the child's result
+   * @return the child's outcome, or {@link JobResult.TimedOut}
+   * @throws IllegalArgumentException if the id is not one of this job's children or the timeout is
+   *     not positive
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
+   * @throws BikeschedException if the step cannot be read or stored
+   */
+  <T> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType, Duration timeout);
+
+  /**
+   * Sets the job's result, mapped to JSON by the configured {@link JsonMapper} right away. Once the
+   * handler returns and the job ends {@code SUCCEEDED}, the result is stored with it: a parent
+   * waiting for the job receives it ({@link #waitForJob(UUID, Class)}), and {@link
+   * JobInfo#result(Class)} returns it.
+   *
+   * <pre>{@code
+   * Receipt receipt = job.step("charge", Receipt.class, step -> payments.charge(order));
+   * job.complete(receipt);
+   * }</pre>
+   *
+   * <p>Like {@link #cancel()} and {@link #fail()} it is a flag checked after the handler returned:
+   * if called repeatedly, the last result wins. A cancelled or failed attempt (also by an exception
+   * thrown afterwards) discards it, the next attempt sets it again; a job ending after its
+   * compensations has no result.
+   *
+   * @param result the result, may be {@code null}
+   * @throws RuntimeException any exception of the mapper
+   */
+  void complete(Object result);
+
+  /**
    * Marks this job as cancelled. Once the handler returns, bikesched sets the job to {@code
    * CANCELLED} (it is not retried) and clears {@code last_error}; if completed steps have a {@link
    * StepBuilder#compensateWith(CompensationHandler) compensation}, the job is compensated first.
