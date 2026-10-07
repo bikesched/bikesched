@@ -31,11 +31,15 @@ import org.slf4j.LoggerFactory;
  * <ol>
  *   <li>{@link Job#cancel(String) cancelled}: {@code CANCELLED}, no retry
  *   <li>{@link Job#fail(String) failed explicitly}: retried with the handler's retry settings
- *   <li>{@link Job#waitForEvent(String, String, String) waiting for an event}: {@code WAITING}
+ *   <li>{@link Job#waitForEvent(String, String, String) waiting for an event}, a child job or the
+ *       end of a sleep: {@code WAITING}
  *   <li>timed out, or threw: retried after the node's {@link RetryBackoff} while attempts remain,
  *       otherwise {@code FAILED}
- *   <li>returned normally: {@code SUCCEEDED}
+ *   <li>returned normally: {@code SUCCEEDED}, with the result set by {@link Job#complete(Object)}
  * </ol>
+ *
+ * <p>A child job ending in a terminal state completes its parent's step waiting for it in the same
+ * transaction (see {@code JobStore}).
  *
  * <p>A job whose cancellation was requested is cancelled without running its handler. A cancelled
  * or permanently failed job with completed compensable steps becomes {@code COMPENSATING} instead
@@ -376,7 +380,11 @@ public final class JobProcessor {
         var completed =
             RECORDING.call(
                 "Completing job " + job.id() + " failed",
-                () -> database.jobs().completeJob(job.id(), job.lock(), next));
+                () ->
+                    database
+                        .jobs()
+                        .completeJob(
+                            job.id(), job.lock(), job.resultJson(), next, job.parentJobId()));
         if (completed.isEmpty()) {
           LOG.warn(
               "Job {} was no longer running in this attempt's claim when completing it", job.id());
@@ -410,6 +418,11 @@ public final class JobProcessor {
                                 wait.eventKey());
                     case JobSuspended.SleepSuspension sleep ->
                         database.steps().suspendJob(job.id(), job.lock(), sleep.stepName());
+                    case JobSuspended.JobSuspension wait ->
+                        database
+                            .steps()
+                            .suspendAtChildJob(
+                                job.id(), job.lock(), wait.stepName(), wait.childJobId());
                   });
       if (suspended.isEmpty()) {
         LOG.warn(
@@ -426,6 +439,8 @@ public final class JobProcessor {
                   wait.event() + " was published while suspending the job";
               case JobSuspended.SleepSuspension _ ->
                   "the wake-up time passed while suspending the job";
+              case JobSuspended.JobSuspension wait ->
+                  "job " + wait.childJobId() + " ended while suspending the job";
             };
         return new Outcome(JobAttemptOutcome.WAITING, "RESCHEDULED, " + rescheduled);
       }
@@ -440,6 +455,12 @@ public final class JobProcessor {
                     + (waitUntil == null ? "" : " until " + waitUntil);
             case JobSuspended.SleepSuspension sleep ->
                 "SLEEPING in step " + sleep.stepName() + " until " + waitUntil;
+            case JobSuspended.JobSuspension wait ->
+                "WAITING for job "
+                    + wait.childJobId()
+                    + " in step "
+                    + wait.stepName()
+                    + (waitUntil == null ? "" : " until " + waitUntil);
           };
       return new Outcome(JobAttemptOutcome.WAITING, outcome);
     } catch (RuntimeException e) {
@@ -458,7 +479,11 @@ public final class JobProcessor {
       var cancelled =
           RECORDING.call(
               "Cancelling job " + job.id() + " failed",
-              () -> database.jobs().cancelJob(job.id(), job.lock(), message, byHandler, next));
+              () ->
+                  database
+                      .jobs()
+                      .cancelJob(
+                          job.id(), job.lock(), message, byHandler, next, job.parentJobId()));
       if (cancelled.isPresent()) {
         boolean compensating = cancelled.get().compensating();
         LOG.info(
@@ -575,7 +600,10 @@ public final class JobProcessor {
       var ended =
           RECORDING.call(
               "Completing the compensation of job " + job.id() + " failed",
-              () -> database.jobs().completeCompensation(job.id(), job.lock(), next));
+              () ->
+                  database
+                      .jobs()
+                      .completeCompensation(job.id(), job.lock(), next, job.parentJobId()));
       if (ended.isEmpty()) {
         LOG.warn(
             "Job {} was no longer compensating in this attempt's claim when completing it",
@@ -612,7 +640,10 @@ public final class JobProcessor {
           RECORDING.call(
               "Recording the failed compensation of job " + job.id() + " failed",
               () ->
-                  database.jobs().failCompensation(job.id(), job.lock(), error, retryAfter, next));
+                  database
+                      .jobs()
+                      .failCompensation(
+                          job.id(), job.lock(), error, retryAfter, next, job.parentJobId()));
       if (failed.isEmpty()) {
         LOG.warn(
             "Compensating job {} of type {} failed and it was no longer compensating in this"
@@ -738,7 +769,16 @@ public final class JobProcessor {
           RECORDING.call(
               "Failing job " + job.id() + " failed",
               () ->
-                  database.jobs().failJob(job.id(), job.lock(), error, maxAttempts, retryIn, next));
+                  database
+                      .jobs()
+                      .failJob(
+                          job.id(),
+                          job.lock(),
+                          error,
+                          maxAttempts,
+                          retryIn,
+                          next,
+                          job.parentJobId()));
       if (failed.isEmpty()) {
         LOG.warn(
             "Job {} of type {} failed and was no longer running in this attempt's claim: {}",

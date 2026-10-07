@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -29,4 +30,21 @@ public interface JobInfo {
    * @return the state
    */
   JobState state();
+
+  /**
+   * Returns the job's result (see {@link Job#complete(Object)}), mapped by the configured {@code
+   * JsonMapper}.
+   *
+   * @param type the type to map the result to
+   * @param <T> the type of the result
+   * @return the result; empty unless the job {@link JobState#SUCCEEDED succeeded} with a result
+   */
+  <T> Optional<T> result(Class<T> type);
+
+  /**
+   * Returns the job that started this one as a child (see {@link Job#newJob(String)}).
+   *
+   * @return the parent's id; empty if this job is not a child
+   */
+  Optional<UUID> parentJobId();
 }

@@ -152,4 +152,4 @@ On startup bikesched logs the database URL (without credentials) at `DEBUG` as
 
 ---
 
-Next: [Kotlin](kotlin.md) · Previous: [Events](events.md) · [Documentation index](index.md)
+Next: [Kotlin](kotlin.md) · Previous: [Child jobs](child-jobs.md) · [Documentation index](index.md)

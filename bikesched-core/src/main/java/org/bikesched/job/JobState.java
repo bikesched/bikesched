@@ -10,7 +10,10 @@ public enum JobState {
   /** Claimed and running on a node (also while it is being compensated). */
   RUNNING,
 
-  /** Waiting for an event, see {@link Job#waitForEvent(String, String, String)}. */
+  /**
+   * Waiting for an event, a child job or the end of a sleep, see {@link Job#waitForEvent(String,
+   * String, String)}, {@link Job#waitForJob(java.util.UUID, Class)} and {@link Job#sleep}.
+   */
   WAITING,
 
   /** Completed successfully. */

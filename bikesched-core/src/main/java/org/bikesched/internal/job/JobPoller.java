@@ -57,6 +57,7 @@ public final class JobPoller {
   private final Database database;
   private final JobPollerSettings settings;
   private final JobRegistry registry;
+  private final JobScheduler scheduler;
   private final String nodeName;
   private final Semaphore slots;
   private final ScheduledExecutorService pollerExecutor;
@@ -75,11 +76,14 @@ public final class JobPoller {
    * @param database the database
    * @param settings the node's settings
    * @param registry the node's job types
+   * @param scheduler stores the child jobs the claimed jobs start
    */
-  public JobPoller(Database database, JobPollerSettings settings, JobRegistry registry) {
+  public JobPoller(
+      Database database, JobPollerSettings settings, JobRegistry registry, JobScheduler scheduler) {
     this.database = database;
     this.settings = settings;
     this.registry = registry;
+    this.scheduler = scheduler;
     this.nodeName = settings.nodeName();
     this.slots = new Semaphore(settings.maxConcurrentJobs());
     this.pollerExecutor =
@@ -194,7 +198,9 @@ public final class JobPoller {
       try {
         jobs =
             database.jobs().claimJobs(nodeId, registry.types(), limit).stream()
-                .map(claimed -> new DefaultJob(database, claimed, settings.eventRetention()))
+                .map(
+                    claimed ->
+                        new DefaultJob(database, claimed, settings.eventRetention(), scheduler))
                 .toList();
       } finally {
         slots.release(limit - jobs.size()); // unused slots; all of them if claiming failed

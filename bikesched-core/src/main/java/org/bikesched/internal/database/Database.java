@@ -71,7 +71,7 @@ public final class Database {
     var access = new DatabaseAccess(dataSource, statementTimeout);
     this.history = new HistoryStore(access, jobHistory);
     this.nodes = new NodeStore(access);
-    this.jobs = new JobStore(access, history);
+    this.jobs = new JobStore(access, history, jsonMapper);
     this.steps = new StepStore(access, history);
     this.events = new EventStore(access, history);
   }

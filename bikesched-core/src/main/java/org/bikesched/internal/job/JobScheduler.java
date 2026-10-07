@@ -9,6 +9,7 @@ import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
+import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,6 +74,16 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
     return jobId;
   }
 
+  /**
+   * Remembers the payload class of a typed job type, see {@link JobRegistry#requirePayloadType}.
+   *
+   * @param type the typed job type
+   * @throws IllegalArgumentException if the name is already used with another payload class
+   */
+  public void requirePayloadType(JobType<?> type) {
+    registry.requirePayloadType(type);
+  }
+
   @Override
   public Recurrence parseRecurrence(String expression) {
     return recurrenceParsers.parse(expression);
@@ -131,8 +142,15 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
     return deleted > 0;
   }
 
-  /** Checks that the job type has a handler, registering the given one first if it has none. */
-  private void requireHandler(String type, JobHandler handler) {
+  /**
+   * Checks that the job type has a handler, registering the given one first if it has none.
+   *
+   * @param type the job type
+   * @param handler the handler set on the builder, {@code null} if none
+   * @throws IllegalArgumentException if the type has no handler
+   */
+  @Override
+  public void requireHandler(String type, JobHandler handler) {
     if (handler != null) {
       if (registry.register(type, handler)) {
         LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);

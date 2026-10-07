@@ -3,13 +3,15 @@ package org.bikesched.internal.job;
 
 import java.io.Serial;
 import java.time.Instant;
+import java.util.UUID;
 import org.bikesched.event.EventWait;
 import org.bikesched.job.Job;
 
 /**
- * Thrown by {@link EventWait#receive(Class)} and {@link Job#sleep} to end the handler's attempt
- * while the job waits for an event or sleeps; bikesched then suspends the job (state {@code
- * WAITING}) and runs the handler again once the event is published or the job wakes up.
+ * Thrown by {@link EventWait#receive(Class)}, {@link Job#sleep} and {@link Job#waitForJob} to end
+ * the handler's attempt while the job waits for an event, sleeps or waits for a child job;
+ * bikesched then suspends the job (state {@code WAITING}) and runs the handler again once the event
+ * is published, the job wakes up or the child ended.
  *
  * <p>An {@link Error} rather than an exception, so a {@code catch (Exception e)} in the handler
  * does not swallow it by accident. Even if the handler catches it anyway, the job is suspended once
@@ -32,13 +34,16 @@ final class JobSuspended extends Error {
     return suspension;
   }
 
-  /** A step a job is suspended at: waiting for an event, or sleeping. */
-  sealed interface Suspension permits EventSuspension, SleepSuspension {
+  /** A step a job is suspended at: waiting for an event or a child job, or sleeping. */
+  sealed interface Suspension permits EventSuspension, SleepSuspension, JobSuspension {
 
     /** The waiting step. */
     String stepName();
 
-    /** The deadline of an event wait ({@code null} if none) or the wake-up time of a sleep. */
+    /**
+     * The deadline of an event wait or a wait for a child job ({@code null} if none) or the wake-up
+     * time of a sleep.
+     */
     Instant waitUntil();
   }
 
@@ -75,6 +80,21 @@ final class JobSuspended extends Error {
     @Override
     public String toString() {
       return "to sleep until " + waitUntil;
+    }
+  }
+
+  /**
+   * A step waiting for the child job it started.
+   *
+   * @param stepName the step that started the child
+   * @param childJobId the child
+   * @param waitUntil the deadline of the wait, {@code null} if none
+   */
+  record JobSuspension(String stepName, UUID childJobId, Instant waitUntil) implements Suspension {
+
+    @Override
+    public String toString() {
+      return "to wait for job " + childJobId + (waitUntil == null ? "" : " until " + waitUntil);
     }
   }
 }

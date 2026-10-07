@@ -12,10 +12,10 @@ import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.ValidationUtil;
 
 /**
- * The {@code bikesched_steps} table: durable steps of jobs and sleeps, and suspending a job at a
- * waiting step (event steps are handled by {@link EventStore}). Changes are recorded in the {@link
- * HistoryStore job history}, if enabled. Thread-safe; every call borrows its own connection from
- * the {@link DatabaseAccess}.
+ * The {@code bikesched_steps} table: durable steps of jobs, sleeps, waits for child jobs, and
+ * suspending a job at a waiting step (event steps are handled by {@link EventStore}, starting child
+ * jobs by {@link JobStore}). Changes are recorded in the {@link HistoryStore job history}, if
+ * enabled. Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  *
  * <p>Every write is fenced by the job's lock ({@link JobLock}): it only takes effect while the job
  * is {@code RUNNING} with the lock token of the writing attempt's claim, checked in the same
@@ -68,18 +68,28 @@ public final class StepStore {
              where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
           .formatted(JOB_LOCKED);
 
+  // A step with a compensation: a completed step, or a child job step once the child was started
+  // (see JobStore.COMPENSATE_SQL).
+  private static final String COMPENSABLE_STEP =
+      """
+            (state = 'SUCCEEDED' or kind = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT'))""";
+
+  // A child job step keeps its child's outcome (child_state, last_error) when it is compensated.
   private static final String COMPENSATE_STEP_SQL =
       """
-            update bikesched_steps set state = 'COMPENSATED', last_error = null
-             where job_id = ? and name = ? and state = 'SUCCEEDED' and %s"""
-          .formatted(JOB_LOCKED);
+            update bikesched_steps
+               set state = 'COMPENSATED', last_error = case when kind = 'CHILD_JOB' and child_state is not null then last_error end
+             where job_id = ? and name = ? and %s and %s"""
+          .formatted(COMPENSABLE_STEP, JOB_LOCKED);
 
-  // The step stays SUCCEEDED: its compensation runs again in the job's next compensation attempt.
+  // The step keeps its state: its compensation runs again in the job's next compensation attempt.
+  // (A child job step keeps the error of its ended child, the failure is in the history.)
   private static final String FAIL_COMPENSATION_SQL =
       """
-            update bikesched_steps set last_error = ?
-             where job_id = ? and name = ? and state = 'SUCCEEDED' and %s"""
-          .formatted(JOB_LOCKED);
+            update bikesched_steps set last_error = case when kind = 'CHILD_JOB' then last_error else ? end
+             where job_id = ? and name = ? and %s and %s
+            returning state"""
+          .formatted(COMPENSABLE_STEP, JOB_LOCKED);
 
   private static final String FAIL_STEP_SQL =
       """
@@ -90,11 +100,12 @@ public final class StepStore {
 
   private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED;
 
-  // Ends a RUNNING attempt whose handler suspended at a waiting step (an event wait or a sleep):
-  // WAITING until the event arrives or wait_until (scheduled_at; 'infinity' for an event wait
-  // without deadline) has passed. If the step is no longer WAITING (the event was published since),
-  // the job is scheduled right away, as is a job whose cancellation was requested (to cancel it).
-  // Suspending does not use up an attempt.
+  // Ends a RUNNING attempt whose handler suspended at a waiting step (an event wait, a sleep or a
+  // wait for a child job): WAITING until the event arrives (the child ends) or wait_until
+  // (scheduled_at; 'infinity' for a wait without deadline) has passed. If the step is no longer
+  // WAITING (the event was published, the child ended since), the job is scheduled right away, as
+  // is a job whose cancellation was requested (to cancel it). Suspending does not use up an
+  // attempt.
   private static final String SUSPEND_JOB_SQL =
       """
             update bikesched_jobs j
@@ -123,6 +134,34 @@ public final class StepStore {
               from (select coalesce(?::timestamptz, now() + ? * interval '1 millisecond') as at) t
             returning state, wait_until""";
 
+  // The step of a job waiting for one of its children; locked (FIND_CHILD_WAIT_SQL) when waiting:
+  // the child's end (JobStore) updates the same row, so a wait serializes with it.
+  private static final String FIND_CHILD_WAIT_READ_ONLY_SQL =
+      """
+            select name, state, child_state, result::text, last_error, wait_until, wait_until <= now()
+              from bikesched_steps where job_id = ? and child_job_id = ? and kind = 'CHILD_JOB'""";
+
+  private static final String FIND_CHILD_WAIT_SQL = FIND_CHILD_WAIT_READ_ONLY_SQL + " for update";
+
+  private static final String SET_CHILD_WAIT_DEADLINE_SQL =
+      """
+            update bikesched_steps set wait_until = now() + ? * interval '1 millisecond'
+             where job_id = ? and name = ? and state = 'WAITING'
+            returning wait_until""";
+
+  private static final String TIME_OUT_CHILD_WAIT_SQL =
+      """
+            update bikesched_steps set state = 'TIMED_OUT', finished_at = now()
+             where job_id = ? and name = ? and state = 'WAITING'""";
+
+  private static final String FIND_CHILD_JOB_STEP_SQL =
+      """
+            select kind, state, child_job_id, attempts from bikesched_steps where job_id = ? and name = ?""";
+
+  private static final String LOCK_STEP_SQL =
+      """
+            select state from bikesched_steps where job_id = ? and name = ? for update""";
+
   private static final String WAKE_UP_SQL =
       """
             update bikesched_steps set state = 'SUCCEEDED', finished_at = now()
@@ -131,8 +170,8 @@ public final class StepStore {
   /**
    * A step as stored.
    *
-   * @param kind what the step does: {@code STEP}, {@code SLEEP}, {@code EVENT_WAIT} or {@code
-   *     EVENT_PUBLISH}
+   * @param kind what the step does: {@code STEP}, {@code SLEEP}, {@code EVENT_WAIT}, {@code
+   *     EVENT_PUBLISH} or {@code CHILD_JOB}
    * @param state its state, e.g. {@code SUCCEEDED}, {@code WAITING} or {@code TIMED_OUT}
    * @param result its stored result (an event wait: a copy of the received event's payload) as JSON
    *     text
@@ -169,6 +208,181 @@ public final class StepStore {
    * @param attempts the number of attempts it took
    */
   public record CompletedStep(String kind, String result, boolean compensated, int attempts) {}
+
+  /**
+   * A step of a job starting a child job.
+   *
+   * @param kind what the step does, see {@link StoredStep}
+   * @param state its state
+   * @param childJobId the child it started, {@code null} unless the step is a {@code CHILD_JOB}
+   * @param attempts its number of attempts (starts of a child)
+   */
+  public record ChildJobStep(String kind, String state, UUID childJobId, int attempts) {}
+
+  /**
+   * Looks up a step of a job, with the child job it started.
+   *
+   * @param jobId the job id
+   * @param name the step name
+   * @return the step, or empty if it has not started yet
+   */
+  public Optional<ChildJobStep> findChildJobStep(UUID jobId, String name) {
+    return access.withConnection(
+        db ->
+            db.one(
+                FIND_CHILD_JOB_STEP_SQL,
+                row -> new ChildJobStep(row.string(1), row.string(2), row.uuid(3), row.integer(4)),
+                jobId,
+                name),
+        e ->
+            new BikeschedException(
+                "Reading step '" + name + "' of bikesched job " + jobId + " failed", e));
+  }
+
+  /**
+   * A job's wait for one of its children.
+   *
+   * @param stepName the step that started the child
+   * @param state {@code SUCCEEDED} (the child ended), {@code WAITING}, {@code TIMED_OUT}, or (only
+   *     met while compensating) {@code CANCELLED} or {@code COMPENSATED}
+   * @param childState the state the child ended in, {@code null} unless {@code SUCCEEDED}
+   * @param result the child's result as JSON text, may be {@code null}
+   * @param error the child's error or cancel message, may be {@code null}
+   * @param waitUntil the deadline of the wait, {@code null} if none
+   */
+  public record ChildWait(
+      String stepName,
+      String state,
+      String childState,
+      String result,
+      String error,
+      Instant waitUntil) {}
+
+  /** A row of {@code FIND_CHILD_WAIT_SQL}. */
+  private record ChildWaitStep(ChildWait childWait, boolean deadlinePassed) {
+
+    static ChildWaitStep from(Sql.Row row) throws SQLException {
+      return new ChildWaitStep(
+          new ChildWait(
+              row.string(1),
+              row.string(2),
+              row.string(3),
+              row.string(4),
+              row.string(5),
+              row.instant(6)),
+          row.bool(7));
+    }
+  }
+
+  /**
+   * Waits for a child job: returns the outcome stored with the child's step if the child ended, or
+   * the timed-out wait; otherwise stores the deadline on the first wait with a timeout (the stored
+   * one wins on later waits), times the wait out once it has passed, or reports it waiting. The
+   * database's clock decides.
+   *
+   * @param jobId the waiting job
+   * @param lock the lock of the job's claim (node and token)
+   * @param childJobId the child
+   * @param timeout how long to wait at most, counted from the first wait; {@code null} for no limit
+   * @return the wait
+   * @throws IllegalArgumentException if the job has no step that started the child
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public ChildWait awaitChildJob(UUID jobId, JobLock lock, UUID childJobId, Duration timeout) {
+    return access.inTransaction(
+        db -> {
+          requireJobLock(db, jobId, lock);
+          ChildWaitStep step =
+              db.one(FIND_CHILD_WAIT_SQL, ChildWaitStep::from, jobId, childJobId)
+                  .orElseThrow(() -> notAChild(jobId, childJobId));
+          ChildWait wait = step.childWait();
+          if (!wait.state().equals("WAITING")) {
+            return wait;
+          }
+          String name = wait.stepName();
+          if (step.deadlinePassed()) {
+            db.update(TIME_OUT_CHILD_WAIT_SQL, jobId, name);
+            history.record(
+                db, Change.step(jobId, name, "TIMED_OUT", null, "waiting for job " + childJobId));
+            return new ChildWait(name, "TIMED_OUT", null, null, null, wait.waitUntil());
+          }
+          if (timeout != null && wait.waitUntil() == null) {
+            Instant deadline =
+                db.one(
+                        SET_CHILD_WAIT_DEADLINE_SQL,
+                        row -> row.instant(1),
+                        Sql.millis(timeout),
+                        jobId,
+                        name)
+                    .orElseThrow();
+            history.record(
+                db,
+                Change.step(
+                    jobId,
+                    name,
+                    "WAITING",
+                    null,
+                    "waiting for job " + childJobId + " until " + deadline));
+            return new ChildWait(name, "WAITING", null, null, null, deadline);
+          }
+          return wait;
+        },
+        e ->
+            new BikeschedException(
+                "Waiting for job " + childJobId + " in bikesched job " + jobId + " failed", e));
+  }
+
+  /**
+   * Reads a job's wait for one of its children without changing it (to replay it while
+   * compensating).
+   *
+   * @param jobId the waiting job
+   * @param childJobId the child
+   * @return the wait as stored
+   * @throws IllegalArgumentException if the job has no step that started the child
+   */
+  public ChildWait findChildWait(UUID jobId, UUID childJobId) {
+    return access.withConnection(
+        db ->
+            db.one(FIND_CHILD_WAIT_READ_ONLY_SQL, ChildWaitStep::from, jobId, childJobId)
+                .map(ChildWaitStep::childWait)
+                .orElseThrow(() -> notAChild(jobId, childJobId)),
+        e ->
+            new BikeschedException(
+                "Reading the wait for job " + childJobId + " of bikesched job " + jobId + " failed",
+                e));
+  }
+
+  private static IllegalArgumentException notAChild(UUID jobId, UUID childJobId) {
+    return new IllegalArgumentException(
+        "Job "
+            + childJobId
+            + " is not a child of job "
+            + jobId
+            + ": a job can only wait for the jobs it started with job.newJob(…)");
+  }
+
+  /**
+   * Ends a running attempt whose handler suspended at a wait for a child job, see {@code
+   * SUSPEND_JOB_SQL}. Locks the step first: if the child ends concurrently, either the suspension
+   * waits for the child's transaction and then finds the step completed (the job is due right
+   * away), or the child's end waits for the suspension and then resumes the {@code WAITING} job.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param stepName the step waiting for the child
+   * @param childJobId the child, for the history
+   * @return the job after suspending; empty if the job is not running on this node (anymore)
+   */
+  public Optional<SuspendedJob> suspendAtChildJob(
+      UUID jobId, JobLock lock, String stepName, UUID childJobId) {
+    return access.inTransaction(
+        db -> {
+          db.one(LOCK_STEP_SQL, row -> row.string(1), jobId, stepName);
+          return suspend(db, history, jobId, lock, stepName, "waiting for job " + childJobId);
+        },
+        e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
+  }
 
   /**
    * Looks up a step that succeeded in an earlier attempt of the job (and may have been compensated
@@ -320,11 +534,20 @@ public final class StepStore {
     history.change(
         db -> {
           String message = ValidationUtil.truncateMessage(error);
-          if (db.update(FAIL_COMPENSATION_SQL, message, jobId, name, jobId, lock.token()) > 0) {
+          Optional<String> state =
+              db.one(
+                  FAIL_COMPENSATION_SQL,
+                  row -> row.string(1),
+                  message,
+                  jobId,
+                  name,
+                  jobId,
+                  lock.token());
+          if (state.isPresent()) {
             history.record(
                 db,
                 Change.step(
-                    jobId, name, "SUCCEEDED", lock.nodeId(), "compensation failed: " + error));
+                    jobId, name, state.get(), lock.nodeId(), "compensation failed: " + error));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -478,15 +701,18 @@ public final class StepStore {
    */
   public Optional<SuspendedJob> suspendJob(UUID jobId, JobLock lock, String stepName) {
     return access.inTransaction(
-        db -> suspend(db, history, jobId, lock, stepName),
+        db -> suspend(db, history, jobId, lock, stepName, null),
         e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
   }
 
   /**
    * Suspends the job at a waiting step in the caller's transaction, see {@code SUSPEND_JOB_SQL}.
+   *
+   * @param waitingFor what the step waits for, for the history; {@code null} to leave it out
    */
   static Optional<SuspendedJob> suspend(
-      Sql db, HistoryStore history, UUID jobId, JobLock lock, String stepName) throws SQLException {
+      Sql db, HistoryStore history, UUID jobId, JobLock lock, String stepName, String waitingFor)
+      throws SQLException {
     Optional<Suspension> suspended =
         db.one(
             SUSPEND_JOB_SQL,
@@ -506,9 +732,11 @@ public final class StepStore {
             suspension.state(),
             suspension.attempts(),
             lock.nodeId(),
-            waiting
-                ? "suspended at step '" + stepName + "'"
-                : "suspended at step '" + stepName + "', due again right away"));
+            "suspended at step '"
+                + stepName
+                + "'"
+                + (waitingFor == null ? "" : ", " + waitingFor)
+                + (waiting ? "" : ", due again right away")));
     return Optional.of(new SuspendedJob(waiting, suspension.waitUntil()));
   }
 
@@ -530,6 +758,7 @@ public final class StepStore {
       case "SLEEP" -> "a sleep";
       case "EVENT_WAIT" -> "an event wait";
       case "EVENT_PUBLISH" -> "an event publish";
+      case "CHILD_JOB" -> "a child job";
       default -> "a " + kind + " step";
     };
   }

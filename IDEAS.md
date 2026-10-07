@@ -126,13 +126,6 @@ delivery id), so it can be looked up or shown without decoding the payload.
   there is a concrete lookup need, similar to [Finding jobs](#finding-jobs).
 - Open: whether it is mutable after creation, and whether it shows up in job history.
 
-### Child jobs and job results
-
-A handler can't start another job exactly once or wait for it to end, and jobs have no result.
-Start children as durable steps (`job.newJob(…)`), wait for them without a thread
-(`job.waitForJob(…)` returning a sealed `JobResult`), and let jobs set a result
-(`job.complete(…)`). Design: [spec](docs/specs/child-jobs.md).
-
 ### Fallbacks in event timeout handlers
 
 Verify whether timeout handlers work for fallbacks, e.g.: a Stripe webhook has not arrived yet, so
