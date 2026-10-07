@@ -9,6 +9,7 @@ import kotlin.time.toJavaDuration
 import org.bikesched.Bikesched
 import org.bikesched.job.Job
 import org.bikesched.job.JobHandler
+import org.bikesched.job.JobHandlerSettings
 import org.bikesched.job.JobSettings
 import org.bikesched.job.Recurrence
 
@@ -275,13 +276,18 @@ internal class JobOptions(
   private val handler: JobHandler?,
 ) {
 
-  fun <B : JobSettings<B, Any>> applyTo(builder: B): B {
+  fun <B : JobHandlerSettings<B, Any>> applyTo(builder: B): B {
+    val b = applySettingsTo(builder)
+    return handler?.let { b.handler(it) } ?: b
+  }
+
+  /** Applies all options but the handler, for child jobs, which have none. */
+  fun <B : JobSettings<B, Any>> applySettingsTo(builder: B): B {
     var b = builder
     payload?.let { b = b.payload(it) }
     priority?.let { b = b.priority(it) }
     maxAttempts?.let { b = b.maxAttempts(it) }
     timeout?.let { b = b.timeout(it.toJavaDuration()) }
-    handler?.let { b = b.handler(it) }
     return b
   }
 }

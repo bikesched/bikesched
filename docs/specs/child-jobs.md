@@ -99,11 +99,11 @@ job is suspended at that step.
 
 ### 4.3 Starting a child
 
-`Job.newJob(type)` / `newJob(JobType<T>)` return a `StepJobBuilder<P>` (extends `JobSettings` like
-the other builders): `payload`, `priority`, `maxAttempts`, `timeout`, plus `stepName(…)` and
+`Job.newJob(type)` / `newJob(JobType<T>)` return a `StepJobBuilder<P>` (extends `JobSettings`, the
+settings shared by all job builders): `payload`, `priority`, `maxAttempts`, `timeout`, plus `stepName(…)` and
 `compensateWith(…)`, ending in `schedule()`, `schedule(Instant)`, `schedule(Duration)`, which
 return the child's id. It has no `connection(…)` and no `schedule(Recurrence)`: children are never
-recurring, enforced at compile time.
+recurring, enforced at compile time. It has no `handler(…)` either (see §10).
 
 - One transaction, fenced by the job lock (`StepStore.requireJobLock`): insert the child with
   `parent_job_id` = the parent, insert the step `WAITING` with `child_job_id`, record history for
@@ -367,8 +367,11 @@ their own.
 
 Choices the spec left open, made while implementing:
 
-1. A child's type needs a handler on the parent's node (or one set with `handler(…)` on the
-   `StepJobBuilder`), exactly like `bikesched.newJob`: `StepJobBuilder` extends `JobSettings`.
+1. A child's type needs a handler registered on the parent's node. The `StepJobBuilder` has no
+   `handler(…)` (decided in review): starting a child is a lightweight way to connect job types
+   registered on their own, and inline code belongs in a step. The handler setters moved from
+   `JobSettings` into `JobHandlerSettings`, which only `JobBuilder` and `TransactionalJobBuilder`
+   extend.
 2. The step stores no child type: starting a child under a step name that started a child of
    another type is rejected only while that child still exists (it is read with the step).
 3. A child's end makes a `WAITING` parent `SCHEDULED` and due now, like a published event does.

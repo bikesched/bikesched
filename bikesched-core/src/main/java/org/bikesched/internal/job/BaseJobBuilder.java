@@ -44,7 +44,10 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
   final JsonMapper jsonMapper;
   final Scheduler scheduler;
   String payload;
+
+  /** Set by the builders implementing {@code JobHandlerSettings}, otherwise {@code null}. */
   JobHandler handler;
+
   int priority = DEFAULT_PRIORITY;
   int maxAttempts = DEFAULT_MAX_ATTEMPTS;
   Duration timeout;
@@ -75,16 +78,16 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
     return self();
   }
 
-  @Override
-  public B handler(JobHandler handler) {
+  /** Sets the handler, for the builders implementing {@code JobHandlerSettings}. */
+  B setHandler(JobHandler handler) {
     this.handler = Objects.requireNonNull(handler, "handler");
     return self();
   }
 
-  @Override
-  public B handler(TypedJobHandler<? super P> handler) {
+  /** Sets a handler receiving the mapped payload, see {@link #setHandler(JobHandler)}. */
+  B setHandler(TypedJobHandler<? super P> handler) {
     Objects.requireNonNull(handler, "handler");
-    return handler(job -> handler.handle(job, job.payload(payloadType)));
+    return setHandler(job -> handler.handle(job, job.payload(payloadType)));
   }
 
   @Override

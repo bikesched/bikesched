@@ -6,7 +6,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import org.bikesched.job.JobHandler;
 import org.bikesched.job.TransactionalJobBuilder;
+import org.bikesched.job.TypedJobHandler;
 
 /** The {@link TransactionalJobBuilder} implementation. */
 final class DefaultTransactionalJobBuilder<P> extends BaseJobBuilder<TransactionalJobBuilder<P>, P>
@@ -22,6 +24,16 @@ final class DefaultTransactionalJobBuilder<P> extends BaseJobBuilder<Transaction
   @Override
   TransactionalJobBuilder<P> self() {
     return this;
+  }
+
+  @Override
+  public TransactionalJobBuilder<P> handler(JobHandler handler) {
+    return setHandler(handler);
+  }
+
+  @Override
+  public TransactionalJobBuilder<P> handler(TypedJobHandler<? super P> handler) {
+    return setHandler(handler);
   }
 
   @Override
