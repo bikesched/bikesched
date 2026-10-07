@@ -6,7 +6,6 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
-import org.bikesched.event.ReceivedEvent
 import org.bikesched.job.JobState
 import org.junit.jupiter.api.Test
 
@@ -31,10 +30,8 @@ class TypedEventTest {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.WAITING)
       }
 
-      val received =
-        bikesched.publishEvent(name = paymentReceived, key = "o-1", payload = Payment("o-1", 100))
+      bikesched.publishEvent(name = paymentReceived, key = "o-1", payload = Payment("o-1", 100))
 
-      assertThat(received).containsExactly(ReceivedEvent(jobId, "await-payment"))
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
       }

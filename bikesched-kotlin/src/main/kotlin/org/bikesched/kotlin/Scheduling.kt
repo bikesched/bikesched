@@ -7,7 +7,6 @@ import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 import org.bikesched.Bikesched
-import org.bikesched.event.ReceivedEvent
 import org.bikesched.job.Job
 import org.bikesched.job.JobHandler
 import org.bikesched.job.JobSettings
@@ -230,7 +229,7 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
  *   `EventBuilder.retention`; defaults to the node's `eventRetention`; `Duration.ZERO` delivers it
  *   only to the steps waiting now
  * @param connection publishes the event in the caller's transaction, see `EventBuilder.connection`
- * @return the steps that received the event, with their job ids
+ * @return the id of the published event
  */
 public fun Bikesched.publishEvent(
   name: String,
@@ -238,11 +237,31 @@ public fun Bikesched.publishEvent(
   payload: Any? = null,
   retention: Duration? = null,
   connection: Connection? = null,
-): List<ReceivedEvent> {
+): UUID {
   val event = newEvent(name, key)
   payload?.let(event::payload)
   retention?.let { event.retention(it.toJavaDuration()) }
   connection?.let(event::connection)
+  return event.publish()
+}
+
+/**
+ * Publishes an event exactly once as a durable step of this job, see `Job.newEvent(String,
+ * String)`.
+ *
+ * @return the id of the published event, the same on every run of the job
+ */
+public fun Job.publishEvent(
+  name: String,
+  key: String,
+  payload: Any? = null,
+  retention: Duration? = null,
+  stepName: String? = null,
+): UUID {
+  val event = newEvent(name, key)
+  payload?.let(event::payload)
+  retention?.let { event.retention(it.toJavaDuration()) }
+  stepName?.let(event::stepName)
   return event.publish()
 }
 

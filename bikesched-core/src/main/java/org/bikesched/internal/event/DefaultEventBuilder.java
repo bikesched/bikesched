@@ -3,14 +3,14 @@ package org.bikesched.internal.event;
 
 import java.sql.Connection;
 import java.time.Duration;
-import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.EventBuilder;
-import org.bikesched.event.ReceivedEvent;
+import org.bikesched.event.NodeEventBuilder;
 
 /** The {@link EventBuilder} implementation. */
-public final class DefaultEventBuilder<P> implements EventBuilder<P> {
+public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
 
   /** Publishes an event built by an {@link EventBuilder}; implemented by the owning bikesched. */
   @FunctionalInterface
@@ -19,7 +19,7 @@ public final class DefaultEventBuilder<P> implements EventBuilder<P> {
      * {@code retention} is the event's retention, {@code null} for the node default; {@code
      * connection} is the caller's connection, or {@code null} to use bikesched's own.
      */
-    List<ReceivedEvent> publish(
+    UUID publish(
         String eventName,
         String eventKey,
         String payload,
@@ -44,13 +44,13 @@ public final class DefaultEventBuilder<P> implements EventBuilder<P> {
   }
 
   @Override
-  public EventBuilder<P> payload(P payload) {
+  public NodeEventBuilder<P> payload(P payload) {
     this.payload = payload == null ? null : jsonMapper.toJson(payload);
     return this;
   }
 
   @Override
-  public EventBuilder<P> retention(Duration retention) {
+  public NodeEventBuilder<P> retention(Duration retention) {
     Objects.requireNonNull(retention, "retention");
     if (retention.isNegative()) {
       throw new IllegalArgumentException("retention must not be negative: " + retention);
@@ -60,13 +60,13 @@ public final class DefaultEventBuilder<P> implements EventBuilder<P> {
   }
 
   @Override
-  public EventBuilder<P> connection(Connection connection) {
+  public NodeEventBuilder<P> connection(Connection connection) {
     this.connection = connection;
     return this;
   }
 
   @Override
-  public List<ReceivedEvent> publish() {
+  public UUID publish() {
     return publisher.publish(eventName, eventKey, payload, retention, connection);
   }
 }

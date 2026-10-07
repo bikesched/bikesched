@@ -18,9 +18,10 @@ import org.bikesched.BikeschedLogContext;
 import org.bikesched.Node;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventType;
-import org.bikesched.event.ReceivedEvent;
+import org.bikesched.event.NodeEventBuilder;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.DatabaseInitializer;
+import org.bikesched.internal.database.EventStore;
 import org.bikesched.internal.event.DefaultEventBuilder;
 import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.DefaultJobBuilder;
@@ -111,6 +112,7 @@ public final class DefaultBikesched implements Bikesched {
                 settings.pollInterval(),
                 settings.defaultJobTimeout(),
                 settings.defaultEventTimeout(),
+                settings.eventRetention(),
                 settings.retryBackoff(),
                 settings.hardTimeoutGrace(),
                 settings.jobListener()),
@@ -285,14 +287,14 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public EventBuilder<Object> newEvent(String eventName, String eventKey) {
+  public NodeEventBuilder<Object> newEvent(String eventName, String eventKey) {
     ValidationUtil.requireName(eventName, "event name");
     ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultEventBuilder<>(eventName, eventKey, database.jsonMapper(), this::publish);
   }
 
   @Override
-  public <T> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey) {
+  public <T> NodeEventBuilder<T> newEvent(EventType<T> eventType, String eventKey) {
     Objects.requireNonNull(eventType, "eventType");
     ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultEventBuilder<>(
@@ -341,7 +343,7 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   /** Publishes an event built by an {@link EventBuilder}. */
-  private List<ReceivedEvent> publish(
+  private UUID publish(
       String eventName,
       String eventKey,
       String payload,
@@ -349,24 +351,20 @@ public final class DefaultBikesched implements Bikesched {
       Connection connection) {
     ensureReady();
     Duration retention = eventRetention != null ? eventRetention : settings.eventRetention();
-    List<ReceivedEvent> received =
+    EventStore.Publication publication =
         connection == null
             ? database.events().publishEvent(eventName, eventKey, payload, retention)
             : database
                 .events()
                 .publishEventInTransaction(connection, eventName, eventKey, payload, retention);
     LOG.debug(
-        "Published event {}/{}{}, received by {} waiting step(s){}",
+        "Published event {} {}/{}{}, received by {} waiting step(s)",
+        publication.eventId(),
         eventName,
         eventKey,
         connection == null ? "" : " in the caller's transaction",
-        received.size(),
-        received.isEmpty()
-            ? ""
-            : received.stream()
-                .map(r -> r.stepName() + " of job " + r.jobId())
-                .collect(java.util.stream.Collectors.joining(", ", ": ", "")));
-    return received;
+        publication.received());
+    return publication.eventId();
   }
 
   /**

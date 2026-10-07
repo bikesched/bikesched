@@ -20,7 +20,8 @@ bikesched.handleJobs<Order>("order") { order ->    // this: Job, order: the mapp
         payments.reserve(order)
     }
     val payment = waitForEvent<Payment>(step = "await-payment", name = "payment-received", key = order.id)
-    step<Unit>("ship") { shipping.ship(order, reservation, payment) }   // Unit steps store no result
+    val shipment = step<Shipment>("ship") { shipping.ship(order, reservation, payment) }
+    publishEvent(name = "order-shipped", key = order.id, payload = shipment)
 }
 
 bikesched.createJob(type = "order", payload = Order("o-1", 100))
@@ -39,7 +40,8 @@ defaults:
 | `handleJobs<T>(type) { payload -> }`, `handleJobs(type) { }` | registers the handler; the `Job` is the receiver |
 | `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id |
 | `createRecurringJob(type, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout) { … }` | registers a recurring job and returns the id of its pending occurrence |
-| `publishEvent(name, key, payload, retention, connection)` | publishes an event and returns the steps that received it |
+| `Bikesched.publishEvent(name, key, payload, retention, connection)` | publishes an event and returns its id |
+| `Job.publishEvent(name, key, payload, retention, stepName)` | publishes once as a durable job step and returns the event's id, the same on every run |
 | `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result (e.g. `waitForEvent<Payment?>(…, timeout = 3.days) { null }`), without fallback the job fails permanently like with the default event timeout |
 | `step<T>(name, compensation) { … }` (in a handler) | runs a durable step; the optional `compensation = { step, result -> … }` undoes it if the job is cancelled or fails permanently |
 

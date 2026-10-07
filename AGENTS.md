@@ -90,7 +90,8 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - Builders: one fluent path ending in a verb that performs the action (`newJob(type)…schedule()`,
   `…schedule(Recurrence)` for a recurring job,
   `newEvent(name, key)…publish()`, `newStep(name, Class)…run(handler)`). Mutually exclusive options
-  are separate builder types (`connection(…)` → `TransactionalJobBuilder`, which has no
+  are separate builder types (`NodeEventBuilder` with `connection(…)`, `StepEventBuilder` with
+  `stepName(…)`; `connection(…)` → `TransactionalJobBuilder`, which has no
   `schedule(Recurrence)`), enforced at compile time, not with runtime checks. Overloads of the
   verb are distinguished by argument type (`Instant`/`Duration` vs. `Recurrence`).
 - Boolean accessors use the `is` prefix (`isPolling`, `isEnded`, `isFixedRate`); builder setters are
@@ -103,7 +104,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   TypedJobHandler)`, `newEvent(EventType, key)`, `waitForEvent(step, EventType, key)`). Builders
   carry the payload type as `P` (`JobBuilder<P>`, `EventBuilder<P>`; `Object` for strings). Keep
   the Kotlin API on reified generics instead.
-- Results get their own type in the feature package (`event.ReceivedEvent`); lookups return
+- Results get their own type in the feature package (`job.JobHistoryEntry`); lookups return
   `Optional` of a minimal interface (`findJob` → `JobInfo` with a `JobState` enum).
 - No exceptions for control flow: intent is a flag checked after the handler (`job.cancel()`,
   `job.fail()`), except suspending at an event wait (internal `Error`, see `JobSuspended`).

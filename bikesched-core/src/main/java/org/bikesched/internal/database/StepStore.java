@@ -44,11 +44,11 @@ public final class StepStore {
 
   private static final String FIND_STEP_SQL =
       """
-            select state, result::text, attempts from bikesched_steps where job_id = ? and name = ?""";
+            select kind, state, result::text, attempts from bikesched_steps where job_id = ? and name = ?""";
 
-  // Starts an attempt of a step that has not succeeded yet; returns its attempt number. Returns no
-  // row if the step already succeeded (e.g. concurrently), was compensated since, or the job is no
-  // longer running on this node.
+  // Starts an attempt of a regular step that has not succeeded yet; returns its attempt number.
+  // Returns no row if the step already succeeded (e.g. concurrently), was compensated since, is
+  // another kind of step, or the job is no longer running on this node.
   private static final String START_STEP_SQL =
       """
             insert into bikesched_steps (job_id, name, state, attempts, locked_by, started_at)
@@ -57,7 +57,7 @@ public final class StepStore {
             on conflict (job_id, name) do update
                set state = 'RUNNING', attempts = bikesched_steps.attempts + 1,
                    locked_by = excluded.locked_by, started_at = now(), finished_at = null
-             where bikesched_steps.state not in ('SUCCEEDED', 'COMPENSATED')
+             where bikesched_steps.kind = 'STEP' and bikesched_steps.state not in ('SUCCEEDED', 'COMPENSATED')
             returning attempts"""
           .formatted(JOB_LOCKED);
 
@@ -108,17 +108,17 @@ public final class StepStore {
                and s.job_id = j.id and s.name = ?
             returning j.state, s.wait_until, j.attempts""";
 
-  // A step of a job, for a sleep: a sleep has wait_until set and no event.
+  // A step of a job, for a sleep.
   private static final String FIND_SLEEP_STEP_SQL =
       """
-            select state, event_name is not null, wait_until, wait_until <= now()
+            select kind, state, wait_until, wait_until <= now()
               from bikesched_steps where job_id = ? and name = ? for update""";
 
   // Starts a sleep: WAITING until wait_until, or SUCCEEDED right away if that has passed.
   private static final String START_SLEEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, state, attempts, wait_until, finished_at)
-            select ?, ?, case when t.at <= now() then 'SUCCEEDED' else 'WAITING' end, 1, t.at,
+            insert into bikesched_steps (job_id, name, kind, state, attempts, wait_until, finished_at)
+            select ?, ?, 'SLEEP', case when t.at <= now() then 'SUCCEEDED' else 'WAITING' end, 1, t.at,
                    case when t.at <= now() then now() end
               from (select coalesce(?::timestamptz, now() + ? * interval '1 millisecond') as at) t
             returning state, wait_until""";
@@ -131,12 +131,14 @@ public final class StepStore {
   /**
    * A step as stored.
    *
+   * @param kind what the step does: {@code STEP}, {@code SLEEP}, {@code EVENT_WAIT} or {@code
+   *     EVENT_PUBLISH}
    * @param state its state, e.g. {@code SUCCEEDED}, {@code WAITING} or {@code TIMED_OUT}
-   * @param result its stored result (an event step: the result its job mapped the event to) as JSON
+   * @param result its stored result (an event wait: a copy of the received event's payload) as JSON
    *     text
    * @param attempts its number of attempts
    */
-  public record StoredStep(String state, String result, int attempts) {}
+  public record StoredStep(String kind, String state, String result, int attempts) {}
 
   /**
    * Looks up a step of a job.
@@ -150,7 +152,7 @@ public final class StepStore {
         db ->
             db.one(
                 FIND_STEP_SQL,
-                row -> new StoredStep(row.string(1), row.string(2), row.integer(3)),
+                row -> new StoredStep(row.string(1), row.string(2), row.string(3), row.integer(4)),
                 jobId,
                 name),
         e ->
@@ -161,11 +163,12 @@ public final class StepStore {
   /**
    * A step that completed in an earlier attempt.
    *
+   * @param kind what the step does, see {@link StoredStep}
    * @param result its stored result as JSON text, may be {@code null}
    * @param compensated whether its compensation ran already
    * @param attempts the number of attempts it took
    */
-  public record CompletedStep(String result, boolean compensated, int attempts) {}
+  public record CompletedStep(String kind, String result, boolean compensated, int attempts) {}
 
   /**
    * Looks up a step that succeeded in an earlier attempt of the job (and may have been compensated
@@ -181,9 +184,11 @@ public final class StepStore {
             step ->
                 switch (step.state()) {
                   case "SUCCEEDED" ->
-                      Optional.of(new CompletedStep(step.result(), false, step.attempts()));
+                      Optional.of(
+                          new CompletedStep(step.kind(), step.result(), false, step.attempts()));
                   case "COMPENSATED" ->
-                      Optional.of(new CompletedStep(step.result(), true, step.attempts()));
+                      Optional.of(
+                          new CompletedStep(step.kind(), step.result(), true, step.attempts()));
                   default -> Optional.empty();
                 });
   }
@@ -387,7 +392,7 @@ public final class StepStore {
    * @param duration how long to sleep, counted from the first run; {@code null} if {@code until}
    * @param until when to wake up; {@code null} if {@code duration}
    * @return whether the sleep is over, and the wake-up time
-   * @throws IllegalStateException if the step name belongs to a regular step or an event wait
+   * @throws IllegalStateException if the step name belongs to another kind of step
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public Sleep sleep(UUID jobId, JobLock lock, String name, Duration duration, Instant until) {
@@ -397,18 +402,19 @@ public final class StepStore {
           Optional<SleepStep> step =
               db.one(
                   FIND_SLEEP_STEP_SQL,
-                  row -> new SleepStep(row.string(1), row.bool(2), row.instant(3), row.bool(4)),
+                  row -> new SleepStep(row.string(1), row.string(2), row.instant(3), row.bool(4)),
                   jobId,
                   name);
           if (step.isPresent()) {
             SleepStep found = step.get();
-            if (found.event() || found.wakeUpAt() == null) {
+            if (!found.kind().equals("SLEEP")) {
               throw new IllegalStateException(
                   "Step '"
                       + name
                       + "' of job "
                       + jobId
-                      + (found.event() ? " waits for an event" : " is a regular step")
+                      + " is "
+                      + describeKind(found.kind())
                       + ", not a sleep; step names must be unique within a job");
             }
             return switch (found.state()) {
@@ -510,7 +516,23 @@ public final class StepStore {
   private record Suspension(String state, Instant waitUntil, int attempts) {}
 
   /** A row of {@code FIND_SLEEP_STEP_SQL}. */
-  private record SleepStep(String state, boolean event, Instant wakeUpAt, boolean due) {}
+  private record SleepStep(String kind, String state, Instant wakeUpAt, boolean due) {}
+
+  /**
+   * Describes a step kind for messages about a step name used for different kinds of steps.
+   *
+   * @param kind the stored kind
+   * @return e.g. {@code "a regular step"}
+   */
+  public static String describeKind(String kind) {
+    return switch (kind) {
+      case "STEP" -> "a regular step";
+      case "SLEEP" -> "a sleep";
+      case "EVENT_WAIT" -> "an event wait";
+      case "EVENT_PUBLISH" -> "an event publish";
+      default -> "a " + kind + " step";
+    };
+  }
 
   /**
    * After a fenced write changed nothing: throws if the job is no longer running on the node

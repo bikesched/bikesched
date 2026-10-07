@@ -10,7 +10,6 @@ import kotlin.time.Duration.Companion.minutes
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.awaitility.Awaitility.await
-import org.bikesched.event.ReceivedEvent
 import org.bikesched.job.JobState
 import org.junit.jupiter.api.Test
 
@@ -242,6 +241,7 @@ class SchedulingTest {
     testNode("event").use { bikesched ->
       bikesched.handleJobs(type) {
         received += waitForEvent("with-payload", eventName, "a").receive<Report>()
+        publishEvent(name = "${eventName}-published", key = "event", payload = Report("shipped"))
         received += waitForEvent("without-payload", eventName, "b").receive<Report?>()
       }
       val jobId = bikesched.createJob(type = type)
@@ -249,8 +249,7 @@ class SchedulingTest {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.WAITING)
       }
 
-      assertThat(bikesched.publishEvent(name = eventName, key = "a", payload = Report("paid")))
-        .containsExactly(ReceivedEvent(jobId, "with-payload"))
+      bikesched.publishEvent(name = eventName, key = "a", payload = Report("paid"))
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.WAITING)
       }

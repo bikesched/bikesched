@@ -59,10 +59,12 @@ class EventTest extends AbstractBikeschedTest {
                   "job_id = '" + jobId + "' and name = 'await-payment' and state = 'WAITING'"))
           .isOne();
 
-      List<ReceivedEvent> steps =
+      UUID eventId =
           bikesched.newEvent("payment-received", "order-1").payload("{\"amount\": 42}").publish();
 
-      assertThat(steps).containsExactly(new ReceivedEvent(jobId, "await-payment"));
+      assertThat(countRows("bikesched_events", "id = '" + eventId + "' and key = 'order-1'"))
+          .as("publish() returns the id of the stored event")
+          .isOne();
       awaitState(jobId, "SUCCEEDED");
       assertThat(count("id = '" + jobId + "' and attempts = 1")).isEqualTo(1);
       assertThat(
@@ -78,6 +80,84 @@ class EventTest extends AbstractBikeschedTest {
     assertThat(runs).as("handler ran again after the wait").hasValue(2);
     assertThat(invoices).as("completed step not executed again").hasValue(1);
     assertThat(received).containsExactly("{\"amount\": 42}");
+  }
+
+  @Test
+  void jobPublishesOnceAsADurableStepAcrossReplay() throws Exception {
+    String key = UUID.randomUUID().toString();
+    List<UUID> publishedIds = new CopyOnWriteArrayList<>();
+    UUID receiverId;
+    try (Bikesched bikesched = node("node-job-event-publish")) {
+      receiverId =
+          bikesched
+              .newJob("job-event-receiver")
+              .handler(job -> job.waitForEvent("receive", "job-event", key).receive(String.class))
+              .schedule();
+      awaitState(receiverId, "WAITING");
+      UUID jobId =
+          bikesched
+              .newJob("job-event-publish")
+              .handler(
+                  job -> {
+                    publishedIds.add(
+                        job.newEvent("job-event", key).payload("\"payload\"").publish());
+                    job.waitForEvent("continue", "continue-job", key).receive(String.class);
+                  })
+              .schedule();
+      awaitState(jobId, "WAITING");
+      awaitState(receiverId, "SUCCEEDED");
+      assertThat(countRows("bikesched_events", "name = 'job-event' and key = '" + key + "'"))
+          .isOne();
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '"
+                      + jobId
+                      + "' and name = 'publish job-event' and kind = 'EVENT_PUBLISH'"
+                      + " and state = 'SUCCEEDED' and event_name = 'job-event'"))
+          .isOne();
+      bikesched.newEvent("continue-job", key).payload("\"continue\"").publish();
+      awaitState(jobId, "SUCCEEDED");
+    }
+    assertThat(publishedIds).as("publish() returned in both runs").hasSize(2);
+    UUID eventId = publishedIds.getFirst();
+    assertThat(publishedIds).as("the same event id on replay").containsOnly(eventId);
+    assertThat(countRows("bikesched_events", "id = '" + eventId + "'")).isOne();
+    assertThat(
+            countRows(
+                "bikesched_steps",
+                "job_id = '"
+                    + receiverId
+                    + "' and name = 'receive' and event_id = '"
+                    + eventId
+                    + "' and result = '\"payload\"'::jsonb"))
+        .isOne();
+  }
+
+  @Test
+  void regularStepWithTheNameOfAnEventWaitIsRejected() throws Exception {
+    List<Throwable> thrown = new CopyOnWriteArrayList<>();
+    try (Bikesched bikesched = node("node-event-step-kind")) {
+      UUID jobId =
+          bikesched
+              .newJob("event-step-kind")
+              .handler(
+                  job -> {
+                    job.waitForEvent("approval", "approved", "kind-1").receive(String.class);
+                    try {
+                      job.step("approval", String.class, step -> "regular");
+                    } catch (IllegalStateException e) {
+                      thrown.add(e);
+                    }
+                  })
+              .schedule();
+      awaitState(jobId, "WAITING");
+      bikesched.newEvent("approved", "kind-1").payload("\"yes\"").publish();
+      awaitState(jobId, "SUCCEEDED");
+    }
+    assertThat(thrown)
+        .singleElement()
+        .satisfies(e -> assertThat(e).hasMessageContaining("is an event wait, not a regular step"));
   }
 
   @Test
@@ -117,9 +197,7 @@ class EventTest extends AbstractBikeschedTest {
   void eventPublishedBeforeTheJobWaitsIsReceivedWithoutSuspending() throws Exception {
     var runs = new AtomicInteger();
     try (Bikesched bikesched = node("node-event-early")) {
-      assertThat(bikesched.newEvent("approved", "early-1").payload("\"yes\"").publish())
-          .as("nobody waiting yet")
-          .isEmpty();
+      bikesched.newEvent("approved", "early-1").payload("\"yes\"").publish(); // nobody waiting yet
 
       UUID jobId =
           bikesched
@@ -152,14 +230,21 @@ class EventTest extends AbstractBikeschedTest {
       awaitState(first, "WAITING");
       awaitState(second, "WAITING");
 
-      List<ReceivedEvent> steps = bikesched.newEvent("released", "batch-1").publish();
+      bikesched.newEvent("released", "batch-1").payload("\"first\"").publish();
 
-      assertThat(steps).extracting(ReceivedEvent::jobId).containsExactlyInAnyOrder(first, second);
       awaitState(first, "SUCCEEDED");
       awaitState(second, "SUCCEEDED");
-      assertThat(bikesched.newEvent("released", "batch-1").publish())
+      bikesched.newEvent("released", "batch-1").payload("\"second\"").publish();
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id in ('"
+                      + first
+                      + "', '"
+                      + second
+                      + "') and name = 'wait' and result = '\"first\"'::jsonb"))
           .as("received steps do not receive again")
-          .isEmpty();
+          .isEqualTo(2);
     }
   }
 
@@ -317,8 +402,7 @@ class EventTest extends AbstractBikeschedTest {
 
       try (Connection connection = dataSource.getConnection()) {
         connection.setAutoCommit(false);
-        assertThat(bikesched.newEvent("shipped", "tx-1").connection(connection).publish())
-            .hasSize(1);
+        bikesched.newEvent("shipped", "tx-1").connection(connection).publish();
         Thread.sleep(300);
         assertThat(count("id = '" + jobId + "' and state = 'WAITING'"))
             .as("not resumed before the commit")

@@ -12,7 +12,6 @@ import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.event.EventWait;
-import org.bikesched.event.ReceivedEvent;
 import org.bikesched.internal.database.HistoryStore.Change;
 
 /**
@@ -44,7 +43,7 @@ public final class EventStore {
 
   private static final String FIND_EVENT_STEP_SQL =
       """
-            select state, result::text, event_name, event_key, wait_until, wait_until <= now()
+            select kind, state, result::text, event_name, event_key, wait_until, wait_until <= now()
               from bikesched_steps where job_id = ? and name = ? for update""";
 
   private static final String LATEST_EVENT_SQL =
@@ -55,13 +54,13 @@ public final class EventStore {
 
   private static final String RECEIVE_EVENT_STEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, state, result, attempts, event_name, event_key, finished_at)
-            values (?, ?, 'SUCCEEDED', ?::jsonb, 1, ?, ?, now())""";
+            insert into bikesched_steps (job_id, name, kind, state, result, attempts, event_name, event_key, event_id, finished_at)
+            values (?, ?, 'EVENT_WAIT', 'SUCCEEDED', ?::jsonb, 1, ?, ?, ?, now())""";
 
   private static final String WAIT_EVENT_STEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, state, attempts, event_name, event_key, wait_until)
-            values (?, ?, 'WAITING', 1, ?, ?, now() + ? * interval '1 millisecond')
+            insert into bikesched_steps (job_id, name, kind, state, attempts, event_name, event_key, wait_until)
+            values (?, ?, 'EVENT_WAIT', 'WAITING', 1, ?, ?, now() + ? * interval '1 millisecond')
             returning wait_until""";
 
   private static final String TIME_OUT_EVENT_STEP_SQL =
@@ -75,7 +74,8 @@ public final class EventStore {
             values (?, ?, ?, ?::jsonb, now() + ? * interval '1 millisecond')""";
 
   // Completes all steps waiting for the event with its payload (copied into each step, so steps do
-  // not depend on the event, which is deleted after its retention) and resumes their WAITING jobs.
+  // not depend on the event, which is deleted after its retention) and its id (a plain reference)
+  // and resumes their WAITING jobs.
   // Jobs that are still RUNNING (suspending right now, or resumed by their deadline) are left
   // alone: suspending (StepStore.suspend) resp. the handler's wait then find the step completed.
   // Returns per step whether its job was resumed, and the job's attempt count.
@@ -83,8 +83,8 @@ public final class EventStore {
       """
             with received as (
                 update bikesched_steps
-                   set state = 'SUCCEEDED', result = ?::jsonb, finished_at = now()
-                 where event_name = ? and event_key = ? and state = 'WAITING'
+                   set state = 'SUCCEEDED', result = ?::jsonb, event_id = ?, finished_at = now()
+                 where kind = 'EVENT_WAIT' and event_name = ? and event_key = ? and state = 'WAITING'
                 returning job_id, name),
             resumed as (
                 update bikesched_jobs j
@@ -98,6 +98,18 @@ public final class EventStore {
   private static final String DELETE_EVENTS_SQL =
       """
             delete from bikesched_events where expires_at <= now()""";
+
+  // A publishing step records the published event (name, key and id), so that later runs return
+  // the same id and can check that they publish the same event.
+  private static final String FIND_PUBLISH_STEP_SQL =
+      """
+            select kind, event_name, event_key, event_id
+              from bikesched_steps where job_id = ? and name = ?""";
+
+  private static final String INSERT_PUBLISH_STEP_SQL =
+      """
+            insert into bikesched_steps (job_id, name, kind, state, attempts, event_name, event_key, event_id, finished_at)
+            values (?, ?, 'EVENT_PUBLISH', 'SUCCEEDED', 1, ?, ?, ?, now())""";
 
   /**
    * The outcome of waiting for an event.
@@ -124,7 +136,7 @@ public final class EventStore {
    * @param timeout how long to wait at most, counted from the first wait; {@code null} for no limit
    * @return the outcome
    * @throws IllegalStateException if the step name belongs to a step waiting for another event or
-   *     to a regular step
+   *     to another kind of step
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public EventWait awaitEvent(
@@ -147,21 +159,24 @@ public final class EventStore {
                           row.string(2),
                           row.string(3),
                           row.string(4),
-                          row.instant(5),
-                          row.bool(6)),
+                          row.string(5),
+                          row.instant(6),
+                          row.bool(7)),
                   jobId,
                   stepName);
           if (step.isPresent()) {
             EventStep found = step.get();
-            if (!eventName.equals(found.eventName()) || !eventKey.equals(found.eventKey())) {
+            if (!found.kind().equals("EVENT_WAIT")
+                || !eventName.equals(found.eventName())
+                || !eventKey.equals(found.eventKey())) {
               throw new IllegalStateException(
                   "Step '"
                       + stepName
                       + "' of job "
                       + jobId
-                      + (found.eventName() == null
-                          ? " is a regular step"
-                          : " waits for event " + found.eventName() + "/" + found.eventKey())
+                      + (found.kind().equals("EVENT_WAIT")
+                          ? " waits for event " + found.eventName() + "/" + found.eventKey()
+                          : " is " + StepStore.describeKind(found.kind()))
                       + ", not for event "
                       + eventName
                       + "/"
@@ -194,7 +209,8 @@ public final class EventStore {
           if (published.isPresent()) {
             String payload = published.get().payload();
             UUID eventId = published.get().id();
-            db.update(RECEIVE_EVENT_STEP_SQL, jobId, stepName, payload, eventName, eventKey);
+            db.update(
+                RECEIVE_EVENT_STEP_SQL, jobId, stepName, payload, eventName, eventKey, eventId);
             history.record(
                 db,
                 Change.step(
@@ -273,9 +289,9 @@ public final class EventStore {
    * @param payload the payload as JSON text, may be {@code null}
    * @param retention how long steps starting to wait later still receive it (and it is kept); may
    *     be zero
-   * @return the steps that received the event
+   * @return the published event
    */
-  public List<ReceivedEvent> publishEvent(
+  public Publication publishEvent(
       String eventName, String eventKey, String payload, Duration retention) {
     return access.inTransaction(
         db -> publish(db, eventName, eventKey, payload, retention),
@@ -294,10 +310,10 @@ public final class EventStore {
    * @param eventKey the event key
    * @param payload the payload as JSON text, may be {@code null}
    * @param retention how long steps starting to wait later still receive it; may be zero
-   * @return the steps that received the event (visible to others once the caller commits)
+   * @return the published event (visible to others once the caller commits)
    * @throws IllegalArgumentException if the connection is in auto-commit mode
    */
-  public List<ReceivedEvent> publishEventInTransaction(
+  public Publication publishEventInTransaction(
       Connection connection,
       String eventName,
       String eventKey,
@@ -318,7 +334,108 @@ public final class EventStore {
                 "Publishing event " + eventName + "/" + eventKey + " failed", e));
   }
 
-  private List<ReceivedEvent> publish(
+  /**
+   * Publishes an event exactly once as a durable step of a job: the first run publishes it and
+   * records the step {@code SUCCEEDED} with the event's id as its result in the same transaction,
+   * fenced by the job lock; later runs find the step and return the stored id without publishing.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param stepName the publishing step
+   * @param eventName the event name
+   * @param eventKey the event key
+   * @param payload the payload as JSON text, may be {@code null}
+   * @param retention how long steps starting to wait later still receive it; may be zero
+   * @param compensating whether the job replays for compensation: then the step must exist
+   * @return the id of the published event, the same on every run
+   * @throws IllegalStateException if the step name belongs to another step or to a publishing step
+   *     that has not succeeded, or a compensation replay finds no publishing step
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public UUID publishEventAsStep(
+      UUID jobId,
+      JobLock lock,
+      String stepName,
+      String eventName,
+      String eventKey,
+      String payload,
+      Duration retention,
+      boolean compensating) {
+    return access.inTransaction(
+        db -> {
+          StepStore.requireJobLock(db, jobId, lock);
+          Optional<PublishStep> previous =
+              db.one(
+                  FIND_PUBLISH_STEP_SQL,
+                  row -> new PublishStep(row.string(1), row.string(2), row.string(3), row.uuid(4)),
+                  jobId,
+                  stepName);
+          if (previous.isPresent()) {
+            return previous.get().eventId(jobId, stepName, eventName, eventKey);
+          }
+          if (compensating) {
+            throw new IllegalStateException(
+                "Compensation replay has no succeeded publishing step '" + stepName + "'");
+          }
+          Publication publication = publish(db, eventName, eventKey, payload, retention);
+          db.update(
+              INSERT_PUBLISH_STEP_SQL, jobId, stepName, eventName, eventKey, publication.eventId());
+          history.record(
+              db,
+              Change.step(
+                  jobId,
+                  stepName,
+                  "SUCCEEDED",
+                  lock.nodeId(),
+                  "published event "
+                      + publication.eventId()
+                      + " "
+                      + eventName
+                      + "/"
+                      + eventKey
+                      + " to "
+                      + publication.received()
+                      + " step(s)"));
+          return publication.eventId();
+        },
+        e ->
+            new BikeschedException(
+                "Publishing event " + eventName + "/" + eventKey + " for job " + jobId + " failed",
+                e));
+  }
+
+  /** A row of {@code FIND_PUBLISH_STEP_SQL}: a step (of any kind) of a job. */
+  // Publishing steps are created SUCCEEDED and never change: they are not compensable, and
+  // cancelling a job only cancels WAITING and RUNNING steps.
+  private record PublishStep(String kind, String eventName, String eventKey, UUID eventId) {
+
+    /**
+     * The id of the event this publishing step published, after checking that it published the same
+     * event as the current run.
+     */
+    UUID eventId(UUID jobId, String stepName, String expectedName, String expectedKey) {
+      if (!kind.equals("EVENT_PUBLISH")
+          || !expectedName.equals(eventName)
+          || !expectedKey.equals(eventKey)) {
+        throw new IllegalStateException(
+            "Step '"
+                + stepName
+                + "' of job "
+                + jobId
+                + (kind.equals("EVENT_PUBLISH")
+                    ? " published event " + eventName + "/" + eventKey
+                    : " is " + StepStore.describeKind(kind))
+                + ", not event "
+                + expectedName
+                + "/"
+                + expectedKey
+                + "; step names must be unique within a job");
+      }
+      return eventId;
+    }
+  }
+
+  private Publication publish(
       Sql db, String eventName, String eventKey, String payload, Duration retention)
       throws SQLException {
     Objects.requireNonNull(retention, "retention");
@@ -330,6 +447,7 @@ public final class EventStore {
             RESUME_WAITING_STEPS_SQL,
             row -> new Resumption(row.uuid(1), row.string(2), row.bool(3), row.integer(4)),
             payload,
+            eventId,
             eventName,
             eventKey);
     List<Change> changes = new ArrayList<>();
@@ -352,8 +470,16 @@ public final class EventStore {
       }
     }
     history.record(db, changes);
-    return resumptions.stream().map(r -> new ReceivedEvent(r.jobId(), r.stepName())).toList();
+    return new Publication(eventId, resumptions.size());
   }
+
+  /**
+   * A published event.
+   *
+   * @param eventId the id of the stored event
+   * @param received the number of waiting steps that received it
+   */
+  public record Publication(UUID eventId, int received) {}
 
   /**
    * Deletes expired events (their retention has passed).
@@ -376,8 +502,9 @@ public final class EventStore {
   /** A row of {@code RESUME_WAITING_STEPS_SQL}: a step that received the event. */
   private record Resumption(UUID jobId, String stepName, boolean jobResumed, int attempts) {}
 
-  /** A row of {@code FIND_EVENT_STEP_SQL}: a step (event step or regular step) of a job. */
+  /** A row of {@code FIND_EVENT_STEP_SQL}: a step (of any kind) of a job. */
   private record EventStep(
+      String kind,
       String state,
       String result,
       String eventName,

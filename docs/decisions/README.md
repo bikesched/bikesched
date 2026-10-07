@@ -32,3 +32,5 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0024](0024-cron-expressions-via-cron-utils.md) | Cron expressions via cron-utils in their own module | Accepted |
 | [0025](0025-recurrence-parsers-in-core.md) | Recurrence parsers in core | Accepted |
 | [0026](0026-durable-sleep-as-step.md) | Durable sleep as a step without an event | Accepted |
+| [0027](0027-job-events.md) | Publish events from jobs as durable steps | Accepted |
+| [0028](0028-step-kinds-and-event-references.md) | Step kinds and plain event references | Accepted |

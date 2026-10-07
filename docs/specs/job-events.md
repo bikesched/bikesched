@@ -1,6 +1,6 @@
 # Specification: publishing events from jobs (`job.newEvent`)
 
-Status: **draft, not implemented**. Open questions in §9 are to be settled before implementing.
+Status: **implemented** (ADR 0027). User docs: `docs/events.md#publishing-from-jobs`.
 
 ## 1. Goal
 
@@ -20,8 +20,8 @@ bikesched.registerJobHandler("ship-order", job -> {
 The same two methods as on `Bikesched`, moved to an interface both implement:
 
 ```java
-EventBuilder<Object> newEvent(String eventName, String eventKey);
-<T> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
+NodeEventBuilder<Object> newEvent(String eventName, String eventKey);
+<T> NodeEventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
 ```
 
 ## 2. Today
@@ -63,9 +63,9 @@ return types for overriding (also for generic methods), so:
 | **B: base + covariant subtypes (proposed)** | `EventBuilder<P>`: `payload`, `retention`, `publish` | `NodeEventBuilder<P>` adds `connection(…)` | `StepEventBuilder<P>` adds `stepName(…)` | two small interfaces; each subtype overrides `payload`/`retention` covariantly so chains keep their type |
 | C: no shared interface | — | `EventBuilder<P>` as today | own `newEvent` returning a job builder | no shared helpers; the user asked for the interface |
 
-Option B keeps every existing call compiling (`bikesched.newEvent(…).payload(…).connection(c)
+Option B keeps existing chained calls compiling (`bikesched.newEvent(…).payload(…).connection(c)
 .publish()` resolves on `NodeEventBuilder`), except code that declares a variable of type
-`EventBuilder` and calls `connection` on it. Names are an open question (§9).
+`EventBuilder` and calls `connection` on it. This is the decided builder shape (§9).
 
 ### 4.2 Publishing as a step
 
@@ -83,26 +83,23 @@ Option B keeps every existing call compiling (`bikesched.newEvent(…).payload(�
   1. insert the step `SUCCEEDED`;
   2. `EventStore.publish(db, …)` as today: advisory lock on name and key, insert the event,
      complete the waiting steps, resume their jobs;
-  3. store the received steps as the step's result (see below) and record history for the step and
-     the event.
+  3. record history for the step (with the number of receiving steps) and the event.
   If the transaction fails or the attempt dies before the commit, nothing is published and the
   next run tries again; after the commit, later runs find the step and skip it.
-- **Later runs** return the stored result without publishing.
+- **Later runs** find the step and return its event id without publishing.
 - **Inside a step handler**: rejected by `StepGuard` like nested steps (a publish is a step). Users
   who want to publish together with their own data write `bikesched.newEvent(…).connection(c)`
   inside the step, accepting at-least-once.
-- **Compensation replay**: a `SUCCEEDED` publish step returns its stored result; a missing one ends
+- **Compensation replay**: a `SUCCEEDED` publish step returns its event id; a missing one ends
   the replay (`CompensationReplayEnded`), as for other steps.
 
 ### 4.3 Return value
 
-`publish()` returns `List<ReceivedEvent>` (`jobId`, `stepName`) today. In a job, the list is stored
-as the step's result and returned on every run, so the handler sees the same value each time. Core
-has no JSON library and the user's `JsonMapper` should not be needed for bikesched's own types, so
-the result is written and read in SQL: `jsonb_agg(jsonb_build_object('jobId', …, 'stepName', …))`
-when publishing, `jsonb_to_recordset(result)` when replaying. Alternative: return nothing in a job
-(`StepEventBuilder.publish()` returning `void`) — simpler, but then the shared interface's
-`publish()` cannot be shared (§9).
+`publish()` returns the id of the published event, for nodes and jobs (it returned
+`List<ReceivedEvent>` before). Callers can log it, return it, or store it with their own entities.
+In a job, every run returns the same id, read from the publishing step. The receiving steps are
+not returned: they are only a snapshot of who waited at that moment, so code should not branch on
+them; the job history records them.
 
 ### 4.4 Delivery to the publishing job itself
 
@@ -113,9 +110,20 @@ its code), the publish completes that step and leaves the job alone because it i
 
 ### 4.5 Storage
 
-No schema change: a publish step is a regular step (`event_name`/`event_key` null) whose result is
-the received list. History: step `SUCCEEDED` with "published event `<id>` `<name>/<key>` to N
-step(s)", plus the existing records of the resumed jobs.
+`bikesched_steps` gets a `kind` (`STEP`, `SLEEP`, `EVENT_WAIT`, `EVENT_PUBLISH`) instead of
+inferring the kind from which columns are null, and an `event_id`: a plain reference without a
+foreign key, because events are purged after their retention while steps live as long as their job.
+
+- A publish step is `EVENT_PUBLISH`, created `SUCCEEDED` with `event_name`, `event_key` and
+  `event_id`, and no result. A replay returns `event_id` and rejects a different name or key, like
+  a wait for another event.
+- An event wait (`EVENT_WAIT`) stores the id of the event it received, both when the publish
+  completes it and when it receives an earlier event right away.
+- Step names are checked against the kind: a regular step, sleep, wait or publish reusing the name
+  of another kind of step is rejected.
+
+History: step `SUCCEEDED` with "published event `<id>` `<name>/<key>` to N step(s)", plus the
+existing records of the resumed jobs.
 
 ### 4.6 Kotlin
 
@@ -144,14 +152,14 @@ covariant builder subtypes, publish as a step).
 1. A job publishes; a waiting job receives it; the publisher's step is `SUCCEEDED` with the
    received list.
 2. The publisher suspends afterwards (event wait or sleep) and resumes: the event is not published
-   again (one row in `bikesched_events`), `publish()` returns the stored list.
+   again (one row in `bikesched_events`), `publish()` returns the same id.
 3. Failure between publish and handler end (handler throws after the publish, retried): published
    once.
 4. Atomicity: the transaction fails after the event insert (forced, e.g. invalid payload JSON or a
    lost job lock): neither the step nor the event exists.
 5. Two publishes with the same default name in one run → `IllegalStateException`; with
    `stepName(…)` both are published.
-6. Inside a step handler → rejected; during compensation replay → stored result / replay ends.
+6. Inside a step handler → rejected; during compensation replay → the stored id / replay ends.
 7. Typed variant (`EventType`), retention, `ZERO` retention.
 8. `EventPublisher` used by a helper with both a `Bikesched` and a `Job`.
 9. Existing `bikesched.newEvent(…).connection(c)` tests stay green.
@@ -160,7 +168,8 @@ covariant builder subtypes, publish as a step).
 
 1. `EventPublisher` and the builder split (option B) without behaviour change: `Bikesched` returns
    `NodeEventBuilder`; docs samples checked.
-2. Store method: publish as a step in one fenced transaction, result as JSON built in SQL, history.
+2. Schema: `kind` and `event_id` on `bikesched_steps`. Store method: publish as a step in one
+   fenced transaction and record history.
 3. `Job.newEvent` in `DefaultJob` with `StepEventBuilder`, default step name, per-run duplicate
    check, `StepGuard`, compensation replay; tests 1–8.
 4. Kotlin extension; docs; ADR; remove the entry from `IDEAS.md`.
@@ -170,13 +179,11 @@ covariant builder subtypes, publish as a step).
 Medium: the API split touches `Bikesched`, the event builder, Kotlin and docs; the store method
 reuses `EventStore.publish`.
 
-## 9. Open questions
+## 9. Decisions
 
-1. Builder shape: option B (proposed), A or C?
-2. Names: `EventPublisher`, `NodeEventBuilder` (from `Bikesched`, with `connection`),
-   `StepEventBuilder` (from `Job`, with `stepName`)? Alternatives: `TransactionalEventBuilder` as
-   for jobs, but that name means "after `connection(…)`" there.
-3. Default step name `publish <eventName>` with `stepName(…)` to override, or a required step name?
-4. Return value in a job: the stored `List<ReceivedEvent>` (proposed) or nothing?
-5. Publishing from compensation handlers: later, or part of this change?
-6. Kotlin: one extension on `EventPublisher` or one per receiver?
+1. Use option B: `EventPublisher` with covariant `NodeEventBuilder` and `StepEventBuilder`.
+2. Use `publish <eventName>` as the default durable step name; `stepName(…)` overrides it.
+3. `publish()` returns the event id; `ReceivedEvent` is removed; publish steps record the event's
+   name, key and id in their own columns (`kind = 'EVENT_PUBLISH'`), not in the result.
+4. Defer publishing from compensation handlers.
+5. Add separate Kotlin extensions for `Bikesched` and `Job`.

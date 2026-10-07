@@ -25,6 +25,7 @@ public record JobPollerSettings(
     Duration pollInterval,
     Duration defaultJobTimeout,
     Duration defaultEventTimeout,
+    Duration eventRetention,
     RetryBackoff retryBackoff,
     Duration hardTimeoutGrace,
     JobListener jobListener) {
@@ -34,6 +35,7 @@ public record JobPollerSettings(
     Objects.requireNonNull(nodeName, "nodeName");
     Objects.requireNonNull(pollInterval, "pollInterval");
     Objects.requireNonNull(retryBackoff, "retryBackoff");
+    Objects.requireNonNull(eventRetention, "eventRetention");
     Objects.requireNonNull(jobListener, "jobListener");
   }
 }

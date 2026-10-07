@@ -6,12 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.bikesched.event.ReceivedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -41,9 +39,8 @@ class EventStoreTest extends AbstractStoreTest {
 
     // The event arrives after the step started waiting, but before the job is suspended (still
     // RUNNING): the step receives it, the job is left alone ...
-    List<ReceivedEvent> received =
-        database.events().publishEvent("paid", "race-1", "{\"amount\": 1}", KEPT);
-    assertThat(received).containsExactly(new ReceivedEvent(job.id(), "wait"));
+    assertThat(database.events().publishEvent("paid", "race-1", "{\"amount\": 1}", KEPT).received())
+        .isOne();
     assertThat(count("id = '" + job.id() + "' and state = 'RUNNING'")).isEqualTo(1);
 
     // ... and suspending sees the received step and schedules the job instead of letting it wait.
@@ -87,14 +84,14 @@ class EventStoreTest extends AbstractStoreTest {
     assertThat(stateAndSchedule(job.id())).isEqualTo("WAITING infinity");
     assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).doesNotContain(job.id());
 
-    assertThat(database.events().publishEvent("paid", "suspend-1", null, KEPT))
-        .containsExactly(new ReceivedEvent(job.id(), "wait"));
+    assertThat(database.events().publishEvent("paid", "suspend-1", null, KEPT).received()).isOne();
     assertThat(stateAndSchedule(job.id())).startsWith("SCHEDULED ");
   }
 
   @Test
   void eventPublishedBeforeWaitingIsReceivedRightAway() throws Exception {
-    assertThat(database.events().publishEvent("paid", "early-1", "\"early\"", KEPT)).isEmpty();
+    assertThat(database.events().publishEvent("paid", "early-1", "\"early\"", KEPT).received())
+        .isZero();
     JobStore.ClaimedJob job = claimNewJob("early");
 
     assertThat(
@@ -132,8 +129,9 @@ class EventStoreTest extends AbstractStoreTest {
       assertThat(
               database
                   .events()
-                  .publishEventInTransaction(connection, "paid", "lock-1", "\"tx\"", KEPT))
-          .isEmpty();
+                  .publishEventInTransaction(connection, "paid", "lock-1", "\"tx\"", KEPT)
+                  .received())
+          .isZero();
 
       // Without the lock, the wait would not see the uncommitted event and start waiting, and the
       // publisher would not see the uncommitted waiting step: the job would wait forever.
@@ -163,8 +161,9 @@ class EventStoreTest extends AbstractStoreTest {
       assertThat(
               database
                   .events()
-                  .publishEventInTransaction(connection, "paid", "rollback-1", null, KEPT))
-          .hasSize(1);
+                  .publishEventInTransaction(connection, "paid", "rollback-1", null, KEPT)
+                  .received())
+          .isOne();
       connection.rollback();
     }
 
@@ -208,9 +207,9 @@ class EventStoreTest extends AbstractStoreTest {
                 .awaitEvent(
                     job.id(), lock(job.id()), "wait", "paid", "deadline-1", Duration.ofMillis(200)))
         .isEqualTo(new EventStore.EventWait("TIMED_OUT", null, null));
-    assertThat(database.events().publishEvent("paid", "deadline-1", null, KEPT))
+    assertThat(database.events().publishEvent("paid", "deadline-1", null, KEPT).received())
         .as("a timed out step no longer receives the event")
-        .isEmpty();
+        .isZero();
   }
 
   @Test
@@ -253,9 +252,9 @@ class EventStoreTest extends AbstractStoreTest {
     database.events().awaitEvent(waiting.id(), lock(waiting.id()), "wait", "ping", "zero-1", null);
     database.events().suspendJob(waiting.id(), lock(waiting.id()), "wait", "ping", "zero-1");
 
-    assertThat(database.events().publishEvent("ping", "zero-1", "\"now\"", Duration.ZERO))
-        .extracting(ReceivedEvent::jobId)
-        .containsExactly(waiting.id());
+    assertThat(
+            database.events().publishEvent("ping", "zero-1", "\"now\"", Duration.ZERO).received())
+        .isOne();
     // Claimed now: claimNewJob below claims every due job.
     claim(waiting.id());
 
@@ -298,6 +297,117 @@ class EventStoreTest extends AbstractStoreTest {
                 .events()
                 .awaitEvent(job.id(), lock(job.id()), "wait", "paid", "copied-1", null))
         .isEqualTo(new EventStore.EventWait("SUCCEEDED", "{\"amount\": 7}", null));
+  }
+
+  @Test
+  void publishingStepPublishesOnlyOnceAndReturnsTheSameEventId() throws Exception {
+    JobStore.ClaimedJob receiver = claimNewJob("step-receiver");
+    database
+        .events()
+        .awaitEvent(receiver.id(), lock(receiver.id()), "wait", "paid", "once-1", null);
+    database.events().suspendJob(receiver.id(), lock(receiver.id()), "wait", "paid", "once-1");
+    JobStore.ClaimedJob publisher = claimNewJob("step-publisher");
+
+    UUID published = publishAsStep(publisher, "publish", "paid", "once-1", "\"first\"");
+    UUID replayed = publishAsStep(publisher, "publish", "paid", "once-1", "\"replayed\"");
+
+    assertThat(replayed).as("same id on every run").isEqualTo(published);
+    assertThat(countRows("bikesched_events", "key = 'once-1'")).as("published once").isOne();
+    assertThat(countRows("bikesched_events", "id = '" + published + "'")).isOne();
+    assertThat(
+            countSteps(
+                "job_id = '"
+                    + publisher.id()
+                    + "' and name = 'publish' and kind = 'EVENT_PUBLISH' and state = 'SUCCEEDED'"
+                    + " and event_name = 'paid' and event_key = 'once-1' and event_id = '"
+                    + published
+                    + "' and result is null"))
+        .as("the publishing step records the event it published")
+        .isOne();
+    assertThat(
+            countSteps(
+                "job_id = '"
+                    + receiver.id()
+                    + "' and name = 'wait' and event_id = '"
+                    + published
+                    + "' and result = '\"first\"'::jsonb"))
+        .as("the receiving step references the event")
+        .isOne();
+  }
+
+  @Test
+  void publishingStepRemembersItsEventAfterTheEventIsDeleted() {
+    JobStore.ClaimedJob publisher = claimNewJob("deleted-publisher");
+    UUID published = publishAsStep(publisher, "publish", "ping", "deleted-1", null, Duration.ZERO);
+    assertThat(database.events().deleteExpiredEvents()).isOne();
+
+    assertThat(publishAsStep(publisher, "publish", "ping", "deleted-1", null, Duration.ZERO))
+        .as("no foreign key: the step keeps the id of the purged event, nothing is published")
+        .isEqualTo(published);
+    assertThat(database.events().deleteExpiredEvents()).isZero();
+  }
+
+  @Test
+  void publishingStepReplayingAnotherEventIsRejected() {
+    JobStore.ClaimedJob publisher = claimNewJob("other-publisher");
+    publishAsStep(publisher, "publish", "paid", "other-1", null);
+
+    assertThatThrownBy(() -> publishAsStep(publisher, "publish", "shipped", "other-1", null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("published event paid/other-1, not event shipped/other-1");
+  }
+
+  @Test
+  void stepNamesAreUniqueAcrossWaitingAndPublishing() {
+    JobStore.ClaimedJob job = claimNewJob("mixed");
+    database.events().awaitEvent(job.id(), lock(job.id()), "wait", "paid", "mixed-1", null);
+    publishAsStep(job, "publish", "paid", "mixed-2", null);
+
+    assertThatThrownBy(() -> publishAsStep(job, "wait", "paid", "mixed-1", null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("is an event wait, not event paid/mixed-1");
+    assertThatThrownBy(
+            () ->
+                database
+                    .events()
+                    .awaitEvent(job.id(), lock(job.id()), "publish", "paid", "mixed-2", null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("is an event publish, not for event paid/mixed-2");
+  }
+
+  @Test
+  void stepReceivingAPublishedEventRightAwayReferencesIt() throws Exception {
+    UUID eventId = database.events().publishEvent("paid", "ref-1", null, KEPT).eventId();
+    JobStore.ClaimedJob job = claimNewJob("ref");
+
+    database.events().awaitEvent(job.id(), lock(job.id()), "wait", "paid", "ref-1", null);
+
+    assertThat(
+            countSteps(
+                "job_id = '"
+                    + job.id()
+                    + "' and kind = 'EVENT_WAIT' and state = 'SUCCEEDED' and event_id = '"
+                    + eventId
+                    + "'"))
+        .isOne();
+  }
+
+  private static UUID publishAsStep(
+      JobStore.ClaimedJob job, String stepName, String eventName, String eventKey, String payload) {
+    return publishAsStep(job, stepName, eventName, eventKey, payload, KEPT);
+  }
+
+  private static UUID publishAsStep(
+      JobStore.ClaimedJob job,
+      String stepName,
+      String eventName,
+      String eventKey,
+      String payload,
+      Duration retention) {
+    return database
+        .events()
+        .publishEventAsStep(
+            job.id(), lock(job.id()), stepName, eventName, eventKey, payload, retention, false);
   }
 
   /** Claims the (due) job, as the poller does. */

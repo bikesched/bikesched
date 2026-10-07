@@ -17,9 +17,9 @@ bikesched.registerJobHandler("order", job -> {
 });
 
 // e.g. in a payment webhook; .connection(connection) publishes in your own transaction
-List<ReceivedEvent> received = bikesched.newEvent("payment-received", order.id())
+UUID eventId = bikesched.newEvent("payment-received", order.id())
         .payload(payment)
-        .publish();   // the steps that received the event, with their job ids
+        .publish();   // the id of the published event, e.g. to log it or store it with your data
 ```
 
 - An event is identified by its name and key and goes to every step waiting for it.
@@ -55,9 +55,8 @@ stateDiagram-v2
 2. **The event is published.** In one transaction, holding the advisory lock on name and key:
    - the event is inserted with its expiry (`expires_at`);
    - every step `WAITING` for that name and key becomes `SUCCEEDED`, with a copy of the payload as
-     its result;
-   - every job `WAITING` at such a step becomes `SCHEDULED`, due now;
-   - `publish()` returns the steps that received the event.
+     its result and the event's id (`event_id`);
+   - every job `WAITING` at such a step becomes `SCHEDULED`, due now.
 
    A job that is still `RUNNING` at that moment (it is just suspending) is left alone: suspending
    finds its step `SUCCEEDED` and schedules the job right away instead of letting it wait.
@@ -78,6 +77,30 @@ Other paths:
   the event was deleted.
 
 With the [job history](jobs.md#job-history) enabled, each of these changes is recorded.
+
+## Publishing from jobs
+
+Use `Job.newEvent` to publish as a durable step. The event, delivery to waiting jobs and completion
+of the publishing step commit together. A retry or replay finds the step and returns the same
+event id without publishing the event again:
+
+```java
+UUID eventId = job.newEvent("order-shipped", order.id())
+        .payload(shipment)
+        .publish();
+```
+
+The default step name is `publish <eventName>`. If a handler publishes that event more than once
+(for example, in a loop), provide distinct names with `.stepName("publish shipment " + index)`;
+otherwise the repeated default name is rejected. The prefix counts toward the 200-character step
+name limit. `retention(...)` works as on node-published events and defaults to `eventRetention`.
+The step records the event's name, key and id; a later run publishing another event under the same
+step name is rejected, like a wait for another event.
+Publishing from inside another step handler is rejected because publishing is itself a durable
+step. Compensation handlers cannot publish through this API.
+
+The Kotlin companion provides `job.publishEvent(name, key, payload, retention, stepName)` with the
+same durable behavior.
 
 ## Typed events
 

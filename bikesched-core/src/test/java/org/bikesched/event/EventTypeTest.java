@@ -31,10 +31,8 @@ class EventTypeTest extends AbstractBikeschedTest {
               .schedule();
       awaitState(jobId, "WAITING");
 
-      var receivers =
-          bikesched.newEvent(paid, "order-1").payload(new Payment("order-1", 100)).publish();
+      bikesched.newEvent(paid, "order-1").payload(new Payment("order-1", 100)).publish();
 
-      assertThat(receivers).containsExactly(new ReceivedEvent(jobId, "await"));
       assertThat(received.get(10, TimeUnit.SECONDS)).isEqualTo(new Payment("order-1", 100));
       awaitState(jobId, "SUCCEEDED");
     }

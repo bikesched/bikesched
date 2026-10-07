@@ -270,25 +270,31 @@ class JobSleepTest extends AbstractBikeschedTest {
       UUID jobId = bikesched.newJob("sleep-schema").handler(job -> {}).schedule(Duration.ofDays(1));
 
       // a sleep: WAITING with a wake-up time
-      insertStep(jobId, "sleep", "'WAITING'", "now()");
-      // neither an event nor a wake-up time
-      assertThatThrownBy(() -> insertStep(jobId, "no-wake-up", "'WAITING'", "null"))
+      insertStep(jobId, "sleep", "SLEEP", "'WAITING'", "now()");
+      // a sleep without a wake-up time
+      assertThatThrownBy(() -> insertStep(jobId, "no-wake-up", "SLEEP", "'WAITING'", "null"))
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("bikesched_steps_wait_check");
+      // regular steps do not wait
+      assertThatThrownBy(() -> insertStep(jobId, "step", "STEP", "'WAITING'", "now()"))
           .isInstanceOf(SQLException.class)
           .hasMessageContaining("bikesched_steps_wait_check");
       // only event waits time out
-      assertThatThrownBy(() -> insertStep(jobId, "timed-out", "'TIMED_OUT'", "now()"))
+      assertThatThrownBy(() -> insertStep(jobId, "timed-out", "SLEEP", "'TIMED_OUT'", "now()"))
           .isInstanceOf(SQLException.class)
           .hasMessageContaining("bikesched_steps_event_check");
     }
   }
 
-  private static void insertStep(UUID jobId, String name, String state, String waitUntil)
-      throws SQLException {
+  private static void insertStep(
+      UUID jobId, String name, String kind, String state, String waitUntil) throws SQLException {
     execute(
-        "insert into bikesched_steps (job_id, name, state, wait_until) values ('"
+        "insert into bikesched_steps (job_id, name, kind, state, wait_until) values ('"
             + jobId
             + "', '"
             + name
+            + "', '"
+            + kind
             + "', "
             + state
             + ", "

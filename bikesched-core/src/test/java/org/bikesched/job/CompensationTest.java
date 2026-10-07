@@ -252,9 +252,13 @@ class CompensationTest extends AbstractBikeschedTest {
                   "job_id = '" + jobId + "' and name = 'await-driver' and state = 'CANCELLED'"))
           .as("the waiting step is cancelled, not deleted")
           .isEqualTo(1);
-      assertThat(bikesched.newEvent("driver-accepted", jobId.toString()).publish())
+      bikesched.newEvent("driver-accepted", jobId.toString()).publish();
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '" + jobId + "' and name = 'await-driver' and state = 'CANCELLED'"))
           .as("a cancelled step no longer receives events")
-          .isEmpty();
+          .isEqualTo(1);
       assertThat(bikesched.cancel(jobId)).as("already cancelled").isFalse();
     }
   }

@@ -6,7 +6,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.event.EventBuilder;
+import org.bikesched.event.EventPublisher;
 import org.bikesched.event.EventType;
+import org.bikesched.event.NodeEventBuilder;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
@@ -51,7 +53,7 @@ import org.bikesched.job.TypedJobHandler;
  * <p>Log output of bikesched threads and job handlers carries the node and job in the logging
  * context, see {@link BikeschedLogContext}.
  */
-public interface Bikesched extends AutoCloseable {
+public interface Bikesched extends AutoCloseable, EventPublisher {
 
   /**
    * Returns a new builder for a {@link Bikesched} instance.
@@ -187,9 +189,9 @@ public interface Bikesched extends AutoCloseable {
    * it (see {@link Job#waitForEvent(String, String, String)}), whose jobs then continue:
    *
    * <pre>{@code
-   * List<ReceivedEvent> received = bikesched.newEvent("payment-received", orderId)
-   *         .payload(payment)
-   *         .publish();
+   * bikesched.newEvent("payment-received", orderId)
+   *     .payload(payment)
+   *     .publish();
    * }</pre>
    *
    * @param eventName the name of the event, e.g. {@code payment-received}, at most 200 characters
@@ -197,7 +199,7 @@ public interface Bikesched extends AutoCloseable {
    * @return a builder for the event
    * @throws IllegalArgumentException if the event name is blank
    */
-  EventBuilder<Object> newEvent(String eventName, String eventKey);
+  NodeEventBuilder<Object> newEvent(String eventName, String eventKey);
 
   /**
    * Starts building an event of an {@link EventType}: {@link EventBuilder#payload(Object)
@@ -212,7 +214,7 @@ public interface Bikesched extends AutoCloseable {
    * @param <T> the payload type
    * @return a builder for the event
    */
-  <T> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
+  <T> NodeEventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
 
   /**
    * Looks up a job by its id, in a read-only transaction.

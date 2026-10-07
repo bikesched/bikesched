@@ -7,7 +7,9 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -15,12 +17,14 @@ import org.bikesched.BikeschedLogContext;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
+import org.bikesched.event.StepEventBuilder;
 import org.bikesched.event.TypedEventWait;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.JobLock;
 import org.bikesched.internal.database.JobLockLostException;
 import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.StepStore;
+import org.bikesched.internal.event.DefaultStepEventBuilder;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.Job;
@@ -47,6 +51,7 @@ public final class DefaultJob implements Job {
   private static final Logger LOG = LoggerFactory.getLogger(Job.class);
 
   private final Database database;
+  private final Duration defaultEventRetention;
   private final UUID id;
 
   /** The lock of this claim: the attempt's writes are fenced by it. */
@@ -72,6 +77,8 @@ public final class DefaultJob implements Job {
   /** Rejects steps and event waits while a step handler or compensation runs. */
   private final StepGuard stepGuard;
 
+  private final Set<String> eventPublishSteps = ConcurrentHashMap.newKeySet();
+
   // Set by the handler, read by bikesched after the handler returned (the handler may use other
   // threads).
   private volatile boolean cancelled;
@@ -84,7 +91,15 @@ public final class DefaultJob implements Job {
 
   /** A job claimed by this node, accessing its steps and events through the database. */
   public DefaultJob(Database database, JobStore.ClaimedJob claimed) {
+    this(database, claimed, Duration.ofDays(7));
+  }
+
+  /** Creates a claimed job with the node's default event retention. */
+  public DefaultJob(
+      Database database, JobStore.ClaimedJob claimed, Duration defaultEventRetention) {
     this.database = Objects.requireNonNull(database, "database");
+    this.defaultEventRetention =
+        Objects.requireNonNull(defaultEventRetention, "defaultEventRetention");
     this.id = claimed.id();
     this.lock = Objects.requireNonNull(claimed.lock(), "lock");
     this.type = claimed.type();
@@ -106,6 +121,72 @@ public final class DefaultJob implements Job {
   @Override
   public UUID id() {
     return id;
+  }
+
+  @Override
+  public StepEventBuilder<Object> newEvent(String eventName, String eventKey) {
+    ValidationUtil.requireName(eventName, "event name");
+    ValidationUtil.requireKey(eventKey, "event key");
+    return new DefaultStepEventBuilder<>(
+        eventName, eventKey, database.jsonMapper(), this::publishEventStep);
+  }
+
+  @Override
+  public <T> StepEventBuilder<T> newEvent(EventType<T> eventType, String eventKey) {
+    Objects.requireNonNull(eventType, "eventType");
+    ValidationUtil.requireKey(eventKey, "event key");
+    return new DefaultStepEventBuilder<>(
+        eventType.name(), eventKey, database.jsonMapper(), this::publishEventStep);
+  }
+
+  private UUID publishEventStep(
+      String eventName,
+      String eventKey,
+      String eventPayload,
+      Duration retention,
+      String requestedStepName) {
+    String stepName = requestedStepName == null ? "publish " + eventName : requestedStepName;
+    if (requestedStepName == null
+        && stepName.codePointCount(0, stepName.length()) > ValidationUtil.MAX_NAME_LENGTH) {
+      throw new IllegalArgumentException(
+          "Default event publishing step name is longer than "
+              + ValidationUtil.MAX_NAME_LENGTH
+              + " characters; set stepName(…) explicitly");
+    }
+    ValidationUtil.requireName(stepName, "step name");
+    stepGuard.requireNoneRunning("publish an event as step '" + stepName + "'");
+    if (!eventPublishSteps.add(stepName)) {
+      throw new IllegalStateException(
+          "Job "
+              + id
+              + " publishes more than once with step name '"
+              + stepName
+              + "'; set a unique stepName(…) for each publish");
+    }
+    if (compensating
+        && database
+            .steps()
+            .findStep(id, stepName)
+            .filter(step -> step.state().equals("SUCCEEDED"))
+            .isEmpty()) {
+      throw new CompensationReplayEnded(stepName);
+    }
+    Runnable restore = putStepName(stepName);
+    try {
+      return database
+          .events()
+          .publishEventAsStep(
+              id,
+              lock,
+              stepName,
+              eventName,
+              eventKey,
+              eventPayload,
+              retention == null ? defaultEventRetention : retention,
+              compensating);
+    } finally {
+      restore.run();
+    }
   }
 
   @Override
@@ -328,6 +409,7 @@ public final class DefaultJob implements Job {
     Runnable restoreStepName = putStepName(name);
     try {
       var completed = database.steps().findCompletedStep(id, name);
+      completed.ifPresent(step -> requireStepKind(name, step.kind(), "STEP", "a regular step"));
       if (compensating) {
         if (completed.isEmpty()) {
           throw new CompensationReplayEnded(name);
@@ -350,12 +432,33 @@ public final class DefaultJob implements Job {
         if (stepAttempt.isPresent()) {
           return executeStep(name, stepAttempt.get(), handler, toJson, compensation != null);
         }
-        completed = database.steps().findCompletedStep(id, name); // completed in the meantime
+        // Completed in the meantime, or a step of another kind (e.g. still waiting for an event).
+        database
+            .steps()
+            .findStep(id, name)
+            .ifPresent(step -> requireStepKind(name, step.kind(), "STEP", "a regular step"));
+        completed = database.steps().findCompletedStep(id, name);
       }
       LOG.debug("Step {} of job {} already completed, reusing its result", name, id);
       return completed.isEmpty() ? null : read(completed.get(), fromJson);
     } finally {
       restoreStepName.run();
+    }
+  }
+
+  /** Rejects a step name already used by another kind of step of this job. */
+  private void requireStepKind(String name, String kind, String expected, String expectedText) {
+    if (!kind.equals(expected)) {
+      throw new IllegalStateException(
+          "Step '"
+              + name
+              + "' of job "
+              + id
+              + " is "
+              + StepStore.describeKind(kind)
+              + ", not "
+              + expectedText
+              + "; step names must be unique within a job");
     }
   }
 
@@ -430,8 +533,9 @@ public final class DefaultJob implements Job {
     try {
       if (compensating) {
         // Replay only: return after a completed sleep, never start or continue one.
-        var state = database.steps().findStep(id, stepName).map(StepStore.StoredStep::state);
-        if (state.filter("SUCCEEDED"::equals).isPresent()) {
+        var stored = database.steps().findStep(id, stepName);
+        stored.ifPresent(step -> requireStepKind(stepName, step.kind(), "SLEEP", "a sleep"));
+        if (stored.map(StepStore.StoredStep::state).filter("SUCCEEDED"::equals).isPresent()) {
           return;
         }
         throw new CompensationReplayEnded(stepName);
@@ -489,6 +593,8 @@ public final class DefaultJob implements Job {
       if (compensating) {
         // Replay only: return what the wait stored, never start or time out a wait.
         var step = database.steps().findStep(id, stepName);
+        step.ifPresent(
+            stored -> requireStepKind(stepName, stored.kind(), "EVENT_WAIT", "an event wait"));
         String state = step.map(StepStore.StoredStep::state).orElse("");
         return switch (state) {
           case "SUCCEEDED" -> read.apply(step.get().result());

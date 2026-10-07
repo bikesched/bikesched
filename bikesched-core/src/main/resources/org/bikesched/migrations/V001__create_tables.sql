@@ -91,10 +91,15 @@ create index bikesched_jobs_finished_at_idx on bikesched_jobs (finished_at)
 create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
--- job can skip steps that already succeeded. Event steps (event_name/event_key set) wait for an
--- event instead: WAITING until it is published (SUCCEEDED, result = a copy of its payload, so the
--- step does not depend on the event) or wait_until has passed (TIMED_OUT). Sleep steps (no event,
--- wait_until set) are WAITING until wait_until has passed and the job runs again (SUCCEEDED).
+-- job can skip steps that already succeeded. The kind tells what a step does:
+-- - STEP: a regular step running user code; result = what it returned.
+-- - SLEEP: WAITING until wait_until has passed and the job runs again (SUCCEEDED).
+-- - EVENT_WAIT: waits for the event event_name/event_key: WAITING until it is published
+--   (SUCCEEDED, event_id = the received event, result = a copy of its payload, so the step does
+--   not depend on the event) or wait_until has passed (TIMED_OUT).
+-- - EVENT_PUBLISH: published the event event_name/event_key (event_id) exactly once; SUCCEEDED
+--   when created, in the transaction that published the event.
+-- event_id only references the event (no FK): events are deleted after their retention.
 -- A compensable step (declared with a compensation) is COMPENSATED once its compensation ran.
 -- Cancelling a job marks its unfinished steps (WAITING, or RUNNING after a crash) CANCELLED.
 -- A RUNNING step is locked by the node running it (locked_by). Every step write also requires the
@@ -104,6 +109,7 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 create table bikesched_steps (
     job_id      uuid        not null references bikesched_jobs (id) on delete cascade,
     name        text        not null,
+    kind        text        not null default 'STEP',
     state       text        not null default 'RUNNING',
     result      jsonb,
     attempts    integer     not null default 0,
@@ -111,21 +117,34 @@ create table bikesched_steps (
     last_error  text,
     event_name  text,
     event_key   text,
+    event_id    uuid,                   -- the event received or published (no FK: see above)
     wait_until  timestamptz,
     compensable boolean     not null default false,
     started_at  timestamptz not null default now(),
     finished_at timestamptz,
     primary key (job_id, name),
+    constraint bikesched_steps_kind_check
+        check (kind in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH')),
     constraint bikesched_steps_state_check
         check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'TIMED_OUT', 'COMPENSATED',
                          'CANCELLED')),
+    -- Event waits and publishes name their event; an event wait references the event once it
+    -- received it, a publish always; only event waits time out.
     constraint bikesched_steps_event_check
-        check ((event_name is null) = (event_key is null)
-               and (event_name is not null or state <> 'TIMED_OUT')),
-    -- A WAITING step without an event is a sleep: it needs its wake-up time. (An event wait
-    -- without a timeout waits without a deadline.)
+        check ((event_name is not null) = (kind in ('EVENT_WAIT', 'EVENT_PUBLISH'))
+               and (event_name is null) = (event_key is null)
+               and case kind
+                       when 'EVENT_WAIT' then (event_id is not null) = (state = 'SUCCEEDED')
+                       when 'EVENT_PUBLISH' then event_id is not null
+                       else event_id is null
+                   end
+               and (kind = 'EVENT_WAIT' or state <> 'TIMED_OUT')),
+    -- Only sleeps and event waits wait; a sleep needs its wake-up time. (An event wait without a
+    -- timeout waits without a deadline.)
     constraint bikesched_steps_wait_check
-        check (state <> 'WAITING' or event_name is not null or wait_until is not null),
+        check ((state <> 'WAITING' or kind in ('SLEEP', 'EVENT_WAIT'))
+               and (wait_until is null or kind in ('SLEEP', 'EVENT_WAIT'))
+               and (kind <> 'SLEEP' or wait_until is not null)),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by is not null)),
     constraint bikesched_steps_name_check
@@ -136,7 +155,7 @@ create table bikesched_steps (
 
 -- Matching published events to the steps waiting for them.
 create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_key)
-    where state = 'WAITING';
+    where kind = 'EVENT_WAIT' and state = 'WAITING';
 
 -- Published events, kept until expires_at (published_at + the event's retention): a step that starts
 -- waiting for an event that was already published receives the latest unexpired one right away, so

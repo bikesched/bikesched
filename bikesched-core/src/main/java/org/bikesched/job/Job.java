@@ -8,8 +8,10 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
+import org.bikesched.event.EventPublisher;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
+import org.bikesched.event.StepEventBuilder;
 import org.bikesched.event.TypedEventWait;
 
 /**
@@ -34,7 +36,28 @@ import org.bikesched.event.TypedEventWait;
  * instead. Steps built with {@link #newStep(String, Class)} can have a compensation that undoes
  * them if the job is cancelled or fails permanently.
  */
-public interface Job {
+public interface Job extends EventPublisher {
+
+  /**
+   * Starts building an event that is published atomically with a durable step of this job.
+   *
+   * @param eventName event name
+   * @param eventKey event key
+   * @return a durable event builder; its step name defaults to {@code publish <eventName>}
+   */
+  @Override
+  StepEventBuilder<Object> newEvent(String eventName, String eventKey);
+
+  /**
+   * Starts building a typed event that is published atomically with a durable step.
+   *
+   * @param eventType event name and payload type
+   * @param eventKey event key
+   * @param <T> payload type
+   * @return a durable event builder
+   */
+  @Override
+  <T> StepEventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
 
   /**
    * Returns the job id.

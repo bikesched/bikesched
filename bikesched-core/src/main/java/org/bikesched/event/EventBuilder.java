@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.event;
 
-import java.sql.Connection;
 import java.time.Duration;
-import java.util.List;
+import java.util.UUID;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
@@ -13,9 +12,9 @@ import org.bikesched.JsonMapper;
  * String)} or, with a typed payload, {@link org.bikesched.Bikesched#newEvent(EventType, String)}:
  *
  * <pre>{@code
- * List<ReceivedEvent> received = bikesched.newEvent("payment-received", orderId)
- *         .payload(payment)
- *         .publish();
+ * UUID eventId = bikesched.newEvent("payment-received", orderId)
+ *     .payload(payment)
+ *     .publish();
  * }</pre>
  *
  * <p>Publishing stores the event and hands it to every step currently waiting for it (same name and
@@ -59,27 +58,12 @@ public interface EventBuilder<P> {
   EventBuilder<P> retention(Duration retention);
 
   /**
-   * Publishes the event as part of the caller's transaction (optional): the event is stored and the
-   * waiting steps receive it only if the caller commits; other nodes see neither before. The
-   * connection must not be in auto-commit mode. bikesched does not commit, roll back or close it.
-   *
-   * <p>Until the caller's transaction ends, it holds a lock on the event's name and key, so jobs
-   * starting to wait for the same event meanwhile block until then; keep such transactions short.
-   *
-   * @param connection the caller's connection, or {@code null} to use bikesched's own
-   * @return this builder
-   */
-  EventBuilder<P> connection(Connection connection);
-
-  /**
    * Publishes the event.
    *
-   * @return the steps that received the event, with their job ids; empty if no step was waiting for
-   *     it (yet)
-   * @throws IllegalArgumentException if the caller's connection is in auto-commit mode
+   * @return the id of the published event, e.g. to log it or store it with your own data
    * @throws BikeschedException if the event cannot be stored, e.g. because the payload is not valid
    *     JSON
-   * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
+   * @throws IllegalStateException if this event cannot be published in the current context
    */
-  List<ReceivedEvent> publish();
+  UUID publish();
 }

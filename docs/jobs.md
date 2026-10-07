@@ -94,6 +94,7 @@ A handler receives the `Job` being executed:
 | `payload()`, `payload(Class)` | the payload as raw JSON or mapped by the `JsonMapper` |
 | `step(name, Class, handler)` | run a durable step, see [Durable steps](steps.md#durable-steps) |
 | `newStep(name, Class)` | build a step with a compensation, see [Compensation](steps.md#compensation) |
+| `newEvent(name, key)`, `newEvent(eventType, key)` | publish once as a durable step, see [Publishing from jobs](events.md#publishing-from-jobs) |
 | `waitForEvent(step, name, key)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](events.md) |
 | `awaitEvent(step, eventType, key)` | wait for an event and return its typed payload, see [Typed events](events.md#typed-events) |
 | `sleep(step, Duration)`, `sleepUntil(step, Instant)` | pause the job without holding a thread, see [Sleeping](steps.md#sleeping) |

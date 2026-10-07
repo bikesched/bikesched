@@ -106,26 +106,10 @@ calling bikesched.
   should fail instead of being ignored.
 - Events: they have no completion, only an expiry (`expires_at`), and a partial index cannot use
   `now()`. Check for an unexpired event with the same name and idempotency key inside the advisory
-  lock `publish` already takes on name and key, and skip the publish if one exists. `publish()`
-  then returns an empty list (or the original receivers, if stored).
+  lock `publish` already takes on name and key, and skip the publish if one exists.
 - With job history: record the skipped duplicate ("duplicate of idempotency key …") on the existing
   job.
 - Outcome: retried callers create each job and event once, without their own deduplication table.
-
-### Publishing events from jobs
-
-A handler publishing with `bikesched.newEvent(…).publish()` publishes again on every run outside a
-step, and at least once inside one; a second publish reaches steps that started waiting in between.
-
-- `job.newEvent(name, key)` and `job.newEvent(EventType, key)` publish as a durable step: the event
-  and the step's completion are written in one transaction fenced by the job lock, so the event is
-  published exactly once per job; later runs return the stored result.
-- Both `newEvent` methods move to an interface (`EventPublisher`) that `Bikesched` and `Job`
-  extend; the returned builders differ only covariantly (`connection(…)` from `Bikesched`, a step
-  name from a job).
-- Spec with the builder options and open questions:
-  [`docs/specs/job-events.md`](docs/specs/job-events.md).
-- Outcome: reliable events from jobs, e.g. "order-shipped" for the jobs waiting on it.
 
 ### Fallbacks in event timeout handlers
 
