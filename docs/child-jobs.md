@@ -48,7 +48,7 @@ bikesched.registerJobHandler("fulfil-order", job -> {
 ## Starting children
 
 `job.newJob(type)` and `job.newJob(jobType)` return a `StepJobBuilder` with the usual settings
-(`payload`, `priority`, `maxAttempts`, `timeout`, `handler`) plus:
+(`payload`, `priority`, `maxAttempts`, `timeout`) plus:
 
 | Method | Purpose |
 |---|---|
@@ -65,8 +65,9 @@ bikesched.registerJobHandler("fulfil-order", job -> {
   children (`IllegalStateException`): the next occurrence replaces them, so nobody waits for their
   children.
 - Starting a child is rejected inside a step handler, like any nested step.
-- Like `bikesched.newJob`, the child's type needs a handler on the parent's node (or one set with
-  `handler(…)`).
+- The child's type needs a handler registered on the parent's node. There is no `handler(…)`:
+  children connect job types registered on their own; code that runs inline belongs in a
+  [step](steps.md).
 
 ## Waiting for children
 

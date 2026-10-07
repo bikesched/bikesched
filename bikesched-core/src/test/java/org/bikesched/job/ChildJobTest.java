@@ -528,6 +528,29 @@ class ChildJobTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void aChildTypeNeedsARegisteredHandler() throws Exception {
+    assertThat(StepJobBuilder.class.getMethods()).noneMatch(m -> m.getName().equals("handler"));
+    var failure = new AtomicReference<Exception>();
+    try (Bikesched bikesched = testNode("node-child-no-handler").build()) {
+      UUID parentId =
+          bikesched
+              .newJob("child-no-handler")
+              .handler(
+                  job -> {
+                    try {
+                      job.newJob("child-no-handler-child").schedule();
+                    } catch (IllegalArgumentException e) {
+                      failure.set(e);
+                    }
+                  })
+              .schedule();
+
+      awaitState(parentId, "SUCCEEDED");
+      assertThat(failure.get()).hasMessageContaining("child-no-handler-child");
+    }
+  }
+
+  @Test
   void startingTwoChildrenWithTheSameStepNameIsRejected() throws Exception {
     var failure = new AtomicReference<Exception>();
     try (Bikesched bikesched = testNode("node-child-duplicate").build()) {
