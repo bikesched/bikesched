@@ -300,6 +300,24 @@ class EventStoreTest extends AbstractStoreTest {
   }
 
   @Test
+  void publishingStepReturnsThePublicationOnlyWhenItPublished() {
+    JobStore.ClaimedJob publisher = claimNewJob("step-publication");
+    var store = database.events();
+
+    EventStore.StepPublication first =
+        store.publishEventAsStep(
+            publisher.id(), lock(publisher.id()), "publish", "paid", "pub-1", null, KEPT, false);
+    EventStore.StepPublication replayed =
+        store.publishEventAsStep(
+            publisher.id(), lock(publisher.id()), "publish", "paid", "pub-1", null, KEPT, false);
+
+    assertThat(first.publication()).isNotNull();
+    assertThat(first.publication().eventId()).isEqualTo(first.eventId());
+    assertThat(replayed.eventId()).isEqualTo(first.eventId());
+    assertThat(replayed.publication()).as("an earlier run published it").isNull();
+  }
+
+  @Test
   void publishingStepPublishesOnlyOnceAndReturnsTheSameEventId() throws Exception {
     JobStore.ClaimedJob receiver = claimNewJob("step-receiver");
     database
@@ -407,7 +425,8 @@ class EventStoreTest extends AbstractStoreTest {
     return database
         .events()
         .publishEventAsStep(
-            job.id(), lock(job.id()), stepName, eventName, eventKey, payload, retention, false);
+            job.id(), lock(job.id()), stepName, eventName, eventKey, payload, retention, false)
+        .eventId();
   }
 
   /** Claims the (due) job, as the poller does. */

@@ -4,6 +4,7 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.util.Objects;
 import org.bikesched.RetryBackoff;
+import org.bikesched.internal.event.EventNotifier;
 import org.bikesched.job.listener.JobListener;
 
 /**
@@ -18,6 +19,7 @@ import org.bikesched.job.listener.JobListener;
  * @param hardTimeoutGrace how long after its timeout an attempt whose handler ignores the interrupt
  *     is abandoned; {@code null} for no hard timeout
  * @param jobListener observes the jobs the node runs
+ * @param eventNotifier reports the events the jobs publish
  */
 public record JobPollerSettings(
     String nodeName,
@@ -28,7 +30,8 @@ public record JobPollerSettings(
     Duration eventRetention,
     RetryBackoff retryBackoff,
     Duration hardTimeoutGrace,
-    JobListener jobListener) {
+    JobListener jobListener,
+    EventNotifier eventNotifier) {
 
   /** Checks the required settings. */
   public JobPollerSettings {
@@ -37,5 +40,6 @@ public record JobPollerSettings(
     Objects.requireNonNull(retryBackoff, "retryBackoff");
     Objects.requireNonNull(eventRetention, "eventRetention");
     Objects.requireNonNull(jobListener, "jobListener");
+    Objects.requireNonNull(eventNotifier, "eventNotifier");
   }
 }

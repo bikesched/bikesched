@@ -171,6 +171,10 @@ Waiting, suspending and publishing lock the event's name and key for the length 
 transaction (a PostgreSQL advisory lock), so an event published while a job starts waiting is never
 missed. Cancelling a waiting job marks its wait `CANCELLED`; it no longer receives events.
 
+An `EventListener` (`BikeschedBuilder.eventListener(…)`) is told about every committed
+publication, e.g. for [Metrics](metrics.md#own-listeners); events published in the caller's
+transaction are not reported.
+
 ---
 
 Next: [Child jobs](child-jobs.md) · Previous: [Recurring jobs](recurring-jobs.md) ·

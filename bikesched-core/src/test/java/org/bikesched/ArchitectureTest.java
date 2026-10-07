@@ -36,7 +36,13 @@ import org.junit.jupiter.api.Test;
 class ArchitectureTest {
 
   /** The packages exported by {@code module-info.java}. */
-  private static final String[] API = {"org.bikesched", "org.bikesched.job", "org.bikesched.event"};
+  private static final String[] API = {
+    "org.bikesched",
+    "org.bikesched.job",
+    "org.bikesched.job.listener",
+    "org.bikesched.event",
+    "org.bikesched.event.listener"
+  };
 
   private static final String INTERNAL = "org.bikesched.internal..";
 

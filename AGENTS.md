@@ -37,7 +37,7 @@ does; this file covers how to change it.
 | `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core and the Kotlin stdlib only (tests use bikesched-jackson) |
 | `bikesched-annotations` | `@JobHandler` and `JobHandlers` (Java only, package `org.bikesched.annotation`): job handlers declared as annotated methods, invoked via `MethodHandle`; depends on core only (`api`; tests use bikesched-jackson) |
 | `bikesched-cron` | `CronRecurrence` and `CronRecurrenceParser` (Java only, package `org.bikesched.cron`): cron expressions parsed with cron-utils; depends on core and `cron-utils` only (both `api`, cron-utils is an automatic module; tests use bikesched-annotations) |
-| `bikesched-micrometer` | `MicrometerJobListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` SPI; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |
+| `bikesched-micrometer` | `MicrometerJobListener` and `MicrometerEventListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` and `EventListener` SPIs; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |
 | `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`JobTypeHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
 | `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test using the shared `util.Database`), described in its own `README.md`; JSON via bikesched-jackson |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
@@ -46,8 +46,9 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 
 - `org.bikesched`: entry point `Bikesched` + `BikeschedBuilder`, exceptions, SPIs (`JsonMapper`,
   `RetryBackoff`), `BikeschedLogContext` (MDC keys).
-- `org.bikesched.job`, `org.bikesched.job.listener`, and `org.bikesched.event`: public API interfaces,
-  records, enums, and exceptions; listener SPI and its event types live in `org.bikesched.job.listener`.
+- `org.bikesched.job`, `org.bikesched.job.listener`, `org.bikesched.event` and
+  `org.bikesched.event.listener`: public API interfaces, records, enums, and exceptions; the
+  listener SPIs and their reported types live in the `listener` subpackages.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
   - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `Settings`
@@ -82,7 +83,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `TimeoutHandler`, `CompensationHandler`); they receive the context object (e.g.
   the `Step`), not just a value. Exception: `JobTypeHandler` adds `type()` for class-based handlers
   registered without a separate type argument.
-- Observers are `<X>Listener` SPIs with `on<Event>(record)` default no-op methods (`job.listener.JobListener`),
+- Observers are `<X>Listener` SPIs with `on<Event>(record)` default no-op methods (`job.listener.JobListener`, `event.listener.EventListener`),
   called synchronously; their exceptions are logged and ignored. Each event passes one record, so
   fields can be added without breaking implementations.
 - Everything handed to user code (job, builders, `JobFailure`, `EventWait`) is a public

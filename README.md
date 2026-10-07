@@ -45,7 +45,7 @@ used to work there, and I'm still a fan) or similar tools.
 | `bikesched-kotlin` | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
 | `bikesched-annotations` | job handlers declared as `@JobHandler` methods, see [Annotations](docs/annotations.md) |
 | `bikesched-cron` | cron expressions as `CronRecurrence` or as strings (`schedule("0 3 * * *")`, `@JobHandler`), via cron-utils, see [Cron expressions](docs/recurring-jobs.md#cron-expressions) |
-| `bikesched-micrometer` | Micrometer meters for claims and attempts, see [Metrics](docs/metrics.md) |
+| `bikesched-micrometer` | Micrometer meters for claims, attempts and published events, see [Metrics](docs/metrics.md) |
 | `bikesched-spring-boot-starter` | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/spring.md) |
 
 ## Features

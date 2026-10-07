@@ -8,6 +8,8 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.bikesched.event.listener.EventListener
+import org.bikesched.event.listener.EventPublication
 import org.bikesched.job.JobState
 import org.bikesched.job.RecurrenceParser
 import org.bikesched.job.listener.JobListener
@@ -17,6 +19,7 @@ class BikeschedDslTest {
 
   @Test
   fun `builds an instance from the DSL`() {
+    val published = mutableListOf<EventPublication>()
     bikesched {
       dataSource = TestDatabase.dataSource
       nodeName = "dsl-node"
@@ -35,6 +38,12 @@ class BikeschedDslTest {
       statementTimeout = 30.seconds
       hardTimeoutGrace = 30.seconds
       jobListener = object : JobListener {}
+      eventListener =
+        object : EventListener {
+          override fun onEventPublished(publication: EventPublication) {
+            published += publication
+          }
+        }
       recurrenceParsers = listOf(RecurrenceParser.isoDuration())
     }
       .use { bikesched ->
@@ -51,6 +60,9 @@ class BikeschedDslTest {
         val recurring = unique("dsl-recurring")
         bikesched.newJob(recurring).handler { _ -> }.schedule("PT1H")
         assertThat(bikesched.removeRecurringJob(recurring)).isTrue()
+
+        val eventId = bikesched.newEvent(unique("dsl-event"), "k").publish()
+        assertThat(published.map { it.eventId() }).containsExactly(eventId)
       }
   }
 

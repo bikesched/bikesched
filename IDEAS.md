@@ -55,6 +55,13 @@ crash of its node.
 - Open: a guaranteed hook (e.g. an outbox-like table or a dead-letter job type), and how it
   relates to the job history.
 
+### Reporting events published in the caller's transaction
+
+`EventListener` does not report events published with `connection(…)`: plain JDBC gives bikesched
+no commit callback, and reporting before the commit could count rolled-back events (see ADR 0030).
+The Spring starter could register a `TransactionSynchronization` and report after the commit when
+the connection belongs to a Spring-managed transaction.
+
 ## Testing
 
 ### Load and failure tests
@@ -64,14 +71,6 @@ crash of its node.
   above), a node pausing longer than the node timeout, a hanging connection.
 
 ## API
-
-### Event listener
-
-There is no callback when an event is successfully published, so metrics cover job execution but not
-published events. Add an `EventListener` SPI, analogous to `JobListener`, so an integration can
-observe event publication. Define the callback around successful publication: publishing with a
-caller-owned transaction must not report success before commit or report rolled-back events. Avoid
-exposing payloads or event keys by default, which can be sensitive or high-cardinality.
 
 ### Fixed-delay recurrences
 

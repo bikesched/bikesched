@@ -13,7 +13,10 @@ import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-/** A node with a {@link MicrometerJobListener} records its jobs. */
+/**
+ * A node with a {@link MicrometerJobListener} and a {@link MicrometerEventListener} records its
+ * jobs and events.
+ */
 class MicrometerNodeTest {
 
   /** One container for this test class; Ryuk removes it when the JVM ends. */
@@ -59,6 +62,36 @@ class MicrometerNodeTest {
       assertThat(registry.get("bikesched.job.claim.delay").tags("job.type", type).timer().count())
           .isOne();
       assertThat(registry.get("bikesched.jobs.active").gauge().value()).isZero();
+    }
+  }
+
+  @Test
+  void recordsTheEventsOfANode() {
+    var registry = new SimpleMeterRegistry();
+    String eventName = "metrics-event-" + UUID.randomUUID();
+    try (Bikesched bikesched =
+        Bikesched.builder()
+            .dataSource(DATA_SOURCE)
+            .nodeName("micrometer-" + UUID.randomUUID())
+            .autoStartPolling(false)
+            .eventListener(new MicrometerEventListener(registry))
+            .build()) {
+      bikesched.newEvent(eventName, "k").publish();
+
+      assertThat(
+              registry
+                  .get("bikesched.events.published")
+                  .tags("event.name", eventName, "source", "node")
+                  .counter()
+                  .count())
+          .isOne();
+      assertThat(
+              registry
+                  .get("bikesched.event.deliveries")
+                  .tags("event.name", eventName)
+                  .counter()
+                  .count())
+          .isZero();
     }
   }
 }

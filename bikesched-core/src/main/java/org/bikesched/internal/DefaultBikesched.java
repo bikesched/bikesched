@@ -19,11 +19,13 @@ import org.bikesched.Node;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventType;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.event.listener.EventSource;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.DatabaseInitializer;
 import org.bikesched.internal.database.EventStore;
 import org.bikesched.internal.event.DefaultEventBuilder;
 import org.bikesched.internal.event.EventCleanUp;
+import org.bikesched.internal.event.EventNotifier;
 import org.bikesched.internal.job.DefaultJobBuilder;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
@@ -83,6 +85,7 @@ public final class DefaultBikesched implements Bikesched {
   private final ScheduledExecutorService heartbeatExecutor;
   private final ScheduledThreadPoolExecutor cleanUpExecutor;
   private final DefaultNode node;
+  private final EventNotifier eventNotifier;
 
   /** Guards starting to poll against closing, so a node never registers after it was closed. */
   private final Object lifecycle = new Object();
@@ -96,6 +99,7 @@ public final class DefaultBikesched implements Bikesched {
     this.settings = settings;
     this.nodeName = settings.nodeName();
     this.node = new DefaultNode(nodeName);
+    this.eventNotifier = new EventNotifier(settings.eventListener());
     this.jobScheduler =
         new JobScheduler(
             database,
@@ -115,7 +119,8 @@ public final class DefaultBikesched implements Bikesched {
                 settings.eventRetention(),
                 settings.retryBackoff(),
                 settings.hardTimeoutGrace(),
-                settings.jobListener()),
+                settings.jobListener(),
+                eventNotifier),
             registry,
             jobScheduler);
     this.heartbeatExecutor =
@@ -365,6 +370,10 @@ public final class DefaultBikesched implements Bikesched {
         eventKey,
         connection == null ? "" : " in the caller's transaction",
         publication.received());
+    if (connection == null) {
+      // Events in the caller's transaction are not reported: it may still roll back.
+      eventNotifier.published(eventName, EventSource.NODE, publication);
+    }
     return publication.eventId();
   }
 

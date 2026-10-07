@@ -6,10 +6,12 @@ import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.JsonMapper;
+import org.bikesched.event.listener.EventListener;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.listener.JobListener;
+import org.bikesched.micrometer.MicrometerEventListener;
 import org.bikesched.micrometer.MicrometerJobListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -109,6 +111,7 @@ public class BikeschedAutoConfiguration {
    * @param recurrenceParsers the {@link RecurrenceParser} beans, added to the built-in parsers
    * @param customizers customizers, applied after the properties in {@code @Order}
    * @param listeners the {@link JobListener} beans, composed into one
+   * @param eventListeners the {@link EventListener} beans, composed into one
    * @param jobTypeHandlers the {@link JobTypeHandler} beans, registered as handlers
    * @param jsonMapper the JSON mapper to use, if the application or bikesched-jackson provides one
    * @return the node
@@ -123,6 +126,7 @@ public class BikeschedAutoConfiguration {
       ObjectProvider<RecurrenceParser> recurrenceParsers,
       ObjectProvider<BikeschedCustomizer> customizers,
       ObjectProvider<JobListener> listeners,
+      ObjectProvider<EventListener> eventListeners,
       ObjectProvider<JobTypeHandler<?>> jobTypeHandlers,
       ObjectProvider<JsonMapper> jsonMapper) {
     var builder =
@@ -148,16 +152,24 @@ public class BikeschedAutoConfiguration {
               ? listenerBeans.getFirst()
               : new CompositeJobListener(listenerBeans));
     }
+    List<EventListener> eventListenerBeans = eventListeners.orderedStream().toList();
+    if (!eventListenerBeans.isEmpty()) {
+      builder.eventListener(
+          eventListenerBeans.size() == 1
+              ? eventListenerBeans.getFirst()
+              : new CompositeEventListener(eventListenerBeans));
+    }
 
     Bikesched node = builder.build();
     int handlers = jobHandlerBeans.registerAll(node);
     jobTypeHandlers.orderedStream().forEach(node::registerJobHandler);
     LOG.info(
-        "bikesched node {} is ready: {} @JobHandler method(s), {} listener(s), {} (polling is"
-            + " started with the application)",
+        "bikesched node {} is ready: {} @JobHandler method(s), {} job listener(s), {} event"
+            + " listener(s), {} (polling is started with the application)",
         node.node().name(),
         handlers,
         listenerBeans.size(),
+        eventListenerBeans.size(),
         mapper == null
             ? "the default JSON mapper (JSON strings only)"
             : mapper.getClass().getName());
@@ -202,7 +214,7 @@ public class BikeschedAutoConfiguration {
   }
 
   /**
-   * The Micrometer listener, when {@code bikesched-micrometer} and a {@code MeterRegistry} exist.
+   * The Micrometer listeners, when {@code bikesched-micrometer} and a {@code MeterRegistry} exist.
    */
   @Configuration(proxyBeanMethods = false)
   @ConditionalOnClass(MicrometerJobListener.class)
@@ -229,6 +241,32 @@ public class BikeschedAutoConfiguration {
         BikeschedProperties properties,
         Environment environment) {
       return new MicrometerJobListener(
+          registry,
+          io.micrometer.core.instrument.Tags.of(
+              "node", NodeNames.resolve(properties.nodeName(), environment)));
+    }
+
+    /**
+     * Records the events published through the node in the context's registry, tagged with the node
+     * name like the job meters.
+     *
+     * @param registry the application's registry
+     * @param properties the properties, for the node name
+     * @param environment the environment, for the default node name
+     * @return the listener
+     */
+    @Bean
+    @ConditionalOnBean(io.micrometer.core.instrument.MeterRegistry.class)
+    @ConditionalOnMissingBean(MicrometerEventListener.class)
+    @ConditionalOnProperty(
+        name = "bikesched.metrics.enabled",
+        havingValue = "true",
+        matchIfMissing = true)
+    MicrometerEventListener micrometerEventListener(
+        io.micrometer.core.instrument.MeterRegistry registry,
+        BikeschedProperties properties,
+        Environment environment) {
+      return new MicrometerEventListener(
           registry,
           io.micrometer.core.instrument.Tags.of(
               "node", NodeNames.resolve(properties.nodeName(), environment)));

@@ -7,6 +7,7 @@ import kotlin.time.toJavaDuration
 import org.bikesched.Bikesched
 import org.bikesched.JsonMapper
 import org.bikesched.RetryBackoff
+import org.bikesched.event.listener.EventListener
 import org.bikesched.job.RecurrenceParser
 import org.bikesched.job.listener.JobListener
 
@@ -136,6 +137,12 @@ public class BikeschedSpec internal constructor() {
   public var jobListener: JobListener? = null
 
   /**
+   * Observes the events published through this node, e.g. `MicrometerEventListener` from
+   * `bikesched-micrometer` (see `BikeschedBuilder.eventListener`); defaults to none.
+   */
+  public var eventListener: EventListener? = null
+
+  /**
    * Parse the recurrence expressions of `schedule(String)` and `@JobHandler(schedule = …)`,
    * replacing the default (see `BikeschedBuilder.recurrenceParsers`); defaults to
    * `RecurrenceParser.isoDuration()` only.
@@ -165,6 +172,7 @@ public class BikeschedSpec internal constructor() {
     statementTimeout?.let { builder.statementTimeout(it.toJavaDuration()) }
     hardTimeoutGrace?.let { builder.hardTimeoutGrace(it.toJavaDuration()) }
     jobListener?.let(builder::jobListener)
+    eventListener?.let(builder::eventListener)
     recurrenceParsers?.let { builder.recurrenceParsers(*it.toTypedArray()) }
     return builder.build()
   }
