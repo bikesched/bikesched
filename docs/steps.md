@@ -47,6 +47,40 @@ Payment payment = job.step("charge-card", Payment.class, step ->
 
 Use the job id and step name, not the attempt number, which changes between attempts.
 
+### Business outcomes as results
+
+A step that throws fails, and the job is retried. That suits technical errors (a timeout, a
+connection reset), but not expected business outcomes: a declined payment stays declined on every
+retry, uses up the job's attempts and, once they are exhausted, starts its compensations. Return
+such outcomes as the step's result instead, with a sealed type for success and the expected
+errors:
+
+```java
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
+@JsonSubTypes({@JsonSubTypes.Type(Charged.class), @JsonSubTypes.Type(Declined.class)})
+sealed interface ChargeOutcome permits Charged, Declined {}
+record Charged(String receiptId) implements ChargeOutcome {}
+record Declined(String code, String reason) implements ChargeOutcome {}
+
+ChargeOutcome outcome = job.step("charge-card", ChargeOutcome.class, step -> {
+    var response = payments.charge(order, step.jobId() + ":" + step.name());
+    return response.approved()
+            ? new Charged(response.receiptId())
+            : new Declined(response.declineCode(), response.message());   // stored, not retried
+});
+switch (outcome) {
+    case Charged c -> job.step("send-receipt", Void.class, _ -> {
+        mailer.sendReceipt(order, c.receiptId());
+        return null;
+    });
+    case Declined d -> job.cancel("payment declined: " + d.code());
+}
+```
+
+- The outcome is stored like any step result, so a later attempt or resume takes the same branch.
+- Exceptions stay for what a retry may fix.
+- The `JsonMapper` must restore the concrete type: with Jackson, declare the subtypes as above.
+
 ## Sleeping
 
 A handler can pause for a duration or until a point in time, as a durable step. Like an
