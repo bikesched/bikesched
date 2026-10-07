@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="bikesched logo: an octopus riding a bicycle with clock wheels, steering with two arms and juggling tasks with the others">
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="bikesched logo: an octopus in a black B cap riding a bicycle with clock wheels, steering with two arms and juggling tasks with the others">
   <title>bikesched</title>
   <g stroke-linecap="round" stroke-linejoin="round">
     <!-- frame -->
@@ -33,6 +33,10 @@
     <path d="M60 92c-8-26 2-56 26-58c24-2 34 26 28 52c-2 8-10 10-26 10c-16 0-26 2-28-4z" fill="#f4c6d0" stroke="#1a1a1a" stroke-width="5"/>
     <circle cx="94" cy="64" r="3.5" fill="#1a1a1a"/>
     <circle cx="106" cy="62" r="3.5" fill="#1a1a1a"/>
+    <!-- cap -->
+    <path d="M60 56c-4-30 54-34 54-4q-27-6-54 4z" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="4"/>
+    <path d="M108 52c10-4 22-3 28 4c-8 5-20 5-28 1z" fill="#1a1a1a" stroke="#1a1a1a" stroke-width="4"/>
+    <path d="M82 34v14h5.5a3.5 3.5 0 0 0 0-7H82h5a3.5 3.5 0 0 0 0-7z" fill="none" stroke="#fff" stroke-width="2.5"/>
     <path d="M96 76q6 3 10-1" fill="none" stroke="#1a1a1a" stroke-width="3"/>
   </g>
 </svg>
