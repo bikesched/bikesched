@@ -13,6 +13,8 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:runSimple   # one handler, one job; honors POSTGRES_PORT, like docker compose
 ./gradlew :bikesched-examples:runAnnotation  # job handlers as @JobHandler methods
 ./gradlew :bikesched-examples:runEvent    # two jobs waiting for an event, published right away and 3s later
+./gradlew :bikesched-examples:runPublish  # a job publishing an event exactly once, another job waiting for it
+./gradlew :bikesched-examples:runOutcome  # declined cards as step results, an outage retried
 ./gradlew :bikesched-examples:run         # taxi booking
 ./gradlew :bikesched-examples:runCinema   # cinema tickets
 ./gradlew :bikesched-examples:runSpring   # Spring Boot application wired by the starter
@@ -62,6 +64,70 @@ service again. Without one, the event is published before the job starts waiting
 receives it right away (see [Events](../docs/events.md)).
 
 `EventExampleTest` runs both variants and checks that the delayed job waits and then succeeds.
+
+## Publish
+
+Package [`org.bikesched.examples.publish`](src/main/java/org/bikesched/examples/publish): a job
+publishes an event as a durable step, another job waits for it. Placing an order schedules two
+jobs: `notify-customer` waits for `order-shipped` keyed by the order id, and `ship-order` hands the
+parcel over to the carrier and publishes the event:
+
+```java
+String trackingId = job.step("hand-over-to-carrier", String.class, _ -> carrier.handOver(order));
+UUID eventId = job.newEvent(ORDER_SHIPPED, order.orderId())
+        .payload(new OrderShipped(order.orderId(), trackingId))
+        .publish();
+job.sleep("await-pickup", Duration.ofSeconds(1));
+```
+
+The event and the completed publish step commit in one transaction. After the sleep, the handler
+runs again from the start: the tracking id comes from the stored step result, and `publish()`
+finds its step and returns the same event id without publishing again (see
+[Publishing from jobs](../docs/events.md#publishing-from-jobs)).
+
+`PublishExampleTest` checks that both jobs succeed, that every run of the shipping handler got the
+same event id, and that `bikesched_events` holds the event once.
+
+## Outcome
+
+Package [`org.bikesched.examples.outcome`](src/main/java/org/bikesched/examples/outcome): business
+outcomes as step results. Charging a card can end in a decline, which a retry would not change, so
+the step returns it as a result instead of throwing. `ChargeOutcome` is a sealed interface with the
+success and the expected error; the Jackson annotations keep the subtype in the stored JSON:
+
+```java
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME)
+@JsonSubTypes({@JsonSubTypes.Type(value = Charged.class, name = "charged"),
+               @JsonSubTypes.Type(value = Declined.class, name = "declined")})
+public sealed interface ChargeOutcome {
+    record Charged(String receiptId) implements ChargeOutcome {}
+    record Declined(String code, String reason) implements ChargeOutcome {}
+}
+
+ChargeOutcome outcome = job.step("charge-card", ChargeOutcome.class, step -> {
+    try {
+        return new Charged(provider.charge(…, step.jobId() + ":" + step.name()));
+    } catch (CardDeclinedException e) {
+        return new Declined(e.code(), e.getMessage());   // stored, not retried
+    }
+});
+switch (outcome) {
+    case Charged charged -> …    // mail the receipt
+    case Declined declined -> …  // mail the customer, then job.cancel("payment declined: " + code)
+}
+```
+
+`SimulatedPaymentProvider` has test cards like real providers: one is charged, two are declined
+(`card_declined`, `insufficient_funds`), and one meets an outage (`IOException`) on its first call.
+The outage fails the step, so the job is retried and the card charged on the second call; a decline
+is not retried.
+
+**Concepts shown:** [business outcomes as results](../docs/steps.md#business-outcomes-as-results),
+technical errors left to [retries](../docs/jobs.md#failures-and-retries), and
+[idempotency keys](../docs/steps.md#idempotency-keys) for the provider.
+
+`OutcomeExample` charges three orders (charged, declined, outage) and prints what happens;
+`OutcomeExampleTest` checks each card's job state and how often the provider was called.
 
 ## Annotation
 

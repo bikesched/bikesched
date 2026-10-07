@@ -42,6 +42,24 @@ tasks.register<JavaExec>("runEvent") {
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
 
+// ./gradlew :bikesched-examples:runPublish: a job publishing an event once, another one waiting.
+tasks.register<JavaExec>("runPublish") {
+    group = "application"
+    description = "Runs the publish example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.publish.PublishExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
+// ./gradlew :bikesched-examples:runOutcome: business outcomes (declined cards) as step results.
+tasks.register<JavaExec>("runOutcome") {
+    group = "application"
+    description = "Runs the outcome example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.outcome.OutcomeExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
 // ./gradlew :bikesched-examples:runAnnotation: job handlers declared as annotated methods.
 tasks.register<JavaExec>("runAnnotation") {
     group = "application"
