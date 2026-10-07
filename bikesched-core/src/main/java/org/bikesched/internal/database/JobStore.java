@@ -50,20 +50,21 @@ public final class JobStore {
             insert into bikesched_jobs (id, type, payload, scheduled_at, priority, max_attempts, timeout_millis, parent_job_id)
             values (?, ?, ?::jsonb, ?, ?, ?, ?, ?)""";
 
-  // The step of a job starting a child job, with the child's type if the child still exists.
+  // The step of a job starting a child job.
   private static final String FIND_CHILD_JOB_STEP_SQL =
       """
-            select s.kind, s.state, s.child_job_id, c.type
-              from bikesched_steps s left join bikesched_jobs c on c.id = s.child_job_id
-             where s.job_id = ? and s.name = ?
-               for update of s""";
+            select kind, state, child_job_id, child_job_type
+              from bikesched_steps
+             where job_id = ? and name = ?
+               for update""";
 
   private static final String INSERT_CHILD_JOB_STEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, kind, state, attempts, child_job_id, compensable)
-            values (?, ?, 'CHILD_JOB', 'WAITING', 1, ?, ?)""";
+            insert into bikesched_steps (job_id, name, kind, state, attempts, child_job_id, child_job_type, compensable)
+            values (?, ?, 'CHILD_JOB', 'WAITING', 1, ?, ?, ?)""";
 
-  // A compensated child job step runs again when its job is retried: it starts a new child.
+  // A compensated child job step runs again when its job is retried: it starts a new child of the
+  // same type.
   private static final String RESTART_CHILD_JOB_STEP_SQL =
       """
             update bikesched_steps
@@ -573,7 +574,7 @@ public final class JobStore {
                       + StepStore.describeKind(found.kind())
                       + ", not a child job; step names must be unique within a job");
             }
-            if (found.childType() != null && !found.childType().equals(child.type())) {
+            if (!found.childType().equals(child.type())) {
               throw new IllegalStateException(
                   "Step '"
                       + stepName
@@ -605,7 +606,13 @@ public final class JobStore {
           if (step.isPresent()) {
             db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, parentJobId, stepName);
           } else {
-            db.update(INSERT_CHILD_JOB_STEP_SQL, parentJobId, stepName, childJobId, compensable);
+            db.update(
+                INSERT_CHILD_JOB_STEP_SQL,
+                parentJobId,
+                stepName,
+                childJobId,
+                child.type(),
+                compensable);
           }
           history.record(
               db,
@@ -649,7 +656,7 @@ public final class JobStore {
    */
   public record ChildJob(UUID id, boolean started) {}
 
-  /** A row of {@code FIND_CHILD_JOB_STEP_SQL}; {@code childType} is null if the child is gone. */
+  /** A row of {@code FIND_CHILD_JOB_STEP_SQL}; {@code childType} is null for other kinds. */
   private record ChildJobStep(String kind, String state, UUID childJobId, String childType) {}
 
   /**
