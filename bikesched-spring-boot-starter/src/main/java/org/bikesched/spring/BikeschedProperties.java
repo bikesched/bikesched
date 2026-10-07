@@ -29,8 +29,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param migrateOnStartup whether the schema is migrated and validated at startup instead of on
  *     first use; defaults to {@code true}
  * @param autoStart whether the node starts automatically with the application
- * @param metrics whether a {@code MicrometerJobListener} is registered when {@code
- *     bikesched-micrometer} and a {@code MeterRegistry} are present; defaults to {@code true}
+ * @param metrics whether a {@code MicrometerJobListener} and a {@code MicrometerEventListener} are
+ *     registered when {@code bikesched-micrometer} and a {@code MeterRegistry} are present;
+ *     defaults to {@code true}
  * @param maxConcurrentJobs how many jobs the node executes at the same time
  * @param pollInterval delay between two polls for due jobs
  * @param heartbeatInterval interval between the heartbeats the node writes
@@ -84,7 +85,8 @@ public record BikeschedProperties(
   /**
    * Micrometer integration.
    *
-   * @param enabled {@code false} to register no automatic {@code MicrometerJobListener}
+   * @param enabled {@code false} to register no automatic {@code MicrometerJobListener} and {@code
+   *     MicrometerEventListener}
    */
   public record Metrics(Boolean enabled) {}
 
@@ -170,7 +172,7 @@ public record BikeschedProperties(
     return autoStart == null || autoStart.enabled() == null || autoStart.enabled();
   }
 
-  /** Whether an automatic {@code MicrometerJobListener} is registered; defaults to {@code true}. */
+  /** Whether the automatic Micrometer listeners are registered; defaults to {@code true}. */
   boolean metricsEnabled() {
     return metrics == null || metrics.enabled() == null || metrics.enabled();
   }

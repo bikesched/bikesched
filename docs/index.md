@@ -43,7 +43,8 @@ and without any coordinator besides PostgreSQL.
    logging
 7. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
 8. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
-9. [Metrics](metrics.md): `JobListener` and the Micrometer meters (`bikesched-micrometer`)
+9. [Metrics](metrics.md): `JobListener`, `EventListener` and the Micrometer meters
+   (`bikesched-micrometer`)
 10. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
 11. [Database](database.md): tables, indexes and migrations
 

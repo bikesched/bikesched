@@ -155,7 +155,7 @@ keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and f
 | `bikesched.metrics.enabled` | `true` | only relevant with Micrometer (below) |
 
 A `BikeschedCustomizer` bean (a `void customize(BikeschedBuilder)` functional interface, applied in
-`@Order` after the properties) covers everything else — another `JsonMapper`, a `JobListener`, a
+`@Order` after the properties) covers everything else — another `JsonMapper`, a listener, a
 computed timeout — and a user-defined `Bikesched` bean makes the auto-configuration back off
 entirely (define one in tests if you want to set builder options directly).
 
@@ -168,12 +168,14 @@ module, payloads stay JSON strings ([configuration.md](configuration.md#json-map
 `JsonMapper` bean wins.
 
 With `bikesched-micrometer` and a `MeterRegistry` bean (Boot's Actuator/micrometer registry), an
-automatic `MicrometerJobListener` records the meters of [metrics.md](metrics.md), tagged `node` with
-the resolved node name — so nodes sharing a registry do not overwrite each other's gauges. Turn it
-off with `bikesched.metrics.enabled=false` or register your own `MicrometerJobListener` bean.
+automatic `MicrometerJobListener` and `MicrometerEventListener` record the meters of
+[metrics.md](metrics.md), tagged `node` with the resolved node name — so nodes sharing a registry do
+not overwrite each other's gauges. Turn both off with `bikesched.metrics.enabled=false`, or replace
+either with your own `MicrometerJobListener` or `MicrometerEventListener` bean.
 
 All `JobListener` beans in the context are composed and passed to the node; each gets the same
-events.
+events. The same goes for `org.bikesched.event.listener.EventListener` beans (not to be confused
+with Spring's `@EventListener` annotation).
 
 ## Out of scope (v1)
 
