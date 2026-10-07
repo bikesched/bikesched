@@ -173,5 +173,5 @@ missed. Cancelling a waiting job marks its wait `CANCELLED`; it no longer receiv
 
 ---
 
-Next: [Configuration](configuration.md) · Previous: [Recurring jobs](recurring-jobs.md) ·
+Next: [Child jobs](child-jobs.md) · Previous: [Recurring jobs](recurring-jobs.md) ·
 [Documentation index](index.md)

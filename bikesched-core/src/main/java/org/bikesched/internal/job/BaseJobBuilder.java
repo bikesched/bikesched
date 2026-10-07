@@ -15,7 +15,7 @@ import org.bikesched.job.TypedJobHandler;
 
 /**
  * The shared settings of the job builder implementations ({@link DefaultJobBuilder}, {@link
- * DefaultTransactionalJobBuilder}).
+ * DefaultTransactionalJobBuilder}, {@link DefaultStepJobBuilder}).
  *
  * @param <B> the builder interface
  */
@@ -34,6 +34,9 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
 
     /** Parses a recurrence expression with the node's recurrence parsers. */
     Recurrence parseRecurrence(String expression);
+
+    /** Registers the handler if given and new; throws if the type has no handler then. */
+    void requireHandler(String type, JobHandler handler);
   }
 
   final String type;

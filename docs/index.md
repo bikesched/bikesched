@@ -18,6 +18,8 @@ and without any coordinator besides PostgreSQL.
 - **Recurring job**: a job type with a `Recurrence`; each run is a regular job (an *occurrence*).
 - **Event**: a message with a name and a key. A job can wait for an event as a step; it is
   suspended without holding a thread until the event is published, then resumes.
+- **Child job**: a job started exactly once as a step of its parent. The parent can wait for it
+  without holding a thread and receives its outcome and result.
 
 ## Guarantees
 
@@ -36,13 +38,14 @@ and without any coordinator besides PostgreSQL.
 3. [Recurring jobs](recurring-jobs.md): schedules, cron expressions (`bikesched-cron`) and
    occurrences
 4. [Events](events.md): waiting for and publishing events
-5. [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
+5. [Child jobs](child-jobs.md): starting and waiting for child jobs, job results
+6. [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
    logging
-6. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
-7. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
-8. [Metrics](metrics.md): `JobListener` and the Micrometer meters (`bikesched-micrometer`)
-9. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
-10. [Database](database.md): tables, indexes and migrations
+7. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
+8. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
+9. [Metrics](metrics.md): `JobListener` and the Micrometer meters (`bikesched-micrometer`)
+10. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
+11. [Database](database.md): tables, indexes and migrations
 
 The [examples](../bikesched-examples/README.md) show the concepts working together. The
 [decision records](decisions/README.md) explain why bikesched works the way it does.

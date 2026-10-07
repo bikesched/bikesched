@@ -1,6 +1,8 @@
 # Specification: child jobs and job results (`job.newJob`, `job.waitForJob`)
 
-Status: **draft**, ready to implement (decisions in §9).
+Status: **implemented** (decisions in §9, deviations in §10); user documentation in
+[docs/child-jobs.md](../child-jobs.md), decision in
+[ADR 0029](../decisions/0029-child-jobs-as-steps.md).
 
 ## 1. Goal
 
@@ -360,3 +362,24 @@ their own.
 9. Results from `@JobHandler` return values and the Spring starter are a follow-up (non-goal).
 10. The job history records that a result exists, not its content (also for the child's outcome).
 11. Different services' `JsonMapper`s must be compatible; documented, not checked.
+
+## 10. Implementation notes
+
+Choices the spec left open, made while implementing:
+
+1. A child's type needs a handler on the parent's node (or one set with `handler(…)` on the
+   `StepJobBuilder`), exactly like `bikesched.newJob`: `StepJobBuilder` extends `JobSettings`.
+2. The step stores no child type: starting a child under a step name that started a child of
+   another type is rejected only while that child still exists (it is read with the step).
+3. A child's end makes a `WAITING` parent `SCHEDULED` and due now, like a published event does.
+4. The end-of-job hook is two statements after the terminal update in the child's transaction
+   (complete the step, then resume the parent): the second needs a fresh snapshot after waiting for
+   a parent that locked the step while suspending (§4.7). Terminal writes of children therefore
+   always run in a transaction; jobs without a parent keep their single statement.
+5. A wait without a timeout followed by one with a timeout (on a later run) stores the deadline
+   then: "the first wait with a timeout stores the deadline".
+6. A child step with a compensation counts as compensable in `WAITING`, `CANCELLED`, `TIMED_OUT`
+   and `SUCCEEDED`; compensating it keeps the child's outcome (`child_state`, `last_error`).
+7. Schema checks: `result` only on `SUCCEEDED` jobs; `parent_job_id` and `recurrence` exclusive.
+8. Kotlin `startJob` has no handler argument (handlers come from `handleJobs`); the Kotlin wait is
+   `awaitJob<T>(childJobId, timeout)`.

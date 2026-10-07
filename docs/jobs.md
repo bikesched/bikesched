@@ -98,6 +98,9 @@ A handler receives the `Job` being executed:
 | `waitForEvent(step, name, key)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](events.md) |
 | `awaitEvent(step, eventType, key)` | wait for an event and return its typed payload, see [Typed events](events.md#typed-events) |
 | `sleep(step, Duration)`, `sleepUntil(step, Instant)` | pause the job without holding a thread, see [Sleeping](steps.md#sleeping) |
+| `newJob(type)`, `newJob(jobType)` | start a child job once as a durable step, see [Child jobs](child-jobs.md) |
+| `waitForJob(childId, Class)`, `waitForJob(childId, Class, timeout)` | wait for a child job without holding a thread and return its `JobResult`, see [Waiting for children](child-jobs.md#waiting-for-children) |
+| `complete(result)` | set the job's result, stored when it succeeds, see [Job results](child-jobs.md#job-results) |
 | `cancel()`, `cancel(message)` | cancel the job, see [Cancellation](#cancellation) |
 | `fail()`, `fail(message)` | fail the attempt without throwing, see [Failures and retries](#failures-and-retries) |
 | `isCompensating()` | whether the handler is replayed to compensate the job |
@@ -134,7 +137,8 @@ bikesched.retry(jobId);   // false if the job does not exist or has not failed
 It is scheduled right away with all its attempts again and continues where it failed: completed
 steps return their stored results (compensated steps run again). The job history records the
 retry. Occurrences of recurring jobs can't be retried (`IllegalArgumentException`); the next
-occurrence runs anyway.
+occurrence runs anyway. Neither can [child jobs](child-jobs.md): their parent may have the outcome
+already, so the parent starts a new child instead.
 
 ## Cancellation
 

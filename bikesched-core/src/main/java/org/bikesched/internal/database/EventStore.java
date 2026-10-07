@@ -275,7 +275,7 @@ public final class EventStore {
     return access.inTransaction(
         db -> {
           lockEvent(db, eventName, eventKey);
-          return StepStore.suspend(db, history, jobId, lock, stepName);
+          return StepStore.suspend(db, history, jobId, lock, stepName, null);
         },
         e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
   }
