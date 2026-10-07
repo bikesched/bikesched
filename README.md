@@ -19,20 +19,24 @@ bikesched stores jobs in PostgreSQL and lets every connected application instanc
 them. Nodes claim due jobs with `SELECT … FOR UPDATE SKIP LOCKED`, so many nodes can share one
 database without stepping on each other and without any coordinator besides PostgreSQL.
 
-It is inspired by job schedulers like [db-scheduler](https://github.com/kagkarlsson/db-scheduler),
-[JobRunr](https://www.jobrunr.io), [Quartz](https://www.quartz-scheduler.org) and
-[River](https://riverqueue.com) and by durable execution engines like
-[Inngest](https://www.inngest.com) and [Restate](https://restate.dev), but deliberately small:
+bikesched is inspired by some great job schedulers, like
+[db-scheduler](https://github.com/kagkarlsson/db-scheduler), [JobRunr](https://www.jobrunr.io),
+[Quartz](https://www.quartz-scheduler.org) and [River](https://riverqueue.com), and by durable
+execution engines like [Inngest](https://www.inngest.com) and [Restate](https://restate.dev). The
+goal is to keep it small and easy to drop into your app:
 
-- **Two runtime dependencies**: the PostgreSQL JDBC driver and the SLF4J API. No framework, no
-  migration tool, no JSON library.
-- **PostgreSQL first**: jobs, durable steps, events and nodes live in plain tables (`bikesched_*`);
-  the schema is created and migrated on first use.
-- **Java 26**, jobs run on virtual threads.
+- **Just two runtime dependencies** in the core: the PostgreSQL JDBC driver and the SLF4J API. No
+  framework, no migration tool, no JSON library.
+- **Extension modules when you want them**: Jackson for typed payloads, Kotlin extensions, Spring
+  Boot auto-configuration, cron expressions and Micrometer metrics. Pull in only what you use.
+- **PostgreSQL is all you need**: jobs, durable steps, events and nodes live in plain tables
+  (`bikesched_*`), and bikesched creates and migrates the schema on first use.
+- **Modern Java**: built for Java 26, with every job on its own virtual thread.
 
-bikesched is not a workflow engine: there are no process models (BPMN), no visual modelling and no
-orchestration across services. If you need that, look at
-[Camunda](https://camunda.com), [Temporal](https://temporal.io) or similar tools.
+**One thing bikesched isn't**: a workflow engine. Steps and compensation live inside a single job,
+so there are no process models (BPMN), no visual modelling and no orchestration across services.
+If that's what you're after, have a look at [Camunda](https://camunda.com) or
+similar tools.
 
 | Module | Contents |
 |---|---|
