@@ -59,7 +59,7 @@ bikesched.registerJobHandler("fulfil-order", job -> {
 - The first run stores the child (with `parent_job_id`) and a `CHILD_JOB` step of the parent in one
   transaction, fenced by the parent's lock: either both exist or neither does. Later runs find the
   step and return the same child's id without scheduling again; a step that started a child of
-  another type is rejected.
+  another type is rejected (the step stores the child's type, so also after the child was deleted).
 - There is no `connection(…)` (the parent's step transaction is the transaction) and no
   `schedule(Recurrence)`: children are never recurring. Occurrences of recurring jobs cannot start
   children (`IllegalStateException`): the next occurrence replaces them, so nobody waits for their

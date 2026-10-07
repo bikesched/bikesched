@@ -110,7 +110,7 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 --   not depend on the event) or wait_until has passed (TIMED_OUT).
 -- - EVENT_PUBLISH: published the event event_name/event_key (event_id) exactly once; SUCCEEDED
 --   when created, in the transaction that published the event.
--- - CHILD_JOB: started the child job child_job_id exactly once; WAITING until the child ends
+-- - CHILD_JOB: started the child job child_job_id of type child_job_type exactly once; WAITING until the child ends
 --   (SUCCEEDED, child_state = its terminal state, result = its result, last_error = its error or
 --   cancel message) or the parent's wait for it times out at wait_until (TIMED_OUT).
 -- event_id only references the event (no FK): events are deleted after their retention; the same
@@ -135,6 +135,7 @@ create table bikesched_steps (
     event_id    uuid,                   -- the event received or published (no FK: see above)
     wait_until  timestamptz,
     child_job_id uuid,                  -- the child job started (no FK: see above)
+    child_job_type text,                -- its type, checked on replays even after it was deleted
     child_state text,                   -- the child's terminal state, once it ended
     compensable boolean     not null default false,
     started_at  timestamptz not null default now(),
@@ -160,6 +161,7 @@ create table bikesched_steps (
     -- step is compensated afterwards).
     constraint bikesched_steps_child_check
         check ((child_job_id is not null) = (kind = 'CHILD_JOB')
+               and (child_job_type is not null) = (kind = 'CHILD_JOB')
                and (child_state is null or kind = 'CHILD_JOB' and state in ('SUCCEEDED', 'COMPENSATED'))
                and (kind <> 'CHILD_JOB' or state <> 'SUCCEEDED' or child_state is not null)
                and child_state in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED')),
@@ -174,7 +176,8 @@ create table bikesched_steps (
     constraint bikesched_steps_name_check
         check (char_length(name) between 1 and 200
                and char_length(event_name) between 1 and 200
-               and char_length(event_key) between 1 and 500)
+               and char_length(event_key) between 1 and 500
+               and char_length(child_job_type) between 1 and 200)
 );
 
 -- Matching published events to the steps waiting for them.
