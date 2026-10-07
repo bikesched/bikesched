@@ -133,11 +133,11 @@ class JobTypeTest extends AbstractBikeschedTest {
           .payload(new Payment("monthly", 10))
           .handler((_, _) -> {})
           .schedule(Recurrence.every(Duration.ofHours(1)), Duration.ofHours(1));
-      assertThat(count("job_type = '" + payment.name() + "' and state = 'SCHEDULED'")).isOne();
+      assertThat(count("type = '" + payment.name() + "' and state = 'SCHEDULED'")).isOne();
 
       assertThat(bikesched.removeRecurringJob(payment)).isTrue();
 
-      assertThat(count("job_type = '" + payment.name() + "'")).isZero();
+      assertThat(count("type = '" + payment.name() + "'")).isZero();
     }
   }
 

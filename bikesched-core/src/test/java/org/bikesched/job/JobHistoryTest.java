@@ -241,8 +241,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
 
   private static String eventId(String eventName) throws Exception {
     try (var connection = dataSource.getConnection();
-        var query =
-            connection.prepareStatement("select id from bikesched_events where event_name = ?")) {
+        var query = connection.prepareStatement("select id from bikesched_events where name = ?")) {
       query.setString(1, eventName);
       try (var rs = query.executeQuery()) {
         assertThat(rs.next()).isTrue();

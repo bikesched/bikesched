@@ -123,7 +123,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
           .atMost(Duration.ofSeconds(20))
           .untilAsserted(
               () ->
-                  assertThat(count("job_type = '" + jobType + "' and state = 'SUCCEEDED'"))
+                  assertThat(count("type = '" + jobType + "' and state = 'SUCCEEDED'"))
                       .isEqualTo(count));
     }
     return peak.get();

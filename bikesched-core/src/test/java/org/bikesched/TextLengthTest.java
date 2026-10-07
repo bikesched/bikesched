@@ -182,15 +182,15 @@ class TextLengthTest extends AbstractBikeschedTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_jobs (id, job_type) values (gen_random_uuid(), '"
+                    "insert into bikesched_jobs (id, type) values (gen_random_uuid(), '"
                         + "x".repeat(201)
                         + "')"))
         .isInstanceOf(SQLException.class)
-        .hasMessageContaining("bikesched_jobs_job_type_check");
+        .hasMessageContaining("bikesched_jobs_type_check");
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_events (id, event_name, event_key, expires_at)"
+                    "insert into bikesched_events (id, name, key, expires_at)"
                         + " values (gen_random_uuid(), 'event', '', now())"))
         .hasMessageContaining("bikesched_events_name_key_check");
     assertThatThrownBy(
@@ -199,7 +199,7 @@ class TextLengthTest extends AbstractBikeschedTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_jobs (id, job_type, recurrence)"
+                    "insert into bikesched_jobs (id, type, recurrence)"
                         + " values (gen_random_uuid(), 'x', '"
                         + "d".repeat(201)
                         + "')"))

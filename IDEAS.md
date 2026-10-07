@@ -40,7 +40,7 @@ using a pool (e.g. HikariCP) and how to size it: job slots plus poller, heartbea
 SQL. A small query API (`findJobs(type, state, limit)`, newest first) would be the basis for an
 admin UI, alerts and bulk `retry(...)`.
 
-- Needs an index fitting the query (e.g. `(job_type, state, updated_at)`), so it costs writes on
+- Needs an index fitting the query (e.g. `(type, state, updated_at)`), so it costs writes on
   every state change; postponed until it is needed. Until then: SQL on `bikesched_jobs`.
 
 ### Hook for permanently failed jobs
@@ -89,6 +89,28 @@ starts the interval when the previous occurrence ended.
 - Not a boolean `fixedRate` flag on `@JobHandler`: computing from the scheduled time is neither a
   fixed rate nor a fixed delay, and the flag would do nothing for wall-clock schedules.
 - Outcome: interval jobs that never overlap their own next run and keep a gap after long runs.
+
+### Idempotency keys for jobs and events
+
+A caller that retries (a webhook delivered twice, a request retried after a timeout) schedules the
+same job or publishes the same event twice. Callers would have to deduplicate themselves before
+calling bikesched.
+
+- Optional `idempotencyKey(String)` on the job builder (also the transactional one) and the event
+  builder; at most 500 characters like event keys (`char_length` CHECK + `ValidationUtil`).
+- Jobs: column `idempotency_key` with a partial unique index on (`type`, `idempotency_key`)
+  over the states that are not ended (`SCHEDULED`, `RUNNING`, `WAITING`, `COMPENSATING`), like
+  `bikesched_jobs_recurring_idx`. `insert … on conflict do nothing`, then `schedule()` returns the
+  id of the existing job instead of creating one; once the job has ended, the key is free again.
+  Open: unique per job type (proposed) or globally; whether a different payload for the same key
+  should fail instead of being ignored.
+- Events: they have no completion, only an expiry (`expires_at`), and a partial index cannot use
+  `now()`. Check for an unexpired event with the same name and idempotency key inside the advisory
+  lock `publish` already takes on name and key, and skip the publish if one exists. `publish()`
+  then returns an empty list (or the original receivers, if stored).
+- With job history: record the skipped duplicate ("duplicate of idempotency key …") on the existing
+  job.
+- Outcome: retried callers create each job and event once, without their own deduplication table.
 
 ### Publishing events from jobs
 

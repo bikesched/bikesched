@@ -36,14 +36,13 @@ class JobExecutionTest extends AbstractBikeschedTest {
                       + " "
                       + job.payload()));
       execute(
-          "insert into bikesched_jobs (id, job_type, payload) "
+          "insert into bikesched_jobs (id, type, payload) "
               + "select gen_random_uuid(), 'print-batch', jsonb_build_object('n', n) from generate_series(1, 25) n");
 
       await()
           .untilAsserted(
               () ->
-                  assertThat(count("job_type = 'print-batch' and state = 'SUCCEEDED'"))
-                      .isEqualTo(25));
+                  assertThat(count("type = 'print-batch' and state = 'SUCCEEDED'")).isEqualTo(25));
     }
 
     assertThat(handled)
@@ -97,8 +96,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
     try {
       try (Bikesched old = testNode("node-old-version").build()) {
         old.registerJobHandler("handled-here", () -> {});
-        execute(
-            "insert into bikesched_jobs (id, job_type) values ('" + jobId + "', '" + type + "')");
+        execute("insert into bikesched_jobs (id, type) values ('" + jobId + "', '" + type + "')");
         Thread.sleep(500); // several polls
         assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0"))
             .as("not claimed without a handler")
@@ -110,7 +108,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
         assertThat(count("id = '" + jobId + "' and attempts = 1")).isOne();
       }
     } finally {
-      execute("delete from bikesched_jobs where job_type = '" + type + "'");
+      execute("delete from bikesched_jobs where type = '" + type + "'");
     }
   }
 

@@ -48,7 +48,7 @@ length: errors (`last_error` of jobs and steps) and cancel messages (`cancel_mes
 ## Indexes and locks
 
 Besides primary keys, the indexes cover job history cleanup, the cleanup of ended jobs (`finished_at`), polling (due `SCHEDULED`/`WAITING`/`COMPENSATING` jobs in
-claim order, as a partial index that excludes finished jobs; it includes `job_type`, so jobs of types
+claim order, as a partial index that excludes finished jobs; it includes `type`, so jobs of types
 the node has no handlers for are skipped on index entries), jobs per node, at most one pending
 occurrence per recurring job (partial unique index), steps waiting for an event, and event lookup
 and cleanup. Waiting for, suspending at and publishing events also take transaction-scoped advisory

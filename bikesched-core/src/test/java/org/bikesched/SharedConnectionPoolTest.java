@@ -72,13 +72,13 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
             .atMost(Duration.ofSeconds(30))
             .untilAsserted(
                 () ->
-                    assertThat(count("job_type = '" + type + "' and state = 'SUCCEEDED'"))
+                    assertThat(count("type = '" + type + "' and state = 'SUCCEEDED'"))
                         .isEqualTo(JOBS));
       } finally {
         nodes.forEach(Bikesched::close);
       }
 
-      assertThat(count("job_type = '" + type + "' and state = 'SUCCEEDED' and attempts = 1"))
+      assertThat(count("type = '" + type + "' and state = 'SUCCEEDED' and attempts = 1"))
           .isEqualTo(JOBS);
       assertThat(duplicates).as("no job executed twice").hasValue(0);
       assertThat(executedBy).hasSize(JOBS);
@@ -89,7 +89,7 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
       assertThat(
               countRows(
                   "bikesched_steps s join bikesched_jobs j on j.id = s.job_id",
-                  "j.job_type = '"
+                  "j.type = '"
                       + type
                       + "' and s.state = 'SUCCEEDED' and s.result->>'node' like 'pool-node-%'"))
           .as("step results committed")

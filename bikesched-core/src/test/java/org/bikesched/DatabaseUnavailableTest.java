@@ -76,8 +76,7 @@ class DatabaseUnavailableTest extends AbstractBikeschedTest {
           .as("initialized once, on the first scheduled job")
           .hasSize(1);
     }
-    execute(
-        "delete from bikesched_jobs where job_type in ('database-down', 'lazy-initialization')");
+    execute("delete from bikesched_jobs where type in ('database-down', 'lazy-initialization')");
   }
 
   /** The test database, unless switched off; counts the connections requested. */

@@ -23,7 +23,7 @@ class JobCleanUpTest extends AbstractBikeschedTest {
     UUID recentJob = UUID.randomUUID();
     UUID pendingJob = UUID.randomUUID();
     execute(
-        "insert into bikesched_jobs (id, job_type, state, finished_at) values ('"
+        "insert into bikesched_jobs (id, type, state, finished_at) values ('"
             + oldJob
             + "', '"
             + type
@@ -58,7 +58,7 @@ class JobCleanUpTest extends AbstractBikeschedTest {
       assertThat(logs.messages())
           .anyMatch(m -> m.matches("Deleted \\d+ job\\(s\\) finished more than PT1H ago"));
     } finally {
-      execute("delete from bikesched_jobs where job_type = '" + type + "'");
+      execute("delete from bikesched_jobs where type = '" + type + "'");
     }
   }
 
@@ -68,7 +68,7 @@ class JobCleanUpTest extends AbstractBikeschedTest {
     UUID oldJob = UUID.randomUUID();
     UUID recentJob = UUID.randomUUID();
     execute(
-        "insert into bikesched_jobs (id, job_type, state, finished_at) values ('"
+        "insert into bikesched_jobs (id, type, state, finished_at) values ('"
             + oldJob
             + "', '"
             + type
@@ -82,7 +82,7 @@ class JobCleanUpTest extends AbstractBikeschedTest {
       await().untilAsserted(() -> assertThat(bikesched.findJob(oldJob)).isEmpty());
       assertThat(bikesched.findJob(recentJob)).isPresent();
     } finally {
-      execute("delete from bikesched_jobs where job_type = '" + type + "'");
+      execute("delete from bikesched_jobs where type = '" + type + "'");
     }
   }
 

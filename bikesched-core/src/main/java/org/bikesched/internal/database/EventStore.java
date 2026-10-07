@@ -50,7 +50,7 @@ public final class EventStore {
   private static final String LATEST_EVENT_SQL =
       """
             select id, payload::text from bikesched_events
-             where event_name = ? and event_key = ? and expires_at > now()
+             where name = ? and key = ? and expires_at > now()
              order by published_at desc limit 1""";
 
   private static final String RECEIVE_EVENT_STEP_SQL =
@@ -71,7 +71,7 @@ public final class EventStore {
 
   private static final String INSERT_EVENT_SQL =
       """
-            insert into bikesched_events (id, event_name, event_key, payload, expires_at)
+            insert into bikesched_events (id, name, key, payload, expires_at)
             values (?, ?, ?, ?::jsonb, now() + ? * interval '1 millisecond')""";
 
   // Completes all steps waiting for the event with its payload (copied into each step, so steps do

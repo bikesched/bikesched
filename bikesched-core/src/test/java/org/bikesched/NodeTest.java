@@ -43,7 +43,7 @@ class NodeTest extends AbstractBikeschedTest {
             .build()) {
       // Scheduling needs no registration (the handler is never run: the node does not poll).
       bikesched.newJob("not-polling").handler(job -> {}).schedule();
-      execute("delete from bikesched_jobs where job_type = 'not-polling'");
+      execute("delete from bikesched_jobs where type = 'not-polling'");
 
       assertThat(bikesched.node().name()).isEqualTo("node-registers-later");
       assertThat(bikesched.node().id()).isEmpty();
@@ -135,7 +135,7 @@ class NodeTest extends AbstractBikeschedTest {
     // A job the crashed previous instance was still running (scheduled in the future so the
     // new instance's poller doesn't immediately execute it after the release).
     execute(
-        "insert into bikesched_jobs (id, job_type, state, locked_by, lock_token, scheduled_at)"
+        "insert into bikesched_jobs (id, type, state, locked_by, lock_token, scheduled_at)"
             + " values (gen_random_uuid(), 'orphan-restart', 'RUNNING', '"
             + staleId
             + "', gen_random_uuid(), now() + interval '1 hour')");
@@ -143,11 +143,11 @@ class NodeTest extends AbstractBikeschedTest {
     try (Bikesched bikesched =
         Bikesched.builder().dataSource(dataSource).nodeName("node-restarted").build()) {
       assertThat(bikesched.node().id().orElseThrow()).isEqualTo(staleId);
-      assertThat(count("job_type = 'orphan-restart' and state = 'SCHEDULED' and locked_by is null"))
+      assertThat(count("type = 'orphan-restart' and state = 'SCHEDULED' and locked_by is null"))
           .as("jobs left running by the previous instance are released on startup")
           .isEqualTo(1);
     }
-    execute("delete from bikesched_jobs where job_type = 'orphan-restart'");
+    execute("delete from bikesched_jobs where type = 'orphan-restart'");
   }
 
   @Test
@@ -171,7 +171,7 @@ class NodeTest extends AbstractBikeschedTest {
               + deadNode
               + "', 'node-dead', now() - interval '1 minute')");
       execute(
-          "insert into bikesched_jobs (id, job_type, state, locked_by, lock_token)"
+          "insert into bikesched_jobs (id, type, state, locked_by, lock_token)"
               + " select gen_random_uuid(), 'orphan', 'RUNNING', '"
               + deadNode
               + "', gen_random_uuid() from generate_series(1, 2)");
@@ -181,7 +181,7 @@ class NodeTest extends AbstractBikeschedTest {
       await()
           .untilAsserted(
               () -> {
-                assertThat(count("job_type = 'orphan' and state = 'SUCCEEDED'")).isEqualTo(2);
+                assertThat(count("type = 'orphan' and state = 'SUCCEEDED'")).isEqualTo(2);
                 assertThat(nodeName(deadNode)).isNull();
               });
     }

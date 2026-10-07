@@ -105,7 +105,7 @@ class EventTest extends AbstractBikeschedTest {
                               "bikesched_steps",
                               "job_id = '" + jobId + "' and name = 'second' and state = 'WAITING'"))
                       .isOne());
-      execute("delete from bikesched_events where event_key = 'copied-1'"); // e.g. clean-up
+      execute("delete from bikesched_events where key = 'copied-1'"); // e.g. clean-up
       bikesched.newEvent("step-done", "copied-2").payload("\"two\"").publish();
       awaitState(jobId, "SUCCEEDED");
 
@@ -409,8 +409,7 @@ class EventTest extends AbstractBikeschedTest {
           .atMost(Duration.ofSeconds(20))
           .untilAsserted(
               () ->
-                  assertThat(count("job_type = 'event-race' and state = 'SUCCEEDED'"))
-                      .isEqualTo(jobs));
+                  assertThat(count("type = 'event-race' and state = 'SUCCEEDED'")).isEqualTo(jobs));
     } finally {
       nodes.forEach(Bikesched::close);
     }
@@ -433,7 +432,7 @@ class EventTest extends AbstractBikeschedTest {
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("retention must not be negative: PT-1S");
     } finally {
-      execute("delete from bikesched_events where event_key = '" + key + "'");
+      execute("delete from bikesched_events where key = '" + key + "'");
     }
   }
 
@@ -465,7 +464,7 @@ class EventTest extends AbstractBikeschedTest {
         var query =
             connection.prepareStatement(
                 "select extract(epoch from expires_at - published_at)::bigint from bikesched_events"
-                    + " where event_name = ? and event_key = ?")) {
+                    + " where name = ? and key = ?")) {
       query.setString(1, name);
       query.setString(2, key);
       try (var rs = query.executeQuery()) {
@@ -486,12 +485,11 @@ class EventTest extends AbstractBikeschedTest {
                 .eventCleanUpInterval(Duration.ofMillis(50))
                 .build()) {
       bikesched.newEvent("cleaned-up", key).publish();
-      assertThat(countRows("bikesched_events", "event_key = '" + key + "'")).isOne();
+      assertThat(countRows("bikesched_events", "key = '" + key + "'")).isOne();
 
       await()
           .untilAsserted(
-              () ->
-                  assertThat(countRows("bikesched_events", "event_key = '" + key + "'")).isZero());
+              () -> assertThat(countRows("bikesched_events", "key = '" + key + "'")).isZero());
     }
     assertThat(logs.messages()).anyMatch(m -> m.matches("Deleted \\d+ expired event\\(s\\)"));
   }

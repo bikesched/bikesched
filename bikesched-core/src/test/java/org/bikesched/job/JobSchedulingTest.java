@@ -33,7 +33,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
               count(
                   "id = '"
                       + jobId
-                      + "' and state = 'SUCCEEDED' and job_type = 'print' "
+                      + "' and state = 'SUCCEEDED' and type = 'print' "
                       + "and payload = '{\"greeting\": \"hello\"}'::jsonb"))
           .isEqualTo(1);
     }
@@ -150,7 +150,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
                       + "' and state = 'SCHEDULED' "
                       + "and scheduled_at between now() + interval '119 minutes' and now() + interval '121 minutes'"))
           .isEqualTo(1);
-      execute("delete from bikesched_jobs where job_type = 'later'");
+      execute("delete from bikesched_jobs where type = 'later'");
     }
   }
 
@@ -246,9 +246,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
               countRows("bikesched_nodes", "id = '" + otherNodeId + "' and name = 'node-tx-other'"))
           .as("node committed")
           .isEqualTo(1);
-      assertThat(count("id = '" + jobId + "' and job_type = 'tx'"))
-          .as("job committed")
-          .isEqualTo(1);
+      assertThat(count("id = '" + jobId + "' and type = 'tx'")).as("job committed").isEqualTo(1);
       assertThat(ran.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(jobId);
       execute("delete from bikesched_nodes where id = '" + otherNodeId + "'");
     }

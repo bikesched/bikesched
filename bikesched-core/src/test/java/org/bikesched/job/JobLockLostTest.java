@@ -72,7 +72,7 @@ class JobLockLostTest extends AbstractBikeschedTest {
           .as("only the first step")
           .isEqualTo(1);
     } finally {
-      execute("delete from bikesched_jobs where job_type = '" + type + "'");
+      execute("delete from bikesched_jobs where type = '" + type + "'");
     }
   }
 

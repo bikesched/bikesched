@@ -65,13 +65,12 @@ class JobStoreTest extends AbstractStoreTest {
   void claimJobsClaimsOnlyJobsOfTheGivenTypes() throws SQLException {
     UUID node = registerNode("node-1");
     insertJobs(2, 0, "now()"); // type 'test'
-    execute(
-        "insert into bikesched_jobs (id, job_type, priority) values (gen_random_uuid(), 'new', 9)");
+    execute("insert into bikesched_jobs (id, type, priority) values (gen_random_uuid(), 'new', 9)");
 
     assertThat(database.jobs().claimJobs(node, Set.of("test", "other"), 10))
         .extracting(JobStore.ClaimedJob::type)
         .containsExactly("test", "test");
-    assertThat(count("job_type = 'new' and state = 'SCHEDULED' and attempts = 0"))
+    assertThat(count("type = 'new' and state = 'SCHEDULED' and attempts = 0"))
         .as("left to nodes with a handler")
         .isOne();
     assertThat(database.jobs().claimJobs(node, Set.of(), 10)).isEmpty();
@@ -84,7 +83,7 @@ class JobStoreTest extends AbstractStoreTest {
     UUID occurrence = UUID.randomUUID();
     UUID succeeded = UUID.randomUUID();
     execute(
-        "insert into bikesched_jobs (id, job_type, state, attempts, last_error, finished_at,"
+        "insert into bikesched_jobs (id, type, state, attempts, last_error, finished_at,"
             + " compensated_state, compensation_attempts, cancel_requested_at, recurrence) values"
             + " ('"
             + failed
@@ -141,7 +140,7 @@ class JobStoreTest extends AbstractStoreTest {
     insertJobs(12, 0, "now() - interval '1 minute'");
     insertJobs(1, 0, "now() + interval '1 hour'"); // not due yet
     execute(
-        "insert into bikesched_jobs (id, job_type, state, locked_by, lock_token) values "
+        "insert into bikesched_jobs (id, type, state, locked_by, lock_token) values "
             + "(gen_random_uuid(), 'test', 'RUNNING', '"
             + node
             + "', gen_random_uuid())"); // already running

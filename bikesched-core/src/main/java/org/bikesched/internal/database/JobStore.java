@@ -38,7 +38,7 @@ public final class JobStore {
 
   private static final String INSERT_JOB_SQL =
       """
-            insert into bikesched_jobs (id, job_type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, fixed_rate_at)
+            insert into bikesched_jobs (id, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, fixed_rate_at)
             values (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)""";
 
   // Inserts an occurrence of a recurring job unless one is pending already (partial unique index).
@@ -46,7 +46,7 @@ public final class JobStore {
       INSERT_JOB_SQL
           + """
 
-            on conflict (job_type) where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')
+            on conflict (type) where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')
             do nothing""";
 
   // Moves a pending (not yet running) occurrence to a new recurrence; returns the old description.
@@ -55,7 +55,7 @@ public final class JobStore {
             update bikesched_jobs j
                set recurrence = ?, scheduled_at = ?, fixed_rate_at = ?, updated_at = now()
               from (select id, recurrence from bikesched_jobs
-                     where job_type = ? and recurrence is not null and state = 'SCHEDULED'
+                     where type = ? and recurrence is not null and state = 'SCHEDULED'
                        and recurrence <> ?
                      for update) old
              where j.id = old.id
@@ -64,14 +64,14 @@ public final class JobStore {
   private static final String FIND_PENDING_OCCURRENCE_SQL =
       """
             select id, scheduled_at, state from bikesched_jobs
-             where job_type = ? and recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')""";
+             where type = ? and recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')""";
 
   // Running occurrences cannot be deleted; finishing them schedules no successor on nodes that no
   // longer have the recurring job registered.
   private static final String DELETE_PENDING_OCCURRENCES_SQL =
       """
             delete from bikesched_jobs
-             where job_type = ? and recurrence is not null and state in ('SCHEDULED', 'WAITING')
+             where type = ? and recurrence is not null and state in ('SCHEDULED', 'WAITING')
             returning id, state, attempts""";
 
   // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
@@ -80,7 +80,7 @@ public final class JobStore {
   // job counts a compensation attempt instead of an attempt (compensated_state stays set). Only
   // jobs of types the node has handlers for: during a rolling deploy, nodes of the old version
   // leave
-  // jobs of new types to the new ones (job_type is a key column of the polling index, so the filter
+  // jobs of new types to the new ones (the type is a key column of the polling index, so the filter
   // is checked on index entries, in claim order, without visiting other rows).
   private static final String CLAIM_JOBS_SQL =
       """
@@ -91,17 +91,17 @@ public final class JobStore {
                    updated_at = now()
              where id in (select id from bikesched_jobs
                            where state in ('SCHEDULED', 'WAITING', 'COMPENSATING') and scheduled_at <= now()
-                             and job_type = any(?)
+                             and type = any(?)
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
-            returning id, job_type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, recurrence, fixed_rate_at,
+            returning id, type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, recurrence, fixed_rate_at,
                       compensated_state, compensation_attempts, cancel_requested_at is not null, cancel_message,
                       locked_by, lock_token""";
 
   private static final String FIND_JOB_SQL =
       """
-            select job_type, state from bikesched_jobs where id = ?""";
+            select type, state from bikesched_jobs where id = ?""";
 
   private static final String COMPLETE_JOB_SQL =
       """
@@ -158,7 +158,7 @@ public final class JobStore {
 
   private static final String FIND_RECURRING_TYPE_SQL =
       """
-            select job_type from bikesched_jobs where id = ? and recurrence is not null""";
+            select type from bikesched_jobs where id = ? and recurrence is not null""";
 
   // Bikesched.cancel(jobId): marks the job; the node claiming it next cancels it instead of running
   // its handler. Scheduled and waiting jobs are due right away; a running job is cancelled after

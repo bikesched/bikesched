@@ -23,7 +23,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
 
     assertThat(database.jobs().deleteFinishedJobs(Duration.ofHours(1), 1000)).isEqualTo(3);
 
-    assertThat(count("job_type like 'old-%'")).isZero();
+    assertThat(count("type like 'old-%'")).isZero();
     assertThat(count("true")).isEqualTo(5);
     assertThat(countSteps("true")).as("steps deleted with their jobs").isEqualTo(5);
   }
@@ -43,7 +43,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
   private static void insertJob(String state, String finishedAt, String type) throws SQLException {
     String compensated = state.equals("COMPENSATING") ? "'CANCELLED'" : "null";
     execute(
-        "insert into bikesched_jobs (id, job_type, state, compensated_state, finished_at) values"
+        "insert into bikesched_jobs (id, type, state, compensated_state, finished_at) values"
             + " (gen_random_uuid(), '"
             + type
             + "', '"

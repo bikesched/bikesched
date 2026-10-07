@@ -29,7 +29,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
    */
   @AfterEach
   void deleteOccurrences() throws Exception {
-    execute("delete from bikesched_jobs where job_type like 'recurring-%'");
+    execute("delete from bikesched_jobs where type like 'recurring-%'");
   }
 
   @Test
@@ -48,9 +48,9 @@ class RecurringJobTest extends AbstractBikeschedTest {
               .schedule(EVERY_200_MS);
 
       assertThat(count("id = '" + first + "' and recurrence = 'every PT0.2S'")).isEqualTo(1);
-      awaitCount("job_type = 'recurring-basic' and state = 'SUCCEEDED'", 3);
+      awaitCount("type = 'recurring-basic' and state = 'SUCCEEDED'", 3);
 
-      assertThat(count("job_type = 'recurring-basic' and state in ('SCHEDULED', 'RUNNING')"))
+      assertThat(count("type = 'recurring-basic' and state in ('SCHEDULED', 'RUNNING')"))
           .as("exactly one pending occurrence")
           .isEqualTo(1);
     }
@@ -66,7 +66,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
       UUID b = second.newJob("recurring-shared").handler(() -> {}).schedule(hourly);
 
       assertThat(b).as("the same pending occurrence").isEqualTo(a);
-      assertThat(count("job_type = 'recurring-shared'")).isEqualTo(1);
+      assertThat(count("type = 'recurring-shared'")).isEqualTo(1);
     }
   }
 
@@ -89,7 +89,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
                       + "' and recurrence = 'every PT2H'"
                       + " and scheduled_at > now() + interval '110 minutes'"))
           .isEqualTo(1);
-      assertThat(count("job_type = 'recurring-change'")).isEqualTo(1);
+      assertThat(count("type = 'recurring-change'")).isEqualTo(1);
     }
     assertThat(logs.messages())
         .anyMatch(
@@ -126,10 +126,10 @@ class RecurringJobTest extends AbstractBikeschedTest {
               })
           .schedule(Recurrence.every(Duration.ofHours(1)), Instant.now());
 
-      awaitCount("job_type = 'recurring-fail' and state = 'FAILED'", 1);
+      awaitCount("type = 'recurring-fail' and state = 'FAILED'", 1);
       assertThat(
               count(
-                  "job_type = 'recurring-fail' and state = 'SCHEDULED'"
+                  "type = 'recurring-fail' and state = 'SCHEDULED'"
                       + " and scheduled_at > now() + interval '50 minutes'"))
           .isEqualTo(1);
     }
@@ -161,7 +161,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
                   "bikesched_jobs next, bikesched_jobs ended",
                   "ended.id = '"
                       + first
-                      + "' and next.job_type = 'recurring-planned' and next.state = 'SCHEDULED'"
+                      + "' and next.type = 'recurring-planned' and next.state = 'SCHEDULED'"
                       + " and next.fixed_rate_at = ended.fixed_rate_at + interval '1 hour'"
                       + " and next.scheduled_at = next.fixed_rate_at"))
           .as("next run = planned run + 1 hour")
@@ -196,9 +196,9 @@ class RecurringJobTest extends AbstractBikeschedTest {
               })
           .schedule(Recurrence.every(Duration.ofHours(1)), Instant.now());
 
-      awaitCount("job_type = 'recurring-retry' and state = 'SUCCEEDED'", 1);
-      assertThat(count("job_type = 'recurring-retry'")).as("succeeded + next").isEqualTo(2);
-      assertThat(count("job_type = 'recurring-retry' and state = 'SUCCEEDED' and attempts = 2"))
+      awaitCount("type = 'recurring-retry' and state = 'SUCCEEDED'", 1);
+      assertThat(count("type = 'recurring-retry'")).as("succeeded + next").isEqualTo(2);
+      assertThat(count("type = 'recurring-retry' and state = 'SUCCEEDED' and attempts = 2"))
           .isEqualTo(1);
     }
   }
@@ -211,8 +211,8 @@ class RecurringJobTest extends AbstractBikeschedTest {
           .handler(job -> job.cancel("not today"))
           .schedule(Recurrence.every(Duration.ofHours(1)), Instant.now());
 
-      awaitCount("job_type = 'recurring-cancel' and state = 'CANCELLED'", 1);
-      assertThat(count("job_type = 'recurring-cancel' and state = 'SCHEDULED'")).isEqualTo(1);
+      awaitCount("type = 'recurring-cancel' and state = 'CANCELLED'", 1);
+      assertThat(count("type = 'recurring-cancel' and state = 'SCHEDULED'")).isEqualTo(1);
     }
   }
 
@@ -233,14 +233,14 @@ class RecurringJobTest extends AbstractBikeschedTest {
       execute("delete from bikesched_jobs where id = '" + occurrence + "'");
 
       bikesched.start();
-      assertThat(count("job_type = 'recurring-repair' and state = 'SCHEDULED'"))
+      assertThat(count("type = 'recurring-repair' and state = 'SCHEDULED'"))
           .as("repaired before start() returns")
           .isOne();
 
       // Only once per node lifetime: a later missing occurrence is not recreated.
-      execute("delete from bikesched_jobs where job_type = 'recurring-repair'");
+      execute("delete from bikesched_jobs where type = 'recurring-repair'");
       Thread.sleep(600);
-      assertThat(count("job_type = 'recurring-repair'")).isZero();
+      assertThat(count("type = 'recurring-repair'")).isZero();
     }
     assertThat(logs.messages())
         .filteredOn(m -> m.startsWith("Recurring job recurring-repair had no pending occurrence"))
@@ -258,7 +258,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
       assertThat(bikesched.removeRecurringJob("recurring-remove")).isTrue();
       Thread.sleep(300); // several heartbeats
 
-      assertThat(count("job_type = 'recurring-remove'")).isZero();
+      assertThat(count("type = 'recurring-remove'")).isZero();
       assertThat(bikesched.removeRecurringJob("recurring-remove")).isFalse();
     }
   }
@@ -273,7 +273,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
       UUID oneOff = bikesched.newJob("recurring-oneoff").schedule();
 
       awaitState(oneOff, "SUCCEEDED");
-      assertThat(count("job_type = 'recurring-oneoff'")).as("one-off + pending").isEqualTo(2);
+      assertThat(count("type = 'recurring-oneoff'")).as("one-off + pending").isEqualTo(2);
       assertThat(count("id = '" + oneOff + "' and recurrence is null")).isEqualTo(1);
     }
   }
@@ -331,9 +331,9 @@ class RecurringJobTest extends AbstractBikeschedTest {
       execute("delete from bikesched_jobs where id = '" + occurrence + "'");
 
       bikesched.start();
-      assertThat(count("job_type = 'recurring-retry'")).as("first attempt failed").isZero();
+      assertThat(count("type = 'recurring-retry'")).as("first attempt failed").isZero();
 
-      awaitCount("job_type = 'recurring-retry' and state = 'SCHEDULED'", 1);
+      awaitCount("type = 'recurring-retry' and state = 'SCHEDULED'", 1);
     }
     assertThat(logs.messages())
         .filteredOn(m -> m.equals("Checking recurring job recurring-retry failed"))

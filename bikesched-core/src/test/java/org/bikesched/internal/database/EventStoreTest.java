@@ -168,7 +168,7 @@ class EventStoreTest extends AbstractStoreTest {
       connection.rollback();
     }
 
-    assertThat(countRows("bikesched_events", "event_key = 'rollback-1'")).isZero();
+    assertThat(countRows("bikesched_events", "key = 'rollback-1'")).isZero();
     assertThat(stateAndSchedule(job.id())).isEqualTo("WAITING infinity");
   }
 
@@ -183,7 +183,7 @@ class EventStoreTest extends AbstractStoreTest {
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("must not be in auto-commit mode");
     }
-    assertThat(countRows("bikesched_events", "event_key = 'auto-1'")).isZero();
+    assertThat(countRows("bikesched_events", "key = 'auto-1'")).isZero();
   }
 
   @Test
@@ -243,8 +243,8 @@ class EventStoreTest extends AbstractStoreTest {
         .isEqualTo("WAITING");
 
     assertThat(database.events().deleteExpiredEvents()).isOne();
-    assertThat(countRows("bikesched_events", "event_key = 'retention-1'")).isZero();
-    assertThat(countRows("bikesched_events", "event_key = 'retention-2'")).isOne();
+    assertThat(countRows("bikesched_events", "key = 'retention-1'")).isZero();
+    assertThat(countRows("bikesched_events", "key = 'retention-2'")).isOne();
   }
 
   @Test

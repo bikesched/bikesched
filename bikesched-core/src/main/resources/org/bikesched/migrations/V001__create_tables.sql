@@ -30,7 +30,7 @@ create index bikesched_nodes_last_heartbeat_at_idx on bikesched_nodes (last_hear
 -- COMPENSATION_FAILED once they failed in max_attempts compensation attempts.
 create table bikesched_jobs (
     id           uuid        primary key,
-    job_type     text        not null,          -- identifies the handler that executes the job
+    type         text        not null,          -- identifies the handler that executes the job
     state        text        not null default 'SCHEDULED',
     payload      jsonb,
     priority     integer     not null default 0,
@@ -66,21 +66,21 @@ create table bikesched_jobs (
     constraint bikesched_jobs_lock_check
         check ((state = 'RUNNING') = (locked_by is not null)
                and (locked_by is null) = (lock_token is null)),
-    constraint bikesched_jobs_job_type_check
-        check (char_length(job_type) between 1 and 200),
+    constraint bikesched_jobs_type_check
+        check (char_length(type) between 1 and 200),
     constraint bikesched_jobs_recurrence_check
         check (char_length(recurrence) between 1 and 200)
 );
 
--- Polling index: only due-able jobs, in claim order. job_type lets the claim skip jobs of types
+-- Polling index: only due-able jobs, in claim order. The type lets the claim skip jobs of types
 -- the node has no handlers for on index entries.
-create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at, job_type)
+create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at, type)
     where state in ('SCHEDULED', 'WAITING', 'COMPENSATING');
 
 -- Recurring jobs (identified by their job type): at most one pending occurrence each. Finishing an
 -- occurrence inserts the next one in the same transaction; registering a recurring job and the
 -- node's repair insert one with "on conflict do nothing" if it is missing.
-create unique index bikesched_jobs_recurring_idx on bikesched_jobs (job_type)
+create unique index bikesched_jobs_recurring_idx on bikesched_jobs (type)
     where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING');
 
 -- Deleting finished jobs after the job retention (only ended jobs have finished_at).
@@ -144,18 +144,18 @@ create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_k
 -- reaches the steps waiting when it is published.
 create table bikesched_events (
     id           uuid        primary key,
-    event_name   text        not null,
-    event_key    text        not null,
+    name         text        not null,
+    key          text        not null,
     payload      jsonb,
     published_at timestamptz not null default now(),
     expires_at   timestamptz not null,
     constraint bikesched_events_name_key_check
-        check (char_length(event_name) between 1 and 200 and char_length(event_key) between 1 and 500),
+        check (char_length(name) between 1 and 200 and char_length(key) between 1 and 500),
     constraint bikesched_events_expires_at_check
         check (expires_at >= published_at)
 );
 
-create index bikesched_events_name_key_idx on bikesched_events (event_name, event_key, published_at desc);
+create index bikesched_events_name_key_idx on bikesched_events (name, key, published_at desc);
 
 -- Deleting expired events.
 create index bikesched_events_expires_at_idx on bikesched_events (expires_at);

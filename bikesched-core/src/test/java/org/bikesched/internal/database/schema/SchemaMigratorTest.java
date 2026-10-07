@@ -216,7 +216,7 @@ class SchemaMigratorTest {
             + "', 'b')");
     execute(
         """
-                insert into bikesched_jobs (id, job_type, priority)
+                insert into bikesched_jobs (id, type, priority)
                 select gen_random_uuid(), 'test', n % 3 from generate_series(1, 10) n""");
 
     String claim =

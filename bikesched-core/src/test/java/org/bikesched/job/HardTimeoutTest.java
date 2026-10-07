@@ -109,7 +109,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
           .isOne();
     } finally {
       release.set(true);
-      execute("delete from bikesched_jobs where job_type = '" + type + "'");
+      execute("delete from bikesched_jobs where type = '" + type + "'");
     }
   }
 
@@ -138,7 +138,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
           .isOne();
     } finally {
       release.set(true);
-      execute("delete from bikesched_jobs where job_type = '" + type + "'");
+      execute("delete from bikesched_jobs where type = '" + type + "'");
     }
   }
 
