@@ -48,8 +48,9 @@ created. Duplicates fail startup with a message naming the bean and the method �
 downgrade this to a warning, and none intended. See [Annotations](annotations.md) for the method
 signature rules.
 
-**Recurring handlers**: the starter auto-configures a `ScheduleProvider` for Spring's six-field
-`CronExpression` syntax, so a handler can declare its schedule next to its type:
+**Recurring handlers**: the starter configures the node's
+[recurrence parsers](recurring-jobs.md#recurrence-expressions) with ISO-8601 durations and Spring's
+six-field `CronExpression` syntax, so a handler can declare its schedule next to its type:
 
 ```java
 @JobHandler(type = "purge-expired-sessions", schedule = "0 0 */6 * * *")
@@ -57,10 +58,26 @@ public void purgeExpiredSessions() { … }
 ```
 
 The schedule is evaluated in UTC and uses the expression itself as its stable recurrence
-description. Regular ISO-8601 duration schedules are also supported by `bikesched-annotations`, for
-example `@JobHandler(type = "refresh-cache", schedule = "PT15M")`; they are parsed with
-`Duration.parse()` and run at a fixed rate. Any `ScheduleProvider` bean is also used when annotated
-handlers are discovered, so an application can add its own schedule formats.
+description. ISO-8601 durations, e.g. `@JobHandler(type = "refresh-cache", schedule = "PT15M")`,
+run at a fixed rate. The same expressions work in `newJob(type).schedule("PT15M")`.
+
+Every `RecurrenceParser` bean is added to these two, so an application can add its own formats. For
+other cron dialects or a time zone other than UTC, add `bikesched-cron` and declare its parser as a
+bean; the starter doesn't configure it. Its syntax must not overlap with the built-in parsers',
+because each expression must be supported by exactly one parser. Unix expressions have five fields,
+so they never match the six-field Spring syntax:
+
+```java
+@Bean
+RecurrenceParser unixCronParser() {
+    return new CronRecurrenceParser(CronType.UNIX, ZoneId.of("Europe/Berlin"));
+}
+```
+
+A `BikeschedCustomizer` runs after this and can replace the whole set with
+`builder.recurrenceParsers(…)`.
+
+See [Cron expressions](recurring-jobs.md#cron-expressions).
 
 **Transactional handlers**: a handler runs on a bikesched job thread, never inside an ambient
 transaction, so `@Transactional` with the default propagation `REQUIRED` simply starts a new one —

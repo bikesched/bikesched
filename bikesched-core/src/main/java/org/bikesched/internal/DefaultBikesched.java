@@ -30,6 +30,7 @@ import org.bikesched.internal.job.JobPoller;
 import org.bikesched.internal.job.JobPollerSettings;
 import org.bikesched.internal.job.JobRegistry;
 import org.bikesched.internal.job.JobScheduler;
+import org.bikesched.internal.job.RecurrenceParsers;
 import org.bikesched.internal.job.RecurringJobRepair;
 import org.bikesched.internal.node.DefaultNode;
 import org.bikesched.internal.node.NodeCleanUp;
@@ -94,7 +95,13 @@ public final class DefaultBikesched implements Bikesched {
     this.settings = settings;
     this.nodeName = settings.nodeName();
     this.node = new DefaultNode(nodeName);
-    this.jobScheduler = new JobScheduler(database, registry, nodeName, this::ensureReady);
+    this.jobScheduler =
+        new JobScheduler(
+            database,
+            registry,
+            nodeName,
+            new RecurrenceParsers(settings.recurrenceParsers()),
+            this::ensureReady);
     this.jobPoller =
         new JobPoller(
             database,

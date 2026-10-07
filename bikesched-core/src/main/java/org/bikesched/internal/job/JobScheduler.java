@@ -25,19 +25,26 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
   private final Database database;
   private final JobRegistry registry;
   private final String nodeName;
+  private final RecurrenceParsers recurrenceParsers;
   private final Runnable beforeDatabaseAccess;
 
   /**
    * @param database the database
    * @param registry the node's job types
    * @param nodeName the node's name, for logging
+   * @param recurrenceParsers the node's recurrence parsers
    * @param beforeDatabaseAccess runs first in every operation; throws if the node is closed
    */
   public JobScheduler(
-      Database database, JobRegistry registry, String nodeName, Runnable beforeDatabaseAccess) {
+      Database database,
+      JobRegistry registry,
+      String nodeName,
+      RecurrenceParsers recurrenceParsers,
+      Runnable beforeDatabaseAccess) {
     this.database = Objects.requireNonNull(database, "database");
     this.registry = Objects.requireNonNull(registry, "registry");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
+    this.recurrenceParsers = Objects.requireNonNull(recurrenceParsers, "recurrenceParsers");
     this.beforeDatabaseAccess =
         Objects.requireNonNull(beforeDatabaseAccess, "beforeDatabaseAccess");
   }
@@ -64,6 +71,11 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
         job.timeout() == null ? "node default" : job.timeout(),
         connection == null ? "" : " in the caller's transaction");
     return jobId;
+  }
+
+  @Override
+  public Recurrence parseRecurrence(String expression) {
+    return recurrenceParsers.parse(expression);
   }
 
   /** Registers a recurring job, see {@link JobBuilder#schedule(Recurrence)}. */

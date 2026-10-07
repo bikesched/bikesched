@@ -53,6 +53,11 @@ public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
   }
 
   @Override
+  public UUID schedule(String recurrence) {
+    return schedule(scheduler.parseRecurrence(recurrence));
+  }
+
+  @Override
   public UUID schedule(Recurrence recurrence, Instant firstRun) {
     Objects.requireNonNull(firstRun, "firstRun");
     return scheduler.scheduleRecurring(recurringJob(recurrence), handler, firstRun);

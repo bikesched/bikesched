@@ -2,12 +2,13 @@
 package org.bikesched.spring;
 
 import java.util.List;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.JsonMapper;
-import org.bikesched.annotation.ScheduleProvider;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.JobTypeHandler;
+import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.listener.JobListener;
 import org.bikesched.micrometer.MicrometerJobListener;
 import org.slf4j.Logger;
@@ -62,19 +63,8 @@ public class BikeschedAutoConfiguration {
    * @return the holder
    */
   @Bean
-  static JobHandlerBeans jobHandlerBeans(
-      ObjectProvider<HandlerWarning> warnings, ObjectProvider<ScheduleProvider> scheduleProviders) {
-    return new JobHandlerBeans(warnings, scheduleProviders);
-  }
-
-  /**
-   * Supports Spring's six-field cron syntax on {@code @JobHandler} schedules.
-   *
-   * @return the cron schedule provider
-   */
-  @Bean
-  ScheduleProvider cronScheduleProvider() {
-    return new CronScheduleProvider();
+  static JobHandlerBeans jobHandlerBeans(ObjectProvider<HandlerWarning> warnings) {
+    return new JobHandlerBeans(warnings);
   }
 
   /**
@@ -107,14 +97,16 @@ public class BikeschedAutoConfiguration {
 
   /**
    * The node: built with {@code autoStartPolling(false)} (the {@link BikeschedLifecycle} starts it
-   * with the application), with the properties and then the customizers applied, the registered
-   * handler beans and the composed listeners. Spring closes it when the context closes, before the
-   * {@code DataSource} it was built from.
+   * with the application), with the properties, the recurrence parsers (ISO-8601 durations,
+   * Spring's six-field cron expressions and the {@link RecurrenceParser} beans) and then the
+   * customizers applied, the registered handler beans and the composed listeners. Spring closes it
+   * when the context closes, before the {@code DataSource} it was built from.
    *
    * @param dataSourceSelector resolves the {@code DataSource} to use
    * @param properties the {@code bikesched.*} properties
    * @param environment the environment, for the default node name
    * @param jobHandlerBeans the collected beans with {@code @JobHandler} methods
+   * @param recurrenceParsers the {@link RecurrenceParser} beans, added to the built-in parsers
    * @param customizers customizers, applied after the properties in {@code @Order}
    * @param listeners the {@link JobListener} beans, composed into one
    * @param jobTypeHandlers the {@link JobTypeHandler} beans, registered as handlers
@@ -128,6 +120,7 @@ public class BikeschedAutoConfiguration {
       BikeschedProperties properties,
       Environment environment,
       JobHandlerBeans jobHandlerBeans,
+      ObjectProvider<RecurrenceParser> recurrenceParsers,
       ObjectProvider<BikeschedCustomizer> customizers,
       ObjectProvider<JobListener> listeners,
       ObjectProvider<JobTypeHandler<?>> jobTypeHandlers,
@@ -138,6 +131,11 @@ public class BikeschedAutoConfiguration {
             .nodeName(NodeNames.resolve(properties.nodeName(), environment))
             .autoStartPolling(false);
     properties.applyTo(builder);
+    builder.recurrenceParsers(
+        Stream.concat(
+                Stream.of(RecurrenceParser.isoDuration(), new SpringCronRecurrenceParser()),
+                recurrenceParsers.orderedStream())
+            .toArray(RecurrenceParser[]::new));
     customizers.orderedStream().forEach(customizer -> customizer.customize(builder));
     JsonMapper mapper = jsonMapper.getIfAvailable();
     if (mapper != null) {

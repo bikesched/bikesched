@@ -29,3 +29,5 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0021](0021-apache-license-and-trademark-policy.md) | Apache License 2.0 with a trademark policy | Accepted |
 | [0022](0022-spring-integration-in-its-own-module.md) | Spring integration in its own module | Accepted |
 | [0023](0023-steps-cannot-be-nested.md) | Steps cannot be nested | Accepted |
+| [0024](0024-cron-expressions-via-cron-utils.md) | Cron expressions via cron-utils in their own module | Accepted |
+| [0025](0025-recurrence-parsers-in-core.md) | Recurrence parsers in core | Accepted |

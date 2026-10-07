@@ -4,6 +4,7 @@ package org.bikesched;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
 import org.bikesched.event.EventTimeoutException;
@@ -15,6 +16,7 @@ import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailure;
+import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.StepHandler;
 import org.bikesched.job.listener.JobListener;
 
@@ -56,6 +58,7 @@ public final class BikeschedBuilder {
   private Duration statementTimeout; // null: left to the data source
   private Duration hardTimeoutGrace; // null: no hard timeout
   private JobListener jobListener = new JobListener() {};
+  private List<RecurrenceParser> recurrenceParsers = List.of(RecurrenceParser.isoDuration());
 
   BikeschedBuilder() {}
 
@@ -332,6 +335,22 @@ public final class BikeschedBuilder {
   }
 
   /**
+   * Sets the parsers for recurrence expressions in {@link JobBuilder#schedule(String)} and in
+   * {@code @JobHandler(schedule = …)} (optional, default: {@link RecurrenceParser#isoDuration()}
+   * only). Replaces the parsers set so far, including the default; add {@code isoDuration()} to
+   * keep ISO-8601 durations, e.g. {@code recurrenceParsers(RecurrenceParser.isoDuration(), new
+   * CronRecurrenceParser())} with {@code bikesched-cron}. An expression must be supported by
+   * exactly one of them.
+   *
+   * @param recurrenceParsers the parsers
+   * @return this builder
+   */
+  public BikeschedBuilder recurrenceParsers(RecurrenceParser... recurrenceParsers) {
+    this.recurrenceParsers = List.of(recurrenceParsers);
+    return this;
+  }
+
+  /**
    * Interval between the heartbeats this node writes while it polls; must be shorter than {@link
    * #nodeTimeout(Duration)}. Lower values detect a crashed node sooner at the cost of one write per
    * interval; defaults to 5 seconds.
@@ -423,7 +442,8 @@ public final class BikeschedBuilder {
             jobCleanUpInterval,
             statementTimeout,
             hardTimeoutGrace,
-            jobListener);
+            jobListener,
+            recurrenceParsers);
     return Internals.create(settings, dataSource, jsonMapper);
   }
 

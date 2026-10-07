@@ -139,6 +139,29 @@ public interface JobBuilder<P> extends JobSettings<JobBuilder<P>, P> {
   UUID schedule(Recurrence recurrence);
 
   /**
+   * Registers a recurring job like {@link #schedule(Recurrence)}, with the recurrence parsed from
+   * an expression by the node's {@link RecurrenceParser}s:
+   *
+   * <pre>{@code
+   * bikesched.newJob("cleanup").handler(job -> cleanup()).schedule("PT1H");
+   * }</pre>
+   *
+   * <p>By default a node parses ISO-8601 durations ({@link RecurrenceParser#isoDuration()}); other
+   * formats, e.g. cron expressions from {@code bikesched-cron}, are configured with {@code
+   * BikeschedBuilder.recurrenceParsers(…)}.
+   *
+   * @param recurrence the recurrence expression, e.g. {@code PT1H}
+   * @return the id of the pending occurrence
+   * @throws IllegalArgumentException if not exactly one of the node's parsers supports the
+   *     expression, the expression is invalid, or no handler is set nor registered for the job type
+   * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
+   *     valid JSON
+   * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed or the
+   *     recurrence does not return a later instant
+   */
+  UUID schedule(String recurrence);
+
+  /**
    * Registers a recurring job like {@link #schedule(Recurrence)}; a new first occurrence runs at
    * the given time (also when moving the pending occurrence to a changed recurrence), the following
    * ones according to the recurrence.

@@ -2,6 +2,7 @@
 package org.bikesched.internal;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
@@ -11,6 +12,7 @@ import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.internal.util.ValidationUtil;
+import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.listener.JobListener;
 
 /**
@@ -44,6 +46,7 @@ import org.bikesched.job.listener.JobListener;
  * @param hardTimeoutGrace how long after its timeout an attempt whose handler ignores the interrupt
  *     is abandoned; {@code null} for no hard timeout
  * @param jobListener observes the jobs the node runs
+ * @param recurrenceParsers parse the recurrence expressions of {@code schedule(String)}
  */
 public record Settings(
     String nodeName,
@@ -64,7 +67,8 @@ public record Settings(
     Duration jobCleanUpInterval,
     Duration statementTimeout,
     Duration hardTimeoutGrace,
-    JobListener jobListener) {
+    JobListener jobListener,
+    List<RecurrenceParser> recurrenceParsers) {
 
   /** Validates the settings. */
   public Settings {
@@ -74,6 +78,7 @@ public record Settings(
     Objects.requireNonNull(pollInterval, "pollInterval");
     Objects.requireNonNull(retryBackoff, "retryBackoff");
     Objects.requireNonNull(jobListener, "jobListener");
+    recurrenceParsers = List.copyOf(recurrenceParsers);
     Objects.requireNonNull(eventRetention, "eventRetention");
     Objects.requireNonNull(nodeCleanUpInterval, "nodeCleanUpInterval");
     Objects.requireNonNull(eventCleanUpInterval, "eventCleanUpInterval");

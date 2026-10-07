@@ -73,9 +73,22 @@ observe event publication. Define the callback around successful publication: pu
 caller-owned transaction must not report success before commit or report rolled-back events. Avoid
 exposing payloads or event keys by default, which can be sensitive or high-cardinality.
 
-### Recurring job handlers in annotations
+### Fixed-delay recurrences
 
-Support declaring recurring job handlers with the `@JobHandler` annotation in `bikesched-annotations`, so annotated methods can register recurring jobs as well as regular job handlers.
+`Recurrence.every(Duration)` runs at a fixed rate; the other recurrences compute the next run from
+the previous occurrence's scheduled time. Neither waits for a run to finish: a sync job taking 10
+of its 15 minutes leaves only 5 minutes to the next run. A fixed delay (Spring's `fixedDelay`)
+starts the interval when the previous occurrence ended.
+
+- Core: e.g. `Recurrence.everyAfterCompletion(Duration)`, described as `every PT15M after
+  completion`. `RecurringJob.nextRun(ended, now)` already receives the end time (`now`); the
+  recurrence needs a way to ask for it instead of the planned or scheduled time, e.g. an enum
+  replacing `isFixedRate()` (`SCHEDULED`, `PLANNED`, `COMPLETED`).
+- Annotations: a schedule format for it, or a `fixedDelay` attribute next to `schedule`; ISO
+  durations stay fixed rate.
+- Not a boolean `fixedRate` flag on `@JobHandler`: computing from the scheduled time is neither a
+  fixed rate nor a fixed delay, and the flag would do nothing for wall-clock schedules.
+- Outcome: interval jobs that never overlap their own next run and keep a gap after long runs.
 
 ### Fallbacks in event timeout handlers
 
@@ -93,27 +106,6 @@ minutes.
   event retention period, so a later wait (new step name) still receives it.
 - Outcome: a documented pattern with a test, or API support (e.g. a timeout handler that can wait
   again).
-
-## Modules
-
-### bikesched-cron
-
-A separate module `bikesched-cron` with cron expressions as `Recurrence`, e.g.
-`CronRecurrence.of("0 3 * * MON-FRI", ZoneId.of("Europe/Berlin"))`. The parsing comes from an
-external library, so core stays free of the dependency and of a cron dialect of its own.
-
-- Library: [cron-utils](https://github.com/jmrozanec/cron-utils) (Unix, Quartz and Spring
-  dialects, `ExecutionTime.nextExecution`). Before choosing it, check its maintenance, its
-  transitive dependencies and JPMS support; alternatives are Spring's `CronExpression` (pulls in
-  `spring-context`) or a small parser of our own.
-- `next(previous)` calculates the next execution after `previous` in the given zone. The
-  description is the normalized expression plus the zone (e.g. `cron 0 3 * * MON-FRI
-  Europe/Berlin`), so changing the expression moves the pending occurrence. Not fixed rate: cron
-  snaps to the wall clock.
-- Choose the dialect explicitly (Unix by default, Quartz with seconds as an option), and reject
-  invalid expressions and expressions without a next execution when the recurrence is created.
-- Daylight saving time: document how skipped and repeated local times behave, and test them.
-- Kotlin: probably no extra API, the recurrence is passed to `createRecurringJob` as is.
 
 ## Website
 

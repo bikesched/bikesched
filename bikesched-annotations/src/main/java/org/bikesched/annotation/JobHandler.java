@@ -38,8 +38,10 @@ public @interface JobHandler {
   String type();
 
   /**
-   * Optional recurring schedule. ISO-8601 durations (e.g. {@code PT5M}) are supported by default;
-   * additional formats can be provided with {@link ScheduleProvider} implementations.
+   * Optional recurring schedule: a recurrence expression, parsed when the handler is registered by
+   * the node's {@link org.bikesched.job.RecurrenceParser}s (like {@link
+   * org.bikesched.job.JobBuilder#schedule(String)}). By default a node parses ISO-8601 durations
+   * (e.g. {@code PT5M}, at a fixed rate); other formats are configured on the node.
    *
    * @return the schedule expression, empty for a one-off handler
    */

@@ -10,10 +10,13 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.bikesched.Bikesched;
+import org.bikesched.BikeschedBuilder;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
+import org.bikesched.job.Recurrence;
+import org.bikesched.job.RecurrenceParser;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -112,6 +115,47 @@ class JobHandlersTest {
     assertThat(jobs.calls).isNotEmpty();
   }
 
+  public static class CustomScheduleJobs {
+    final List<String> calls = new CopyOnWriteArrayList<>();
+
+    @JobHandler(type = "custom-schedule-ping", schedule = "every 100 ms")
+    public void ping() {
+      calls.add("ping");
+    }
+  }
+
+  @Test
+  void schedulesAreParsedByTheNodesRecurrenceParsers() {
+    RecurrenceParser everyMillis =
+        new RecurrenceParser() {
+          @Override
+          public boolean supports(String expression) {
+            return expression.matches("every \\d+ ms");
+          }
+
+          @Override
+          public Recurrence parse(String expression) {
+            return Recurrence.every(Duration.ofMillis(Long.parseLong(expression.split(" ")[1])));
+          }
+        };
+    var jobs = new CustomScheduleJobs();
+    try (Bikesched bikesched =
+        nodeBuilder().recurrenceParsers(RecurrenceParser.isoDuration(), everyMillis).build()) {
+      JobHandlers.register(bikesched, jobs);
+      await().atMost(Duration.ofSeconds(15)).until(() -> !jobs.calls.isEmpty());
+      bikesched.removeRecurringJob("custom-schedule-ping");
+    }
+  }
+
+  @Test
+  void anUnsupportedScheduleFailsTheRegistration() {
+    try (Bikesched bikesched = node()) {
+      assertThatThrownBy(() -> JobHandlers.register(bikesched, new CustomScheduleJobs()))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("No RecurrenceParser supports recurrence 'every 100 ms'");
+    }
+  }
+
   public interface MailApi {
     void send(Mail mail);
   }
@@ -202,11 +246,14 @@ class JobHandlersTest {
   }
 
   private static Bikesched node() {
+    return nodeBuilder().build();
+  }
+
+  private static BikeschedBuilder nodeBuilder() {
     return Bikesched.builder()
         .dataSource(DATA_SOURCE)
         .nodeName("annotations-" + UUID.randomUUID())
         .pollInterval(Duration.ofMillis(50))
-        .jsonMapper(new JacksonJsonMapper())
-        .build();
+        .jsonMapper(new JacksonJsonMapper());
   }
 }

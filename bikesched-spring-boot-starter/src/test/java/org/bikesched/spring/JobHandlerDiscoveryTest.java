@@ -4,6 +4,7 @@ package org.bikesched.spring;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -15,6 +16,8 @@ import org.bikesched.job.Job;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
 import org.bikesched.job.JobTypeHandler;
+import org.bikesched.job.Recurrence;
+import org.bikesched.job.RecurrenceParser;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -183,6 +186,51 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
         .withBean("cronJobs", CronJobs.class, CronJobs::new)
         .withPropertyValues("bikesched.node-name=" + unique("cron-node"))
         .run(context -> await().untilAsserted(() -> assertThat(CronJobs.handled).isNotEmpty()));
+  }
+
+  @Test
+  void addsRecurrenceParserBeansToTheBuiltInParsers() {
+    MillisJobs.handled.clear();
+    CronJobs.handled.clear();
+    runner()
+        .withBean("dataSource", DataSource.class, () -> dataSource())
+        .withBean("millisJobs", MillisJobs.class, MillisJobs::new)
+        .withBean("cronJobs", CronJobs.class, CronJobs::new)
+        .withBean("millisParser", RecurrenceParser.class, MillisJobs::parser)
+        .withPropertyValues("bikesched.node-name=" + unique("parser-node"))
+        .run(
+            context ->
+                await()
+                    .untilAsserted(
+                        () -> {
+                          assertThat(MillisJobs.handled).isNotEmpty();
+                          assertThat(CronJobs.handled).isNotEmpty();
+                        }));
+  }
+
+  /** A recurring handler with a schedule format of a {@link RecurrenceParser} bean. */
+  public static class MillisJobs {
+
+    public static final List<String> handled = new CopyOnWriteArrayList<>();
+
+    @JobHandler(type = "millis-job", schedule = "every 100 ms")
+    public void handle() {
+      handled.add("ran");
+    }
+
+    static RecurrenceParser parser() {
+      return new RecurrenceParser() {
+        @Override
+        public boolean supports(String expression) {
+          return expression.equals("every 100 ms");
+        }
+
+        @Override
+        public Recurrence parse(String expression) {
+          return Recurrence.every(Duration.ofMillis(100));
+        }
+      };
+    }
   }
 
   /** A {@code @JobHandler} bean discovered and invoked with a record payload. */

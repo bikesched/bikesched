@@ -10,6 +10,7 @@ import org.bikesched.JsonMapper;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobSettings;
+import org.bikesched.job.Recurrence;
 import org.bikesched.job.TypedJobHandler;
 
 /**
@@ -30,6 +31,9 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
 
     /** Registers a recurring job; {@code firstRun} is {@code null} for the schedule's next run. */
     UUID scheduleRecurring(RecurringJob job, JobHandler handler, Instant firstRun);
+
+    /** Parses a recurrence expression with the node's recurrence parsers. */
+    Recurrence parseRecurrence(String expression);
   }
 
   final String type;

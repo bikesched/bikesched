@@ -33,7 +33,8 @@ and without any coordinator besides PostgreSQL.
 
 1. [Jobs](jobs.md): scheduling, writing handlers, retries, cancellation, job history, timeouts
 2. [Steps and compensation](steps.md): durable steps and sagas
-3. [Recurring jobs](recurring-jobs.md): schedules and occurrences
+3. [Recurring jobs](recurring-jobs.md): schedules, cron expressions (`bikesched-cron`) and
+   occurrences
 4. [Events](events.md): waiting for and publishing events
 5. [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
    logging

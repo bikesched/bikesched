@@ -43,40 +43,24 @@ class JobHandlersScanTest {
   }
 
   @Test
-  void parsesIsoDurationSchedulesAsFixedRateRecurrences() {
+  void keepsTheScheduleForRegistration() {
     var handler = JobHandlers.scan(RecurringHandlers.class).getFirst();
 
-    assertThat(handler.recurrence()).isPresent();
-    assertThat(handler.recurrence().orElseThrow().description()).isEqualTo("every PT5M");
-    assertThat(handler.recurrence().orElseThrow().isFixedRate()).isTrue();
+    assertThat(handler.schedule()).contains("PT5M");
   }
 
   @Test
-  void rejectsSchedulesWithoutAProvider() {
-    assertThatThrownBy(() -> JobHandlers.scan(UnsupportedSchedule.class))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("No ScheduleProvider supports schedule 'every 5 minutes'");
+  void doesNotParseTheSchedule() {
+    // parsed by the node's recurrence parsers when registering, see JobHandlersTest
+    var handler = JobHandlers.scan(UnsupportedSchedule.class).getFirst();
+
+    assertThat(handler.schedule()).contains("every 5 minutes");
   }
 
   @Test
-  void usesAddedScheduleProviders() {
-    ScheduleProvider provider =
-        new ScheduleProvider() {
-          @Override
-          public boolean supports(String schedule) {
-            return schedule.equals("every 5 minutes");
-          }
-
-          @Override
-          public org.bikesched.job.Recurrence parse(String schedule) {
-            return org.bikesched.job.Recurrence.every(java.time.Duration.ofMinutes(5));
-          }
-        };
-
-    var handler = JobHandlers.scan(UnsupportedSchedule.class, provider).getFirst();
-
-    assertThat(handler.recurrence()).isPresent();
-    assertThat(handler.recurrence().orElseThrow().description()).isEqualTo("every PT5M");
+  void oneOffHandlersHaveNoSchedule() {
+    assertThat(JobHandlers.scan(ValidHandlers.class))
+        .allSatisfy(handler -> assertThat(handler.schedule()).isEmpty());
   }
 
   @Test

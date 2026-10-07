@@ -10,7 +10,6 @@ import java.util.Optional;
 import org.bikesched.Bikesched;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobType;
-import org.bikesched.job.Recurrence;
 
 /**
  * A job handler found on a {@link JobHandler @JobHandler} method, see {@link
@@ -24,7 +23,7 @@ public final class AnnotatedJobHandler {
 
   private final String type;
   private final Class<?> payloadType;
-  private final Recurrence recurrence;
+  private final String schedule; // null for a one-off handler
   private final Method method;
   private final int parameterCount;
   private final int jobIndex;
@@ -36,7 +35,7 @@ public final class AnnotatedJobHandler {
   AnnotatedJobHandler(
       String type,
       Class<?> payloadType,
-      Recurrence recurrence,
+      String schedule,
       Method method,
       int parameterCount,
       int jobIndex,
@@ -45,7 +44,7 @@ public final class AnnotatedJobHandler {
       MethodHandle invoker) {
     this.type = Objects.requireNonNull(type, "type");
     this.payloadType = payloadType;
-    this.recurrence = recurrence;
+    this.schedule = schedule;
     this.method = Objects.requireNonNull(method, "method");
     this.parameterCount = parameterCount;
     this.jobIndex = jobIndex;
@@ -73,12 +72,13 @@ public final class AnnotatedJobHandler {
   }
 
   /**
-   * The recurring schedule declared by the annotation.
+   * The recurrence expression declared by the annotation, parsed by the node's {@code
+   * RecurrenceParser}s when the handler is registered.
    *
-   * @return the recurrence, empty for a one-off handler
+   * @return the expression, empty for a one-off handler
    */
-  public Optional<Recurrence> recurrence() {
-    return Optional.ofNullable(recurrence);
+  public Optional<String> schedule() {
+    return Optional.ofNullable(schedule);
   }
 
   /**
@@ -128,7 +128,7 @@ public final class AnnotatedJobHandler {
     return new AnnotatedJobHandler(
         type,
         payloadType,
-        recurrence,
+        schedule,
         method,
         parameterCount,
         jobIndex,
@@ -149,11 +149,13 @@ public final class AnnotatedJobHandler {
   /**
    * Registers this handler on the node: with a payload parameter as the handler of {@code
    * JobType.of(type, payloadType)}, so the node rejects the type with another payload class;
-   * otherwise as the handler of the job type name.
+   * otherwise as the handler of the job type name. With a schedule, it also registers the recurring
+   * job, parsing the schedule with the node's {@code RecurrenceParser}s.
    *
    * @param bikesched the node
    * @throws IllegalStateException if the handler is not bound, see {@link #bindTo(Object)}
-   * @throws IllegalArgumentException if the node already has a handler for the type
+   * @throws IllegalArgumentException if the node already has a handler for the type, or the
+   *     schedule is not supported by exactly one of the node's recurrence parsers
    */
   public void registerOn(Bikesched bikesched) {
     Objects.requireNonNull(bikesched, "bikesched");
@@ -166,9 +168,9 @@ public final class AnnotatedJobHandler {
     } else {
       registerTyped(bikesched, JobType.of(type, payloadType));
     }
-    if (recurrence != null) {
+    if (schedule != null) {
       if (payloadType == null) {
-        bikesched.newJob(type).schedule(recurrence);
+        bikesched.newJob(type).schedule(schedule);
       } else {
         scheduleTyped(bikesched, JobType.of(type, payloadType));
       }
@@ -198,7 +200,7 @@ public final class AnnotatedJobHandler {
   }
 
   private <T> void scheduleTyped(Bikesched bikesched, JobType<T> jobType) {
-    bikesched.newJob(jobType).schedule(recurrence);
+    bikesched.newJob(jobType).schedule(schedule);
   }
 
   /** Calls the bound method; its exceptions are passed on unchanged. */

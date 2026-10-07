@@ -7,7 +7,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.bikesched.Bikesched;
 import org.bikesched.annotation.AnnotatedJobHandler;
 import org.bikesched.annotation.JobHandlers;
-import org.bikesched.annotation.ScheduleProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -24,16 +23,12 @@ final class JobHandlerBeans {
 
   private final Map<String, Bean> beans = new ConcurrentHashMap<>();
   private final ObjectProvider<HandlerWarning> warningProvider;
-  private final ObjectProvider<ScheduleProvider> scheduleProviderProvider;
   private volatile List<HandlerWarning> warnings; // resolved lazily: the beans may come later
   private volatile Bikesched bikesched;
   private volatile boolean nodeClosed;
 
-  JobHandlerBeans(
-      ObjectProvider<HandlerWarning> warningProvider,
-      ObjectProvider<ScheduleProvider> scheduleProviderProvider) {
+  JobHandlerBeans(ObjectProvider<HandlerWarning> warningProvider) {
     this.warningProvider = warningProvider;
-    this.scheduleProviderProvider = scheduleProviderProvider;
   }
 
   /** Records a bean whose class declares {@code @JobHandler} methods. */
@@ -79,10 +74,7 @@ final class JobHandlerBeans {
     }
     List<AnnotatedJobHandler> handlers;
     try {
-      handlers =
-          JobHandlers.scan(
-              bean.targetClass(),
-              scheduleProviderProvider.orderedStream().toArray(ScheduleProvider[]::new));
+      handlers = JobHandlers.scan(bean.targetClass());
       for (AnnotatedJobHandler handler : handlers) {
         AnnotatedJobHandler bound = handler.bindTo(bean.instance());
         warnings().forEach(warning -> warning.warn(bound));

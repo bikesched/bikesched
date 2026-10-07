@@ -9,6 +9,7 @@ import kotlin.time.Duration.Companion.seconds
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.bikesched.job.JobState
+import org.bikesched.job.RecurrenceParser
 import org.bikesched.job.listener.JobListener
 import org.junit.jupiter.api.Test
 
@@ -34,6 +35,7 @@ class BikeschedDslTest {
       statementTimeout = 30.seconds
       hardTimeoutGrace = 30.seconds
       jobListener = object : JobListener {}
+      recurrenceParsers = listOf(RecurrenceParser.isoDuration())
     }
       .use { bikesched ->
         assertThat(bikesched.node().name()).isEqualTo("dsl-node")
@@ -45,6 +47,10 @@ class BikeschedDslTest {
 
         val jobId = bikesched.createJob(type = unique("dsl-history"), delay = 1.hours) {}
         assertThat(bikesched.findJobHistory(jobId).map { it.state() }).containsExactly("SCHEDULED")
+
+        val recurring = unique("dsl-recurring")
+        bikesched.newJob(recurring).handler { _ -> }.schedule("PT1H")
+        assertThat(bikesched.removeRecurringJob(recurring)).isTrue()
       }
   }
 
