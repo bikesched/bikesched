@@ -28,3 +28,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0020](0020-job-listener-and-micrometer.md) | Job listener SPI with Micrometer in its own module | Accepted |
 | [0021](0021-apache-license-and-trademark-policy.md) | Apache License 2.0 with a trademark policy | Accepted |
 | [0022](0022-spring-integration-in-its-own-module.md) | Spring integration in its own module | Accepted |
+| [0023](0023-steps-cannot-be-nested.md) | Steps cannot be nested | Accepted |

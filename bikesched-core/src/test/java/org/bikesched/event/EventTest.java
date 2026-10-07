@@ -199,6 +199,36 @@ class EventTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void timeoutHandlerCanRunAStep() throws Exception {
+    List<String> results = new CopyOnWriteArrayList<>();
+    try (Bikesched bikesched = node("node-event-timeout-step")) {
+      UUID jobId =
+          bikesched
+              .newJob("event-timeout-step")
+              .handler(
+                  job -> {
+                    String payment =
+                        job.waitForEvent("await-payment", "paid", "timeout-step-1")
+                            .timeout(
+                                Duration.ofMillis(300),
+                                () -> job.step("fetch-payment", String.class, _ -> "\"fetched\""))
+                            .receive(String.class);
+                    results.add(payment);
+                  })
+              .schedule();
+
+      awaitState(jobId, "SUCCEEDED");
+
+      assertThat(results).containsExactly("\"fetched\"");
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '" + jobId + "' and name = 'fetch-payment' and state = 'SUCCEEDED'"))
+          .isOne();
+    }
+  }
+
+  @Test
   void waitWithTimeoutReceivesEventInTime() throws Exception {
     List<String> results = new CopyOnWriteArrayList<>();
     try (Bikesched bikesched = node("node-event-in-time")) {

@@ -35,6 +35,7 @@ public interface StepBuilder<T> {
    * @param handler executes the step
    * @return the step result, may be {@code null}
    * @throws Exception if the step failed
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
   T run(StepHandler<T> handler) throws Exception;
 }

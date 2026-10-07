@@ -53,7 +53,8 @@ public interface EventWait {
    * @return the payload, may be {@code null}
    * @throws EventTimeoutException if the wait exceeded the node's {@link
    *     BikeschedBuilder#defaultEventTimeout(Duration) default event timeout}; the job fails
-   * @throws IllegalStateException if the step name is used for another step of the job
+   * @throws IllegalStateException if the step name is used for another step of the job, or if
+   *     called while a step handler or compensation of the job runs
    * @throws BikeschedException if the step cannot be read or stored
    */
   <T> T receive(Class<T> payloadType);
@@ -73,7 +74,8 @@ public interface EventWait {
      * @param payloadType the type to convert the payload to
      * @return the payload or the result of the timeout handler, may be {@code null}
      * @throws Exception the exception thrown by the timeout handler
-     * @throws IllegalStateException if the step name is used for another step of the job
+     * @throws IllegalStateException if the step name is used for another step of the job, or if
+     *     called while a step handler or compensation of the job runs
      * @throws BikeschedException if the step cannot be read or stored
      */
     T receive(Class<? extends T> payloadType) throws Exception;

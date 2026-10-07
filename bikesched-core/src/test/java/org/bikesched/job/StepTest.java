@@ -3,6 +3,7 @@ package org.bikesched.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import java.util.UUID;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
@@ -82,40 +83,133 @@ class StepTest extends AbstractBikeschedTest {
               .newJob("step-context")
               .handler(
                   job -> {
-                    job.step(
-                        "outer",
-                        String.class,
-                        step -> {
-                          String outer =
-                              step.jobId()
-                                  + " "
-                                  + step.name()
-                                  + " "
-                                  + step.attempts()
-                                  + " "
-                                  + org.slf4j.MDC.get(BikeschedLogContext.STEP_NAME);
-                          String inner =
-                              job.step(
-                                  "inner",
-                                  String.class,
-                                  s ->
-                                      "\""
-                                          + org.slf4j.MDC.get(BikeschedLogContext.STEP_NAME)
-                                          + "\"");
-                          seen.complete(
-                              outer
-                                  + " / "
-                                  + inner
-                                  + " / "
-                                  + org.slf4j.MDC.get(BikeschedLogContext.STEP_NAME));
-                          return null;
-                        });
-                    assertThat(org.slf4j.MDC.get(BikeschedLogContext.STEP_NAME)).isNull();
+                    String inStep =
+                        job.step(
+                            "context",
+                            String.class,
+                            step ->
+                                "\""
+                                    + step.jobId()
+                                    + " "
+                                    + step.name()
+                                    + " "
+                                    + step.attempts()
+                                    + " "
+                                    + org.slf4j.MDC.get(BikeschedLogContext.STEP_NAME)
+                                    + "\"");
+                    seen.complete(
+                        inStep + " / " + org.slf4j.MDC.get(BikeschedLogContext.STEP_NAME));
                   })
               .schedule();
 
       assertThat(seen.get(10, java.util.concurrent.TimeUnit.SECONDS))
-          .isEqualTo(jobId + " outer 1 outer / \"inner\" / outer");
+          .isEqualTo("\"" + jobId + " context 1 context\" / null");
+    }
+  }
+
+  @Test
+  void stepsAndEventWaitsCannotBeNestedInAStep() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-nested").build()) {
+      var rejected = new java.util.concurrent.CopyOnWriteArrayList<String>();
+      UUID jobId =
+          bikesched
+              .newJob("step-nested")
+              .maxAttempts(1)
+              .handler(
+                  job -> {
+                    var builtOutside = job.newStep("built-outside", String.class);
+                    var waitOutside = job.waitForEvent("wait-outside", "nested", "key-1");
+                    List<java.util.concurrent.Callable<?>> nested =
+                        List.of(
+                            () -> job.step("inner", String.class, _ -> "\"inner\""),
+                            () -> job.newStep("inner-builder", String.class),
+                            () -> builtOutside.run(_ -> "\"inner\""),
+                            () -> job.waitForEvent("inner-wait", "nested", "key-1"),
+                            () -> waitOutside.receive(String.class),
+                            () ->
+                                java.util.concurrent.CompletableFuture.supplyAsync(
+                                        () -> {
+                                          try {
+                                            return job.step(
+                                                "other-thread", String.class, _ -> "\"inner\"");
+                                          } catch (Exception e) {
+                                            throw new java.util.concurrent.CompletionException(e);
+                                          }
+                                        })
+                                    .join());
+                    job.step(
+                        "outer",
+                        String.class,
+                        _ -> {
+                          for (var call : nested) {
+                            try {
+                              call.call();
+                              rejected.add("not rejected");
+                            } catch (Exception e) {
+                              Throwable cause =
+                                  e instanceof java.util.concurrent.CompletionException
+                                      ? e.getCause()
+                                      : e;
+                              rejected.add(
+                                  cause instanceof IllegalStateException
+                                      ? cause.getMessage()
+                                      : cause.toString());
+                            }
+                          }
+                          return "\"outer\"";
+                        });
+                    job.step("after", String.class, _ -> "\"after\"");
+                  })
+              .schedule();
+
+      awaitState(jobId, "SUCCEEDED");
+
+      String job = "Job " + jobId + " cannot ";
+      String suffix = " while step 'outer' runs: steps and event waits cannot be nested";
+      assertThat(rejected)
+          .containsExactly(
+              job + "run step 'inner'" + suffix,
+              job + "create step 'inner-builder'" + suffix,
+              job + "run step 'built-outside'" + suffix,
+              job + "wait for an event as step 'inner-wait'" + suffix,
+              job + "wait for an event as step 'wait-outside'" + suffix,
+              job + "run step 'other-thread'" + suffix);
+      assertThat(countRows("bikesched_steps", "job_id = '" + jobId + "'"))
+          .as("only the outer step and the one after it are stored")
+          .isEqualTo(2);
+    }
+  }
+
+  @Test
+  void nestedStepFailsTheOuterStep() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-nested-fails").build()) {
+      UUID jobId =
+          bikesched
+              .newJob("step-nested-fails")
+              .maxAttempts(1)
+              .handler(
+                  job ->
+                      job.step(
+                          "outer",
+                          String.class,
+                          _ -> job.step("inner", String.class, _ -> "\"inner\"")))
+              .schedule();
+
+      awaitState(jobId, "FAILED");
+
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '"
+                      + jobId
+                      + "' and name = 'outer' and state = 'FAILED' and last_error = "
+                      + "'java.lang.IllegalStateException: Job "
+                      + jobId
+                      + " cannot run step ''inner'' while step ''outer'' runs: "
+                      + "steps and event waits cannot be nested'"))
+          .isOne();
+      assertThat(countRows("bikesched_steps", "job_id = '" + jobId + "' and name = 'inner'"))
+          .isZero();
     }
   }
 

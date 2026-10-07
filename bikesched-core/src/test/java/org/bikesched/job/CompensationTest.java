@@ -125,6 +125,42 @@ class CompensationTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void compensationCannotRunSteps() throws Exception {
+    try (Bikesched bikesched = node("node-compensate-nested")) {
+      List<String> rejected = new CopyOnWriteArrayList<>();
+      UUID jobId =
+          bikesched
+              .newJob("compensate-nested")
+              .handler(
+                  job -> {
+                    job.newStep("a", String.class)
+                        .compensateWith(
+                            (_, _) -> {
+                              try {
+                                job.step("undo", String.class, _ -> "\"undo\"");
+                              } catch (IllegalStateException e) {
+                                rejected.add(e.getMessage());
+                              }
+                            })
+                        .run(_ -> "1");
+                    job.cancel();
+                  })
+              .schedule();
+
+      awaitState(jobId, "CANCELLED");
+
+      assertThat(rejected)
+          .containsExactly(
+              "Job "
+                  + jobId
+                  + " cannot run step 'undo' while the compensation of step 'a' runs:"
+                  + " steps and event waits cannot be nested");
+      assertThat(countRows("bikesched_steps", "job_id = '" + jobId + "' and name = 'undo'"))
+          .isZero();
+    }
+  }
+
+  @Test
   void failedCompensationIsRetriedThenCompensationFailed() throws Exception {
     try (Bikesched bikesched = node("node-compensate-retry")) {
       var attempts = new AtomicInteger();

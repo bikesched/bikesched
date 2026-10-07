@@ -110,7 +110,9 @@ public interface Job {
    * step is executed again. Step names identify steps across attempts, so they must be unique
    * within the job and the handler must call its steps in a deterministic way. A step may still run
    * more than once (e.g. if the node dies before its result is stored), so steps should be
-   * idempotent. Steps run on the calling thread, one at a time.
+   * idempotent. Steps run on the calling thread, one at a time, and cannot be nested: a step
+   * handler (or compensation) must not run steps or wait for events itself, so that every step
+   * completes or fails as a whole.
    *
    * @param name the step name, unique within the job, at most 200 characters
    * @param resultType the type of the step result, used to read a stored result back
@@ -121,6 +123,7 @@ public interface Job {
    * @throws BikeschedException if the step cannot be read or stored, e.g. because the mapped result
    *     is not valid JSON
    * @throws IllegalArgumentException if the name is blank
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
   <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception;
 
@@ -158,6 +161,7 @@ public interface Job {
    * @param <T> the type of the step result
    * @return the step builder
    * @throws IllegalArgumentException if the name is blank
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
   <T> StepBuilder<T> newStep(String name, Class<T> resultType);
 
@@ -217,6 +221,7 @@ public interface Job {
    *     characters
    * @return the wait, to set an optional timeout and receive the event
    * @throws IllegalArgumentException if the step or event name is blank
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
   EventWait waitForEvent(String stepName, String eventName, String eventKey);
 
@@ -241,6 +246,7 @@ public interface Job {
    * @param <T> the payload type
    * @return the wait, to set an optional timeout and receive the payload
    * @throws IllegalArgumentException if the step name is blank
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
   <T> TypedEventWait<T> waitForEvent(String stepName, EventType<T> eventType, String eventKey);
 
@@ -267,7 +273,8 @@ public interface Job {
    * @return the payload, {@code null} if the event has none
    * @throws org.bikesched.event.EventTimeoutException if the wait exceeded the node's default event
    *     timeout; the job fails
-   * @throws IllegalStateException if the step name is used for another step of the job
+   * @throws IllegalStateException if the step name is used for another step of the job, or if
+   *     called while a step handler or compensation of the job runs
    * @throws BikeschedException if the step cannot be read or stored
    * @throws IllegalArgumentException if the step name is blank
    */

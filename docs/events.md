@@ -110,7 +110,9 @@ see [Payload design](configuration.md#payload-design).
 
 To stop waiting after a while, add a timeout; its handler's result is returned instead of the
 payload. Unlike the payload, it is not stored: the timeout handler runs every time the job's
-handler reaches the timed-out wait, so it should only produce a fallback:
+handler reaches the timed-out wait, so it should only produce a fallback, or run a
+[step](steps.md#durable-steps) for one with side effects (unlike a step handler, a timeout handler
+may run steps):
 
 ```java
 Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())

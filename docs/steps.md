@@ -26,6 +26,11 @@ bikesched.registerJobHandler("order", job -> {
 - The step handler receives the `Step` (job id, name and attempt number), e.g. for idempotency
   keys.
 - Code outside of steps runs again on every attempt, so it should be cheap and deterministic.
+- Steps cannot be nested: while a step handler runs, `job.step(...)`, `job.newStep(...)` and
+  event waits of the same job throw an `IllegalStateException` (from any thread, so steps of one
+  job cannot run in parallel either). An inner step would complete durably even if the outer step
+  failed, and its retry would skip it. Run the steps one after the other instead. The same applies
+  inside [compensations](#compensation).
 
 ### Idempotency keys
 

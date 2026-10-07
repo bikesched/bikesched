@@ -69,6 +69,9 @@ public final class DefaultJob implements Job {
   /** Compensations registered while replaying for compensation, latest first. */
   private final Deque<PendingCompensation> compensations = new ConcurrentLinkedDeque<>();
 
+  /** Rejects steps and event waits while a step handler or compensation runs. */
+  private final StepGuard stepGuard;
+
   // Set by the handler, read by bikesched after the handler returned (the handler may use other
   // threads).
   private volatile boolean cancelled;
@@ -97,6 +100,7 @@ public final class DefaultJob implements Job {
     this.compensationAttempts = claimed.compensationAttempts();
     this.cancelRequested = claimed.cancelRequested();
     this.cancelRequestMessage = claimed.cancelMessage();
+    this.stepGuard = new StepGuard(id);
   }
 
   @Override
@@ -191,7 +195,7 @@ public final class DefaultJob implements Job {
     try {
       LOG.debug("Compensating step {} of job {}", name, id);
       try {
-        compensation.call().call();
+        stepGuard.run("the compensation of step '" + name + "'", compensation.call());
       } catch (Exception e) {
         LOG.debug(
             "Compensating step {} of job {} FAILED in {} ms: {}",
@@ -307,6 +311,7 @@ public final class DefaultJob implements Job {
   public <T> StepBuilder<T> newStep(String name, Class<T> resultType) {
     ValidationUtil.requireName(name, "step name");
     Objects.requireNonNull(resultType, "resultType");
+    stepGuard.requireNoneRunning("create step '" + name + "'");
     return new DefaultStepBuilder<>(this, name, resultType);
   }
 
@@ -319,6 +324,7 @@ public final class DefaultJob implements Job {
       throws Exception {
     ValidationUtil.requireName(name, "step name");
     Objects.requireNonNull(handler, "handler");
+    stepGuard.requireNoneRunning("run step '" + name + "'");
     Runnable restoreStepName = putStepName(name);
     try {
       var completed = database.steps().findCompletedStep(id, name);
@@ -379,6 +385,7 @@ public final class DefaultJob implements Job {
     ValidationUtil.requireName(stepName, "step name");
     ValidationUtil.requireName(eventName, "event name");
     ValidationUtil.requireKey(eventKey, "event key");
+    stepGuard.requireNoneRunning("wait for an event as step '" + stepName + "'");
     return new DefaultEventWait(this, stepName, eventName, eventKey);
   }
 
@@ -425,6 +432,7 @@ public final class DefaultJob implements Job {
       Function<String, ? extends T> read,
       StepCall<? extends T> onTimeout)
       throws Exception {
+    stepGuard.requireNoneRunning("wait for an event as step '" + stepName + "'");
     Runnable restoreStepName = putStepName(stepName);
     try {
       if (compensating) {
@@ -489,7 +497,8 @@ public final class DefaultJob implements Job {
     long start = System.nanoTime();
     T result;
     try {
-      result = handler.handle(new Step(id, name, stepAttempt));
+      var step = new Step(id, name, stepAttempt);
+      result = stepGuard.run("step '" + name + "'", () -> handler.handle(step));
       String json = result == null ? null : toJson.apply(result);
       fenced(() -> database.steps().completeStep(id, lock, name, json, compensable));
     } catch (Exception e) {

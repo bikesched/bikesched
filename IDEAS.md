@@ -73,17 +73,6 @@ observe event publication. Define the callback around successful publication: pu
 caller-owned transaction must not report success before commit or report rolled-back events. Avoid
 exposing payloads or event keys by default, which can be sensitive or high-cardinality.
 
-### Steps inside steps
-
-A step handler can currently call `job.step(...)` (or wait for an event) itself; nothing prevents
-it. The semantics are unclear: the inner step completes durably even if the outer step then
-fails, a retry runs the outer step again but skips the inner one, and a wait inside a step would
-suspend the job while the outer step is still `RUNNING`.
-
-- Either allow nesting and document it (inner steps are independent durable steps), or
-- guard it with a flag on the job that is set while a step runs, so that creating a step, a step
-  builder or an event wait inside a step throws an `IllegalStateException`.
-
 ### Recurring job handlers in annotations
 
 Support declaring recurring job handlers with the `@JobHandler` annotation in `bikesched-annotations`, so annotated methods can register recurring jobs as well as regular job handlers.
@@ -95,8 +84,8 @@ fetch the payment by its id from Stripe, or if it is not available yet either, t
 minutes.
 
 - The timeout handler runs again on every replay after the deadline, so a fetch inside it is
-  repeated; it would need to be a step, inside the handler (see
-  [Steps inside steps](#steps-inside-steps)) or after the wait.
+  repeated; it would need to be a step, inside the handler (timeout handlers may run steps, see
+  [Timeouts](docs/events.md#timeouts)) or after the wait.
 - "Try again in 5 minutes": the wait step stays `TIMED_OUT`, so waiting again needs a new step
   name, or the job fails the attempt with `job.fail().retryAfter(Duration.ofMinutes(5))`, which uses
   up an attempt and runs the fallback again.

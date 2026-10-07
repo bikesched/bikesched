@@ -54,8 +54,8 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   - `internal.node`: `DefaultNode` (the node's name, id and closed state), `NodeHeartbeat`,
     `NodeCleanUp` (releases jobs of dead nodes, removes them)
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
-    event waits via `DefaultEventWait`), `JobScheduler` (stores built jobs, registers and removes
-    recurring jobs), `JobPoller` (claiming and running jobs: poller, job
+    event waits via `DefaultEventWait`; `StepGuard` rejects nested steps), `JobScheduler` (stores
+    built jobs, registers and removes recurring jobs), `JobPoller` (claiming and running jobs: poller, job
     slots, job threads, timeouts; configured by `JobPollerSettings`), `JobRegistry` (handlers,
     recurring jobs and payload types of a node), `JobAttempt` (timeout timer), `HardTimeout` (abandons
     attempts that ignore their timeout), `JobSlot`, `RecurringJob`, `RecurringJobRepair`,

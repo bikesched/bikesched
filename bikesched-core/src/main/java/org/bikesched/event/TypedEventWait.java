@@ -29,6 +29,7 @@ public interface TypedEventWait<T> {
    *
    * @return the payload, {@code null} if the event has none; or the timeout handler's result
    * @throws Exception from the timeout handler
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
   T receive() throws Exception;
 }

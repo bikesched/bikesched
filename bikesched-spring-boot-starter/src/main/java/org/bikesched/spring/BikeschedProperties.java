@@ -28,7 +28,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param dataSource name of the {@code DataSource} bean to use if the context has several
  * @param migrateOnStartup whether the schema is migrated and validated at startup instead of on
  *     first use; defaults to {@code true}
- * @param polling whether the node polls for jobs with the application
+ * @param autoStart whether the node starts automatically with the application
  * @param metrics whether a {@code MicrometerJobListener} is registered when {@code
  *     bikesched-micrometer} and a {@code MeterRegistry} are present; defaults to {@code true}
  * @param maxConcurrentJobs how many jobs the node executes at the same time
