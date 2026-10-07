@@ -14,7 +14,7 @@ import org.bikesched.LogCapture;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.event.listener.EventPublication;
 import org.bikesched.event.listener.EventSource;
-import org.bikesched.internal.event.EventListenerUtil;
+import org.bikesched.internal.DefaultBikesched;
 import org.junit.jupiter.api.Test;
 
 /** The {@link EventListener} sees every committed publication once. */
@@ -107,7 +107,7 @@ class EventListenerTest extends AbstractBikeschedTest {
 
   @Test
   void failingListenerDoesNotAffectPublishing() throws Exception {
-    var logs = LogCapture.of(EventListenerUtil.class);
+    var logs = LogCapture.of(DefaultBikesched.class);
     var listener =
         new EventListener() {
           @Override

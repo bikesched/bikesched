@@ -87,9 +87,9 @@ Rejected alternatives:
 ### 4.4 Implementation
 
 - The `EventListener` is passed from the `Settings` to `JobPoller` (via `JobPollerSettings`) and
-  from there to each `DefaultJob`. The static helper `internal.event.EventListenerUtil
-  .notifyPublished` builds the record at the calling site, calls the listener, and logs and
-  swallows `RuntimeException`s.
+  from there to each `DefaultJob`. `DefaultBikesched` and `DefaultJob` each have a private
+  `notifyPublished` that builds the record, calls the listener, and logs and swallows
+  `RuntimeException`s (like `JobProcessor.notifyListener`).
 - `EventStore.publishEventAsStep` returns a `StepPublication(eventId, publication)`, where
   `publication` is `null` when an earlier run published it; `DefaultJob` notifies only then.
 - `DefaultBikesched.publish` notifies only when no caller connection was given.

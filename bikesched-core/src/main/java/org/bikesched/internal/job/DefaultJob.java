@@ -20,6 +20,7 @@ import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
 import org.bikesched.event.TypedEventWait;
 import org.bikesched.event.listener.EventListener;
+import org.bikesched.event.listener.EventPublication;
 import org.bikesched.event.listener.EventSource;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.EventStore;
@@ -29,7 +30,6 @@ import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.event.DefaultStepEventBuilder;
-import org.bikesched.internal.event.EventListenerUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.Job;
@@ -210,12 +210,22 @@ public final class DefaultJob implements Job {
                   retention == null ? defaultEventRetention : retention,
                   compensating);
       if (published.publication() != null) {
-        EventListenerUtil.notifyPublished(
-            eventListener, eventName, EventSource.JOB, published.publication());
+        notifyPublished(eventName, published.publication());
       }
       return published.eventId();
     } finally {
       restore.run();
+    }
+  }
+
+  /** Reports a committed publication; the listener's exceptions must not affect the job. */
+  private void notifyPublished(String eventName, EventStore.Publication publication) {
+    try {
+      eventListener.onEventPublished(
+          new EventPublication(
+              publication.eventId(), eventName, EventSource.JOB, publication.received()));
+    } catch (RuntimeException e) {
+      LOG.warn("Event listener failed for event {}, ignoring it", publication.eventId(), e);
     }
   }
 

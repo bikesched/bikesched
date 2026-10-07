@@ -19,13 +19,13 @@ import org.bikesched.Node;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventType;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.event.listener.EventPublication;
 import org.bikesched.event.listener.EventSource;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.DatabaseInitializer;
 import org.bikesched.internal.database.EventStore;
 import org.bikesched.internal.event.DefaultEventBuilder;
 import org.bikesched.internal.event.EventCleanUp;
-import org.bikesched.internal.event.EventListenerUtil;
 import org.bikesched.internal.job.DefaultJobBuilder;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
@@ -370,10 +370,22 @@ public final class DefaultBikesched implements Bikesched {
         publication.received());
     if (connection == null) {
       // Events in the caller's transaction are not reported: it may still roll back.
-      EventListenerUtil.notifyPublished(
-          settings.eventListener(), eventName, EventSource.NODE, publication);
+      notifyPublished(eventName, publication);
     }
     return publication.eventId();
+  }
+
+  /** Reports a committed publication; the listener's exceptions must not affect publishing. */
+  private void notifyPublished(String eventName, EventStore.Publication publication) {
+    try {
+      settings
+          .eventListener()
+          .onEventPublished(
+              new EventPublication(
+                  publication.eventId(), eventName, EventSource.NODE, publication.received()));
+    } catch (RuntimeException e) {
+      LOG.warn("Event listener failed for event {}, ignoring it", publication.eventId(), e);
+    }
   }
 
   /**

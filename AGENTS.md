@@ -63,8 +63,7 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
     recurring jobs and payload types of a node), `JobAttempt` (timeout timer), `HardTimeout` (abandons
     attempts that ignore their timeout), `JobSlot`, `RecurringJob`, `RecurringJobRepair`,
     `HistoryCleanUp`, `JobCleanUp`
-  - `internal.event`: `DefaultEventBuilder`, `EventCleanUp`, `EventListenerUtil` (reports
-    publications to the `EventListener`)
+  - `internal.event`: `DefaultEventBuilder`, `EventCleanUp`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
     (`ExecutorUtil`: shutting down executors; `ValidationUtil`: name and key checks matching the
     schema's length constraints, message
