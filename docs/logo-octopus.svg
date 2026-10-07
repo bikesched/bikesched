@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="bikesched logo: an octopus riding a bicycle with clock wheels, steering with two arms and juggling tasks with the others">
+  <title>bikesched</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- frame -->
+    <path d="M50 150h42L80 110zM80 110h52l-40 40M132 110l18 40M132 110l-4-18M118 90h16" fill="none" stroke="#9a9a9a" stroke-width="6"/>
+    <path d="M70 106h18" stroke="#1a1a1a" stroke-width="6"/>
+
+    <!-- clock wheels -->
+    <g fill="none" stroke="#1a1a1a" stroke-width="6">
+      <circle cx="50" cy="150" r="30" fill="#fde8ee" fill-opacity="0.3"/>
+      <circle cx="150" cy="150" r="30" fill="#fde8ee" fill-opacity="0.3"/>
+      <path d="M50 150l-4.6-10M50 150l14.6-6.5M150 150l-4.6-10M150 150l14.6-6.5" stroke-width="5"/>
+    </g>
+
+    <!-- arms: outline layer, then fill layer -->
+    <g fill="none" stroke="#1a1a1a" stroke-width="12">
+      <path id="arms" d="M92 94c10 6 20 4 26-4c3-3 7-1 5 4M102 92c10 0 20-2 26-6c3-2 7 1 4 5M70 78c-12-6-20-16-24-28M72 88c-14 8-30 10-40-2M102 76c12-6 22-18 34-28M80 94c-4 18 2 34 12 56M90 94c8 14 10 30 8 44M66 90c-12 14-8 28 4 24"/>
+    </g>
+    <use href="#arms" fill="none" stroke="#f4c6d0" stroke-width="5"/>
+
+    <!-- tasks: a checked box, a clock and a cog -->
+    <g transform="rotate(-12 38 30)">
+      <rect x="27" y="16" width="22" height="28" rx="3" fill="#f4c6d0" stroke="#1a1a1a" stroke-width="4"/>
+      <path d="M32 28l5 5l8-10" fill="none" stroke="#1a1a1a" stroke-width="4"/>
+    </g>
+    <circle cx="24" cy="72" r="13" fill="#fde8ee" stroke="#1a1a1a" stroke-width="4"/>
+    <path d="M24 72v-7M24 72l5 3" fill="none" stroke="#1a1a1a" stroke-width="3"/>
+    <circle cx="148" cy="36" r="14" fill="none" stroke="#1a1a1a" stroke-width="7" stroke-dasharray="5 6" stroke-linecap="butt"/>
+    <circle cx="148" cy="36" r="11" fill="#9a9a9a" stroke="#1a1a1a" stroke-width="4"/>
+    <circle cx="148" cy="36" r="4" fill="#fff" stroke="#1a1a1a" stroke-width="3"/>
+
+    <!-- head, eyes -->
+    <path d="M60 92c-8-26 2-56 26-58c24-2 34 26 28 52c-2 8-10 10-26 10c-16 0-26 2-28-4z" fill="#f4c6d0" stroke="#1a1a1a" stroke-width="5"/>
+    <circle cx="94" cy="64" r="3.5" fill="#1a1a1a"/>
+    <circle cx="106" cy="62" r="3.5" fill="#1a1a1a"/>
+    <path d="M96 76q6 3 10-1" fill="none" stroke="#1a1a1a" stroke-width="3"/>
+  </g>
+</svg>
