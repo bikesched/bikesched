@@ -18,7 +18,8 @@ import org.bikesched.BikeschedException;
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
  */
-public interface TransactionalJobBuilder<P> extends JobSettings<TransactionalJobBuilder<P>, P> {
+public interface TransactionalJobBuilder<P>
+    extends JobHandlerSettings<TransactionalJobBuilder<P>, P> {
 
   /**
    * Schedules the job to run as soon as possible once the caller's transaction commits.

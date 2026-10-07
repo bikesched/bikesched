@@ -36,7 +36,7 @@ import org.bikesched.BikeschedException;
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
  */
-public interface JobBuilder<P> extends JobSettings<JobBuilder<P>, P> {
+public interface JobBuilder<P> extends JobHandlerSettings<JobBuilder<P>, P> {
 
   /**
    * Continues with storing the job using the given connection, as part of the caller's transaction

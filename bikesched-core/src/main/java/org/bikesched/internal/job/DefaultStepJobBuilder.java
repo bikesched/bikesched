@@ -54,7 +54,7 @@ final class DefaultStepJobBuilder<P> extends BaseJobBuilder<StepJobBuilder<P>, P
   @Override
   public UUID schedule(Instant at) {
     Objects.requireNonNull(at, "at");
-    scheduler.requireHandler(type, handler);
+    scheduler.requireHandler(type, null);
     return parent.startChildJob(stepName, newJob(at), compensation);
   }
 

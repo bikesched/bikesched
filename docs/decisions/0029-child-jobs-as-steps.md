@@ -32,7 +32,8 @@ Alternatives considered:
 
 - `Job.complete(result)` sets a job's result as a flag read after the handler; it is stored in
   `bikesched_jobs.result` only in the transaction ending the job `SUCCEEDED`.
-- `Job.newJob(type)` returns a `StepJobBuilder` (no `connection(…)`, no `schedule(Recurrence)`)
+- `Job.newJob(type)` returns a `StepJobBuilder` (no `connection(…)`, no `schedule(Recurrence)`, no
+  `handler(…)`: children connect job types registered on their own, inline code is a step)
   that stores the child (`parent_job_id`) and a `CHILD_JOB` step of the parent in one transaction
   fenced by the parent's lock. The step is `WAITING` until the child ends; every terminal path of
   a child completes it in the child's transaction (`SUCCEEDED` with `child_state`, `result`,

@@ -3,13 +3,12 @@ package org.bikesched.job;
 
 import java.sql.Connection;
 import java.time.Duration;
-import java.util.Objects;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.JsonMapper;
 
 /**
- * The settings shared by all job builders: payload, handler, priority, attempts and timeout. Each
- * setter returns the concrete builder, so they can be called in any order:
+ * The settings shared by all job builders: payload, priority, attempts and timeout. Each setter
+ * returns the concrete builder, so they can be called in any order:
  *
  * <ul>
  *   <li>{@link JobBuilder}: a one-off job or, with {@link JobBuilder#schedule(Recurrence)}, a
@@ -17,7 +16,12 @@ import org.bikesched.JsonMapper;
  *       org.bikesched.Bikesched#newJob(JobType)}
  *   <li>{@link TransactionalJobBuilder}: a one-off job stored in the caller's transaction, from
  *       {@link JobBuilder#connection(Connection)}
+ *   <li>{@link StepJobBuilder}: a child job started as a step of its parent, from {@link
+ *       Job#newJob(String)} or {@link Job#newJob(JobType)}
  * </ul>
+ *
+ * <p>The builders of jobs scheduled through {@link org.bikesched.Bikesched} can also set the
+ * handler, see {@link JobHandlerSettings}.
  *
  * @param <B> the concrete builder type
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
@@ -38,42 +42,6 @@ public interface JobSettings<B extends JobSettings<B, P>, P> {
    * @see Job#payload(Class)
    */
   B payload(P payload);
-
-  /**
-   * Sets the handler executing jobs of this type (optional if one is already registered). It is
-   * registered under the job type when the job is scheduled. <strong>If a handler is already
-   * registered for the type, that one is kept and this handler is ignored</strong>, so the same
-   * {@code newJob(type).handler(...).schedule()} code can run repeatedly (lambdas are usually a new
-   * instance on every call).
-   *
-   * @param handler executes jobs of this type
-   * @return this builder
-   * @see org.bikesched.Bikesched#registerJobHandler(String, JobHandler)
-   */
-  B handler(JobHandler handler);
-
-  /**
-   * Sets a handler that does not need the job itself (e.g. no payload).
-   *
-   * @param handler executes jobs of this type
-   * @return this builder
-   * @see #handler(JobHandler)
-   */
-  default B handler(Runnable handler) {
-    Objects.requireNonNull(handler, "handler");
-    return handler(_ -> handler.run());
-  }
-
-  /**
-   * Sets a handler receiving the payload mapped to the payload type (the {@link JobType}'s payload
-   * class, {@code Object} for a job type given as a string). Registered like {@link
-   * #handler(JobHandler)}.
-   *
-   * @param handler executes jobs of this type
-   * @return this builder
-   * @see org.bikesched.Bikesched#registerJobHandler(JobType, TypedJobHandler)
-   */
-  B handler(TypedJobHandler<? super P> handler);
 
   /**
    * Sets the priority (optional, default 0). Due jobs with a higher priority are claimed first.
