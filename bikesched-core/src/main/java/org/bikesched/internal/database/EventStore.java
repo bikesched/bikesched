@@ -69,24 +69,6 @@ public final class EventStore {
             update bikesched_steps set state = 'TIMED_OUT', finished_at = now()
              where job_id = ? and name = ? and state = 'WAITING'""";
 
-  // Ends a RUNNING attempt whose handler suspended at a waiting event step: WAITING until the
-  // event arrives or the wait's deadline (scheduled_at; 'infinity' without one) has passed. If the
-  // event was published since the step started waiting (it is no longer WAITING), the job is
-  // scheduled right away, as is a job whose cancellation was requested (to cancel it). Suspending
-  // does not use up an attempt.
-  private static final String SUSPEND_JOB_SQL =
-      """
-            update bikesched_jobs j
-               set state = case when s.state = 'WAITING' then 'WAITING' else 'SCHEDULED' end,
-                   scheduled_at = case when s.state = 'WAITING' and j.cancel_requested_at is null
-                                       then coalesce(s.wait_until, 'infinity')
-                                       else now() end,
-                   attempts = j.attempts - 1, locked_by = null, lock_token = null, locked_at = null, updated_at = now()
-              from bikesched_steps s
-             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING'
-               and s.job_id = j.id and s.name = ?
-            returning j.state, s.wait_until, j.attempts""";
-
   private static final String INSERT_EVENT_SQL =
       """
             insert into bikesched_events (id, event_name, event_key, payload, expires_at)
@@ -95,8 +77,8 @@ public final class EventStore {
   // Completes all steps waiting for the event with its payload (copied into each step, so steps do
   // not depend on the event, which is deleted after its retention) and resumes their WAITING jobs.
   // Jobs that are still RUNNING (suspending right now, or resumed by their deadline) are left
-  // alone: SUSPEND_JOB_SQL resp. the handler's wait then find the step completed. Returns per step
-  // whether its job was resumed, and the job's attempt count.
+  // alone: suspending (StepStore.suspend) resp. the handler's wait then find the step completed.
+  // Returns per step whether its job was resumed, and the job's attempt count.
   private static final String RESUME_WAITING_STEPS_SQL =
       """
             with received as (
@@ -127,15 +109,6 @@ public final class EventStore {
    * @param waitUntil the deadline of a {@code WAITING} step, {@code null} if none
    */
   public record EventWait(String state, String json, Instant waitUntil) {}
-
-  /**
-   * A job after suspending it.
-   *
-   * @param waiting {@code true} if it is {@code WAITING}, {@code false} if it was scheduled right
-   *     away because the event arrived meanwhile
-   * @param waitUntil the deadline of the wait, {@code null} if none
-   */
-  public record SuspendedJob(boolean waiting, Instant waitUntil) {}
 
   /**
    * Waits for an event as a step of a job: returns the step's earlier outcome (received or timed
@@ -271,8 +244,8 @@ public final class EventStore {
   }
 
   /**
-   * Ends a running attempt whose handler suspended at a waiting event step, see {@code
-   * SUSPEND_JOB_SQL}. Runs in one transaction holding the event's advisory lock.
+   * Ends a running attempt whose handler suspended at a waiting event step, see {@link
+   * StepStore#suspendJob}. Runs in one transaction holding the event's advisory lock.
    *
    * @param jobId the job id
    * @param lock the lock of the job's claim (node and token)
@@ -281,34 +254,12 @@ public final class EventStore {
    * @param eventKey the event key
    * @return the job after suspending; empty if the job is not running on this node (anymore)
    */
-  public Optional<SuspendedJob> suspendJob(
+  public Optional<StepStore.SuspendedJob> suspendJob(
       UUID jobId, JobLock lock, String stepName, String eventName, String eventKey) {
     return access.inTransaction(
         db -> {
           lockEvent(db, eventName, eventKey);
-          Optional<Suspension> suspended =
-              db.one(
-                  SUSPEND_JOB_SQL,
-                  row -> new Suspension(row.string(1), row.instant(2), row.integer(3)),
-                  jobId,
-                  lock.token(),
-                  stepName);
-          if (suspended.isEmpty()) {
-            return Optional.<SuspendedJob>empty();
-          }
-          Suspension suspension = suspended.get();
-          history.record(
-              db,
-              Change.job(
-                  jobId,
-                  suspension.state(),
-                  suspension.attempts(),
-                  lock.nodeId(),
-                  suspension.state().equals("WAITING")
-                      ? "suspended at step '" + stepName + "'"
-                      : "suspended at step '" + stepName + "', due again right away"));
-          return Optional.of(
-              new SuspendedJob(suspension.state().equals("WAITING"), suspension.waitUntil()));
+          return StepStore.suspend(db, history, jobId, lock, stepName);
         },
         e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
   }
@@ -421,9 +372,6 @@ public final class EventStore {
 
   /** An event found in {@code bikesched_events}; its payload may be {@code null}. */
   private record PublishedEvent(UUID id, String payload) {}
-
-  /** A row of {@code SUSPEND_JOB_SQL}. */
-  private record Suspension(String state, Instant waitUntil, int attempts) {}
 
   /** A row of {@code RESUME_WAITING_STEPS_SQL}: a step that received the event. */
   private record Resumption(UUID jobId, String stepName, boolean jobResumed, int attempts) {}

@@ -357,10 +357,11 @@ public final class JobProcessor {
       if (failure != null) {
         // The handler caught the suspension and threw afterwards: the wait wins.
         LOG.warn(
-            "Job {} of type {} waits for an event, ignoring the exception thrown by its handler"
+            "Job {} of type {} waits in step {}, ignoring the exception thrown by its handler"
                 + " afterwards",
             job.id(),
             job.type(),
+            job.suspension().stepName(),
             failure);
       }
       return recordSuspension(job, job.suspension());
@@ -392,41 +393,55 @@ public final class JobProcessor {
   }
 
   private Outcome recordSuspension(DefaultJob job, JobSuspended.Suspension suspension) {
-    String event = "event " + suspension.eventName() + "/" + suspension.eventKey();
     try {
       var suspended =
           RECORDING.call(
               "Suspending job " + job.id() + " failed",
               () ->
-                  database
-                      .events()
-                      .suspendJob(
-                          job.id(),
-                          job.lock(),
-                          suspension.stepName(),
-                          suspension.eventName(),
-                          suspension.eventKey()));
+                  switch (suspension) {
+                    case JobSuspended.EventSuspension wait ->
+                        database
+                            .events()
+                            .suspendJob(
+                                job.id(),
+                                job.lock(),
+                                wait.stepName(),
+                                wait.eventName(),
+                                wait.eventKey());
+                    case JobSuspended.SleepSuspension sleep ->
+                        database.steps().suspendJob(job.id(), job.lock(), sleep.stepName());
+                  });
       if (suspended.isEmpty()) {
         LOG.warn(
-            "Job {} of type {} waits for {} but was no longer running in this attempt's claim",
+            "Job {} of type {} waits in step {} but was no longer running in this attempt's claim",
             job.id(),
             job.type(),
-            event);
+            suspension.stepName());
         return NOT_RUNNING;
       }
       if (!suspended.get().waiting()) {
-        return new Outcome(
-            JobAttemptOutcome.WAITING,
-            "RESCHEDULED, " + event + " was published while suspending the job");
+        String rescheduled =
+            switch (suspension) {
+              case JobSuspended.EventSuspension wait ->
+                  wait.event() + " was published while suspending the job";
+              case JobSuspended.SleepSuspension _ ->
+                  "the wake-up time passed while suspending the job";
+            };
+        return new Outcome(JobAttemptOutcome.WAITING, "RESCHEDULED, " + rescheduled);
       }
       Instant waitUntil = suspended.get().waitUntil();
-      return new Outcome(
-          JobAttemptOutcome.WAITING,
-          "WAITING for "
-              + event
-              + " in step "
-              + suspension.stepName()
-              + (waitUntil == null ? "" : " until " + waitUntil));
+      String outcome =
+          switch (suspension) {
+            case JobSuspended.EventSuspension wait ->
+                "WAITING for "
+                    + wait.event()
+                    + " in step "
+                    + wait.stepName()
+                    + (waitUntil == null ? "" : " until " + waitUntil);
+            case JobSuspended.SleepSuspension sleep ->
+                "SLEEPING in step " + sleep.stepName() + " until " + waitUntil;
+          };
+      return new Outcome(JobAttemptOutcome.WAITING, outcome);
     } catch (RuntimeException e) {
       LOG.warn("Suspending job {} failed", job.id(), e);
       return NOT_RECORDED;

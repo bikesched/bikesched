@@ -23,8 +23,8 @@ create index bikesched_nodes_last_heartbeat_at_idx on bikesched_nodes (last_hear
 -- Jobs are claimed by nodes with:  ... where state in ('SCHEDULED', 'WAITING', 'COMPENSATING')
 --                                  and scheduled_at <= now()
 --                                  order by priority desc, scheduled_at for update skip locked
--- A WAITING job waits for an event (see bikesched_events); its scheduled_at is the deadline of the
--- wait, or 'infinity' if it waits without one.
+-- A WAITING job waits for an event (see bikesched_events) or sleeps; its scheduled_at is the
+-- deadline of the wait ('infinity' if it waits without one) or the wake-up time of the sleep.
 -- A job that is cancelled or fails permanently after completing steps with a compensation is
 -- COMPENSATING (compensated_state: the state it ends in) until its compensations ran, or
 -- COMPENSATION_FAILED once they failed in max_attempts compensation attempts.
@@ -93,7 +93,8 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
 -- job can skip steps that already succeeded. Event steps (event_name/event_key set) wait for an
 -- event instead: WAITING until it is published (SUCCEEDED, result = a copy of its payload, so the
--- step does not depend on the event) or wait_until has passed (TIMED_OUT).
+-- step does not depend on the event) or wait_until has passed (TIMED_OUT). Sleep steps (no event,
+-- wait_until set) are WAITING until wait_until has passed and the job runs again (SUCCEEDED).
 -- A compensable step (declared with a compensation) is COMPENSATED once its compensation ran.
 -- Cancelling a job marks its unfinished steps (WAITING, or RUNNING after a crash) CANCELLED.
 -- A RUNNING step is locked by the node running it (locked_by). Every step write also requires the
@@ -120,7 +121,11 @@ create table bikesched_steps (
                          'CANCELLED')),
     constraint bikesched_steps_event_check
         check ((event_name is null) = (event_key is null)
-               and (event_name is not null or (wait_until is null and state not in ('WAITING', 'TIMED_OUT')))),
+               and (event_name is not null or state <> 'TIMED_OUT')),
+    -- A WAITING step without an event is a sleep: it needs its wake-up time. (An event wait
+    -- without a timeout waits without a deadline.)
+    constraint bikesched_steps_wait_check
+        check (state <> 'WAITING' or event_name is not null or wait_until is not null),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by is not null)),
     constraint bikesched_steps_name_check

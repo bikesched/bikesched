@@ -52,6 +52,7 @@ orchestration across services. If you need that, look at
 - **Cancellation** from within a handler or from outside
 - **Recurring jobs** with fixed-rate, daily, weekly or custom schedules
 - **Events**: jobs wait for an event without holding a thread and resume when it is published
+- **Sleeping**: jobs pause for days with `job.sleep(…)` without holding a thread
 - Optional typed `JobType`/`EventType` constants, next to plain string names
 - Crash recovery: jobs of dead nodes are released and retried by others; a node that lost a job
   can no longer change its steps

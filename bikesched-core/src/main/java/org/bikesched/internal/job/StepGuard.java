@@ -35,7 +35,7 @@ final class StepGuard {
   }
 
   /**
-   * Runs a step handler or compensation, rejecting steps and event waits until it returns.
+   * Runs a step handler or compensation, rejecting steps, event waits and sleeps until it returns.
    *
    * @param description the handler, e.g. {@code step 'charge'}
    * @throws IllegalStateException if another step handler or compensation runs
@@ -60,6 +60,6 @@ final class StepGuard {
             + action
             + " while "
             + current
-            + " runs: steps and event waits cannot be nested");
+            + " runs: steps, event waits and sleeps cannot be nested");
   }
 }

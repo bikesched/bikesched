@@ -1,6 +1,6 @@
 # Specification: durable sleep in jobs (`job.sleep`, `job.sleepUntil`)
 
-Status: **draft, not implemented**. Open questions in §9 are to be settled before implementing.
+Status: **implemented** (core and `bikesched-kotlin`, ADR 0026). User docs: `docs/steps.md#sleeping`.
 
 ## 1. Goal
 
@@ -171,7 +171,7 @@ can live in `StepStore`, which owns the step).
 
 ## 5. Documentation
 
-- `docs/steps.md` or a new section "Sleeping" in `docs/events.md`: API, wake-up precision (poll
+- A section "Sleeping" in `docs/steps.md`: API, wake-up precision (poll
   interval), the stored wake-up time wins, the lifecycle (`WAITING` → `SUCCEEDED`/`CANCELLED`).
 - `Job` method table in `docs/jobs.md`, Kotlin table in `docs/kotlin.md`, step states in
   `docs/database.md`.
@@ -210,11 +210,11 @@ Kotlin: `sleep(name, kotlin.time.Duration)` end to end.
 Small to medium: one store method, one `DefaultJob` method pair, the suspension refactoring, one
 constraint; no new table, state or index.
 
-## 9. Open questions
+## 9. Decisions (former open questions)
 
-1. Step name required (option A in §4.1)?
-2. Method names: `sleep`/`sleepUntil`, or `waitFor`/`waitUntil` (closer to `waitForEvent`, but
-   `waitUntil` collides with the `wait_until` column's meaning of a deadline)?
-3. Return value: `void`, or the wake-up `Instant` (useful for logging, free to provide)?
-4. Should a changed argument be ignored silently (proposed) or logged at debug?
-5. Documentation home: a section in `events.md` ("Waiting") or its own page `sleeping.md`?
+1. Step name required: `sleep(stepName, duration)`, `sleepUntil(stepName, time)` (option A).
+2. Method names: `sleep` / `sleepUntil`.
+3. Return value: `void`.
+4. A changed argument on a later run is ignored silently and documented in the Javadoc.
+5. Documentation: a "Sleeping" section in `docs/steps.md`.
+6. Suspension: a sealed type (`EventSuspension`, `SleepSuspension`), see §4.4.

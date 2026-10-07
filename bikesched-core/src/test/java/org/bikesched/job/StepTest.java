@@ -165,7 +165,7 @@ class StepTest extends AbstractBikeschedTest {
       awaitState(jobId, "SUCCEEDED");
 
       String job = "Job " + jobId + " cannot ";
-      String suffix = " while step 'outer' runs: steps and event waits cannot be nested";
+      String suffix = " while step 'outer' runs: steps, event waits and sleeps cannot be nested";
       assertThat(rejected)
           .containsExactly(
               job + "run step 'inner'" + suffix,
@@ -206,7 +206,7 @@ class StepTest extends AbstractBikeschedTest {
                       + "'java.lang.IllegalStateException: Job "
                       + jobId
                       + " cannot run step ''inner'' while step ''outer'' runs: "
-                      + "steps and event waits cannot be nested'"))
+                      + "steps, event waits and sleeps cannot be nested'"))
           .isOne();
       assertThat(countRows("bikesched_steps", "job_id = '" + jobId + "' and name = 'inner'"))
           .isZero();

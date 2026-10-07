@@ -41,6 +41,10 @@ public fun JobFailure.retryAfter(delay: Duration): JobFailure = retryAfter(delay
 /** Moves the deadline of the running attempt, see `Job.updateTimeout(Duration)`. */
 public fun Job.updateTimeout(timeout: Duration): Unit = updateTimeout(timeout.toJavaDuration())
 
+/** Sleeps as a durable step, see `Job.sleep(String, Duration)`. */
+public fun Job.sleep(stepName: String, duration: Duration): Unit =
+  sleep(stepName, duration.toJavaDuration())
+
 /** A fixed-rate recurrence running every [interval], see `Recurrence.every(Duration)`. */
 public fun every(interval: Duration): Recurrence = Recurrence.every(interval.toJavaDuration())
 

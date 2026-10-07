@@ -2,6 +2,7 @@
 package org.bikesched.job;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
@@ -148,9 +149,9 @@ public interface Job {
    * <p>Compensation is optional: a job whose completed steps have no compensation is cancelled or
    * failed right away, as without this method. Otherwise the job becomes {@code COMPENSATING}: a
    * node runs its handler again in compensation mode, where completed steps return their stored
-   * results (registering their compensations) and the replay ends at the first step or event wait
-   * that has not completed, or when the handler returns or throws. Then the compensations run in
-   * reverse order, each recorded once it succeeded (steps become {@code COMPENSATED}). A failed
+   * results (registering their compensations) and the replay ends at the first step, event wait or
+   * sleep that has not completed, or when the handler returns or throws. Then the compensations run
+   * in reverse order, each recorded once it succeeded (steps become {@code COMPENSATED}). A failed
    * compensation is retried in further compensation attempts (up to the job's maximum number of
    * attempts, with the node's retry backoff), afterwards the job is {@code COMPENSATION_FAILED}.
    * Once all compensations ran, the job ends {@code CANCELLED} or {@code FAILED}.
@@ -279,6 +280,58 @@ public interface Job {
    * @throws IllegalArgumentException if the step name is blank
    */
   <T> T awaitEvent(String stepName, EventType<T> eventType, String eventKey);
+
+  /**
+   * Sleeps for the given duration, as a durable step. On the first run the step stores its wake-up
+   * time ({@code duration} from now), the job's attempt ends here (the method does not return) and
+   * the job is suspended in state {@code WAITING}, using no thread and no concurrency slot. Once
+   * the wake-up time has passed, the job runs again from the start: completed steps are skipped,
+   * and {@code sleep} now returns.
+   *
+   * <pre>{@code
+   * bikesched.registerJobHandler("trial", job -> {
+   *     Account account = job.payload(Account.class);
+   *     job.step("send-welcome", Void.class, step -> { mail.welcome(account); return null; });
+   *     job.sleep("trial-period", Duration.ofDays(14));
+   *     job.step("send-trial-ended", Void.class, step -> { mail.trialEnded(account); return null; });
+   * });
+   * }</pre>
+   *
+   * <p>The wake-up time stored on the first run wins: later runs ignore the argument, so a changed
+   * duration (e.g. after a deploy) does not move a sleep that already started. A job is claimed on
+   * the first poll after its wake-up time, so it wakes up to one {@link
+   * BikeschedBuilder#pollInterval(Duration) poll interval} late. Sleeping does not use up an
+   * attempt; like waiting for an event, it reruns the code outside of steps, and the same rules
+   * apply (see {@link #waitForEvent(String, String, String)}).
+   *
+   * @param stepName the step name, unique within the job, at most 200 characters
+   * @param duration how long to sleep, positive
+   * @throws IllegalArgumentException if the step name is blank or the duration is not positive
+   * @throws IllegalStateException if the step name is used for another step of the job, or if
+   *     called while a step handler or compensation of the job runs
+   * @throws BikeschedException if the step cannot be read or stored
+   */
+  void sleep(String stepName, Duration duration);
+
+  /**
+   * Sleeps until the given time, as a durable step, like {@link #sleep(String, Duration)}. Returns
+   * right away if the time has passed (the step is stored as completed).
+   *
+   * <pre>{@code
+   * job.sleepUntil("until-check-in", booking.checkIn().minus(Duration.ofDays(1)));
+   * }</pre>
+   *
+   * <p>The wake-up time stored on the first run wins: later runs ignore the argument, so a time
+   * computed from {@link Instant#now()} outside of a step does not move the sleep.
+   *
+   * @param stepName the step name, unique within the job, at most 200 characters
+   * @param time when to wake up
+   * @throws IllegalArgumentException if the step name is blank
+   * @throws IllegalStateException if the step name is used for another step of the job, or if
+   *     called while a step handler or compensation of the job runs
+   * @throws BikeschedException if the step cannot be read or stored
+   */
+  void sleepUntil(String stepName, Instant time);
 
   /**
    * Marks this job as cancelled. Once the handler returns, bikesched sets the job to {@code

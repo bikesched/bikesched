@@ -83,7 +83,7 @@ class EventStoreTest extends AbstractStoreTest {
             .suspendJob(job.id(), lock(job.id()), "wait", "paid", "suspend-1")
             .orElseThrow();
 
-    assertThat(suspended).isEqualTo(new EventStore.SuspendedJob(true, null));
+    assertThat(suspended).isEqualTo(new StepStore.SuspendedJob(true, null));
     assertThat(stateAndSchedule(job.id())).isEqualTo("WAITING infinity");
     assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).doesNotContain(job.id());
 

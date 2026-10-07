@@ -90,20 +90,6 @@ starts the interval when the previous occurrence ended.
   fixed rate nor a fixed delay, and the flag would do nothing for wall-clock schedules.
 - Outcome: interval jobs that never overlap their own next run and keep a gap after long runs.
 
-### Durable sleep in jobs
-
-Jobs can wait for an event without holding a thread, but not for time: a handler that has to pause
-for days (a trial period, a reminder before a booking) has to split itself into several jobs or wait
-for an event nobody publishes, with a timeout.
-
-- `job.sleep(stepName, Duration)` and `job.sleepUntil(stepName, Instant)` as durable steps: a step
-  without an event, `WAITING` with `wait_until` as the wake-up time; the job is `WAITING` and due
-  then, like an event wait with a deadline. No new table, state or column.
-- Internally a sealed `Suspension` (event wait or sleep) replaces the event-only record.
-- Spec with the design, rejected alternatives and open questions (step name, method names):
-  [`docs/specs/job-sleep.md`](docs/specs/job-sleep.md).
-- Outcome: long pauses inside one job, without threads, slots or extra jobs.
-
 ### Publishing events from jobs
 
 A handler publishing with `bikesched.newEvent(…).publish()` publishes again on every run outside a

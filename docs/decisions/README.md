@@ -31,3 +31,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0023](0023-steps-cannot-be-nested.md) | Steps cannot be nested | Accepted |
 | [0024](0024-cron-expressions-via-cron-utils.md) | Cron expressions via cron-utils in their own module | Accepted |
 | [0025](0025-recurrence-parsers-in-core.md) | Recurrence parsers in core | Accepted |
+| [0026](0026-durable-sleep-as-step.md) | Durable sleep as a step without an event | Accepted |

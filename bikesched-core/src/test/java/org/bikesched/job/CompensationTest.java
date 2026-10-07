@@ -154,7 +154,7 @@ class CompensationTest extends AbstractBikeschedTest {
               "Job "
                   + jobId
                   + " cannot run step 'undo' while the compensation of step 'a' runs:"
-                  + " steps and event waits cannot be nested");
+                  + " steps, event waits and sleeps cannot be nested");
       assertThat(countRows("bikesched_steps", "job_id = '" + jobId + "' and name = 'undo'"))
           .isZero();
     }

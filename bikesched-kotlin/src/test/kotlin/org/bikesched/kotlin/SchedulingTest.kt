@@ -54,6 +54,23 @@ class SchedulingTest {
   }
 
   @Test
+  fun `sleep takes a kotlin Duration`() {
+    val ran = CopyOnWriteArrayList<String>()
+    testNode("sleep").use { bikesched ->
+      val id =
+        bikesched.createJob(type = unique("sleep")) {
+          ran += "before"
+          sleep("nap", 200.milliseconds)
+          ran += "after"
+        }
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(id)?.state()).isEqualTo(JobState.SUCCEEDED)
+      }
+      assertThat(ran).containsExactly("before", "before", "after")
+    }
+  }
+
+  @Test
   fun `handleJobs without payload gets the job as receiver`() {
     val type = unique("no-payload-handler")
     val ids = CopyOnWriteArrayList<UUID>()

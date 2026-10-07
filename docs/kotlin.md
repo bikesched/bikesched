@@ -54,7 +54,7 @@ unless it already has one; with a `payload` it gets the payload as its type, oth
 | `bikesched { … }` | `Bikesched.builder()…build()` |
 | `job.payload<T>()` | `payload(T.class)` |
 | `receive<T>()`, `receive<T>(timeout) { fallback }`, `receiveOrNull<T>(timeout)` on the Java `waitForEvent(step, name, key)` | `receive(T.class)`, `timeout(…, handler).receive(T.class)` |
-| `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `every(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
+| `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `sleep(String, Duration)`, `every(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
 | `findJobOrNull(id)`, `node.idOrNull` | `Optional` |
 
 ## Nullability

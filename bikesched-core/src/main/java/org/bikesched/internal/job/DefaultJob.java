@@ -403,13 +403,64 @@ public final class DefaultJob implements Job {
     return waitForEvent(stepName, eventType.name(), eventKey).receive(eventType.payloadType());
   }
 
+  @Override
+  public void sleep(String stepName, Duration duration) {
+    ValidationUtil.requireName(stepName, "step name");
+    Objects.requireNonNull(duration, "duration");
+    if (duration.isNegative() || duration.isZero()) {
+      throw new IllegalArgumentException("duration must be positive: " + duration);
+    }
+    sleepStep(stepName, duration, null);
+  }
+
+  @Override
+  public void sleepUntil(String stepName, Instant time) {
+    ValidationUtil.requireName(stepName, "step name");
+    Objects.requireNonNull(time, "time");
+    sleepStep(stepName, null, time);
+  }
+
+  /**
+   * Sleeps as a step: returns once the sleep is over (in this or an earlier run), or suspends the
+   * job by throwing {@link JobSuspended}. Exactly one of {@code duration} and {@code until} is set.
+   */
+  private void sleepStep(String stepName, Duration duration, Instant until) {
+    stepGuard.requireNoneRunning("sleep as step '" + stepName + "'");
+    Runnable restoreStepName = putStepName(stepName);
+    try {
+      if (compensating) {
+        // Replay only: return after a completed sleep, never start or continue one.
+        var state = database.steps().findStep(id, stepName).map(StepStore.StoredStep::state);
+        if (state.filter("SUCCEEDED"::equals).isPresent()) {
+          return;
+        }
+        throw new CompensationReplayEnded(stepName);
+      }
+      var sleep = fenced(() -> database.steps().sleep(id, lock, stepName, duration, until));
+      if (sleep.awake()) {
+        LOG.debug("Step {} of job {} slept until {}", stepName, id, sleep.wakeUpAt());
+        return;
+      }
+      var sleeping = new JobSuspended.SleepSuspension(stepName, sleep.wakeUpAt());
+      suspension = sleeping;
+      LOG.debug(
+          "Step {} of job {} sleeping until {}, suspending the job",
+          stepName,
+          id,
+          sleep.wakeUpAt());
+      throw new JobSuspended(sleeping);
+    } finally {
+      restoreStepName.run();
+    }
+  }
+
   /** A call run with the step name in the logging context. */
   @FunctionalInterface
   interface StepCall<R> {
     R call() throws Exception;
   }
 
-  /** The step the handler suspended the job at, {@code null} if it did not wait for an event. */
+  /** The step the handler suspended the job at, {@code null} if it did not wait or sleep. */
   JobSuspended.Suspension suspension() {
     return suspension;
   }
@@ -464,7 +515,7 @@ public final class DefaultJob implements Job {
         }
         default -> {
           var waiting =
-              new JobSuspended.Suspension(stepName, eventName, eventKey, wait.waitUntil());
+              new JobSuspended.EventSuspension(stepName, eventName, eventKey, wait.waitUntil());
           suspension = waiting;
           LOG.debug(
               "Step {} of job {} waiting for event {}/{}{}, suspending the job",
