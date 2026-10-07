@@ -106,7 +106,7 @@ return the child's id. It has no `connection(…)` and no `schedule(Recurrence)`
 recurring, enforced at compile time. It has no `handler(…)` either (see §10).
 
 - One transaction, fenced by the job lock (`StepStore.requireJobLock`): insert the child with
-  `parent_job_id` = the parent, insert the step `WAITING` with `child_job_id`, record history for
+  `parent_job_id` = the parent, insert the step `WAITING` with `child_job_id` and `child_job_type`, record history for
   both. Either both exist or neither does.
 - Later runs find the step (in any state) and return its `child_job_id` without scheduling; a
   different job type is rejected, like a wait for another event.
@@ -183,6 +183,8 @@ public sealed interface JobResult<T> {
 
 - `child_job_id uuid`, set exactly for `CHILD_JOB` steps; no foreign key, like `event_id`: the
   child is deleted after its retention while the step lives as long as its job.
+- `child_job_type text`, the child's type, set exactly for `CHILD_JOB` steps (CHECK 1 to 200
+  characters): replays compare it with the requested type, also after the child was deleted.
 - `child_state text`: the child's terminal state, set exactly when a `CHILD_JOB` step is
   `SUCCEEDED`; CHECK `in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED')`. The child's
   result goes into `result`, its error or cancel message into `last_error` (both exist already).
@@ -372,8 +374,8 @@ Choices the spec left open, made while implementing:
    registered on their own, and inline code belongs in a step. The handler setters moved from
    `JobSettings` into `JobHandlerSettings`, which only `JobBuilder` and `TransactionalJobBuilder`
    extend.
-2. The step stores no child type: starting a child under a step name that started a child of
-   another type is rejected only while that child still exists (it is read with the step).
+2. The step stores the child's type (`child_job_type`, decided in review): starting a child under a
+   step name that started a child of another type is rejected, also after the child was deleted.
 3. A child's end makes a `WAITING` parent `SCHEDULED` and due now, like a published event does.
 4. The end-of-job hook is two statements after the terminal update in the child's transaction
    (complete the step, then resume the parent): the second needs a fresh snapshot after waiting for

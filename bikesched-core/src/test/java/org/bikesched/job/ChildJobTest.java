@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.bikesched.AbstractBikeschedTest;
@@ -547,6 +548,45 @@ class ChildJobTest extends AbstractBikeschedTest {
 
       awaitState(parentId, "SUCCEEDED");
       assertThat(failure.get()).hasMessageContaining("child-no-handler-child");
+    }
+  }
+
+  @Test
+  void aStepCannotStartAChildOfAnotherTypeAfterItsChildWasDeleted() throws Exception {
+    var child = new AtomicReference<UUID>();
+    var failure = new AtomicReference<Exception>();
+    var deleted = new AtomicBoolean();
+    try (Bikesched bikesched = testNode("node-child-type").build()) {
+      bikesched.registerJobHandler("child-type-a", job -> {});
+      bikesched.registerJobHandler("child-type-b", job -> {});
+      UUID parentId =
+          bikesched
+              .newJob("child-type-parent")
+              .handler(
+                  job -> {
+                    String type = deleted.get() ? "child-type-b" : "child-type-a";
+                    try {
+                      child.set(job.newJob(type).stepName("child").schedule());
+                    } catch (IllegalStateException e) {
+                      failure.set(e);
+                      return;
+                    }
+                    job.waitForEvent("go", "child-type-go", "k").receive(String.class);
+                  })
+              .schedule();
+
+      // the child's end completed the step, and resumed the parent if it was waiting already
+      await()
+          .until(
+              () ->
+                  countSteps(parentId, "name = 'child' and state = 'SUCCEEDED'") == 1
+                      && count("id = '" + parentId + "' and state = 'WAITING'") == 1);
+      execute("delete from bikesched_jobs where id = '" + child.get() + "'"); // job retention
+      deleted.set(true);
+      bikesched.newEvent("child-type-go", "k").payload("\"go\"").publish();
+      awaitState(parentId, "SUCCEEDED");
+      assertThat(failure.get())
+          .hasMessageContaining("of type child-type-a, not of type child-type-b");
     }
   }
 
