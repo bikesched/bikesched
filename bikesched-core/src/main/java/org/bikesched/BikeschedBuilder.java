@@ -10,6 +10,7 @@ import javax.sql.DataSource;
 import org.bikesched.event.EventTimeoutException;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.TimeoutHandler;
+import org.bikesched.event.listener.EventListener;
 import org.bikesched.internal.Internals;
 import org.bikesched.internal.Settings;
 import org.bikesched.internal.util.ValidationUtil;
@@ -58,6 +59,7 @@ public final class BikeschedBuilder {
   private Duration statementTimeout; // null: left to the data source
   private Duration hardTimeoutGrace; // null: no hard timeout
   private JobListener jobListener = new JobListener() {};
+  private EventListener eventListener = new EventListener() {};
   private List<RecurrenceParser> recurrenceParsers = List.of(RecurrenceParser.isoDuration());
 
   BikeschedBuilder() {}
@@ -335,6 +337,19 @@ public final class BikeschedBuilder {
   }
 
   /**
+   * Observes the events published through this node, e.g. {@code MicrometerEventListener} from
+   * {@code bikesched-micrometer} for metrics (optional, default none). Events published in the
+   * caller's transaction are not reported.
+   *
+   * @param eventListener the listener
+   * @return this builder
+   */
+  public BikeschedBuilder eventListener(EventListener eventListener) {
+    this.eventListener = Objects.requireNonNull(eventListener, "eventListener");
+    return this;
+  }
+
+  /**
    * Sets the parsers for recurrence expressions in {@link JobBuilder#schedule(String)} and in
    * {@code @JobHandler(schedule = …)} (optional, default: {@link RecurrenceParser#isoDuration()}
    * only). Replaces the parsers set so far, including the default; add {@code isoDuration()} to
@@ -443,6 +458,7 @@ public final class BikeschedBuilder {
             statementTimeout,
             hardTimeoutGrace,
             jobListener,
+            eventListener,
             recurrenceParsers);
     return Internals.create(settings, dataSource, jsonMapper);
   }

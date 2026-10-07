@@ -19,7 +19,11 @@ import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
 import org.bikesched.event.TypedEventWait;
+import org.bikesched.event.listener.EventListener;
+import org.bikesched.event.listener.EventPublication;
+import org.bikesched.event.listener.EventSource;
 import org.bikesched.internal.database.Database;
+import org.bikesched.internal.database.EventStore;
 import org.bikesched.internal.database.JobLock;
 import org.bikesched.internal.database.JobLockLostException;
 import org.bikesched.internal.database.JobStore;
@@ -58,6 +62,7 @@ public final class DefaultJob implements Job {
   private final Database database;
   private final JobScheduler scheduler;
   private final Duration defaultEventRetention;
+  private final EventListener eventListener;
   private final UUID id;
 
   /** The lock of this claim: the attempt's writes are fenced by it. */
@@ -105,13 +110,16 @@ public final class DefaultJob implements Job {
    * @param claimed the claimed job
    * @param defaultEventRetention the node's default event retention
    * @param scheduler checks the handlers of the child jobs it starts
+   * @param eventListener observes the events the job publishes
    */
   public DefaultJob(
       Database database,
       JobStore.ClaimedJob claimed,
       Duration defaultEventRetention,
-      JobScheduler scheduler) {
+      JobScheduler scheduler,
+      EventListener eventListener) {
     this.database = Objects.requireNonNull(database, "database");
+    this.eventListener = Objects.requireNonNull(eventListener, "eventListener");
     this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
     this.defaultEventRetention =
         Objects.requireNonNull(defaultEventRetention, "defaultEventRetention");
@@ -189,19 +197,35 @@ public final class DefaultJob implements Job {
     }
     Runnable restore = putStepName(stepName);
     try {
-      return database
-          .events()
-          .publishEventAsStep(
-              id,
-              lock,
-              stepName,
-              eventName,
-              eventKey,
-              eventPayload,
-              retention == null ? defaultEventRetention : retention,
-              compensating);
+      EventStore.StepPublication published =
+          database
+              .events()
+              .publishEventAsStep(
+                  id,
+                  lock,
+                  stepName,
+                  eventName,
+                  eventKey,
+                  eventPayload,
+                  retention == null ? defaultEventRetention : retention,
+                  compensating);
+      if (published.publication() != null) {
+        notifyPublished(eventName, published.publication());
+      }
+      return published.eventId();
     } finally {
       restore.run();
+    }
+  }
+
+  /** Reports a committed publication; the listener's exceptions must not affect the job. */
+  private void notifyPublished(String eventName, EventStore.Publication publication) {
+    try {
+      eventListener.onEventPublished(
+          new EventPublication(
+              publication.eventId(), eventName, EventSource.JOB, publication.received()));
+    } catch (RuntimeException e) {
+      LOG.warn("Event listener failed for event {}, ignoring it", publication.eventId(), e);
     }
   }
 

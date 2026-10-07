@@ -27,6 +27,7 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 | `statementTimeout(Duration)` | data source | maximum duration of each database statement of the node, applied as JDBC query timeout (whole seconds, rounded up); a statement running longer is cancelled and fails like any other database error, see [Statement timeout](#statement-timeout) |
 | `recurrenceParsers(RecurrenceParser...)` | `RecurrenceParser.isoDuration()` | parse the expressions of `schedule(String)` and `@JobHandler(schedule = …)`; replaces the default, see [Recurrence expressions](recurring-jobs.md#recurrence-expressions) |
 | `jobListener(JobListener)` | none | observes claims and attempt outcomes, e.g. for [Metrics](metrics.md) |
+| `eventListener(EventListener)` | none | observes published events (not those in the caller's transaction), e.g. for [Metrics](metrics.md) |
 | `hardTimeoutGrace(Duration)` | off | abandons attempts whose handler ignores the interrupt of its timeout this long after the timeout, see [Timeouts](jobs.md#timeouts) |
 
 ## Nodes

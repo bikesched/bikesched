@@ -200,7 +200,12 @@ public final class JobPoller {
             database.jobs().claimJobs(nodeId, registry.types(), limit).stream()
                 .map(
                     claimed ->
-                        new DefaultJob(database, claimed, settings.eventRetention(), scheduler))
+                        new DefaultJob(
+                            database,
+                            claimed,
+                            settings.eventRetention(),
+                            scheduler,
+                            settings.eventListener()))
                 .toList();
       } finally {
         slots.release(limit - jobs.size()); // unused slots; all of them if claiming failed

@@ -347,12 +347,13 @@ public final class EventStore {
    * @param payload the payload as JSON text, may be {@code null}
    * @param retention how long steps starting to wait later still receive it; may be zero
    * @param compensating whether the job replays for compensation: then the step must exist
-   * @return the id of the published event, the same on every run
+   * @return the id of the published event, the same on every run, and the publication if this run
+   *     published it
    * @throws IllegalStateException if the step name belongs to another step or to a publishing step
    *     that has not succeeded, or a compensation replay finds no publishing step
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public UUID publishEventAsStep(
+  public StepPublication publishEventAsStep(
       UUID jobId,
       JobLock lock,
       String stepName,
@@ -371,7 +372,8 @@ public final class EventStore {
                   jobId,
                   stepName);
           if (previous.isPresent()) {
-            return previous.get().eventId(jobId, stepName, eventName, eventKey);
+            return new StepPublication(
+                previous.get().eventId(jobId, stepName, eventName, eventKey), null);
           }
           if (compensating) {
             throw new IllegalStateException(
@@ -396,7 +398,7 @@ public final class EventStore {
                       + " to "
                       + publication.received()
                       + " step(s)"));
-          return publication.eventId();
+          return new StepPublication(publication.eventId(), publication);
         },
         e ->
             new BikeschedException(
@@ -480,6 +482,15 @@ public final class EventStore {
    * @param received the number of waiting steps that received it
    */
   public record Publication(UUID eventId, int received) {}
+
+  /**
+   * The event of a publishing step.
+   *
+   * @param eventId the id of the step's event
+   * @param publication the publication if this run published the event, {@code null} if an earlier
+   *     run did
+   */
+  public record StepPublication(UUID eventId, Publication publication) {}
 
   /**
    * Deletes expired events (their retention has passed).

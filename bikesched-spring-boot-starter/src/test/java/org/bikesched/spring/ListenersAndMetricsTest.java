@@ -6,20 +6,28 @@ import static org.awaitility.Awaitility.await;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
+import org.bikesched.event.listener.EventListener;
+import org.bikesched.event.listener.EventPublication;
 import org.bikesched.job.JobState;
 import org.bikesched.job.listener.JobAttemptResult;
 import org.bikesched.job.listener.JobClaim;
 import org.bikesched.job.listener.JobListener;
+import org.bikesched.micrometer.MicrometerEventListener;
 import org.bikesched.micrometer.MicrometerJobListener;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-/** Composition of {@link JobListener} beans and the automatic {@link MicrometerJobListener}. */
+/**
+ * Composition of {@link JobListener} and {@link EventListener} beans and the automatic Micrometer
+ * listeners.
+ */
 class ListenersAndMetricsTest extends AbstractSpringTest {
 
   private ApplicationContextRunner runner() {
@@ -55,6 +63,24 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
   }
 
   @Test
+  void composesMultipleEventListeners() {
+    RecordingEventListener first = new RecordingEventListener();
+    RecordingEventListener second = new RecordingEventListener();
+    String eventName = unique("listener-event");
+    runner()
+        .withBean("dataSource", DataSource.class, () -> dataSource())
+        .withBean("first", EventListener.class, () -> first)
+        .withBean("second", EventListener.class, () -> second)
+        .withPropertyValues("bikesched.node-name=" + unique("event-listener-node"))
+        .run(
+            context -> {
+              UUID eventId = context.getBean(Bikesched.class).newEvent(eventName, "k").publish();
+              assertThat(first.published).extracting(EventPublication::eventId).contains(eventId);
+              assertThat(second.published).extracting(EventPublication::eventId).contains(eventId);
+            });
+  }
+
+  @Test
   void createsAMicrometerListenerFromTheRegistry() {
     SimpleMeterRegistry registry = new SimpleMeterRegistry();
     String nodeName = unique("metrics-node");
@@ -78,6 +104,15 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
                           .timer()
                           .count())
                   .isOne();
+              String eventName = unique("metrics-event");
+              node.newEvent(eventName, "k").publish();
+              assertThat(
+                      registry
+                          .get("bikesched.events.published")
+                          .tags("node", nodeName, "event.name", eventName, "source", "node")
+                          .counter()
+                          .count())
+                  .isOne();
             });
   }
 
@@ -96,6 +131,7 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
               node.registerJobHandler(type, _ -> {});
               UUID jobId = node.newJob(type).schedule();
               await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              node.newEvent(unique("metrics-off-event"), "k").publish();
               assertThat(registry.getMeters()).isEmpty();
             });
   }
@@ -105,7 +141,11 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
     runner()
         .withBean("dataSource", DataSource.class, () -> dataSource())
         .withPropertyValues("bikesched.node-name=" + unique("no-metrics-node"))
-        .run(context -> assertThat(context).doesNotHaveBean(MicrometerJobListener.class));
+        .run(
+            context -> {
+              assertThat(context).doesNotHaveBean(MicrometerJobListener.class);
+              assertThat(context).doesNotHaveBean(MicrometerEventListener.class);
+            });
   }
 
   @Test
@@ -132,6 +172,16 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
     @Override
     public void onAttemptEnded(JobAttemptResult result) {
       ended.incrementAndGet();
+    }
+  }
+
+  private static final class RecordingEventListener implements EventListener {
+
+    final List<EventPublication> published = new CopyOnWriteArrayList<>();
+
+    @Override
+    public void onEventPublished(EventPublication publication) {
+      published.add(publication);
     }
   }
 }

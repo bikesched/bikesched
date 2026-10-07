@@ -1,7 +1,9 @@
 # Metrics
 
-A `JobListener` set with `BikeschedBuilder.jobListener(…)` observes the jobs a node runs. The
-module `bikesched-micrometer` implements it with Micrometer meters.
+A `JobListener` set with `BikeschedBuilder.jobListener(…)` observes the jobs a node runs, an
+`EventListener` set with `BikeschedBuilder.eventListener(…)` the events published through it. The
+module `bikesched-micrometer` implements both with Micrometer meters; the core stays free of
+Micrometer.
 
 ## Micrometer
 
@@ -11,6 +13,7 @@ Bikesched bikesched =
         .dataSource(dataSource)
         .nodeName("node-1")
         .jobListener(new MicrometerJobListener(registry, Tags.of("node", "node-1")))
+        .eventListener(new MicrometerEventListener(registry, Tags.of("node", "node-1")))
         .build();
 ```
 
@@ -21,11 +24,17 @@ Bikesched bikesched =
 | `bikesched.job.attempts.abandoned` | counter | `job.type` | attempts abandoned by the [hard timeout](jobs.md#timeouts) |
 | `bikesched.jobs.active` | gauge | | attempts being processed by the node |
 | `bikesched.jobs.abandoned` | gauge | | abandoned attempts whose thread is still running |
+| `bikesched.events.published` | counter | `event.name`, `source` | published events; `source` is `node` (`bikesched.newEvent`) or `job` (`job.newEvent`) |
+| `bikesched.event.deliveries` | counter | `event.name` | waiting steps that received an event when it was published |
 
 `outcome` is the `JobAttemptOutcome` in lower case: `succeeded`, `retrying`, `failed`, `cancelled`,
 `waiting`, `compensating`, `compensated`, `compensation_retrying`, `compensation_failed` or
 `not_recorded` (the job was released while it ran, or the database write failed; it runs again).
 Alert e.g. on `failed` and `compensation_failed`.
+
+The event meters count an event once, when it is published; a step that starts waiting later and
+receives a kept event (see [Retention](events.md#retention)) is not a delivery. Events published in
+the caller's transaction (`connection(…)`) are not counted, see [Own listeners](#own-listeners).
 
 Every meter also carries the tags passed to the constructor. Use one listener per node, and give
 nodes that share a registry a distinguishing tag such as the node name, otherwise their gauges
@@ -45,6 +54,22 @@ a query on `bikesched_jobs` (see [Database](database.md)).
 The methods are called synchronously on the job's thread, so they must be fast and thread-safe.
 Exceptions they throw are logged and ignored. A job's outcome is reported by the node that ran it
 after the database commit, so it is lost if that node dies in between.
+
+`EventListener` has one method, doing nothing by default:
+
+| Method | Called |
+|---|---|
+| `onEventPublished(EventPublication)` | once per published event, after it committed; `EventPublication` has the event id, its name, the `EventSource` (`NODE` or `JOB`) and the number of waiting steps that received it |
+
+It is called synchronously on the publishing thread: before `bikesched.newEvent(…).publish()`
+returns, and in a job when its publishing step first publishes the event (not when a later run of
+the handler finds the step and returns the stored id). Events published in the caller's
+transaction (`connection(…)`) are **not** reported: bikesched does not see whether that
+transaction commits or rolls back. The payload and the event key are not part of the
+`EventPublication`, since they can be sensitive or high-cardinality. Exceptions are logged and
+ignored; `publish()` still returns the event id.
+
+A class can implement both `JobListener` and `EventListener`.
 
 ---
 
