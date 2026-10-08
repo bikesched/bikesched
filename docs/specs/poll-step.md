@@ -1,6 +1,7 @@
 # Specification: poll steps (`job.newPoll`)
 
-Status: **draft, not implemented**.
+Status: **implemented** (core and `bikesched-kotlin`, ADR 0031). User docs:
+`docs/steps.md#polling`.
 
 ## 1. Goal
 
@@ -239,7 +240,7 @@ Decided: a poll records its first wait and its final outcome, not every check.
 | Attempts | checks that are not ready don't use up attempts; a throwing check does |
 | Job timeout | covers one attempt, so one check (plus the steps before it in that run) |
 | Cancellation | a `WAITING` poll step becomes `CANCELLED` (existing cancel path), compensations of earlier steps run |
-| Compensation replay | a `SUCCEEDED` poll returns its result; any other state ends the replay (`CompensationReplayEnded`), like sleeps; a replay never starts a check |
+| Compensation replay | a `SUCCEEDED` poll returns its result, a `TIMED_OUT` one its fallback (or throws), like event waits, so the compensations of later steps register; any other state ends the replay (`CompensationReplayEnded`); a replay never starts a check |
 | `bikesched.retry(id)` | a `FAILED` poll step checks again; a `TIMED_OUT` one stays timed out |
 | Step handlers, compensations | `newPoll(…).run` inside them throws `IllegalStateException` (`StepGuard`) |
 | Timeout handlers | may run polls, as they may run steps (a poll as the fallback of an event wait) |
@@ -378,4 +379,20 @@ job.step("mark-paid", Void.class, _ -> { orders.markPaid(settled); return null; 
 8. A timeout without a fallback fails the job permanently with `PollTimeoutException`, like event
    waits.
 
-No open questions left; the spec is ready to implement.
+## 10. Implementation notes
+
+- Compensation replay: a `TIMED_OUT` poll returns its fallback (or throws its
+  `PollTimeoutException`, which ends the replay) instead of ending the replay, like event waits;
+  otherwise the compensations of steps after a poll that timed out with a fallback would not
+  register (§4.7 updated).
+- History pairing: a suspension is skipped exactly when the poll was already `WAITING` when the job
+  was claimed (`PollSuspension.resumed`), which is when the claim entry was skipped; a check after a
+  failed check is claimed and suspended with entries again. A suspension that schedules the job
+  right away (a cancel request) is always recorded.
+- Kotlin: `poll<T>(name, interval, timeout, onTimeout) { step -> … }` with the same `onTimeout`
+  naming as `waitForEvent`; a `poll<Unit>` runs as a `Void` poll.
+- Example: `pay(orderId, settlesAfter, webhook)` carries the simulated settlement time in the
+  payload too, so the lost-webhook payment settles after the webhook timeout and polling takes
+  several checks.
+- Store-level tests live in `StepStoreTest` (lifecycle, timeout, fencing, the claim's history
+  filter); the claim filter was mutation-checked by disabling it.

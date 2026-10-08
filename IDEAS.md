@@ -125,31 +125,6 @@ delivery id), so it can be looked up or shown without decoding the payload.
   there is a concrete lookup need, similar to [Finding jobs](#finding-jobs).
 - Open: whether it is mutable after creation, and whether it shows up in job history.
 
-### Fallbacks in event timeout handlers
-
-Verify whether timeout handlers work for fallbacks, e.g.: a Stripe webhook has not arrived yet, so
-fetch the payment by its id from Stripe, or if it is not available yet either, try again in 5
-minutes.
-
-- The timeout handler runs again on every replay after the deadline, so a fetch inside it is
-  repeated; it would need to be a step, inside the handler (timeout handlers may run steps, see
-  [Timeouts](docs/events.md#timeouts)) or after the wait.
-- "Try again in 5 minutes": the wait step stays `TIMED_OUT`, so waiting again needs a new step
-  name, or the job fails the attempt with `job.fail().retryAfter(Duration.ofMinutes(5))`, which uses
-  up an attempt and runs the fallback again.
-- A webhook arriving after the timeout is not delivered to the timed-out step; it is kept for the
-  event retention period, so a later wait (new step name) still receives it.
-- Outcome: a documented pattern with a test, or API support (e.g. a timeout handler that can wait
-  again).
-
-### Poll step
-
-Polling an external service until it returns a result needs failed attempts, a growing loop of
-steps and sleeps, or a slot held by a loop inside a step. A dedicated
-`job.newPoll(name, type, interval)` step returns `Poll.ready(value)` or `Poll.notReady()` per check,
-suspends between checks like a sleep, keeps one row for all checks and has an optional timeout
-with a fallback. Design: [spec](docs/specs/poll-step.md).
-
 ### Stable step id for external callbacks
 
 `bikesched_steps` is keyed by `(job_id, name)`; nothing about a step is a single opaque,

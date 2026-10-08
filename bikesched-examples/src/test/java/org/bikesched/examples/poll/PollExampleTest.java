@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: Apache-2.0
+package org.bikesched.examples.poll;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.UUID;
+import javax.sql.DataSource;
+import org.bikesched.Bikesched;
+import org.bikesched.examples.poll.PollExample.Webhook;
+import org.bikesched.examples.util.Database;
+import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.job.JobHistoryEntry;
+import org.bikesched.job.JobState;
+import org.junit.jupiter.api.Test;
+
+/** Runs the poll example's job against a real PostgreSQL. */
+class PollExampleTest {
+
+  private static final DataSource DATA_SOURCE = Database.dataSource();
+
+  private final ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+  @Test
+  void aDeliveredWebhookNeedsNoPolling() throws SQLException {
+    try (Bikesched bikesched = node()) {
+      var example =
+          new PollExample(bikesched, new PrintStream(output, true, StandardCharsets.UTF_8));
+
+      UUID jobId = example.pay("order-webhook", Duration.ofSeconds(1), Webhook.DELIVERED);
+
+      awaitEnd(bikesched, jobId);
+      String paymentId = paymentId(bikesched, jobId);
+      assertThat(example.provider().statusCalls(paymentId)).isZero();
+      assertThat(pollChecks(jobId)).as("no poll step").isZero();
+      assertThat(output.toString(StandardCharsets.UTF_8))
+          .contains("[shop]     order order-webhook paid (" + paymentId + ", webhook)");
+    }
+  }
+
+  @Test
+  void aLostWebhookIsMadeUpForByPolling() throws SQLException {
+    try (Bikesched bikesched = node()) {
+      var example =
+          new PollExample(bikesched, new PrintStream(output, true, StandardCharsets.UTF_8));
+
+      UUID jobId = example.pay("order-polled", Duration.ofSeconds(4), Webhook.LOST);
+
+      awaitEnd(bikesched, jobId);
+      String paymentId = paymentId(bikesched, jobId);
+      int statusCalls = example.provider().statusCalls(paymentId);
+      assertThat(statusCalls).as("pending at least once, then settled").isGreaterThanOrEqualTo(2);
+      assertThat(pollChecks(jobId)).as("one check per status call").isEqualTo(statusCalls);
+      assertThat(bikesched.findJobHistory(jobId))
+          .filteredOn(entry -> "poll-payment".equals(entry.stepName()))
+          .extracting(JobHistoryEntry::detail)
+          .containsExactly("ready after " + statusCalls + " checks");
+      assertThat(output.toString(StandardCharsets.UTF_8))
+          .contains("[provider] settled " + paymentId + ", webhook lost")
+          .contains("[shop]     order order-polled paid (" + paymentId + ", polled)");
+    }
+  }
+
+  private static void awaitEnd(Bikesched bikesched, UUID jobId) {
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+    assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
+  }
+
+  /** The payment id, as stored by the job's first step. */
+  private static String paymentId(Bikesched bikesched, UUID jobId) throws SQLException {
+    return query(
+        "select result #>> '{}' from bikesched_steps where job_id = '"
+            + jobId
+            + "' and name = 'create-payment'");
+  }
+
+  /** The number of checks of the job's poll step, 0 without one. */
+  private static int pollChecks(UUID jobId) throws SQLException {
+    String checks =
+        query(
+            "select coalesce(max(attempts), 0) from bikesched_steps where job_id = '"
+                + jobId
+                + "' and name = 'poll-payment'");
+    return Integer.parseInt(checks);
+  }
+
+  private static String query(String sql) throws SQLException {
+    try (var connection = DATA_SOURCE.getConnection();
+        var statement = connection.createStatement();
+        var rows = statement.executeQuery(sql)) {
+      rows.next();
+      return rows.getString(1);
+    }
+  }
+
+  private static Bikesched node() {
+    return Bikesched.builder()
+        .dataSource(DATA_SOURCE)
+        .nodeName("poll-" + UUID.randomUUID())
+        .pollInterval(Duration.ofMillis(50))
+        .jobHistory(Duration.ofHours(1))
+        .jsonMapper(new JacksonJsonMapper())
+        .build();
+  }
+}

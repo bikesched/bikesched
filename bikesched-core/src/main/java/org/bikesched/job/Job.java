@@ -8,6 +8,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
+import org.bikesched.RetryBackoff;
 import org.bikesched.event.EventPublisher;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
@@ -355,6 +356,67 @@ public interface Job extends EventPublisher {
    * @throws BikeschedException if the step cannot be read or stored
    */
   void sleepUntil(String stepName, Instant time);
+
+  /**
+   * Builds a poll: a durable step that checks, e.g. an external service, until a result is ready.
+   * Each run of the handler checks once; if the result is not ready, the job's attempt ends at the
+   * poll (it does not return) and the job is suspended in state {@code WAITING} until the next
+   * check, using no thread and no concurrency slot, like {@link #sleep(String, Duration)}. Once a
+   * check is ready, the poll returns the value, which is stored and returned on later runs without
+   * checking again.
+   *
+   * <pre>{@code
+   * Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30))
+   *     .timeout(Duration.ofHours(2))   // optional
+   *     .run(step -> switch (reports.status(reportId)) {
+   *       case Done d -> Poll.ready(d.report());
+   *       case Pending _ -> Poll.notReady();
+   *     });
+   * }</pre>
+   *
+   * <p>A poll is one step for all its checks: checks that are not ready do not use up attempts, and
+   * the step's {@link Step#attempts()} counts the checks. A check that throws fails the job's
+   * attempt; the next attempt checks again right away. A due check runs on the next poll of a node,
+   * so up to one {@link BikeschedBuilder#pollInterval(Duration) poll interval} late. Like waiting
+   * for an event, polling reruns the code outside of steps, and the same rules apply (see {@link
+   * #waitForEvent(String, String, String)}).
+   *
+   * @param name the step name, unique within the job, at most 200 characters
+   * @param resultType the type of the ready value, used to read the stored value back
+   * @param interval the time between checks, positive; {@link Poll#notReady(Duration)} overrides it
+   *     for one check
+   * @param <T> the type of the ready value
+   * @return the poll builder
+   * @throws IllegalArgumentException if the name is blank or the interval is not positive
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
+   */
+  <T> PollBuilder<T> newPoll(String name, Class<T> resultType, Duration interval);
+
+  /**
+   * Builds a poll whose interval grows, like {@link #newPoll(String, Class, Duration)}:
+   *
+   * <pre>{@code
+   * job.newPoll("await-report", Report.class,
+   *         RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(5)))
+   *     .run(step -> …);
+   * }</pre>
+   *
+   * <p>After each check that is not ready, the interval is called with the number of that check (1,
+   * 2, …, also counting checks that threw), and the next check runs after the returned delay. It is
+   * not called for a ready check, nor for a check that threw (that is a failed attempt, delayed by
+   * the node's {@link BikeschedBuilder#retryBackoff(RetryBackoff) retry backoff}). A delay of zero
+   * checks again on the next poll of a node; an interval that throws or returns {@code null} or a
+   * negative delay is logged, and the next check runs right away.
+   *
+   * @param name the step name, unique within the job, at most 200 characters
+   * @param resultType the type of the ready value, used to read the stored value back
+   * @param interval the time between checks, by the number of the check that was not ready
+   * @param <T> the type of the ready value
+   * @return the poll builder
+   * @throws IllegalArgumentException if the name is blank
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
+   */
+  <T> PollBuilder<T> newPoll(String name, Class<T> resultType, RetryBackoff interval);
 
   /**
    * Starts building a child job, started exactly once as a durable step of this job: the first run

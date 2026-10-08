@@ -12,9 +12,9 @@ import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.ValidationUtil;
 
 /**
- * The {@code bikesched_steps} table: durable steps of jobs, sleeps, waits for child jobs, and
- * suspending a job at a waiting step (event steps are handled by {@link EventStore}, starting child
- * jobs by {@link JobStore}). Changes are recorded in the {@link HistoryStore job history}, if
+ * The {@code bikesched_steps} table: durable steps of jobs, sleeps, waits for child jobs, polls,
+ * and suspending a job at a waiting step (event steps are handled by {@link EventStore}, starting
+ * child jobs by {@link JobStore}). Changes are recorded in the {@link HistoryStore job history}, if
  * enabled. Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  *
  * <p>Every write is fenced by the job's lock ({@link JobLock}): it only takes effect while the job
@@ -166,6 +166,43 @@ public final class StepStore {
       """
             update bikesched_steps set state = 'SUCCEEDED', finished_at = now()
              where job_id = ? and name = ? and state = 'WAITING'""";
+
+  // A step of a job, for a poll.
+  private static final String FIND_POLL_STEP_SQL =
+      """
+            select kind, state, result::text, attempts, wait_until, wait_until <= now()
+              from bikesched_steps where job_id = ? and name = ? for update""";
+
+  // Starts the first check of a poll; its deadline (timeout_at) is null without a timeout.
+  private static final String START_POLL_SQL =
+      """
+            insert into bikesched_steps (job_id, name, kind, state, attempts, locked_by, timeout_at)
+            values (?, ?, 'POLL', 'RUNNING', 1, ?, now() + ? * interval '1 millisecond')
+            returning attempts""";
+
+  // Starts a further check of a poll; the deadline set by an earlier check wins.
+  private static final String RESTART_POLL_SQL =
+      """
+            update bikesched_steps
+               set state = 'RUNNING', attempts = attempts + 1, locked_by = ?, started_at = now(),
+                   finished_at = null,
+                   timeout_at = coalesce(timeout_at, now() + ? * interval '1 millisecond')
+             where job_id = ? and name = ?
+            returning attempts""";
+
+  // Ends a check that was not ready: WAITING until the next check (at most until the deadline,
+  // so the last check runs at the deadline), or TIMED_OUT if the deadline has passed.
+  private static final String WAIT_POLL_SQL =
+      """
+            update bikesched_steps
+               set state = case when timeout_at <= now() then 'TIMED_OUT' else 'WAITING' end,
+                   wait_until = case when timeout_at <= now() then wait_until
+                                     else least(now() + ? * interval '1 millisecond', timeout_at) end,
+                   finished_at = case when timeout_at <= now() then now() end,
+                   locked_by = null, last_error = null
+             where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s
+            returning state, wait_until, attempts"""
+          .formatted(JOB_LOCKED);
 
   /**
    * A step as stored.
@@ -468,6 +505,11 @@ public final class StepStore {
    */
   public void completeStep(
       UUID jobId, JobLock lock, String name, String result, boolean compensable) {
+    complete(jobId, lock, name, result, compensable, null);
+  }
+
+  private void complete(
+      UUID jobId, JobLock lock, String name, String result, boolean compensable, String detail) {
     history.change(
         db -> {
           int updated =
@@ -481,7 +523,7 @@ public final class StepStore {
                   jobId,
                   lock.token());
           if (updated > 0) {
-            history.record(db, Change.step(jobId, name, "SUCCEEDED", lock.nodeId(), null));
+            history.record(db, Change.step(jobId, name, "SUCCEEDED", lock.nodeId(), detail));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -573,12 +615,16 @@ public final class StepStore {
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public void failStep(UUID jobId, JobLock lock, String name, String error) {
+    fail(jobId, lock, name, error, error);
+  }
+
+  private void fail(UUID jobId, JobLock lock, String name, String error, String detail) {
     history.change(
         db -> {
           String message = ValidationUtil.truncateMessage(error);
           if (db.update(FAIL_STEP_SQL, message, jobId, name, lock.nodeId(), jobId, lock.token())
               > 0) {
-            history.record(db, Change.step(jobId, name, "FAILED", lock.nodeId(), error));
+            history.record(db, Change.step(jobId, name, "FAILED", lock.nodeId(), detail));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -682,6 +728,197 @@ public final class StepStore {
   }
 
   /**
+   * A poll step after {@link #startPoll}.
+   *
+   * @param state {@code RUNNING} (a check started), {@code WAITING} (the next check is not due
+   *     yet), {@code SUCCEEDED} (ready in an earlier run) or {@code TIMED_OUT}
+   * @param result the ready value as JSON text if {@code SUCCEEDED}, may be {@code null}
+   * @param checks the number of checks so far, including a started one
+   * @param waitUntil the time of the next check if {@code WAITING}
+   * @param resumed whether the poll was waiting when this run reached it (the job was claimed for a
+   *     further check)
+   */
+  public record PollStep(
+      String state, String result, int checks, Instant waitUntil, boolean resumed) {}
+
+  /**
+   * Reaches a poll: starts a check (the first one, or a further one once it is due or after a
+   * failed check), or reports the poll as stored if it is ready, timed out, or not due yet. The
+   * deadline is stored on the first check with a timeout; it wins on later checks.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @param timeout how long to poll at most, counted from the first check; {@code null} for no
+   *     limit
+   * @return the poll
+   * @throws IllegalStateException if the step name belongs to another kind of step
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public PollStep startPoll(UUID jobId, JobLock lock, String name, Duration timeout) {
+    return access.inTransaction(
+        db -> {
+          requireJobLock(db, jobId, lock);
+          Optional<StoredPoll> step =
+              db.one(
+                  FIND_POLL_STEP_SQL,
+                  row ->
+                      new StoredPoll(
+                          row.string(1),
+                          row.string(2),
+                          row.string(3),
+                          row.integer(4),
+                          row.instant(5),
+                          row.bool(6)),
+                  jobId,
+                  name);
+          if (step.isEmpty()) {
+            int checks =
+                db.one(
+                        START_POLL_SQL,
+                        row -> row.integer(1),
+                        jobId,
+                        name,
+                        lock.nodeId(),
+                        Sql.millis(timeout))
+                    .orElseThrow();
+            return new PollStep("RUNNING", null, checks, null, false);
+          }
+          StoredPoll found = step.get();
+          if (!found.kind().equals("POLL")) {
+            throw new IllegalStateException(
+                "Step '"
+                    + name
+                    + "' of job "
+                    + jobId
+                    + " is "
+                    + describeKind(found.kind())
+                    + ", not a poll; step names must be unique within a job");
+          }
+          boolean waiting = found.state().equals("WAITING");
+          return switch (found.state()) {
+            case "SUCCEEDED", "TIMED_OUT" ->
+                new PollStep(found.state(), found.result(), found.checks(), null, false);
+            case "WAITING", "FAILED", "RUNNING" -> {
+              if (waiting && !found.due()) {
+                yield new PollStep("WAITING", null, found.checks(), found.waitUntil(), true);
+              }
+              int checks =
+                  db.one(
+                          RESTART_POLL_SQL,
+                          row -> row.integer(1),
+                          lock.nodeId(),
+                          Sql.millis(timeout),
+                          jobId,
+                          name)
+                      .orElseThrow();
+              yield new PollStep("RUNNING", null, checks, null, waiting);
+            }
+            default ->
+                throw new IllegalStateException(
+                    "Poll step '" + name + "' of job " + jobId + " is " + found.state());
+          };
+        },
+        e ->
+            new BikeschedException(
+                "Polling in step '" + name + "' of bikesched job " + jobId + " failed", e));
+  }
+
+  /**
+   * Marks a running poll {@code SUCCEEDED} after a check found it ready, and stores the value.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @param result the ready value as JSON text, may be {@code null}
+   * @param checks the number of checks it took, for the history
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public void completePoll(UUID jobId, JobLock lock, String name, String result, int checks) {
+    complete(jobId, lock, name, result, false, "ready after " + checks(checks));
+  }
+
+  /**
+   * Marks a running poll {@code FAILED} after its check threw.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @param error description of the failure, stored as {@code last_error}
+   * @param check the number of the failed check, for the history
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public void failPoll(UUID jobId, JobLock lock, String name, String error, int check) {
+    fail(jobId, lock, name, error, "check " + check + " failed: " + error);
+  }
+
+  /**
+   * A poll after a check that was not ready.
+   *
+   * @param timedOut whether its deadline has passed (the step is {@code TIMED_OUT})
+   * @param waitUntil the time of the next check, if not timed out
+   * @param checks the number of checks so far
+   */
+  public record PollWait(boolean timedOut, Instant waitUntil, int checks) {}
+
+  /**
+   * Ends a check that was not ready: the poll waits until the next check (at most until its
+   * deadline), or times out if the deadline has passed. Only a timeout is recorded in the history.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @param delay the time until the next check
+   * @return the poll
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public PollWait waitPoll(UUID jobId, JobLock lock, String name, Duration delay) {
+    return history.change(
+        db -> {
+          Optional<PollWait> wait =
+              db.one(
+                  WAIT_POLL_SQL,
+                  row ->
+                      new PollWait(
+                          row.string(1).equals("TIMED_OUT"), row.instant(2), row.integer(3)),
+                  Sql.millis(delay),
+                  jobId,
+                  name,
+                  lock.nodeId(),
+                  jobId,
+                  lock.token());
+          if (wait.isEmpty()) {
+            requireJobLock(db, jobId, lock);
+            throw new IllegalStateException(
+                "Poll step '" + name + "' of job " + jobId + " is not running");
+          }
+          if (wait.get().timedOut()) {
+            history.record(
+                db,
+                Change.step(
+                    jobId,
+                    name,
+                    "TIMED_OUT",
+                    lock.nodeId(),
+                    "timed out after " + checks(wait.get().checks())));
+          }
+          return wait.get();
+        },
+        e ->
+            new BikeschedException(
+                "Recording a check of poll '" + name + "' of bikesched job " + jobId + " failed",
+                e));
+  }
+
+  private static String checks(int checks) {
+    return checks == 1 ? "1 check" : checks + " checks";
+  }
+
+  /** A row of {@code FIND_POLL_STEP_SQL}. */
+  private record StoredPoll(
+      String kind, String state, String result, int checks, Instant waitUntil, boolean due) {}
+
+  /**
    * A job after suspending it.
    *
    * @param waiting {@code true} if it is {@code WAITING}, {@code false} if it was scheduled right
@@ -706,12 +943,44 @@ public final class StepStore {
   }
 
   /**
+   * Ends a running attempt whose handler suspended at a poll until its next check, see {@code
+   * SUSPEND_JOB_SQL}. Only the first suspension of a poll is recorded in the history: a job claimed
+   * while its poll waits is not recorded either (see {@code JobStore.claimJobs}), so the checks in
+   * between leave no entries. A suspension that schedules the job right away is always recorded.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param stepName the polling step
+   * @param recorded whether to record the suspension: {@code false} if the poll was already waiting
+   *     when the job was claimed
+   * @return the job after suspending; empty if the job is not running on this node (anymore)
+   */
+  public Optional<SuspendedJob> suspendAtPoll(
+      UUID jobId, JobLock lock, String stepName, boolean recorded) {
+    return access.inTransaction(
+        db -> suspend(db, history, jobId, lock, stepName, "polling", recorded),
+        e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
+  }
+
+  /**
    * Suspends the job at a waiting step in the caller's transaction, see {@code SUSPEND_JOB_SQL}.
    *
    * @param waitingFor what the step waits for, for the history; {@code null} to leave it out
    */
   static Optional<SuspendedJob> suspend(
       Sql db, HistoryStore history, UUID jobId, JobLock lock, String stepName, String waitingFor)
+      throws SQLException {
+    return suspend(db, history, jobId, lock, stepName, waitingFor, true);
+  }
+
+  private static Optional<SuspendedJob> suspend(
+      Sql db,
+      HistoryStore history,
+      UUID jobId,
+      JobLock lock,
+      String stepName,
+      String waitingFor,
+      boolean recorded)
       throws SQLException {
     Optional<Suspension> suspended =
         db.one(
@@ -725,6 +994,9 @@ public final class StepStore {
     }
     Suspension suspension = suspended.get();
     boolean waiting = suspension.state().equals("WAITING");
+    if (!recorded && waiting) {
+      return Optional.of(new SuspendedJob(true, suspension.waitUntil()));
+    }
     history.record(
         db,
         Change.job(
@@ -759,6 +1031,7 @@ public final class StepStore {
       case "EVENT_WAIT" -> "an event wait";
       case "EVENT_PUBLISH" -> "an event publish";
       case "CHILD_JOB" -> "a child job";
+      case "POLL" -> "a poll";
       default -> "a " + kind + " step";
     };
   }

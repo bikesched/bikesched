@@ -111,6 +111,78 @@ job.sleepUntil("until-check-in", booking.checkIn().minus(Duration.ofDays(1)));
   the compensations of its completed steps.
 - Sleeping inside a step handler or a compensation is rejected, like nested steps.
 
+## Polling
+
+A handler can poll an external service until a result is ready, as one durable step. Each run of
+the handler checks once: if the result is not ready, the attempt ends at the poll and the job is
+suspended in state `WAITING` until the next check, without holding a thread or a concurrency slot,
+like a [sleep](#sleeping). Once a check is ready, the poll returns the value, which is stored and
+returned on later runs without checking again:
+
+```java
+Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30))
+        .timeout(Duration.ofHours(2))   // optional
+        .run(step -> switch (reports.status(reportId)) {
+            case Done d -> Poll.ready(d.report());
+            case Pending _ -> Poll.notReady();
+        });
+```
+
+| The poll handler… | Step | Job |
+|---|---|---|
+| returns `Poll.ready(value)` | `SUCCEEDED`, the value stored | continues |
+| returns `Poll.notReady()` | `WAITING` until the next check | suspended, the attempt given back |
+| returns `Poll.notReady()` after the deadline | `TIMED_OUT` | fails with a `PollTimeoutException`, or gets the timeout handler's result |
+| throws | `FAILED` | the attempt fails and is retried (with the node's retry backoff); the next attempt checks right away |
+
+- A poll is one row in `bikesched_steps` for all its checks; the step's `attempts` counts them, and
+  the poll handler receives it as `step.attempts()`. Checks that are not ready don't use up
+  attempts.
+- The interval is required. For a growing one, pass a `RetryBackoff` instead of a `Duration`: it
+  is called after each check that is not ready, with the number of that check, e.g.
+  `job.newPoll("await-report", Report.class, RetryBackoff.exponential(Duration.ofSeconds(5),
+  Duration.ofMinutes(5)))`. `Poll.notReady(Duration)` sets the time until the next check for one
+  check, e.g. from a `Retry-After` header.
+- `timeout(Duration)` stops polling after the given time, counted from the first check; the last
+  check runs at the deadline. Then the job fails without further attempts with a
+  `PollTimeoutException`, or, with `timeout(Duration, handler)`, `run` returns the handler's
+  result. Like an event wait's timeout handler, it is not stored and runs on every replay.
+  Without a timeout, the poll checks until it is ready or the job is cancelled.
+- The deadline stored on the first check wins: a timeout changed in a deploy doesn't move a poll
+  that already started. Polling again after a timeout needs a new step name.
+- A due check runs on the next poll of a node, so up to one poll interval late (5 seconds by
+  default). For checks every few seconds, loop inside a [step](#durable-steps) instead.
+- An expected negative answer (e.g. the report failed) is a ready value too, see
+  [Business outcomes as results](#business-outcomes-as-results); exceptions are for errors a retry
+  may fix.
+- The [job history](jobs.md#job-history) records the poll's first wait and its outcome (`ready
+  after 3 checks`), not every check.
+- Polling inside a step handler or a compensation is rejected, like nested steps. Cancelling a
+  polling job marks the poll `CANCELLED` and runs the compensations of its completed steps.
+
+Polling with a loop of steps and sleeps (`check-1`, `wait-1`, `check-2`, …) works too, but adds two
+rows per check, and every run replays all earlier checks. Failing the attempt with
+`job.fail(…).retryAfter(…)` while the result is not ready uses up attempts and counts as a failure.
+
+### Webhooks with a polling fallback
+
+When a service sends a webhook but may lose it, wait for the webhook for a short time and poll if
+it doesn't arrive:
+
+```java
+PaymentSettled webhook = job.waitForEvent("await-webhook", PAYMENT_SETTLED, paymentId)
+        .timeout(Duration.ofSeconds(30), () -> null)
+        .receive();
+PaymentSettled settled = webhook != null
+        ? webhook
+        : job.newPoll("poll-payment", PaymentSettled.class, Duration.ofMinutes(1))
+                .timeout(Duration.ofHours(1))
+                .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
+```
+
+A timeout handler may also run the poll itself. The
+[poll example](../bikesched-examples/README.md#poll) shows both paths.
+
 ## Compensation
 
 Steps with side effects can declare a compensation that undoes them if the job is cancelled or

@@ -15,9 +15,11 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.JsonMapper;
+import org.bikesched.RetryBackoff;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
+import org.bikesched.event.TimeoutHandler;
 import org.bikesched.event.TypedEventWait;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.event.listener.EventPublication;
@@ -36,6 +38,10 @@ import org.bikesched.job.Job;
 import org.bikesched.job.JobFailure;
 import org.bikesched.job.JobResult;
 import org.bikesched.job.JobType;
+import org.bikesched.job.Poll;
+import org.bikesched.job.PollBuilder;
+import org.bikesched.job.PollHandler;
+import org.bikesched.job.PollTimeoutException;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.Step;
 import org.bikesched.job.StepBuilder;
@@ -645,6 +651,25 @@ public final class DefaultJob implements Job {
     return new DefaultStepBuilder<>(this, name, resultType);
   }
 
+  @Override
+  public <T> PollBuilder<T> newPoll(String name, Class<T> resultType, Duration interval) {
+    ValidationUtil.requireName(name, "step name");
+    Objects.requireNonNull(interval, "interval");
+    if (interval.isNegative() || interval.isZero()) {
+      throw new IllegalArgumentException("interval must be positive: " + interval);
+    }
+    return newPoll(name, resultType, RetryBackoff.fixed(interval));
+  }
+
+  @Override
+  public <T> PollBuilder<T> newPoll(String name, Class<T> resultType, RetryBackoff interval) {
+    ValidationUtil.requireName(name, "step name");
+    Objects.requireNonNull(resultType, "resultType");
+    Objects.requireNonNull(interval, "interval");
+    stepGuard.requireNoneRunning("create poll '" + name + "'");
+    return new DefaultPollBuilder<>(this, name, resultType, interval);
+  }
+
   private <T> T runStep(
       String name,
       StepHandler<T> handler,
@@ -805,6 +830,184 @@ public final class DefaultJob implements Job {
     } finally {
       restoreStepName.run();
     }
+  }
+
+  /**
+   * Polls as a step: returns the ready value (checked in this run, or stored by an earlier one) or
+   * the timeout handler's result once the poll timed out, or suspends the job by throwing {@link
+   * JobSuspended} until the next check. The arguments were validated by the {@link
+   * DefaultPollBuilder}.
+   *
+   * @param timeout how long to poll at most, counted from the first check; {@code null} for no
+   *     limit
+   * @param timeoutHandler produces the result after the timeout; {@code null} to fail the job with
+   *     a {@link PollTimeoutException}. Runs on every run that reaches the timed-out poll, its
+   *     result is not stored
+   */
+  <T> T poll(
+      String name,
+      Class<T> resultType,
+      RetryBackoff interval,
+      Duration timeout,
+      TimeoutHandler<? extends T> timeoutHandler,
+      PollHandler<T> handler)
+      throws Exception {
+    stepGuard.requireNoneRunning("poll as step '" + name + "'");
+    Runnable restoreStepName = putStepName(name);
+    try {
+      if (compensating) {
+        // Replay only: return what the poll stored, never start a check.
+        var stored = database.steps().findStep(id, name);
+        stored.ifPresent(step -> requireStepKind(name, step.kind(), "POLL", "a poll"));
+        String state = stored.map(StepStore.StoredStep::state).orElse("");
+        return switch (state) {
+          case "SUCCEEDED" -> reader(resultType).apply(stored.get().result());
+          case "TIMED_OUT" -> pollTimedOut(name, stored.get().attempts(), timeout, timeoutHandler);
+          default -> throw new CompensationReplayEnded(name);
+        };
+      }
+      var poll = fenced(() -> database.steps().startPoll(id, lock, name, timeout));
+      switch (poll.state()) {
+        case "SUCCEEDED" -> {
+          LOG.debug("Step {} of job {} already completed, reusing its result", name, id);
+          return reader(resultType).apply(poll.result());
+        }
+        case "TIMED_OUT" -> {
+          return pollTimedOut(name, poll.checks(), timeout, timeoutHandler);
+        }
+        case "WAITING" -> {
+          LOG.debug(
+              "Step {} of job {}: next check not due until {}, suspending the job",
+              name,
+              id,
+              poll.waitUntil());
+          throw suspendPoll(
+              new JobSuspended.PollSuspension(name, poll.checks(), poll.waitUntil(), true));
+        }
+        default -> {
+          return check(name, interval, timeout, timeoutHandler, handler, poll);
+        }
+      }
+    } finally {
+      restoreStepName.run();
+    }
+  }
+
+  /** Runs one check of a poll, see {@link #poll}. */
+  private <T> T check(
+      String name,
+      RetryBackoff interval,
+      Duration timeout,
+      TimeoutHandler<? extends T> timeoutHandler,
+      PollHandler<T> handler,
+      StepStore.PollStep poll)
+      throws Exception {
+    int check = poll.checks();
+    LOG.debug("Checking poll {} of job {} (check {})", name, id, check);
+    long start = System.nanoTime();
+    Poll.NotReady<T> notReady;
+    try {
+      var step = new Step(id, name, check);
+      Poll<T> outcome = stepGuard.run("poll '" + name + "'", () -> handler.handle(step));
+      if (outcome == null) {
+        throw new IllegalStateException(
+            "The handler of poll '"
+                + name
+                + "' returned null; return Poll.ready(value) or Poll.notReady()");
+      }
+      switch (outcome) {
+        case Poll.Ready<T> ready -> {
+          T value = ready.value();
+          String json = value == null ? null : database.jsonMapper().toJson(value);
+          fenced(() -> database.steps().completePoll(id, lock, name, json, check));
+          LOG.debug(
+              "Step {} of job {} ready after check {} in {} ms",
+              name,
+              id,
+              check,
+              millisSince(start));
+          return value;
+        }
+        case Poll.NotReady<T> later -> notReady = later;
+      }
+    } catch (Exception e) {
+      LOG.debug(
+          "Step {} of job {} (check {}) FAILED in {} ms: {}",
+          name,
+          id,
+          check,
+          millisSince(start),
+          e.toString());
+      try {
+        fenced(() -> database.steps().failPoll(id, lock, name, e.toString(), check));
+      } catch (RuntimeException recording) {
+        e.addSuppressed(recording);
+      }
+      throw e;
+    }
+    Duration delay =
+        notReady.retryAfter() != null ? notReady.retryAfter() : nextCheckIn(name, interval, check);
+    var wait = fenced(() -> database.steps().waitPoll(id, lock, name, delay));
+    if (wait.timedOut()) {
+      LOG.debug("Step {} of job {} timed out after check {}", name, id, check);
+      return pollTimedOut(name, wait.checks(), timeout, timeoutHandler);
+    }
+    LOG.debug(
+        "Step {} of job {}: check {} not ready, checking again at {}, suspending the job",
+        name,
+        id,
+        check,
+        wait.waitUntil());
+    throw suspendPoll(
+        new JobSuspended.PollSuspension(name, check, wait.waitUntil(), poll.resumed()));
+  }
+
+  /** The time until the next check: the interval's delay, or zero if it fails. */
+  private Duration nextCheckIn(String name, RetryBackoff interval, int check) {
+    try {
+      Duration delay = interval.delay(check);
+      if (delay != null && !delay.isNegative()) {
+        return delay;
+      }
+      LOG.warn(
+          "Interval of poll {} of job {} returned {} after check {}, checking again right away",
+          name,
+          id,
+          delay,
+          check);
+    } catch (RuntimeException e) {
+      LOG.warn(
+          "Interval of poll {} of job {} failed after check {}, checking again right away",
+          name,
+          id,
+          check,
+          e);
+    }
+    return Duration.ZERO;
+  }
+
+  /** The result of a timed-out poll: the timeout handler's, or the job fails without retries. */
+  private <T> T pollTimedOut(
+      String name, int checks, Duration timeout, TimeoutHandler<? extends T> timeoutHandler)
+      throws Exception {
+    if (timeoutHandler != null) {
+      return timeoutHandler.handle();
+    }
+    String message =
+        "Polling in step '"
+            + name
+            + "' timed out"
+            + (timeout == null ? "" : " after " + timeout)
+            + " ("
+            + checks
+            + (checks == 1 ? " check)" : " checks)");
+    fail(message).remainingAttempts(0); // polling again would time out again
+    throw new PollTimeoutException(message);
+  }
+
+  private JobSuspended suspendPoll(JobSuspended.PollSuspension polling) {
+    suspension = polling;
+    return new JobSuspended(polling);
   }
 
   /** A call run with the step name in the logging context. */

@@ -8,10 +8,11 @@ import org.bikesched.event.EventWait;
 import org.bikesched.job.Job;
 
 /**
- * Thrown by {@link EventWait#receive(Class)}, {@link Job#sleep} and {@link Job#waitForJob} to end
- * the handler's attempt while the job waits for an event, sleeps or waits for a child job;
- * bikesched then suspends the job (state {@code WAITING}) and runs the handler again once the event
- * is published, the job wakes up or the child ended.
+ * Thrown by {@link EventWait#receive(Class)}, {@link Job#sleep}, {@link Job#waitForJob} and polls
+ * to end the handler's attempt while the job waits for an event, sleeps, waits for a child job or
+ * for the next check of a poll; bikesched then suspends the job (state {@code WAITING}) and runs
+ * the handler again once the event is published, the job wakes up, the child ended or the next
+ * check is due.
  *
  * <p>An {@link Error} rather than an exception, so a {@code catch (Exception e)} in the handler
  * does not swallow it by accident. Even if the handler catches it anyway, the job is suspended once
@@ -34,15 +35,16 @@ final class JobSuspended extends Error {
     return suspension;
   }
 
-  /** A step a job is suspended at: waiting for an event or a child job, or sleeping. */
-  sealed interface Suspension permits EventSuspension, SleepSuspension, JobSuspension {
+  /** A step a job is suspended at: waiting for an event or a child job, sleeping, or polling. */
+  sealed interface Suspension
+      permits EventSuspension, SleepSuspension, JobSuspension, PollSuspension {
 
     /** The waiting step. */
     String stepName();
 
     /**
-     * The deadline of an event wait or a wait for a child job ({@code null} if none) or the wake-up
-     * time of a sleep.
+     * The deadline of an event wait or a wait for a child job ({@code null} if none), the wake-up
+     * time of a sleep, or the time of a poll's next check.
      */
     Instant waitUntil();
   }
@@ -95,6 +97,25 @@ final class JobSuspended extends Error {
     @Override
     public String toString() {
       return "to wait for job " + childJobId + (waitUntil == null ? "" : " until " + waitUntil);
+    }
+  }
+
+  /**
+   * A poll waiting for its next check.
+   *
+   * @param stepName the polling step
+   * @param check the number of the check that was not ready (or of the last check, if the job was
+   *     claimed before the next one was due)
+   * @param waitUntil the time of the next check
+   * @param resumed whether the poll was already waiting when the job was claimed: then neither the
+   *     claim nor this suspension is recorded in the job history
+   */
+  record PollSuspension(String stepName, int check, Instant waitUntil, boolean resumed)
+      implements Suspension {
+
+    @Override
+    public String toString() {
+      return "to poll again at " + waitUntil;
     }
   }
 }

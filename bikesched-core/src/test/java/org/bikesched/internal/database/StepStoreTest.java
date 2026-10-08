@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.junit.jupiter.api.Test;
@@ -176,5 +177,123 @@ class StepStoreTest extends AbstractStoreTest {
     assertThatThrownBy(() -> database.events().awaitEvent(jobId, ended, "w", "event", "key", null))
         .isInstanceOf(JobLockLostException.class);
     assertThat(countSteps("job_id = '" + jobId + "'")).isZero();
+  }
+
+  @Test
+  void pollLifecycleKeepsOneRowAndItsFirstDeadline() throws SQLException {
+    UUID node = registerNode("node-1");
+    insertJobs(1, 0, "now()");
+    UUID jobId = claimJobs(node, 1).getFirst().id();
+    StepStore steps = database.steps();
+
+    assertThat(steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1)))
+        .isEqualTo(new StepStore.PollStep("RUNNING", null, 1, null, false));
+    assertThat(
+            countSteps(
+                "name = 'p' and kind = 'POLL' and state = 'RUNNING' and locked_by = '"
+                    + node
+                    + "' and timeout_at > now() + interval '50 minutes'"))
+        .isEqualTo(1);
+
+    StepStore.PollWait wait = steps.waitPoll(jobId, lock(jobId), "p", Duration.ofMinutes(5));
+    assertThat(wait.timedOut()).isFalse();
+    assertThat(wait.checks()).isEqualTo(1);
+    assertThat(
+            countSteps(
+                "name = 'p' and state = 'WAITING' and locked_by is null"
+                    + " and wait_until between now() + interval '4 minutes'"
+                    + " and now() + interval '6 minutes'"))
+        .isEqualTo(1);
+
+    StepStore.PollStep early = steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1));
+    assertThat(early.state()).as("not due: no check").isEqualTo("WAITING");
+    assertThat(early.resumed()).isTrue();
+    assertThat(early.waitUntil()).isEqualTo(wait.waitUntil());
+
+    execute("update bikesched_steps set wait_until = now() where name = 'p'");
+    assertThat(steps.startPoll(jobId, lock(jobId), "p", Duration.ofMillis(1)))
+        .isEqualTo(new StepStore.PollStep("RUNNING", null, 2, null, true));
+    assertThat(countSteps("name = 'p' and timeout_at > now() + interval '50 minutes'"))
+        .as("the first deadline wins")
+        .isEqualTo(1);
+
+    steps.completePoll(jobId, lock(jobId), "p", "\"ready\"", 2);
+    assertThat(steps.startPoll(jobId, lock(jobId), "p", null))
+        .isEqualTo(new StepStore.PollStep("SUCCEEDED", "\"ready\"", 2, null, false));
+    assertThat(countRows("bikesched_job_history", "job_id = '" + jobId + "' and step_name = 'p'"))
+        .as("only the outcome is recorded")
+        .isOne();
+  }
+
+  @Test
+  void aPollTimesOutOnceItsDeadlineHasPassed() throws SQLException {
+    UUID node = registerNode("node-1");
+    insertJobs(1, 0, "now()");
+    UUID jobId = claimJobs(node, 1).getFirst().id();
+    StepStore steps = database.steps();
+    steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1));
+    steps.waitPoll(jobId, lock(jobId), "p", Duration.ofHours(2));
+    assertThat(countSteps("name = 'p' and wait_until = timeout_at"))
+        .as("the next check is at most at the deadline")
+        .isEqualTo(1);
+
+    execute("update bikesched_steps set wait_until = now(), timeout_at = now() where name = 'p'");
+    steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1));
+    StepStore.PollWait wait = steps.waitPoll(jobId, lock(jobId), "p", Duration.ofHours(2));
+
+    assertThat(wait.timedOut()).isTrue();
+    assertThat(wait.checks()).isEqualTo(2);
+    assertThat(steps.startPoll(jobId, lock(jobId), "p", null).state()).isEqualTo("TIMED_OUT");
+    assertThat(
+            countRows(
+                "bikesched_job_history",
+                "job_id = '"
+                    + jobId
+                    + "' and step_name = 'p' and state = 'TIMED_OUT'"
+                    + " and detail = 'timed out after 2 checks'"))
+        .isOne();
+  }
+
+  @Test
+  void pollWritesOfAnEarlierClaimAreRejected() throws SQLException {
+    UUID node = registerNode("node-1");
+    insertJobs(1, 0, "now()");
+    UUID jobId = claimJobs(node, 1).getFirst().id();
+    StepStore steps = database.steps();
+    steps.startPoll(jobId, lock(jobId), "p", null);
+    JobLock stale = staleLock(node);
+
+    assertThatThrownBy(() -> steps.startPoll(jobId, stale, "q", null))
+        .isInstanceOf(JobLockLostException.class);
+    assertThatThrownBy(() -> steps.waitPoll(jobId, stale, "p", Duration.ZERO))
+        .isInstanceOf(JobLockLostException.class);
+    assertThatThrownBy(() -> steps.completePoll(jobId, stale, "p", null, 1))
+        .isInstanceOf(JobLockLostException.class);
+    assertThatThrownBy(() -> steps.failPoll(jobId, stale, "p", "boom", 1))
+        .isInstanceOf(JobLockLostException.class);
+    assertThat(countSteps("name = 'p' and state = 'RUNNING'")).isOne();
+    assertThat(countSteps("name = 'q'")).isZero();
+  }
+
+  @Test
+  void claimsAndSuspensionsOfAWaitingPollAreNotRecorded() throws SQLException {
+    UUID node = registerNode("node-1");
+    insertJobs(1, 0, "now()");
+    UUID jobId = claimJobs(node, 1).getFirst().id();
+    StepStore steps = database.steps();
+    steps.startPoll(jobId, lock(jobId), "p", null);
+    steps.waitPoll(jobId, lock(jobId), "p", Duration.ZERO);
+    assertThat(steps.suspendAtPoll(jobId, lock(jobId), "p", true)).isPresent();
+    String jobEntries = "job_id = '" + jobId + "' and step_name is null";
+    long recorded = countRows("bikesched_job_history", jobEntries);
+
+    // The next check: claimed while the poll waits, and suspended again.
+    assertThat(claimJobs(node, 1)).extracting(JobStore.ClaimedJob::id).containsExactly(jobId);
+    steps.startPoll(jobId, lock(jobId), "p", null);
+    steps.waitPoll(jobId, lock(jobId), "p", Duration.ZERO);
+    assertThat(steps.suspendAtPoll(jobId, lock(jobId), "p", false)).isPresent();
+
+    assertThat(countRows("bikesched_job_history", jobEntries)).isEqualTo(recorded);
+    assertThat(count("id = '" + jobId + "' and state = 'WAITING'")).isOne();
   }
 }

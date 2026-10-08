@@ -60,6 +60,15 @@ tasks.register<JavaExec>("runOutcome") {
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
 
+// ./gradlew :bikesched-examples:runPoll: a webhook with a polling fallback.
+tasks.register<JavaExec>("runPoll") {
+    group = "application"
+    description = "Runs the poll example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.poll.PollExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
 // ./gradlew :bikesched-examples:runAnnotation: job handlers declared as annotated methods.
 tasks.register<JavaExec>("runAnnotation") {
     group = "application"
