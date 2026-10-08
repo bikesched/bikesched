@@ -11,6 +11,19 @@ With no or a long statement timeout, a hanging connection blocks the single poll
 heartbeat (own thread) keeps the node looking alive. A watchdog could log and recover when a poll
 takes far longer than the poll interval.
 
+### Outage incidents with a local buffer
+
+A node that cannot reach the database only logs it. It could record the outage as an incident in a
+local buffer and write it to the database once connected again (insert with its UUID, `on
+conflict do nothing`). Job failures need no buffer: they cannot happen while the database is down
+and open their incident later, in the same transaction as before ([spec](docs/specs/incidents.md)).
+
+- Buffer: an append-only JSON-lines file, no new core dependency; if that is not enough, an
+  embedded store in an optional module: [MVStore](https://www.h2database.com/html/mvstore.html),
+  [Xodus](https://github.com/JetBrains/xodus), [SQLite](https://github.com/xerial/sqlite-jdbc),
+  [RocksDB](https://rocksdb.org) or [LMDB](https://github.com/lmdbjava/lmdbjava).
+- Needs incidents without a job (nullable `job_id`, a kind, the node name).
+
 ## Performance
 
 ### LISTEN/NOTIFY
