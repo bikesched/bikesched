@@ -11,6 +11,29 @@ With no or a long statement timeout, a hanging connection blocks the single poll
 heartbeat (own thread) keeps the node looking alive. A watchdog could log and recover when a poll
 takes far longer than the poll interval.
 
+### Outage incidents with a local buffer
+
+A node that cannot reach the database (failed heartbeats, polls or store calls) leaves no durable
+trace of it: it only logs. Incidents (see [the spec](docs/specs/incidents.md)) cover permanently
+failed jobs only, and they can only be written when the database is available. A node could
+record outage incidents ("node X could not reach the database from … to …") in a local buffer and
+write them to the database once it is connected again.
+
+- Not for job failures: a job cannot fail while the database is down (its failing statement fails
+  too), it stays claimed, is released once the node counts as dead and fails on a later attempt,
+  which opens its incident in the same transaction as before. Buffering would record incidents
+  for jobs whose next attempt succeeds and break that guarantee.
+- Buffer: an append-only JSON-lines file per node, no new core dependency; each entry gets its
+  UUID when written, so replaying it uses `insert … on conflict do nothing` and a replay
+  interrupted by another outage is safe to repeat. Delete or truncate the file after the replay
+  committed. An embedded key-value store (MVStore, RocksDB) only behind a small SPI in an
+  optional module, if the file turns out to be too little.
+- Needs incidents that are not tied to a job: `job_id` nullable, a kind column (`JOB_FAILED`,
+  `DATABASE_UNAVAILABLE`), the node name, start and end of the outage.
+- Open: the buffer location (a builder option, off by default); a size limit and what to drop
+  when it is reached; whether a node that never comes back may lose its buffer (other nodes see
+  it as dead anyway).
+
 ## Performance
 
 ### LISTEN/NOTIFY
