@@ -165,10 +165,10 @@ IncidentSettings.builder()
   is a record in `org.bikesched.incident`, so typed handlers use
   `JobType.of("alert-payments", IncidentJobPayload.class)`.
 - The incident job references its incident in a new column
-  `bikesched_jobs.created_by_incident_id uuid references bikesched_incidents (id) on delete set null`, set
+  `bikesched_jobs.for_incident_id uuid references bikesched_incidents (id) on delete set null`, set
   only on incident jobs. A CLI or UI can show per incident whether its job ran.
 - No loops: a failing incident job opens an incident like any job (a broken alert is not silent),
-  but the failing statement schedules no incident job for a job with `created_by_incident_id` set. The marker
+  but the failing statement schedules no incident job for a job with `for_incident_id` set. The marker
   is stored with the job, so it does not depend on the nodes' mappings agreeing or staying the
   same between scheduling and failure.
 - Without a handler for the incident job type anywhere, the job waits like any unhandled job.
@@ -236,7 +236,7 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
   failure opens a second incident; job history entries; log lines.
 - `JobCleanUpTest`: jobs with open incidents are kept, resolved ones deleted after the retention
   from `resolved_at`.
-- `SchemaMigratorTest`: the new table; `bikesched_jobs.created_by_incident_id`.
+- `SchemaMigratorTest`: the new table; `bikesched_jobs.for_incident_id`.
 - Micrometer gauge, starter properties, Kotlin DSL.
 
 ## 8. Implementation steps
@@ -261,4 +261,4 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
 - Opt-in via `BikeschedBuilder.incidents(IncidentSettings)` (§4.1).
 - `COMPENSATION_FAILED` jobs and failed occurrences of recurring jobs can only be resolved (§4.4).
 - Incident job types are mapped per failed job type in the incident settings (§4.5).
-- Incident jobs reference their incident (`bikesched_jobs.created_by_incident_id`) and never schedule another incident job (§4.5).
+- Incident jobs reference their incident (`bikesched_jobs.for_incident_id`) and never schedule another incident job (§4.5).
