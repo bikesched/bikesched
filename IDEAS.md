@@ -32,7 +32,15 @@ Wake pollers with PostgreSQL `LISTEN/NOTIFY` when a job is scheduled (or becomes
 by an event), instead of waiting for the next poll. Lowers latency and allows a longer poll
 interval, so less idle polling. Polling stays as the fallback (notifications are lost while a node
 is disconnected). Needs a dedicated connection per node that stays open, which interacts with
-connection pools.
+connection pools. Design: [spec](docs/specs/listen-notify.md).
+
+### Claim reports for woken polls
+
+With `LISTEN/NOTIFY`, every node handling a type polls at each due time and all but one claim
+nothing. A node could report what it claimed (count, limit, job types) on a channel of its own, so
+others with the same types skip their poll when it claimed less than its limit. Costs a notifying
+commit per woken poll and a wait for the report; worth it only with many nodes per type, after
+measuring. Sketch: [spec §6](docs/specs/listen-notify.md#6-alternatives).
 
 ### Fewer round trips per step
 
