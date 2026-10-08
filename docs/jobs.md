@@ -98,6 +98,7 @@ A handler receives the `Job` being executed:
 | `waitForEvent(step, name, key)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](events.md) |
 | `awaitEvent(step, eventType, key)` | wait for an event and return its typed payload, see [Typed events](events.md#typed-events) |
 | `sleep(step, Duration)`, `sleepUntil(step, Instant)` | pause the job without holding a thread, see [Sleeping](steps.md#sleeping) |
+| `newPoll(step, Class, interval)…run(handler)` | check an external service until a result is ready, see [Polling](steps.md#polling) |
 | `newJob(type)`, `newJob(jobType)` | start a child job once as a durable step, see [Child jobs](child-jobs.md) |
 | `waitForJob(childId, Class)`, `waitForJob(childId, Class, timeout)` | wait for a child job without holding a thread and return its `JobResult`, see [Waiting for children](child-jobs.md#waiting-for-children) |
 | `complete(result)` | set the job's result, stored when it succeeds, see [Job results](child-jobs.md#job-results) |
@@ -208,6 +209,8 @@ A job that waited for an event and was retried once could show:
   attempt back, resuming counts a new one.
 - `nodeId` is the node that made the change; it is empty for changes made by the application:
   scheduling, cancel requests and publishing events.
+- A [poll](steps.md#polling) records its first wait and its outcome, not every check: its
+  further claims and suspensions are left out.
 - Also recorded: cancellations, compensation (`COMPENSATING`, compensation attempts,
   `COMPENSATED` steps), jobs released by a stopping node or from a dead node, occurrences moved to
   a changed recurrence or deleted with their recurring job.

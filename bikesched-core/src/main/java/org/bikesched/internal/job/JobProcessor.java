@@ -423,6 +423,10 @@ public final class JobProcessor {
                             .steps()
                             .suspendAtChildJob(
                                 job.id(), job.lock(), wait.stepName(), wait.childJobId());
+                    case JobSuspended.PollSuspension poll ->
+                        database
+                            .steps()
+                            .suspendAtPoll(job.id(), job.lock(), poll.stepName(), !poll.resumed());
                   });
       if (suspended.isEmpty()) {
         LOG.warn(
@@ -441,6 +445,8 @@ public final class JobProcessor {
                   "the wake-up time passed while suspending the job";
               case JobSuspended.JobSuspension wait ->
                   "job " + wait.childJobId() + " ended while suspending the job";
+              case JobSuspended.PollSuspension _ ->
+                  "the next check became due while suspending the job";
             };
         return new Outcome(JobAttemptOutcome.WAITING, "RESCHEDULED, " + rescheduled);
       }
@@ -461,6 +467,13 @@ public final class JobProcessor {
                     + " in step "
                     + wait.stepName()
                     + (waitUntil == null ? "" : " until " + waitUntil);
+            case JobSuspended.PollSuspension poll ->
+                "POLLING in step "
+                    + poll.stepName()
+                    + " after check "
+                    + poll.check()
+                    + ", next check at "
+                    + waitUntil;
           };
       return new Outcome(JobAttemptOutcome.WAITING, outcome);
     } catch (RuntimeException e) {

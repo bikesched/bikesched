@@ -36,3 +36,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0028](0028-step-kinds-and-event-references.md) | Step kinds and plain event references | Accepted |
 | [0029](0029-child-jobs-as-steps.md) | Child jobs as one step holding the outcome | Accepted |
 | [0030](0030-event-listener.md) | Event listener reports committed publications only | Accepted |
+| [0031](0031-poll-steps.md) | Poll steps: one step for all checks | Accepted |

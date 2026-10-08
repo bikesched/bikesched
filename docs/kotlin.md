@@ -46,6 +46,7 @@ defaults:
 | `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result (e.g. `waitForEvent<Payment?>(…, timeout = 3.days) { null }`), without fallback the job fails permanently like with the default event timeout |
 | `step<T>(name, compensation) { … }` (in a handler) | runs a durable step; the optional `compensation = { step, result -> … }` undoes it if the job is cancelled or fails permanently |
 | `startJob(type, payload, stepName, at, delay, priority, maxAttempts, timeout, compensation)` (in a handler) | starts a [child job](child-jobs.md) once as a durable step and returns its id, the same on every run; the optional `compensation = { step, childId -> … }` e.g. cancels it |
+| `poll<T>(name, interval, timeout, onTimeout) { step -> … }` (in a handler) | polls until the trailing handler returns `Poll.ready(value)`, checking every `interval` (a `Duration` or a `RetryBackoff`); once the optional `timeout` passes, the result of `onTimeout`, without it the job fails with a `PollTimeoutException`; a `poll<Unit>` stores no value |
 | `awaitJob<T>(childJobId, timeout)` (in a handler) | waits for a child job and returns its `JobResult<T>`; `JobResult.TimedOut` once the optional `timeout` passed |
 
 The optional trailing handler of `createJob` and `createRecurringJob` is registered for the type

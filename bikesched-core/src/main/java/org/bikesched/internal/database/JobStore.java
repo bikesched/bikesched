@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
@@ -129,6 +130,12 @@ public final class JobStore {
             delete from bikesched_jobs
              where type = ? and recurrence is not null and state in ('SCHEDULED', 'WAITING')
             returning id, state, attempts""";
+
+  // The jobs among the given ones whose poll waits for its next check.
+  private static final String WAITING_AT_POLL_SQL =
+      """
+            select job_id from bikesched_steps
+             where job_id = any(?) and kind = 'POLL' and state = 'WAITING'""";
 
   // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
   // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
@@ -451,9 +458,11 @@ public final class JobStore {
                       nodeId,
                       Sql.array("text", jobTypes.toArray()),
                       limit);
+              Set<UUID> polling = waitingAtPoll(db, claimed);
               history.record(
                   db,
                   claimed.stream()
+                      .filter(job -> !polling.contains(job.id()))
                       .map(
                           job ->
                               Change.job(
@@ -466,6 +475,22 @@ public final class JobStore {
                     "Claiming jobs for bikesched node " + nodeId + " failed", e));
     jobs.sort(CLAIM_ORDER);
     return jobs;
+  }
+
+  /**
+   * The claimed jobs whose poll is waiting for its next check: their claims are not recorded in the
+   * history (nor their suspension after the check, see {@code StepStore.suspendAtPoll}), so a poll
+   * records its first wait and its outcome, not every check. Queried only with the history enabled.
+   */
+  private Set<UUID> waitingAtPoll(Sql db, List<ClaimedJob> claimed) throws SQLException {
+    if (!history.isEnabled() || claimed.isEmpty()) {
+      return Set.of();
+    }
+    return Set.copyOf(
+        db.list(
+            WAITING_AT_POLL_SQL,
+            row -> row.uuid(1),
+            Sql.array("uuid", claimed.stream().map(ClaimedJob::id).toArray())));
   }
 
   private static String claimDetail(ClaimedJob job) {

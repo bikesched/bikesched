@@ -15,6 +15,7 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:runEvent    # two jobs waiting for an event, published right away and 3s later
 ./gradlew :bikesched-examples:runPublish  # a job publishing an event exactly once, another job waiting for it
 ./gradlew :bikesched-examples:runOutcome  # declined cards as step results, an outage retried
+./gradlew :bikesched-examples:runPoll     # a webhook with a polling fallback
 ./gradlew :bikesched-examples:run         # taxi booking
 ./gradlew :bikesched-examples:runCinema   # cinema tickets
 ./gradlew :bikesched-examples:runSpring   # Spring Boot application wired by the starter
@@ -128,6 +129,43 @@ technical errors left to [retries](../docs/jobs.md#failures-and-retries), and
 
 `OutcomeExample` charges three orders (charged, declined, outage) and prints what happens;
 `OutcomeExampleTest` checks each card's job state and how often the provider was called.
+
+## Poll
+
+Package [`org.bikesched.examples.poll`](src/main/java/org/bikesched/examples/poll): a webhook with
+a polling fallback. `SimulatedPaymentProvider` settles a payment some time after it was created and
+sends a webhook, which the application's endpoint publishes as the event `payment-settled`, keyed
+by the payment id. The job waits for the webhook for two seconds and polls the provider's status
+every second if it doesn't arrive:
+
+```java
+String paymentId = job.step("create-payment", String.class, step -> provider.createPayment(…));
+PaymentSettled webhook = job.waitForEvent("await-webhook", PAYMENT_SETTLED, paymentId)
+        .timeout(WEBHOOK_TIMEOUT, () -> null)
+        .receive();
+PaymentSettled settled = webhook != null
+        ? webhook
+        : job.newPoll("poll-payment", PaymentSettled.class, POLL_INTERVAL)
+                .timeout(Duration.ofSeconds(30))
+                .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
+job.step("mark-paid", Void.class, _ -> { … });
+```
+
+`pay(orderId, settlesAfter, webhook)` decides per job when the payment settles and whether its
+webhook arrives, and `main` takes one payment of each:
+
+```java
+example.pay("order-webhook", Duration.ofSeconds(1), Webhook.DELIVERED);   // the webhook arrives in time
+example.pay("order-polled", Duration.ofSeconds(4), Webhook.LOST);         // polled until settled
+```
+
+The second job's wait times out after two seconds; then every check that finds the payment still
+pending suspends the job until the next one, as one step (`poll-payment`) for all checks. See
+[Polling](../docs/steps.md#polling).
+
+`PollExampleTest` checks that the delivered webhook needs no status call, and that for the lost
+one the number of status calls equals the poll step's checks, with a single history entry
+(`ready after n checks`) for the poll.
 
 ## Annotation
 

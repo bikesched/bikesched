@@ -113,6 +113,10 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 -- - CHILD_JOB: started the child job child_job_id of type child_job_type exactly once; WAITING until the child ends
 --   (SUCCEEDED, child_state = its terminal state, result = its result, last_error = its error or
 --   cancel message) or the parent's wait for it times out at wait_until (TIMED_OUT).
+-- - POLL: checks an external service until it is ready; one row for all checks (attempts = the
+--   number of checks). RUNNING during a check, WAITING until the next check at wait_until (at most
+--   timeout_at), SUCCEEDED once ready (result = the ready value), TIMED_OUT once a check after
+--   timeout_at was not ready, FAILED after a check that threw.
 -- event_id only references the event (no FK): events are deleted after their retention; the same
 -- for child_job_id (children are deleted after the job retention).
 -- A compensable step (declared with a compensation) is COMPENSATED once its compensation ran.
@@ -137,17 +141,18 @@ create table bikesched_steps (
     child_job_id uuid,                  -- the child job started (no FK: see above)
     child_job_type text,                -- its type, checked on replays even after it was deleted
     child_state text,                   -- the child's terminal state, once it ended
+    timeout_at  timestamptz,            -- the deadline of a poll, none if null
     compensable boolean     not null default false,
     started_at  timestamptz not null default now(),
     finished_at timestamptz,
     primary key (job_id, name),
     constraint bikesched_steps_kind_check
-        check (kind in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB')),
+        check (kind in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB', 'POLL')),
     constraint bikesched_steps_state_check
         check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'TIMED_OUT', 'COMPENSATED',
                          'CANCELLED')),
     -- Event waits and publishes name their event; an event wait references the event once it
-    -- received it, a publish always; only event waits and child jobs time out.
+    -- received it, a publish always; only event waits, child jobs and polls time out.
     constraint bikesched_steps_event_check
         check ((event_name is not null) = (kind in ('EVENT_WAIT', 'EVENT_PUBLISH'))
                and (event_name is null) = (event_key is null)
@@ -156,7 +161,7 @@ create table bikesched_steps (
                        when 'EVENT_PUBLISH' then event_id is not null
                        else event_id is null
                    end
-               and (kind in ('EVENT_WAIT', 'CHILD_JOB') or state <> 'TIMED_OUT')),
+               and (kind in ('EVENT_WAIT', 'CHILD_JOB', 'POLL') or state <> 'TIMED_OUT')),
     -- Child job steps reference their child; the child's state is set once it ended (kept when the
     -- step is compensated afterwards).
     constraint bikesched_steps_child_check
@@ -165,12 +170,15 @@ create table bikesched_steps (
                and (child_state is null or kind = 'CHILD_JOB' and state in ('SUCCEEDED', 'COMPENSATED'))
                and (kind <> 'CHILD_JOB' or state <> 'SUCCEEDED' or child_state is not null)
                and child_state in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED')),
-    -- Only sleeps, event waits and child jobs wait; a sleep needs its wake-up time. (An event wait
-    -- or a wait for a child job without a timeout waits without a deadline.)
+    -- Only sleeps, event waits, child jobs and polls wait; a sleep and a waiting poll need their
+    -- wake-up time. (An event wait or a wait for a child job without a timeout waits without a
+    -- deadline.) Only polls have a deadline of their own.
     constraint bikesched_steps_wait_check
-        check ((state <> 'WAITING' or kind in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB'))
-               and (wait_until is null or kind in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB'))
-               and (kind <> 'SLEEP' or wait_until is not null)),
+        check ((state <> 'WAITING' or kind in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL'))
+               and (wait_until is null or kind in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL'))
+               and (kind <> 'SLEEP' or wait_until is not null)
+               and (kind <> 'POLL' or state <> 'WAITING' or wait_until is not null)
+               and (timeout_at is null or kind = 'POLL')),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by is not null)),
     constraint bikesched_steps_name_check
