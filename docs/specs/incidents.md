@@ -133,9 +133,16 @@ New methods on `Bikesched`:
 
 From a failed job to its incident: `JobInfo` gets `openIncidentId()` (`Optional<UUID>`), filled
 by `findJob` with a lookup on `bikesched_incidents_job_id_idx`; `findJobIncidents(jobId)` returns
-all of them. The job stores no reference itself: a job can have several incidents (retried, failed
-again), and a column would have to be kept in sync on every resolution. The opposite direction,
-from an incident job to the incident it handles, is a column (§4.5).
+all of them.
+
+A job also records that its failure was accepted: `resolveIncident` sets
+`bikesched_jobs.resolved_by_incident_id uuid references bikesched_incidents (id) on delete set null`
+in the same transaction, and every retry (`retry`, `retryIncident`) clears it with the rest of the
+failure state. So a `FAILED` or `COMPENSATION_FAILED` job with the column set is handled, without
+a join; `JobInfo.resolvedByIncidentId()` returns it, and a CLI or UI lists unhandled failed jobs
+from `bikesched_jobs` alone. It only ever refers to the incident of the job's current end state:
+a retried job that fails again has it cleared until its new incident is resolved. The opposite
+direction, from an incident job to the incident it handles, is `for_incident_id` (§4.5).
 
 `Incident` is an interface in the new exported package `org.bikesched.incident`, with
 `IncidentState` (`OPEN`, `RESOLVED`) and `IncidentResolution` (`RETRIED`, `RESOLVED`):
@@ -201,7 +208,7 @@ Rejected alternatives:
   counted from the later of `finished_at` and the last `resolved_at`, so resolving an old incident
   does not delete the job right away. Its incidents go with it (`on delete cascade`).
 - `COMPENSATION_FAILED` jobs stay kept forever as today (ADR 0012), with or without incidents.
-  Whether one was handled is read from its incident, not from the job's state.
+  Whether one was handled is `resolved_by_incident_id`, not a job state.
 - Without incidents enabled nothing changes.
 
 ### 4.7 Metrics
@@ -242,12 +249,13 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
   and not for incident jobs; `retryIncident` reruns the job and resolves, `resolveIncident` only
   resolves, both return `false` for resolved incidents; `retryIncident` throws for recurring
   occurrences and `COMPENSATION_FAILED`; `retry(jobId)` resolves the open incident; a second
-  failure opens a second incident; `resolved_by` is stored; job history entries; log lines.
+  failure opens a second incident; `resolved_by` is stored; `resolveIncident` sets and retries clear
+  `resolved_by_incident_id`; job history entries; log lines.
 - Incident jobs: `job.resolveIncident`/`job.retryIncident` set `resolved_by_job_id`, a replay does
   not resolve again, other jobs get an `IllegalStateException`.
 - `JobCleanUpTest`: jobs with open incidents are kept, resolved ones deleted after the retention
   from `resolved_at`.
-- `SchemaMigratorTest`: the new table; `bikesched_jobs.for_incident_id`.
+- `SchemaMigratorTest`: the new table; `bikesched_jobs.for_incident_id` and `resolved_by_incident_id`.
 - Micrometer gauge, starter properties, Kotlin DSL.
 
 ## 8. Implementation steps
@@ -269,9 +277,10 @@ None; see the decisions below.
 - Incident job types are mapped per failed job type in the incident settings (§4.5).
 - Incident jobs reference their incident (`bikesched_jobs.for_incident_id`) and never schedule another incident job (§4.5).
 - `findIncidents(state, limit)` to start with; a filter object follows when the CLI needs one.
-- No new job state for handled `COMPENSATION_FAILED` jobs (e.g. `COMPENSATION_RESOLVED`): the
-  incident records it, and a job state would spread to the CHECK constraints, `JobState`,
-  `child_state`, `JobResult` and the history, while resolved `FAILED` jobs would stay `FAILED`.
-  `COMPENSATION_FAILED` jobs keep being kept forever (§4.6).
+- No new job state for handled `COMPENSATION_FAILED` jobs (e.g. `COMPENSATION_RESOLVED`): a job
+  state would spread to the CHECK constraints, `JobState`, `child_state`, `JobResult` and the
+  history. Instead `bikesched_jobs.resolved_by_incident_id` marks handled `FAILED` and
+  `COMPENSATION_FAILED` jobs alike (§4.4). `COMPENSATION_FAILED` jobs keep being kept forever
+  (§4.6).
 - Who resolved an incident: `resolved_by` (text, 200 characters) from the caller, and
   `resolved_by_job_id` when an incident job resolved it (§4.4, §4.5).
