@@ -91,6 +91,8 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
         .withPropertyValues(
             "bikesched.node-name=" + nodeName,
             "bikesched.poll-interval=100ms",
+            "bikesched.listen-for-due-jobs=false",
+            "bikesched.notify-interval=250ms",
             "bikesched.max-concurrent-jobs=20",
             "bikesched.heartbeat-interval=10s",
             "bikesched.node-timeout=60s",
@@ -101,6 +103,8 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
               BikeschedProperties properties = context.getBean(BikeschedProperties.class);
               assertThat(properties.nodeName()).isEqualTo(nodeName);
               assertThat(properties.pollInterval()).isEqualTo(Duration.ofMillis(100));
+              assertThat(properties.listenForDueJobs()).isFalse();
+              assertThat(properties.notifyInterval()).isEqualTo(Duration.ofMillis(250));
               assertThat(properties.maxConcurrentJobs()).isEqualTo(20);
               assertThat(properties.heartbeatInterval()).isEqualTo(Duration.ofSeconds(10));
               assertThat(properties.nodeTimeout()).isEqualTo(Duration.ofSeconds(60));

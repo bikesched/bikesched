@@ -1,0 +1,145 @@
+// SPDX-License-Identifier: Apache-2.0
+package org.bikesched.internal.job;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.bikesched.internal.database.DueJobs;
+import org.bikesched.internal.database.JobStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Tells the nodes about the jobs this node's committed writes made due, see {@link DueJobs}:
+ *
+ * <ul>
+ *   <li>due now: this node's {@link DueTimes} right away, and all listening nodes through one
+ *       batched notification ({@link JobStore#notifyDue}) per {@code notifyInterval}: the first
+ *       type of an empty batch schedules the flush on the {@code bikesched-notifier} thread, so an
+ *       idle node sends nothing and a busy one at most one notifying commit per interval
+ *   <li>due later: only this node's {@link DueTimes} (the other nodes find such jobs with their
+ *       next-due query)
+ * </ul>
+ *
+ * <p>A failed flush drops its batch (the jobs start on the next interval poll) and logs one warning
+ * per failure streak. {@link #close()} flushes once more.
+ */
+public final class DueJobsNotifier implements DueJobs, AutoCloseable {
+
+  private static final Logger LOG = LoggerFactory.getLogger(DueJobsNotifier.class);
+
+  private final JobStore store;
+  private final Duration notifyInterval;
+  private final boolean notifying;
+  private final DueTimes local;
+  private final String nodeName;
+  private final Set<String> batch = ConcurrentHashMap.newKeySet();
+  private final AtomicBoolean flushScheduled = new AtomicBoolean();
+  private final ScheduledThreadPoolExecutor executor;
+
+  /** Whether the last flush failed: warns once per failure streak. */
+  private volatile boolean failing;
+
+  /**
+   * @param store sends the notifications
+   * @param notifyInterval the batching window
+   * @param notifying whether to notify the other nodes; {@code false}: only this node's {@link
+   *     DueTimes} are told
+   * @param local this node's wake-ups
+   * @param nodeName the node's name, for logging
+   */
+  public DueJobsNotifier(
+      JobStore store, Duration notifyInterval, boolean notifying, DueTimes local, String nodeName) {
+    this.store = Objects.requireNonNull(store, "store");
+    this.notifyInterval = Objects.requireNonNull(notifyInterval, "notifyInterval");
+    this.notifying = notifying;
+    this.local = Objects.requireNonNull(local, "local");
+    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
+    this.executor =
+        new ScheduledThreadPoolExecutor(
+            1, Thread.ofPlatform().name("bikesched-notifier").daemon().factory());
+    // close() flushes itself instead of waiting for a scheduled flush.
+    this.executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+  }
+
+  @Override
+  public void dueNow(Set<String> types) {
+    local.dueNow(types);
+    if (!notifying) {
+      return;
+    }
+    batch.addAll(types);
+    if (flushScheduled.compareAndSet(false, true)) {
+      try {
+        executor.schedule(this::flush, notifyInterval.toMillis(), TimeUnit.MILLISECONDS);
+      } catch (RejectedExecutionException e) {
+        // closing: close() flushes the batch
+      }
+    }
+  }
+
+  @Override
+  public void dueAt(String type, Instant dueAt) {
+    local.dueAt(type, dueAt);
+  }
+
+  @Override
+  public boolean isNotifying() {
+    return notifying;
+  }
+
+  /** Sends the batch; never throws (it runs on the notifier thread and in {@link #close()}). */
+  private void flush() {
+    // Cleared before draining: a type added from now on is either drained below or schedules the
+    // next flush.
+    flushScheduled.set(false);
+    List<String> types = new ArrayList<>();
+    for (String type : batch) {
+      batch.remove(type);
+      types.add(type);
+    }
+    if (types.isEmpty()) {
+      return;
+    }
+    try {
+      store.notifyDue(types);
+      LOG.debug("bikesched node {} notified due jobs of type(s) {}", nodeName, types);
+      if (failing) {
+        failing = false;
+        LOG.info("bikesched node {} notifies due jobs again", nodeName);
+      }
+    } catch (RuntimeException e) {
+      if (!failing) {
+        failing = true;
+        LOG.warn(
+            "bikesched node {} could not notify due jobs of type(s) {}; other nodes start them on"
+                + " their next poll",
+            nodeName,
+            types,
+            e);
+      }
+    }
+  }
+
+  /** Stops the notifier thread and sends what is left. */
+  @Override
+  public void close() {
+    executor.shutdownNow();
+    try {
+      if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        LOG.warn("bikesched node {}: the notifier did not stop in time", nodeName);
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+    flush();
+  }
+}

@@ -29,7 +29,8 @@ public final class BikeschedBuilder {
 
   static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(5);
   static final Duration DEFAULT_NODE_TIMEOUT = Duration.ofSeconds(30);
-  static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(5);
+  static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(10);
+  static final Duration DEFAULT_NOTIFY_INTERVAL = Duration.ofMillis(100);
   static final Duration DEFAULT_EVENT_RETENTION = Duration.ofDays(7);
   static final Duration DEFAULT_NODE_CLEAN_UP_INTERVAL = Duration.ofSeconds(15);
   static final Duration DEFAULT_EVENT_CLEAN_UP_INTERVAL = Duration.ofHours(1);
@@ -44,6 +45,8 @@ public final class BikeschedBuilder {
   private Duration heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL;
   private Duration nodeTimeout = DEFAULT_NODE_TIMEOUT;
   private Duration pollInterval = DEFAULT_POLL_INTERVAL;
+  private boolean listenForDueJobs = true;
+  private Duration notifyInterval = DEFAULT_NOTIFY_INTERVAL;
   private boolean autoStartPolling = true;
   private JsonMapper jsonMapper; // null: the default, accepting only JSON strings
   private Duration defaultJobTimeout;
@@ -393,16 +396,53 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Interval between two polls for due jobs. Together with the job's scheduled time it bounds how
-   * long a freshly scheduled job waits before a node claims it (at most one interval), and it is
-   * the load every node puts on the job table, so it scales with the number of nodes: the default
-   * is 5 seconds.
+   * Interval between two polls for due jobs; defaults to 10 seconds. While nodes {@linkplain
+   * #listenForDueJobs(boolean) listen for due jobs}, it is the safety net for missed notifications
+   * and bounds how late a delayed job scheduled by another node (or on a caller's connection)
+   * starts. Nodes that don't listen start jobs made due by other nodes up to one interval late, so
+   * they should poll more often (e.g. every 5 seconds or less). Every poll is a query on the job
+   * table, so the load scales with the number of nodes.
    *
    * @param pollInterval the interval, positive
    * @return this builder
    */
   public BikeschedBuilder pollInterval(Duration pollInterval) {
     this.pollInterval = requirePositive(pollInterval, "pollInterval");
+    return this;
+  }
+
+  /**
+   * Whether the node listens for due jobs and notifies the other nodes about the jobs it makes due
+   * now (PostgreSQL {@code LISTEN/NOTIFY}); defaults to {@code true}. Then a job starts as soon as
+   * it is due instead of on the next poll: notifications reach the other nodes within the {@link
+   * #notifyInterval(Duration) notify interval}, and every node wakes itself up for the delayed jobs
+   * it writes. A listening node holds one connection of the data source for its lifetime, so size a
+   * pool one connection larger.
+   *
+   * <p>Turn it off where notifications cannot arrive, e.g. behind PgBouncer in transaction mode (a
+   * listening node warns at startup if its own notification does not arrive), and then lower the
+   * {@link #pollInterval(Duration) poll interval}. Set it the same on all nodes and clients: the
+   * writes of a node that doesn't notify reach the others only on their next poll.
+   *
+   * @param listenForDueJobs {@code false} to neither listen nor notify
+   * @return this builder
+   */
+  public BikeschedBuilder listenForDueJobs(boolean listenForDueJobs) {
+    this.listenForDueJobs = listenForDueJobs;
+    return this;
+  }
+
+  /**
+   * How long a node collects the job types it made due now before it notifies the other nodes in
+   * one statement; defaults to 100 milliseconds. It is the extra latency of such jobs on other
+   * nodes, and limits the notifying commits of a node to one per interval (they are serialized
+   * database-wide). An idle node sends nothing.
+   *
+   * @param notifyInterval the interval, positive
+   * @return this builder
+   */
+  public BikeschedBuilder notifyInterval(Duration notifyInterval) {
+    this.notifyInterval = requirePositive(notifyInterval, "notifyInterval");
     return this;
   }
 
@@ -443,6 +483,8 @@ public final class BikeschedBuilder {
             heartbeatInterval,
             nodeTimeout,
             pollInterval,
+            listenForDueJobs,
+            notifyInterval,
             maxConcurrentJobs,
             autoStartPolling,
             defaultJobTimeout,

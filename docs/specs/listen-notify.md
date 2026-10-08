@@ -1,6 +1,8 @@
 # Specification: waking pollers with `LISTEN/NOTIFY`
 
-Status: **draft, not implemented**; decisions in §9, follow-ups in §10, no open questions.
+Status: **implemented** ([ADR 0032](../decisions/0032-batched-notifications-after-commit.md), user
+docs: [Due jobs start right away](../configuration.md#due-jobs-start-right-away)); decisions in §9,
+follow-ups in §10.
 
 ## 1. Goal
 
@@ -71,10 +73,14 @@ next-due query, i.e. up to one `pollInterval`.
 ### 4.2 Notifying: batched after the commit
 
 Only a transaction that issues `NOTIFY` takes PostgreSQL's commit lock (§5.1), so bikesched never
-notifies inside a job write. `DueJobsNotifier` (`internal.job`) collects the types of jobs made due
-now:
+notifies inside a job write. The stores report what their statements make due on their `Sql`
+handle (`db.dueNow(type)`, `db.dueAt(type, time)`, `db.due(type, time)` for inserts, which picks
+one by the due time); `DatabaseAccess` passes the reports to the node's `DueJobs` (interface in
+`internal.database`) once the work committed, and drops them on a rollback. `DueJobsNotifier`
+(`internal.job`) implements it and collects the types of jobs made due now:
 
-- Each write path calls `notifier.due(type)` after its commit; that only adds to a concurrent set.
+- After the commit, `dueNow(types)` wakes the node's own poller right away (§9.16) and adds the
+  types to a concurrent set.
 - The first type added to an empty set schedules one flush after `notifyInterval` (default 100 ms,
   `bikesched-notifier` thread). The flush sends the set in one auto-commit statement
   (`JobStore.notifyDue(types)`):
@@ -91,7 +97,7 @@ now:
   issue `pg_notify` inside the caller's transaction (`notifyDue(connection, types)`), so it is sent
   on commit and not on rollback.
 
-Write paths that report types:
+Write paths that report types (each with `db.dueNow` or `db.due` next to its statement):
 
 | Write path | Store call | Type from |
 |---|---|---|
@@ -102,25 +108,26 @@ Write paths that report types:
 | releases (`close()`, start, inactive claims, dead nodes) | the three `release*` methods | released rows |
 | recurring occurrence already due | `registerRecurringJob`, `insertOccurrence` | `NewJob.type()` when due now |
 
-Not reported: writes that leave the writing attempt's own job due now (retry without backoff,
-compensation start, suspension whose step completed meanwhile). That node calls `pollNow()` itself
-when its attempt ends. A node also receives its own notifications. `NodeCleanUp` (`internal.node`,
-which may not use `internal.job`) gets a plain `Consumer` for released types.
+Not notified: writes that leave the writing attempt's own job due now (retry without backoff,
+compensation start, suspension whose step completed meanwhile). Their stores report `dueAt` with a
+time that has passed, which makes the node poll itself. A node also receives its own
+notifications. `NodeCleanUp` needs nothing: its release statement reports in the store.
 
 ### 4.3 Listening
 
 `JobNotificationListener` (`internal.job.claim`, thread `bikesched-listener`), started and closed
 by `JobPoller`:
 
-- Borrows **one connection**, runs `listen bikesched_jobs`, and loops on
-  `connection.unwrap(PGConnection.class).getNotifications(timeoutMillis)` (pgjdbc 42.7.13). A
-  payload in `registry.types()` calls `pollNow()`; others are ignored.
+- Borrows **one connection** through `JobStore.listen()`, which returns a `DueJobsListening`
+  (`internal.database`, so the JDBC stays in the database package): it runs `listen
+  bikesched_jobs` and wraps `connection.unwrap(PGConnection.class).getNotifications(timeoutMillis)`
+  (pgjdbc 42.7.13). A payload in `registry.types()` calls `pollNow()`; others are ignored.
 - Connects on its own thread with the pool's timeout, so `start()` never waits. On failure: `WARN`,
   wait `pollInterval`, reconnect. After each `listen` it wakes the poller once (with the next-due
   query) for what was missed.
 - **Self-check:** after each `listen` it sends itself a random token and waits up to 1 s; if
   nothing arrives (e.g. PgBouncer in transaction mode) it logs a `WARN`.
-- `close()` closes the connection, which ends the blocking wait.
+- `close()` aborts the connection (`Connection.abort`), which ends the blocking wait.
 - Connections that don't unwrap to `PGConnection` get one `WARN`; the node works without
   notifications.
 
@@ -137,8 +144,9 @@ in `bikesched-micrometer`).
 - `arm(dueAt)` replaces the timer only if `dueAt` is earlier. When the timer fires, it polls and
   then runs the next-due query.
 - **Own writes arm it** through `DueTimes.dueAt(type, dueAt)`, a callback in `internal.job` that
-  `JobPoller` implements (so `internal.job` doesn't depend on `claim`), with the due time the
-  store returned:
+  `JobPoller` implements (so `internal.job` doesn't depend on `claim`), called by the
+  `DueJobsNotifier` with the due time the store reported after the commit. Due times beyond the
+  next interval poll are dropped (its next-due query finds them):
 
   | Write | Due time from |
   |---|---|
@@ -147,9 +155,12 @@ in `bikesched-micrometer`).
   | next occurrence, first occurrence | `NewJob.scheduledAt()` when inserted |
   | delayed `schedule()`, child jobs | `NewJob.scheduledAt()` |
 
-- **Next-due query** (`JobStore.nextDueIn(types, window)`) after start/reconnect, timer polls,
-  interval polls and handler registrations after `start()`; not after "due now" polls, whose timer
-  is still valid. The window is `pollInterval`, because the next interval poll looks again:
+- **Next-due query** (`JobStore.nextDueIn(types, window)`) with start/reconnect, timer polls,
+  interval polls and handler registrations after `start()`; not with "due now" polls, whose timer
+  is still valid. It runs right **before** the claim: the query sees jobs due after its `now()`,
+  the claim those due before its own, so no job becomes due unseen in between (run after the
+  claim, jobs due between the two statements were only found by a later poll; the concurrency
+  test caught it). The window is `pollInterval`, because the next interval poll looks again:
 
   ```sql
   select ceil(extract(epoch from min(scheduled_at) - now()) * 1000)::bigint
@@ -206,16 +217,17 @@ The poller, the listener and the timer move into `org.bikesched.internal.job.cla
 
 | Class | Package | Lines |
 |---|---|---|
-| `JobPoller`, `JobPollerSettings` | moved to `claim` | 249 + 45 today |
-| `JobNotificationListener` | new, `claim` | ~150 |
-| wake-up timer (own class if `JobPoller` grows too long) | new, `claim` | ~80 |
-| `DueTimes`, `DueJobsNotifier` | new, `internal.job` | ~15, ~60 |
+| `JobPoller`, `JobPollerSettings` | moved to `claim` | 249 + 45 before |
+| `JobNotificationListener` | new, `claim` | ~250 |
+| `WakeUpTimer` | new, `claim` | ~65 |
+| `DueTimes`, `DueJobsNotifier` | new, `internal.job` | ~30, ~150 |
+| `DueJobs`, `DueJobsListening` | new, `internal.database` | ~55, ~110 |
 
 Nothing in `internal.job` uses `JobPoller` (checked), so the dependency is one-way. The ArchUnit
 "Job" layer becomes `org.bikesched.internal.job` without sub-packages (used by Node and Claim), and
-a new "Claim" layer `internal.job.claim..` is used by Node only. `package-info.java` explains why
-the `listen` statement is the only JDBC outside the stores. Logger names change; two tests get new
-imports. Not named `poll` (poll steps) or `scheduling` (`JobScheduler`).
+a new "Claim" layer `internal.job.claim..` is used by Node only. The `listen` statement stays in
+the database package (`DueJobsListening`). Logger names change; two tests get new imports. Not
+named `poll` (poll steps) or `scheduling` (`JobScheduler`).
 
 ## 5. Issues
 
@@ -275,7 +287,7 @@ imports. Not named `poll` (poll steps) or `scheduling` (`JobScheduler`).
 ## 7. Testing
 
 `JobNotificationTest` (core) with a 1-minute poll interval, so only notifications and the timer can
-start jobs in time:
+start jobs in time (listener cases in `JobNotificationListenerTest`):
 
 - Due now: scheduled, event resuming a waiting job, child job ending, `retry`, `cancel` of a
   waiting job, jobs released by `close()` of another node: each starts within a second.
@@ -294,9 +306,11 @@ start jobs in time:
   returns promptly), self-check failure (wrapper running `unlisten *`), foreign types ignored,
   prompt `close()`, `listenForDueJobs(false)`.
 
-Store tests: each store call of §4.2 returns the types it made due now (none for delayed jobs,
-suspensions, claims); `notifyDue` reaches a plain JDBC listener on its own connection and in a
-caller's transaction; `nextDueIn` inside and beyond the window.
+Store tests (`DueJobsStoreTest`, with a recording `DueJobs`): each store call of §4.2 reports the
+types it made due now (none for delayed jobs, suspensions, claims, rolled-back writes) and due-later
+writes their due time; `notifyDue` reaches a plain JDBC listener on its own connection and in a
+caller's transaction; `nextDueIn` inside and beyond the window; closing a listening ends a blocked
+receive.
 
 **Guard test** (`DueJobsWritePathsTest`, no database): reads the stores' `*_SQL` constants by
 reflection and keeps those containing `insert into bikesched_jobs` or `update bikesched_jobs`
@@ -350,6 +364,18 @@ one line each; no schema test changes.
 13. **Timer confined to the poller thread.**
 14. **Listener connects on its own thread**; `start()` never waits.
 15. **`notifyInterval` default 100 ms**, window started by the first type, so idle nodes don't tick.
+
+Decided while implementing:
+
+16. **The stores report** what they make due (`Sql.dueNow/dueAt/due`), and `DatabaseAccess`
+    passes it on after the commit, instead of store calls returning types for every caller to
+    forward: the report sits next to each statement, no store signature changes, `NodeCleanUp`
+    needs no `Consumer`, and `DueTimes` is reached through the `DueJobs` sink.
+17. **Own due-now writes wake the own poller right away**, not ≤ 100 ms later by the own
+    notification; costs at most one empty claim and makes nodes with `listenForDueJobs(false)`
+    react to their own writes.
+18. **The next-due query runs before the claim** (§4.4), not after it.
+19. **A released slot returns its permit before it polls** (`JobSlot`), so the woken poll sees it.
 
 ## 10. Follow-ups
 

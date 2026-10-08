@@ -117,7 +117,8 @@ public final class StepStore {
               from bikesched_steps s
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING'
                and s.job_id = j.id and s.name = ?
-            returning j.state, s.wait_until, j.attempts""";
+            returning j.state, s.wait_until, j.attempts, j.type,
+                      case when j.scheduled_at < 'infinity' then j.scheduled_at end""";
 
   // A step of a job, for a sleep.
   private static final String FIND_SLEEP_STEP_SQL =
@@ -985,7 +986,9 @@ public final class StepStore {
     Optional<Suspension> suspended =
         db.one(
             SUSPEND_JOB_SQL,
-            row -> new Suspension(row.string(1), row.instant(2), row.integer(3)),
+            row ->
+                new Suspension(
+                    row.string(1), row.instant(2), row.integer(3), row.string(4), row.instant(5)),
             jobId,
             lock.token(),
             stepName);
@@ -993,6 +996,10 @@ public final class StepStore {
       return Optional.empty();
     }
     Suspension suspension = suspended.get();
+    if (suspension.dueAt() != null) {
+      // Due again at the deadline or wake-up time, or right away: the node wakes itself up.
+      db.dueAt(suspension.type(), suspension.dueAt());
+    }
     boolean waiting = suspension.state().equals("WAITING");
     if (!recorded && waiting) {
       return Optional.of(new SuspendedJob(true, suspension.waitUntil()));
@@ -1013,7 +1020,8 @@ public final class StepStore {
   }
 
   /** A row of {@code SUSPEND_JOB_SQL}. */
-  private record Suspension(String state, Instant waitUntil, int attempts) {}
+  private record Suspension(
+      String state, Instant waitUntil, int attempts, String type, Instant dueAt) {}
 
   /** A row of {@code FIND_SLEEP_STEP_SQL}. */
   private record SleepStep(String kind, String state, Instant wakeUpAt, boolean due) {}

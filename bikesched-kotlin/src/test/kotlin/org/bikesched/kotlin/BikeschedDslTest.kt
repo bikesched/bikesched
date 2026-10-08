@@ -4,6 +4,7 @@ package org.bikesched.kotlin
 import java.util.UUID
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import org.assertj.core.api.Assertions.assertThat
@@ -25,6 +26,8 @@ class BikeschedDslTest {
       nodeName = "dsl-node"
       maxConcurrentJobs = 3
       autoStartPolling = false
+      listenForDueJobs = true
+      notifyInterval = 200.milliseconds
       defaultJobTimeout = 5.minutes
       defaultEventTimeout = 1.minutes
       retryBackoff = exponentialBackoff(1.seconds, 1.minutes)

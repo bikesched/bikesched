@@ -5,7 +5,10 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Set;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Connection and transaction handling for the stores: runs their {@link Sql} work on a connection
@@ -18,11 +21,18 @@ import javax.sql.DataSource;
  *
  * <p>With a statement timeout, every statement gets it as JDBC query timeout (whole seconds,
  * rounded up): a statement still running then is cancelled and fails like any other.
+ *
+ * <p>The jobs the work reported due on its {@link Sql} are passed on to the {@link DueJobs} after
+ * the commit; on a caller's connection, the notification is sent in the caller's transaction
+ * instead.
  */
 public final class DatabaseAccess {
 
+  private static final Logger LOG = LoggerFactory.getLogger(DatabaseAccess.class);
+
   private final DataSource dataSource;
   private final int queryTimeoutSeconds;
+  private volatile DueJobs dueJobs = DueJobs.NONE;
 
   DatabaseAccess(DataSource dataSource) {
     this(dataSource, null);
@@ -46,6 +56,27 @@ public final class DatabaseAccess {
 
   private Sql sql(Connection connection) {
     return new Sql(connection, queryTimeoutSeconds);
+  }
+
+  /** Sets where committed work reports the jobs it made due. */
+  void dueJobs(DueJobs dueJobs) {
+    this.dueJobs = Objects.requireNonNull(dueJobs, "dueJobs");
+  }
+
+  /** Passes on the jobs the committed work made due; never throws, the work is committed. */
+  private void report(Sql sql) {
+    if (sql.dueNowTypes().isEmpty() && sql.dueAtTimes().isEmpty()) {
+      return;
+    }
+    DueJobs target = dueJobs;
+    try {
+      if (!sql.dueNowTypes().isEmpty()) {
+        target.dueNow(Set.copyOf(sql.dueNowTypes()));
+      }
+      sql.dueAtTimes().forEach(target::dueAt);
+    } catch (RuntimeException e) {
+      LOG.warn("Reporting due jobs failed, they start on the next poll", e);
+    }
   }
 
   /**
@@ -75,12 +106,16 @@ public final class DatabaseAccess {
    */
   public <T> T withConnection(Sql.Work<T> work, SqlExceptionHandler onFailure) {
     try (Connection connection = dataSource.getConnection()) {
+      Sql sql = sql(connection);
       if (connection.getAutoCommit()) {
-        return work.run(sql(connection));
+        T result = work.run(sql);
+        report(sql);
+        return result;
       }
       try {
-        T result = work.run(sql(connection));
+        T result = work.run(sql);
         connection.commit();
+        report(sql);
         return result;
       } catch (SQLException | RuntimeException e) {
         rollback(connection, e);
@@ -119,7 +154,9 @@ public final class DatabaseAccess {
 
   /**
    * Runs the work on a caller-supplied connection, as part of the caller's transaction: the
-   * connection is neither committed nor closed.
+   * connection is neither committed nor closed. Jobs the work made due now are notified in the
+   * caller's transaction ({@link JobStore#NOTIFY_DUE_SQL}, sent on commit, not on rollback) if the
+   * {@link DueJobs} notify.
    *
    * @param connection the caller's connection
    * @param work the statements
@@ -129,7 +166,30 @@ public final class DatabaseAccess {
   public <T> T onCallerConnection(
       Connection connection, Sql.Work<T> work, SqlExceptionHandler onFailure) {
     try {
-      return work.run(sql(connection));
+      Sql sql = sql(connection);
+      T result = work.run(sql);
+      if (!sql.dueNowTypes().isEmpty() && dueJobs.isNotifying()) {
+        sql.execute(JobStore.NOTIFY_DUE_SQL, Sql.array("text", sql.dueNowTypes().toArray()));
+      }
+      sql.dueNowTypes().clear(); // not committed yet: due-later times only arm this node's timer
+      report(sql);
+      return result;
+    } catch (SQLException e) {
+      throw failure(onFailure, e);
+    }
+  }
+
+  /**
+   * Borrows a connection for listening on a channel until the returned listening is closed.
+   *
+   * @param channel the channel
+   * @param onFailure creates the exception thrown if connecting or listening fails
+   * @return the listening connection
+   * @throws UnsupportedOperationException if the connection is no PostgreSQL JDBC connection
+   */
+  DueJobsListening listen(String channel, SqlExceptionHandler onFailure) {
+    try {
+      return DueJobsListening.open(dataSource.getConnection(), channel);
     } catch (SQLException e) {
       throw failure(onFailure, e);
     }
@@ -146,8 +206,10 @@ public final class DatabaseAccess {
         connection.setReadOnly(readOnly); // before the transaction starts (BEGIN READ ONLY)
       }
       try {
-        T result = work.run(sql(connection));
+        Sql sql = sql(connection);
+        T result = work.run(sql);
         connection.commit();
+        report(sql);
         return result;
       } catch (SQLException | RuntimeException e) {
         rollback(connection, e);
