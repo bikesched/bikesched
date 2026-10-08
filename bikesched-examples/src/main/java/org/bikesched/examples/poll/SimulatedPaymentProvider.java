@@ -53,7 +53,8 @@ public final class SimulatedPaymentProvider {
         idempotencyKey,
         _ -> {
           String paymentId = "pay_" + UUID.randomUUID().toString().substring(0, 8);
-          out.printf("[provider] created %s for %s%n", paymentId, amount);
+          out.printf(
+              "%s [provider] created %s for %s%n", PollExample.timestamp(), paymentId, amount);
           Thread.ofVirtual().start(() -> settle(paymentId, settlesAfter, webhook));
           return paymentId;
         });
@@ -69,10 +70,10 @@ public final class SimulatedPaymentProvider {
     var payment = new PaymentSettled(paymentId, "succeeded");
     settled.put(paymentId, payment);
     if (webhook == Webhook.LOST) {
-      out.printf("[provider] settled %s, webhook lost%n", paymentId);
+      out.printf("%s [provider] settled %s, webhook lost%n", PollExample.timestamp(), paymentId);
       return;
     }
-    out.printf("[provider] settled %s, sending webhook%n", paymentId);
+    out.printf("%s [provider] settled %s, sending webhook%n", PollExample.timestamp(), paymentId);
     webhookEndpoint.accept(payment);
   }
 
@@ -86,8 +87,11 @@ public final class SimulatedPaymentProvider {
     int call = statusCalls.computeIfAbsent(paymentId, _ -> new AtomicInteger()).incrementAndGet();
     Optional<PaymentSettled> payment = Optional.ofNullable(settled.get(paymentId));
     out.printf(
-        "[provider] status of %s (call %d): %s%n",
-        paymentId, call, payment.map(PaymentSettled::status).orElse("pending"));
+        "%s [provider] status of %s (call %d): %s%n",
+        PollExample.timestamp(),
+        paymentId,
+        call,
+        payment.map(PaymentSettled::status).orElse("pending"));
     return payment;
   }
 
