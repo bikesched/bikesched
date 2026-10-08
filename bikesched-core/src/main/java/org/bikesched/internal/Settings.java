@@ -25,6 +25,8 @@ import org.bikesched.job.listener.JobListener;
  * @param nodeTimeout a node without heartbeat for this long is considered dead: its running jobs
  *     are released and its name may be taken over
  * @param pollInterval interval between job polls
+ * @param listenForDueJobs whether the node listens for due jobs and notifies the other nodes
+ * @param notifyInterval how long the node collects due job types before notifying them
  * @param maxConcurrentJobs maximum number of jobs executed at the same time on this node
  * @param autoStartPolling whether job polling starts when the node is built; otherwise it starts
  *     with {@link Bikesched#start()}
@@ -55,6 +57,8 @@ public record Settings(
     Duration heartbeatInterval,
     Duration nodeTimeout,
     Duration pollInterval,
+    boolean listenForDueJobs,
+    Duration notifyInterval,
     int maxConcurrentJobs,
     boolean autoStartPolling,
     Duration defaultJobTimeout,
@@ -79,6 +83,7 @@ public record Settings(
     Objects.requireNonNull(heartbeatInterval, "heartbeatInterval");
     Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     Objects.requireNonNull(pollInterval, "pollInterval");
+    Objects.requireNonNull(notifyInterval, "notifyInterval");
     Objects.requireNonNull(retryBackoff, "retryBackoff");
     Objects.requireNonNull(jobListener, "jobListener");
     Objects.requireNonNull(eventListener, "eventListener");

@@ -28,8 +28,8 @@ public final class JobSlot {
   /** Releases the slot; does nothing if it was released before. */
   public void release() {
     if (released.compareAndSet(false, true)) {
+      slots.release(); // first: onRelease may poll, which must see the free slot
       onRelease.run();
-      slots.release();
     }
   }
 }

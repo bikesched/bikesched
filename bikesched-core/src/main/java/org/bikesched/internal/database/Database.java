@@ -34,6 +34,8 @@ public final class Database {
 
   private final HistoryStore history;
 
+  private final DatabaseAccess access;
+
   /**
    * Creates the database access without job history.
    *
@@ -68,7 +70,7 @@ public final class Database {
       DataSource dataSource, JsonMapper jsonMapper, boolean jobHistory, Duration statementTimeout) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
     this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
-    var access = new DatabaseAccess(dataSource, statementTimeout);
+    this.access = new DatabaseAccess(dataSource, statementTimeout);
     this.history = new HistoryStore(access, jobHistory);
     this.nodes = new NodeStore(access);
     this.jobs = new JobStore(access, history, jsonMapper);
@@ -99,6 +101,16 @@ public final class Database {
   /** The {@code bikesched_job_history} table, written by the other stores if enabled. */
   public HistoryStore history() {
     return history;
+  }
+
+  /**
+   * Sets where the stores report the jobs their committed writes made due; {@link DueJobs#NONE}
+   * until then.
+   *
+   * @param dueJobs receives the due jobs
+   */
+  public void reportDueJobs(DueJobs dueJobs) {
+    access.dueJobs(dueJobs);
   }
 
   /** The mapper for payloads and step results; handed to the claimed {@link Job}s. */

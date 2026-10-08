@@ -134,7 +134,9 @@ keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and f
 |---|---|---|
 | `bikesched.node-name` | `<spring.application.name>-<host name>` | unique per live node; the host name keeps replicas apart |
 | `bikesched.data-source` | the single / `@Primary` `DataSource` | the **bean name** of the one to use, never a JDBC URL; with several candidates and neither the property nor a `@Primary`, the context fails listing them |
-| `bikesched.poll-interval` | 5 seconds | a job scheduled "now" starts within one interval |
+| `bikesched.poll-interval` | 10 seconds | safety net while listening, see [Due jobs](configuration.md#due-jobs-start-right-away) |
+| `bikesched.listen-for-due-jobs` | `true` | holds one pool connection; `false` behind PgBouncer in transaction mode |
+| `bikesched.notify-interval` | 100 ms | |
 | `bikesched.heartbeat-interval` | 5 seconds | |
 | `bikesched.node-timeout` | 30 seconds | must be longer than the heartbeat interval (validated) |
 | `bikesched.max-concurrent-jobs` | 10 | |

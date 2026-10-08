@@ -52,10 +52,22 @@ public class BikeschedSpec internal constructor() {
   public var autoStartPolling: Boolean? = null
 
   /**
-   * Interval between two polls for due jobs (see `BikeschedBuilder.pollInterval`); defaults to 5
+   * Interval between two polls for due jobs (see `BikeschedBuilder.pollInterval`); defaults to 10
    * seconds.
    */
   public var pollInterval: Duration? = null
+
+  /**
+   * Whether the node listens for due jobs and notifies the other nodes about the jobs it makes due
+   * (see `BikeschedBuilder.listenForDueJobs`); defaults to `true`.
+   */
+  public var listenForDueJobs: Boolean? = null
+
+  /**
+   * How long the node collects due job types before notifying the other nodes (see
+   * `BikeschedBuilder.notifyInterval`); defaults to 100 milliseconds.
+   */
+  public var notifyInterval: Duration? = null
 
   /**
    * Interval between the heartbeats this node writes while it polls (see
@@ -156,6 +168,8 @@ public class BikeschedSpec internal constructor() {
     maxConcurrentJobs?.let(builder::maxConcurrentJobs)
     autoStartPolling?.let(builder::autoStartPolling)
     pollInterval?.let { builder.pollInterval(it.toJavaDuration()) }
+    listenForDueJobs?.let(builder::listenForDueJobs)
+    notifyInterval?.let { builder.notifyInterval(it.toJavaDuration()) }
     heartbeatInterval?.let { builder.heartbeatInterval(it.toJavaDuration()) }
     nodeTimeout?.let { builder.nodeTimeout(it.toJavaDuration()) }
     jsonMapper?.let(builder::jsonMapper)

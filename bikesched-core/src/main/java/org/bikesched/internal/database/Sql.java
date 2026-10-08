@@ -11,9 +11,13 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -26,6 +30,9 @@ import java.util.UUID;
  * {@link Instant} is bound as {@code timestamptz}. Nullable parameters whose SQL type PostgreSQL
  * cannot infer (e.g. in {@code coalesce(?, ...)}) are passed {@link #typed typed}, durations
  * explicitly as {@link #millis} or {@link #seconds}.
+ *
+ * <p>The stores also report the jobs their statements make due ({@link #dueNow}, {@link #dueAt});
+ * the {@link DatabaseAccess} passes them on to {@link DueJobs} once the work committed.
  */
 public final class Sql {
 
@@ -33,6 +40,12 @@ public final class Sql {
 
   /** The JDBC query timeout of every statement in seconds; 0 for none. */
   private final int queryTimeoutSeconds;
+
+  /** Types of jobs the work made due now, see {@link #dueNow}. */
+  private final Set<String> dueNow = new LinkedHashSet<>();
+
+  /** The earliest due time per type of the jobs the work made due later, see {@link #dueAt}. */
+  private final Map<String, Instant> dueAt = new LinkedHashMap<>();
 
   public Sql(Connection connection) {
     this(connection, 0);
@@ -48,6 +61,53 @@ public final class Sql {
       throw new IllegalArgumentException("queryTimeoutSeconds must not be negative");
     }
     this.queryTimeoutSeconds = queryTimeoutSeconds;
+  }
+
+  /**
+   * Reports that a statement of the work made jobs of this type due now (new, resumed, released
+   * jobs): all nodes are told after the commit, see {@link DueJobs#dueNow}.
+   *
+   * @param type the job type
+   */
+  public void dueNow(String type) {
+    dueNow.add(Objects.requireNonNull(type, "type"));
+  }
+
+  /**
+   * Reports that a statement of the work made a job of this type due at the given time (possibly
+   * already), for this node's own wake-up after the commit, see {@link DueJobs#dueAt}.
+   *
+   * @param type the job type
+   * @param at when it is due
+   */
+  public void dueAt(String type, Instant at) {
+    Objects.requireNonNull(at, "at");
+    dueAt.merge(Objects.requireNonNull(type, "type"), at, (a, b) -> a.isBefore(b) ? a : b);
+  }
+
+  /**
+   * Reports a new job: due now (all nodes are told) if {@code at} has passed, otherwise for this
+   * node's own wake-up at {@code at}.
+   *
+   * @param type the job type
+   * @param at when it is due
+   */
+  public void due(String type, Instant at) {
+    if (at.isAfter(Instant.now())) {
+      dueAt(type, at);
+    } else {
+      dueNow(type);
+    }
+  }
+
+  /** The types reported by {@link #dueNow}. */
+  Set<String> dueNowTypes() {
+    return dueNow;
+  }
+
+  /** The due times reported by {@link #dueAt}, the earliest per type. */
+  Map<String, Instant> dueAtTimes() {
+    return dueAt;
   }
 
   /** Work on an {@link Sql}; any {@link SQLException} is wrapped by the caller of the work. */

@@ -34,6 +34,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     defaults to {@code true}
  * @param maxConcurrentJobs how many jobs the node executes at the same time
  * @param pollInterval delay between two polls for due jobs
+ * @param listenForDueJobs whether the node listens for due jobs and notifies the other nodes
+ * @param notifyInterval how long the node collects due job types before notifying them
  * @param heartbeatInterval interval between the heartbeats the node writes
  * @param nodeTimeout time without heartbeat after which a node is considered dead
  * @param defaultJobTimeout timeout for jobs scheduled without one
@@ -59,6 +61,8 @@ public record BikeschedProperties(
     Metrics metrics,
     Integer maxConcurrentJobs,
     Duration pollInterval,
+    Boolean listenForDueJobs,
+    Duration notifyInterval,
     Duration heartbeatInterval,
     Duration nodeTimeout,
     Duration defaultJobTimeout,
@@ -117,6 +121,12 @@ public record BikeschedProperties(
     }
     if (pollInterval != null) {
       builder.pollInterval(pollInterval);
+    }
+    if (listenForDueJobs != null) {
+      builder.listenForDueJobs(listenForDueJobs);
+    }
+    if (notifyInterval != null) {
+      builder.notifyInterval(notifyInterval);
     }
     if (heartbeatInterval != null) {
       builder.heartbeatInterval(heartbeatInterval);
