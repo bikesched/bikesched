@@ -179,7 +179,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - `docs/specs/` holds design specs written before an implementation lands, one file per feature
   (`bikesched-spring-boot-starter.md`, named after the module). A spec states the goal, the module
   and dependencies, the design with rejected alternatives, a test plan and implementation steps, and
-  its open questions; settle the open questions first, then implement. Keep the spec updated while
+  its open questions; settle the open questions first, then implement. `docs/specs/index.md` lists
+  every spec with its creation date and status, oldest first: add a row for a new spec and update
+  the status when it changes. Keep the spec updated while
   implementing instead of writing it up afterwards, and link it from the README section of the
   module once it exists. The user-facing page in `docs/` and the ADR are written with the
   implementation, not with the spec. Specs are internal: they are not linked from `docs/index.md`.
