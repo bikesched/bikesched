@@ -6,6 +6,8 @@ import static org.awaitility.Awaitility.await;
 import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import org.bikesched.Bikesched;
@@ -66,6 +68,18 @@ public final class PollExample {
    */
   public record PaymentSettled(String paymentId, String status) {}
 
+  private static final DateTimeFormatter TIMESTAMP_FORMAT =
+      DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
+
+  /**
+   * The current time, formatted for the example's console output.
+   *
+   * @return the formatted time
+   */
+  static String timestamp() {
+    return LocalTime.now().format(TIMESTAMP_FORMAT);
+  }
+
   private final Bikesched bikesched;
   private final SimulatedPaymentProvider provider;
 
@@ -124,8 +138,11 @@ public final class PollExample {
               Void.class,
               _ -> {
                 out.printf(
-                    "[shop]     order %s paid (%s, %s)%n",
-                    payment.orderId(), settled.paymentId(), webhook != null ? "webhook" : "polled");
+                    "%s [shop]     order %s paid (%s, %s)%n",
+                    timestamp(),
+                    payment.orderId(),
+                    settled.paymentId(),
+                    webhook != null ? "webhook" : "polled");
                 return null;
               });
         });
@@ -167,7 +184,7 @@ public final class PollExample {
             await()
                 .atMost(Duration.ofSeconds(30))
                 .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-        System.out.println("[app]      job " + jobId + " ended " + state);
+        System.out.println(timestamp() + " [app]      job " + jobId + " ended " + state);
       }
     }
   }
