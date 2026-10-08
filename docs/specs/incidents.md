@@ -1,6 +1,6 @@
 # Specification: incidents for permanently failed jobs
 
-Status: **draft**, open questions in §9.
+Status: **draft**, open questions settled (§9).
 
 ## 1. Goal
 
@@ -23,8 +23,8 @@ Bikesched bikesched =
 for (Incident incident : bikesched.findIncidents(IncidentState.OPEN, 50)) {
   log.info("{} failed: {}", incident.jobType(), incident.error());
 }
-bikesched.retryIncident(incidentId, "fixed the payment provider config");
-bikesched.resolveIncident(otherIncidentId, "refunded manually");
+bikesched.retryIncident(incidentId, "simon", "fixed the payment provider config");
+bikesched.resolveIncident(otherIncidentId, "simon", "refunded manually");
 ```
 
 ## 2. Today
@@ -71,9 +71,12 @@ create table bikesched_incidents (
     state       text        not null default 'OPEN',
     resolution  text,                   -- RETRIED or RESOLVED, once resolved
     comment     text,                   -- the operator's comment, once resolved
+    resolved_by text,                   -- who resolved it, as passed by the caller (a user name, …)
+    resolved_by_job_id uuid references bikesched_jobs (id) on delete set null, -- the incident job that resolved it
     created_at  timestamptz not null default now(),
     resolved_at timestamptz,
     constraint bikesched_incidents_job_type_length check (char_length(job_type) <= 200),
+    constraint bikesched_incidents_resolved_by_length check (char_length(resolved_by) <= 200),
     constraint bikesched_incidents_job_state_check check (job_state in ('FAILED', 'COMPENSATION_FAILED')),
     constraint bikesched_incidents_state_check
         check (state = 'OPEN' and resolution is null and resolved_at is null
@@ -115,8 +118,8 @@ New methods on `Bikesched`:
 | `Optional<Incident> findIncident(UUID incidentId)` | the incident, if it exists |
 | `List<Incident> findIncidents(IncidentState state, int limit)` | incidents in that state, oldest first |
 | `List<Incident> findJobIncidents(UUID jobId)` | all incidents of a job, oldest first |
-| `boolean retryIncident(UUID incidentId, String comment)` | retries the job like `retry(jobId)` and resolves the incident as `RETRIED`, in one transaction; `false` if the incident is not open |
-| `boolean resolveIncident(UUID incidentId, String comment)` | resolves the incident as `RESOLVED` without running the job; `false` if it is not open |
+| `boolean retryIncident(UUID incidentId, String resolvedBy, String comment)` | retries the job like `retry(jobId)` and resolves the incident as `RETRIED`, in one transaction; `false` if the incident is not open |
+| `boolean resolveIncident(UUID incidentId, String resolvedBy, String comment)` | resolves the incident as `RESOLVED` without running the job; `false` if it is not open |
 
 - `retryIncident` throws `IllegalArgumentException` for incidents it cannot retry, like `retry`
   does: `COMPENSATION_FAILED` jobs and failed occurrences of recurring jobs. Those can only be
@@ -124,8 +127,8 @@ New methods on `Bikesched`:
   not collide with the next occurrence) goes into `IDEAS.md`.
 - `Bikesched.retry(jobId)` on a job with an open incident resolves it as `RETRIED` as well (no
   comment), so both paths leave the same state.
-- `comment` may be `null`. Who resolved an incident is not recorded by bikesched; a CLI or UI puts
-  it into the comment (open question 3).
+- `resolvedBy` (at most 200 characters, like names) and `comment` may be `null`. bikesched does
+  not know users; a CLI or UI passes its user, so it can show and filter by it.
 - Both are recorded in the job history ("incident retried", "incident resolved").
 
 From a failed job to its incident: `JobInfo` gets `openIncidentId()` (`Optional<UUID>`), filled
@@ -172,6 +175,12 @@ IncidentSettings.builder()
   is stored with the job, so it does not depend on the nodes' mappings agreeing or staying the
   same between scheduling and failure.
 - Without a handler for the incident job type anywhere, the job waits like any unhandled job.
+- An incident job can resolve its own incident: `Job.resolveIncident(comment)` and
+  `Job.retryIncident(comment)` (e.g. retry once after a delay, page someone only if it fails
+  again). They act on the job's `for_incident_id` (`IllegalStateException` for other jobs), set
+  `resolved_by_job_id` to the job's id, and run as a durable step fenced by the job lock, so a
+  replay returns the stored outcome instead of resolving again. `retryIncident` throws like the
+  node API for incidents that cannot be retried.
 
 Rejected alternatives:
 
@@ -191,8 +200,8 @@ Rejected alternatives:
 - Once its incidents are resolved, a `FAILED` job is deleted after the retention as before,
   counted from the later of `finished_at` and the last `resolved_at`, so resolving an old incident
   does not delete the job right away. Its incidents go with it (`on delete cascade`).
-- `COMPENSATION_FAILED` jobs stay kept forever as today (ADR 0012), with or without incidents
-  (open question 2).
+- `COMPENSATION_FAILED` jobs stay kept forever as today (ADR 0012), with or without incidents.
+  Whether one was handled is read from its incident, not from the job's state.
 - Without incidents enabled nothing changes.
 
 ### 4.7 Metrics
@@ -233,7 +242,9 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
   and not for incident jobs; `retryIncident` reruns the job and resolves, `resolveIncident` only
   resolves, both return `false` for resolved incidents; `retryIncident` throws for recurring
   occurrences and `COMPENSATION_FAILED`; `retry(jobId)` resolves the open incident; a second
-  failure opens a second incident; job history entries; log lines.
+  failure opens a second incident; `resolved_by` is stored; job history entries; log lines.
+- Incident jobs: `job.resolveIncident`/`job.retryIncident` set `resolved_by_job_id`, a replay does
+  not resolve again, other jobs get an `IllegalStateException`.
 - `JobCleanUpTest`: jobs with open incidents are kept, resolved ones deleted after the retention
   from `resolved_at`.
 - `SchemaMigratorTest`: the new table; `bikesched_jobs.for_incident_id`.
@@ -249,12 +260,7 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
 
 ## 9. Open questions
 
-1. Should `findIncidents` take a filter object (job type, created before/after, cursor paging) for
-   the CLI right away, or start with state and limit?
-2. Should resolved `COMPENSATION_FAILED` jobs fall to the retention when incidents are enabled?
-   Today they are kept forever because they need attention; a resolved incident says they no
-   longer do.
-3. Record who resolved an incident (`resolved_by text`), or leave it to the comment?
+None; see the decisions below.
 
 ## 10. Decisions
 
@@ -262,3 +268,10 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
 - `COMPENSATION_FAILED` jobs and failed occurrences of recurring jobs can only be resolved (§4.4).
 - Incident job types are mapped per failed job type in the incident settings (§4.5).
 - Incident jobs reference their incident (`bikesched_jobs.for_incident_id`) and never schedule another incident job (§4.5).
+- `findIncidents(state, limit)` to start with; a filter object follows when the CLI needs one.
+- No new job state for handled `COMPENSATION_FAILED` jobs (e.g. `COMPENSATION_RESOLVED`): the
+  incident records it, and a job state would spread to the CHECK constraints, `JobState`,
+  `child_state`, `JobResult` and the history, while resolved `FAILED` jobs would stay `FAILED`.
+  `COMPENSATION_FAILED` jobs keep being kept forever (§4.6).
+- Who resolved an incident: `resolved_by` (text, 200 characters) from the caller, and
+  `resolved_by_job_id` when an incident job resolved it (§4.4, §4.5).
