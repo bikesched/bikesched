@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-package org.bikesched.internal.job;
+package org.bikesched.internal.job.claim;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -10,13 +11,20 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.internal.database.Database;
+import org.bikesched.internal.job.DefaultJob;
+import org.bikesched.internal.job.DueTimes;
+import org.bikesched.internal.job.HardTimeout;
+import org.bikesched.internal.job.JobProcessor;
+import org.bikesched.internal.job.JobRegistry;
+import org.bikesched.internal.job.JobScheduler;
+import org.bikesched.internal.job.JobSlot;
 import org.bikesched.internal.util.ExecutorUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
@@ -41,13 +49,20 @@ import org.slf4j.MDC;
  *       if configured
  * </ul>
  *
+ * <p>Wake-ups: besides every {@link JobPollerSettings#pollInterval()} (the safety net), the poller
+ * polls when jobs it handles become due: right away for jobs due now ({@link #dueNow}, from this
+ * node's writes or from the {@link JobNotificationListener}'s notifications of other nodes), and
+ * through its {@link WakeUpTimer} for jobs due later ({@link #dueAt}, from this node's writes, and
+ * from the next-due query after interval polls, timer polls, (re)connects and new handlers). A
+ * wake-up that finds no free slot is remembered: the next slot that frees up polls.
+ *
  * <p>Concurrency limit: a semaphore holds one permit per job slot ({@link
  * JobPollerSettings#maxConcurrentJobs()}). The poller claims at most {@code min(free slots,
  * POLL_BATCH_SIZE)} jobs and skips polling while no slot is free; each job returns its slot when it
  * ends. Jobs are therefore only claimed when they can start immediately and never wait in a local
  * queue while marked {@code RUNNING} in the database.
  */
-public final class JobPoller {
+public final class JobPoller implements DueTimes {
 
   /** Maximum number of jobs claimed per poll. */
   static final int POLL_BATCH_SIZE = 10;
@@ -60,10 +75,20 @@ public final class JobPoller {
   private final JobScheduler scheduler;
   private final String nodeName;
   private final Semaphore slots;
-  private final ScheduledExecutorService pollerExecutor;
+  private final ScheduledThreadPoolExecutor pollerExecutor;
   private final ScheduledThreadPoolExecutor timeoutExecutor;
   private final ExecutorService jobExecutor;
   private final Map<UUID, AtomicInteger> activeJobs = new ConcurrentHashMap<>();
+  private final WakeUpTimer timer;
+
+  /** Merges requests to poll now into one poll. */
+  private final AtomicBoolean pollRequested = new AtomicBoolean();
+
+  /** Set by a wake-up that found no free slot: the next released slot polls. */
+  private final AtomicBoolean wakeWhenSlotFrees = new AtomicBoolean();
+
+  /** Receives the notifications of other nodes; {@code null} if not listening. */
+  private volatile JobNotificationListener listener;
 
   /** Set (once) by {@link #start(UUID)}, together with the processor; {@code null} until then. */
   private volatile UUID nodeId;
@@ -87,8 +112,12 @@ public final class JobPoller {
     this.nodeName = settings.nodeName();
     this.slots = new Semaphore(settings.maxConcurrentJobs());
     this.pollerExecutor =
-        Executors.newSingleThreadScheduledExecutor(
-            Thread.ofPlatform().name("bikesched-poller").daemon().factory());
+        new ScheduledThreadPoolExecutor(
+            1, Thread.ofPlatform().name("bikesched-poller").daemon().factory());
+    // close() must not wait for the wake-up timer; replaced timers are removed right away.
+    this.pollerExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+    this.pollerExecutor.setRemoveOnCancelPolicy(true);
+    this.timer = new WakeUpTimer(pollerExecutor, () -> onPollerThread(this::timerFired));
     this.timeoutExecutor =
         new ScheduledThreadPoolExecutor(
             1, Thread.ofPlatform().name("bikesched-timeouts").daemon().factory());
@@ -121,14 +150,122 @@ public final class JobPoller {
     nodeId = id;
     long millis = settings.pollInterval().toMillis();
     pollerExecutor.scheduleWithFixedDelay(
-        () -> {
-          try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, id.toString())) {
-            poll();
-          }
-        },
+        () ->
+            onPollerThread(
+                () -> {
+                  armForNextDue();
+                  poll(false);
+                }),
         millis,
         millis,
         TimeUnit.MILLISECONDS);
+    registry.onNewHandler(this::wakeUpAndLookAhead);
+    // The jobs that became due before this node polled, or become due within the first interval.
+    wakeUpAndLookAhead();
+    if (settings.listenForDueJobs()) {
+      listener =
+          new JobNotificationListener(
+              database.jobs(),
+              registry::types,
+              this::pollNow,
+              this::wakeUpAndLookAhead,
+              settings.pollInterval(),
+              nodeName,
+              id);
+      listener.start();
+    }
+  }
+
+  /** Polls right away (merged with other requests); ignored until started and after closing. */
+  public void pollNow() {
+    if (nodeId == null || !pollRequested.compareAndSet(false, true)) {
+      return;
+    }
+    submit(
+        () -> {
+          pollRequested.set(false);
+          poll(true);
+        });
+  }
+
+  @Override
+  public void dueNow(Set<String> types) {
+    for (String type : types) {
+      if (registry.types().contains(type)) {
+        pollNow();
+        return;
+      }
+    }
+  }
+
+  @Override
+  public void dueAt(String type, Instant dueAt) {
+    if (nodeId == null || !registry.types().contains(type)) {
+      return;
+    }
+    Instant now = Instant.now();
+    if (!dueAt.isAfter(now)) {
+      pollNow();
+    } else if (!dueAt.isAfter(now.plus(settings.pollInterval()))) {
+      // Later due times are found by the next-due query after an interval poll.
+      submit(() -> timer.arm(dueAt));
+    }
+  }
+
+  /** Polls and then looks for the jobs due within the next interval, on the poller thread. */
+  private void wakeUpAndLookAhead() {
+    if (nodeId == null) {
+      return;
+    }
+    submit(
+        () -> {
+          armForNextDue();
+          poll(true);
+        });
+  }
+
+  private void timerFired() {
+    LOG.debug("bikesched node {} ({}) woken up by its timer", nodeName, nodeId);
+    armForNextDue();
+    poll(true);
+  }
+
+  /**
+   * Arms the timer for the earliest job of the node's types that becomes due within the next poll
+   * interval (the next interval poll looks further). Poller thread only, always right before a
+   * poll: the query looks at jobs due after its start, the poll claims those due before its own, so
+   * no job becomes due unseen in between.
+   */
+  private void armForNextDue() {
+    if (registry.types().isEmpty()) {
+      return;
+    }
+    try {
+      database
+          .jobs()
+          .nextDueIn(registry.types(), settings.pollInterval())
+          .ifPresent(delay -> timer.arm(Instant.now().plus(delay)));
+    } catch (RuntimeException e) {
+      LOG.warn("Looking up the next due job failed on bikesched node {} ({})", nodeName, nodeId, e);
+    }
+  }
+
+  /** Runs the task on the poller thread with the node id in the MDC; nothing after closing. */
+  private void submit(Runnable task) {
+    try {
+      pollerExecutor.execute(() -> onPollerThread(task));
+    } catch (RejectedExecutionException e) {
+      // closing
+    }
+  }
+
+  private void onPollerThread(Runnable task) {
+    try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId))) {
+      task.run();
+    } catch (RuntimeException e) {
+      // Must never throw: an exception would cancel the interval polls.
+      LOG.warn("Waking up bikesched node {} ({}) failed", nodeName, nodeId, e);
+    }
   }
 
   /** Returns a stable snapshot of jobs whose attempts still run in memory. */
@@ -138,6 +275,14 @@ public final class JobPoller {
 
   private void trackActiveJob(UUID jobId) {
     activeJobs.computeIfAbsent(jobId, _ -> new AtomicInteger()).incrementAndGet();
+  }
+
+  /** A job's slot was released: polls if a wake-up found no free slot. */
+  private void released(UUID jobId) {
+    untrackActiveJob(jobId);
+    if (wakeWhenSlotFrees.compareAndSet(true, false)) {
+      pollNow();
+    }
   }
 
   private void untrackActiveJob(UUID jobId) {
@@ -154,24 +299,37 @@ public final class JobPoller {
    * jobs still running stay {@code RUNNING} in the database for the caller to release.
    */
   public void close() {
+    JobNotificationListener listening = listener;
+    if (listening != null) {
+      listening.close();
+    }
     ExecutorUtil.shutdownAndAwait(pollerExecutor, "poller");
     ExecutorUtil.shutdownAndAwait(jobExecutor, "job executor");
     timeoutExecutor
         .shutdownNow(); // all jobs ended (or were abandoned): no timeouts left to enforce
   }
 
-  private void poll() {
-    while (pollOnce()) {
+  /**
+   * Claims due jobs until a poll claims less than it could.
+   *
+   * @param wokenUp whether a wake-up (not the interval) triggered it: if it finds no free slot, the
+   *     next released slot polls
+   */
+  private void poll(boolean wokenUp) {
+    while (pollOnce(wokenUp)) {
       // A full batch can mean more due work is waiting while slots remain free. Poll immediately
       // instead of waiting for the next interval; the next partial batch resumes the normal delay.
     }
   }
 
-  private boolean pollOnce() {
+  private boolean pollOnce(boolean wokenUp) {
     // Must never throw: an exception would silently cancel all future polls.
     try {
       int free = slots.availablePermits();
       if (free == 0) {
+        if (wokenUp) {
+          wakeWhenSlotFrees.set(true);
+        }
         LOG.debug("bikesched node {} ({}) is at capacity, skipping poll", nodeName, nodeId);
         return false;
       }
@@ -229,7 +387,7 @@ public final class JobPoller {
    */
   private void dispatch(DefaultJob job) {
     trackActiveJob(job.id());
-    var slot = new JobSlot(slots, () -> untrackActiveJob(job.id()));
+    var slot = new JobSlot(slots, () -> released(job.id()));
     try {
       jobExecutor.execute(
           () -> {

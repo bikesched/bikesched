@@ -58,18 +58,23 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
     event waits via `DefaultEventWait`, sleeps, polls via `DefaultPollBuilder`; `JobSuspended` with
     its sealed `Suspension` ends an attempt at a wait, sleep or poll; `StepGuard` rejects nested steps), `JobScheduler` (stores
-    built jobs, registers and removes recurring jobs), `JobPoller` (claiming and running jobs: poller, job
-    slots, job threads, timeouts; configured by `JobPollerSettings`), `JobRegistry` (handlers,
+    built jobs, registers and removes recurring jobs), `JobRegistry` (handlers,
     recurring jobs and payload types of a node), `JobAttempt` (timeout timer), `HardTimeout` (abandons
     attempts that ignore their timeout), `JobSlot`, `RecurringJob`, `RecurringJobRepair`,
-    `HistoryCleanUp`, `JobCleanUp`
+    `HistoryCleanUp`, `JobCleanUp`, `DueJobsNotifier` (tells the own poller and, batched, the other
+    nodes about jobs made due), `DueTimes` (the poller's wake-ups, implemented in `claim`)
+  - `internal.job.claim`: `JobPoller` (claiming and running jobs: poller, job slots, job threads,
+    timeouts, wake-ups; configured by `JobPollerSettings`), `WakeUpTimer` (one timer, confined to
+    the poller thread), `JobNotificationListener` (`LISTEN` connection, reconnects, self-check);
+    uses `internal.job`, never the other way round
   - `internal.event`: `DefaultEventBuilder`, `EventCleanUp`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
     (`ExecutorUtil`: shutting down executors; `ValidationUtil`: name and key checks matching the
     schema's length constraints, message
     truncation)
   - `internal.database` (+ `.schema`): `Database`, `DatabaseAccess`, `Sql`, the stores and the rows
-    they read and write (`NewJob`, `DefaultJobInfo`)
+    they read and write (`NewJob`, `DefaultJobInfo`), `DueJobs` (receives the jobs committed writes
+    made due), `DueJobsListening` (the listening connection)
 - The API packages reach the implementation only through the factories in `internal.Internals`
   (plus the `Settings` record the builder fills, and `internal.util`); public API signatures never mention internal
   types. `ArchitectureTest` (ArchUnit) enforces both rules and the package dependencies above.
@@ -151,6 +156,11 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `inReadOnlyTransaction`, `onCallerConnection(connection, …)`: the last argument is a lazy
   exception handler, called only for an `SQLException`. A caller's connection is never committed,
   rolled back, closed or switched to auto-commit.
+- Statements that make jobs due report it on their `Sql` handle: `db.dueNow(type)` for jobs due
+  now (other nodes are notified after the commit, or in the caller's transaction), `db.dueAt(type,
+  time)` for the writing node's own wake-up (suspensions, retries), `db.due(type, time)` for new
+  jobs. A new statement inserting or updating `bikesched_jobs` must be classified in
+  `DueJobsWritePathsTest`; a forgotten report makes that path up to one poll interval slower.
 - `Sql.one()` rejects a `null` mapping: map nullable columns into a record so "no row" and "null
   value" stay distinct.
 

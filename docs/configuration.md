@@ -10,7 +10,9 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 | `nodeName(String)` | host name | unique node name; a dead node's name is taken over |
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
 | `autoStartPolling(boolean)` | `true` | with `false`, call `start()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated on first use (`start()`, scheduling a job, publishing an event), and retried on the next one if that fails |
-| `pollInterval(Duration)` | 5 seconds | delay between two polls for due jobs; a job scheduled "now" therefore starts within one interval. Lower it for sub-second reaction (at the cost of one table scan per node and interval), or raise it for idle clusters |
+| `pollInterval(Duration)` | 10 seconds | delay between two polls for due jobs. While nodes [listen for due jobs](#due-jobs-start-right-away), it is the safety net for missed notifications and bounds how late a delayed job scheduled by another node starts; without listening, every job made due by another node starts within one interval, so lower it (e.g. 5 seconds or less) |
+| `listenForDueJobs(boolean)` | `true` | with `false`, the node neither listens for due jobs nor notifies other nodes, and holds no extra connection; set it the same on all nodes, see [Due jobs start right away](#due-jobs-start-right-away) |
+| `notifyInterval(Duration)` | 100 ms | how long a node collects the job types it made due before notifying the other nodes in one statement: the extra latency of such jobs on other nodes, and at most one notifying commit per node and interval |
 | `heartbeatInterval(Duration)` | 5 seconds | interval between the node's heartbeats; must be shorter than `nodeTimeout` |
 | `nodeTimeout(Duration)` | 30 seconds | time without heartbeat after which other nodes consider the node dead and release its jobs; the builder rejects a value not longer than `heartbeatInterval` |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
@@ -32,10 +34,12 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 
 ## Nodes
 
-Nodes send a heartbeat every 5 seconds and poll for due jobs every 5 seconds (both configurable,
-see [Builder options](#builder-options)), claiming at most 10
-jobs per poll and never more than they have free slots. When a poll fills its batch while slots are
-still free, the node polls again immediately; otherwise it waits for the next poll interval. A node
+Nodes send a heartbeat every 5 seconds and poll for due jobs every 10 seconds (both configurable,
+see [Builder options](#builder-options)), and in between whenever jobs become due (see [Due jobs
+start right away](#due-jobs-start-right-away)), claiming at most 10 jobs per poll and never more
+than they have free slots. When a poll fills its batch while slots are still free, the node polls
+again immediately. A node that is woken up for due jobs while all its slots are busy polls as soon
+as a slot frees up. A node
 without heartbeat for 30 seconds is considered dead: on their next node clean-up, other nodes
 release its running jobs for retry, and remove the node after another 30 seconds. If a node cannot
 record an attempt's outcome after its retries, its next node clean-up releases that inactive claim
@@ -56,6 +60,51 @@ holds even if the handler catches the exception. Work done outside steps is not 
 `bikesched.node()` describes the node (`name()`, `id()` once registered, `isPolling()`).
 `close()` stops polling and the heartbeat, waits up to 10 seconds for running jobs, puts jobs
 that are still running back to `SCHEDULED` for other nodes, and deregisters the node.
+
+## Due jobs start right away
+
+A job starts when it is due, not on the next poll: a node that makes jobs due now (schedules a
+job, publishes an event a job waits for, ends a child job, retries, cancels or releases jobs) tells
+every node through PostgreSQL's `LISTEN/NOTIFY`, and every node wakes itself up for the delayed
+work it writes itself (sleeps, polls, event-wait deadlines, retries with a delay, next occurrences
+of recurring jobs, delayed jobs). With every interval poll, a node also looks for jobs of its
+types that become due before its next interval poll, e.g. delayed jobs scheduled by another node.
+
+| Job made due | Starts |
+|---|---|
+| now, by this node | right away |
+| now, by another node | within the `notifyInterval` (100 ms) |
+| later, by this node (sleep, poll, retry, deadline, occurrence, delayed job) | when due |
+| later, by another node or on a caller's connection | when due, if the next interval poll saw it in time; otherwise up to one `pollInterval` late |
+| by plain SQL, outside bikesched | on the next interval poll |
+
+- **Batched notifications.** A transaction that sends a notification takes a database-wide lock at
+  its commit (PostgreSQL serializes notifying commits; a few thousand per second on fast local
+  disks). bikesched therefore never notifies inside a job write: each node collects the types it
+  made due and notifies them in one statement of its own after `notifyInterval`, so a node sends
+  at most 10 notifying commits per second, however many jobs it writes, and an idle node sends
+  none. A lost notification (the node dies right after its commit) only delays the job until the
+  next interval poll.
+- **Caller's transaction.** Jobs scheduled and events published on the caller's connection
+  ([transactional scheduling](jobs.md#transactional-scheduling)) notify inside the caller's
+  transaction: the notification is sent on commit and not on rollback. That commit takes the lock
+  mentioned above, so it is one notifying commit per transaction.
+- **Connection pool.** A listening node holds one connection of its data source for its lifetime:
+  size the pool one connection larger, and expect pool leak detectors to report it. The node
+  borrows it on a thread of its own; if that fails, it warns and retries after the poll interval.
+- **PgBouncer.** In transaction pooling mode, `LISTEN` does not work. A node checks after
+  connecting that its own notification arrives and warns if it does not; then turn off
+  `listenForDueJobs` on all nodes and lower the `pollInterval`, or connect the nodes directly.
+- **All nodes alike.** Set `listenForDueJobs` the same on all nodes and clients (instances with
+  `autoStartPolling(false)` notify but don't listen): the jobs a node made due without notifying
+  reach the others only on their next interval poll.
+- **Every node gets every notification.** A notification carries the job type only; nodes ignore
+  types they don't handle, and all nodes handling the type poll (all but one claim nothing). Several
+  bikesched schemas in one database share the channel `bikesched_jobs`, which only costs an extra
+  poll.
+- **Monitoring.** A full notification queue (8 GB by default) makes notifying commits fail;
+  `select pg_notification_queue_usage()` shows how full it is. Notifications are short (one per
+  type and batch) and consumed right away by the listening nodes.
 
 ## Statement timeout
 

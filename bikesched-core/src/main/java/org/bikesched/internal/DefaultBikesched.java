@@ -27,14 +27,15 @@ import org.bikesched.internal.database.EventStore;
 import org.bikesched.internal.event.DefaultEventBuilder;
 import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.DefaultJobBuilder;
+import org.bikesched.internal.job.DueJobsNotifier;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
-import org.bikesched.internal.job.JobPoller;
-import org.bikesched.internal.job.JobPollerSettings;
 import org.bikesched.internal.job.JobRegistry;
 import org.bikesched.internal.job.JobScheduler;
 import org.bikesched.internal.job.RecurrenceParsers;
 import org.bikesched.internal.job.RecurringJobRepair;
+import org.bikesched.internal.job.claim.JobPoller;
+import org.bikesched.internal.job.claim.JobPollerSettings;
 import org.bikesched.internal.node.DefaultNode;
 import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.internal.node.NodeHeartbeat;
@@ -67,6 +68,8 @@ import org.slf4j.MDC;
  *       RecurringJobRepair} (recreates missing occurrences of the node's recurring jobs), which
  *       runs once when polling starts
  *   <li>the threads of the {@link JobPoller}, which claims and runs jobs while the node polls
+ *   <li>{@code bikesched-notifier}: the {@link DueJobsNotifier}, which tells the nodes about the
+ *       jobs this node's writes made due
  * </ul>
  *
  * <p>The job types the node knows (handlers, recurring jobs, payload classes) are in its {@link
@@ -82,6 +85,7 @@ public final class DefaultBikesched implements Bikesched {
   private final JobRegistry registry = new JobRegistry();
   private final JobPoller jobPoller;
   private final JobScheduler jobScheduler;
+  private final DueJobsNotifier notifier;
   private final ScheduledExecutorService heartbeatExecutor;
   private final ScheduledThreadPoolExecutor cleanUpExecutor;
   private final DefaultNode node;
@@ -112,6 +116,7 @@ public final class DefaultBikesched implements Bikesched {
                 settings.nodeName(),
                 settings.maxConcurrentJobs(),
                 settings.pollInterval(),
+                settings.listenForDueJobs(),
                 settings.defaultJobTimeout(),
                 settings.defaultEventTimeout(),
                 settings.eventRetention(),
@@ -121,6 +126,14 @@ public final class DefaultBikesched implements Bikesched {
                 settings.eventListener()),
             registry,
             jobScheduler);
+    this.notifier =
+        new DueJobsNotifier(
+            database.jobs(),
+            settings.notifyInterval(),
+            settings.listenForDueJobs(),
+            jobPoller,
+            nodeName);
+    database.reportDueJobs(notifier);
     this.heartbeatExecutor =
         Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().name("bikesched-heartbeat").daemon().factory());
@@ -219,10 +232,11 @@ public final class DefaultBikesched implements Bikesched {
       scheduleWithFixedDelay(cleanUpExecutor, jobCleanUp::run, settings.jobCleanUpInterval());
       jobPoller.start(id);
       LOG.info(
-          "bikesched node {} ({}) registered, polling for jobs every {} (running up to {}"
+          "bikesched node {} ({}) registered, {}polling for jobs every {} (running up to {}"
               + " concurrently) and heartbeating every {}",
           nodeName,
           id,
+          settings.listenForDueJobs() ? "listening for due jobs, " : "",
           settings.pollInterval(),
           settings.maxConcurrentJobs(),
           settings.heartbeatInterval());
@@ -405,9 +419,15 @@ public final class DefaultBikesched implements Bikesched {
     ExecutorUtil.shutdownAndAwait(cleanUpExecutor, "clean-up");
     ExecutorUtil.shutdownAndAwait(heartbeatExecutor, "heartbeat");
     if (id == null) {
+      notifier.close(); // what this client made due
       LOG.info("bikesched node {} closed (it never polled, so it was not registered)", nodeName);
       return;
     }
+    deregister(id);
+    notifier.close(); // after releasing the node's jobs, so that other nodes take them over now
+  }
+
+  private void deregister(UUID id) {
     try {
       int released = database.jobs().releaseJobs(id);
       if (released > 0) {

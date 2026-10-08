@@ -6,7 +6,7 @@ import static org.awaitility.Awaitility.await;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import java.time.Duration;
-import org.bikesched.internal.job.JobPoller;
+import org.bikesched.internal.job.claim.JobPoller;
 import org.bikesched.job.JobBuilder;
 import org.junit.jupiter.api.Test;
 

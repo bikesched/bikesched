@@ -14,9 +14,13 @@
  *
  * <p>The {@code org.bikesched.internal} packages hold the implementation and are not exported.
  */
+// The PostgreSQL JDBC driver has no module descriptor, only an Automatic-Module-Name; bikesched
+// uses its PGConnection to receive notifications.
+@SuppressWarnings("requires-automatic")
 module org.bikesched {
   requires transitive java.sql;
   requires org.slf4j;
+  requires org.postgresql.jdbc;
 
   exports org.bikesched;
   exports org.bikesched.job;

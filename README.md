@@ -52,6 +52,8 @@ similar tools.
 
 - Jobs now, at a given time or after a delay, with priority, retries and timeouts; optionally in
   your own database transaction
+- Jobs start as soon as they are due: nodes notify each other with PostgreSQL `LISTEN/NOTIFY`,
+  polling is only the safety net
 - Durable **steps** whose results survive retries, with optional **compensation** (sagas)
 - **Cancellation** from within a handler or from outside
 - **Recurring jobs** with fixed-rate, daily, weekly or custom schedules

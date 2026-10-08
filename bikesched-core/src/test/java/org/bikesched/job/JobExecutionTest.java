@@ -12,8 +12,8 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.LogCapture;
 import org.bikesched.internal.DefaultBikesched;
-import org.bikesched.internal.job.JobPoller;
 import org.bikesched.internal.job.JobProcessor;
+import org.bikesched.internal.job.claim.JobPoller;
 import org.junit.jupiter.api.Test;
 
 /** Executing jobs: polling, handlers, retries, cancellation and the logging context. */

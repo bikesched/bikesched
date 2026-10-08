@@ -322,11 +322,11 @@ public interface Job extends EventPublisher {
    * }</pre>
    *
    * <p>The wake-up time stored on the first run wins: later runs ignore the argument, so a changed
-   * duration (e.g. after a deploy) does not move a sleep that already started. A job is claimed on
-   * the first poll after its wake-up time, so it wakes up to one {@link
-   * BikeschedBuilder#pollInterval(Duration) poll interval} late. Sleeping does not use up an
-   * attempt; like waiting for an event, it reruns the code outside of steps, and the same rules
-   * apply (see {@link #waitForEvent(String, String, String)}).
+   * duration (e.g. after a deploy) does not move a sleep that already started. The node that
+   * suspended the job wakes up at the wake-up time, other nodes find it with every {@link
+   * BikeschedBuilder#pollInterval(Duration) interval poll}. Sleeping does not use up an attempt;
+   * like waiting for an event, it reruns the code outside of steps, and the same rules apply (see
+   * {@link #waitForEvent(String, String, String)}).
    *
    * @param stepName the step name, unique within the job, at most 200 characters
    * @param duration how long to sleep, positive
@@ -376,10 +376,10 @@ public interface Job extends EventPublisher {
    *
    * <p>A poll is one step for all its checks: checks that are not ready do not use up attempts, and
    * the step's {@link Step#attempts()} counts the checks. A check that throws fails the job's
-   * attempt; the next attempt checks again right away. A due check runs on the next poll of a node,
-   * so up to one {@link BikeschedBuilder#pollInterval(Duration) poll interval} late. Like waiting
-   * for an event, polling reruns the code outside of steps, and the same rules apply (see {@link
-   * #waitForEvent(String, String, String)}).
+   * attempt; the next attempt checks again right away. A due check runs when it is due, like a
+   * sleep ends (see {@link #sleep(String, Duration)}). Like waiting for an event, polling reruns
+   * the code outside of steps, and the same rules apply (see {@link #waitForEvent(String, String,
+   * String)}).
    *
    * @param name the step name, unique within the job, at most 200 characters
    * @param resultType the type of the ready value, used to read the stored value back

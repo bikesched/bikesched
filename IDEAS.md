@@ -26,14 +26,6 @@ and open their incident later, in the same transaction as before ([spec](docs/sp
 
 ## Performance
 
-### LISTEN/NOTIFY
-
-Wake pollers with PostgreSQL `LISTEN/NOTIFY` when a job is scheduled (or becomes due, e.g. resumed
-by an event), instead of waiting for the next poll. Lowers latency and allows a longer poll
-interval, so less idle polling. Polling stays as the fallback (notifications are lost while a node
-is disconnected). Needs a dedicated connection per node that stays open, which interacts with
-connection pools. Design: [spec](docs/specs/listen-notify.md).
-
 ### Claim reports for woken polls
 
 With `LISTEN/NOTIFY`, every node handling a type polls at each due time and all but one claim
@@ -53,7 +45,8 @@ the job history). Combining the read and the start into one statement would roug
 
 Every store call borrows its own connection. With `PGSimpleDataSource`, used by the examples and
 docs, that is a new TCP connection and authentication per statement, several per step. Document
-using a pool (e.g. HikariCP) and how to size it: job slots plus poller, heartbeat and clean-ups.
+using a pool (e.g. HikariCP) and how to size it: job slots plus poller, heartbeat and clean-ups,
+plus the connection a listening node holds for `LISTEN/NOTIFY` for its lifetime.
 
 ### Finding jobs
 

@@ -22,6 +22,19 @@ public final class JobRegistry {
   /** Payload classes of the job types used with a {@link JobType} on this node, by name. */
   private final Map<String, Class<?>> payloadTypes = new ConcurrentHashMap<>();
 
+  /** Runs after a handler of a new type was registered; set by the poller. */
+  private volatile Runnable onNewHandler = () -> {};
+
+  /**
+   * Sets what runs after a handler of a new type was registered (the poller then looks for its
+   * jobs).
+   *
+   * @param onNewHandler runs on the registering thread; must not throw
+   */
+  public void onNewHandler(Runnable onNewHandler) {
+    this.onNewHandler = Objects.requireNonNull(onNewHandler, "onNewHandler");
+  }
+
   /**
    * Registers the handler of a job type unless it has one.
    *
@@ -31,7 +44,11 @@ public final class JobRegistry {
    */
   public boolean register(String type, JobHandler handler) {
     Objects.requireNonNull(handler, "handler");
-    return handlers.putIfAbsent(type, handler) == null;
+    if (handlers.putIfAbsent(type, handler) != null) {
+      return false;
+    }
+    onNewHandler.run();
+    return true;
   }
 
   /**

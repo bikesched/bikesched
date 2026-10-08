@@ -78,7 +78,7 @@ public final class EventStore {
   // and resumes their WAITING jobs.
   // Jobs that are still RUNNING (suspending right now, or resumed by their deadline) are left
   // alone: suspending (StepStore.suspend) resp. the handler's wait then find the step completed.
-  // Returns per step whether its job was resumed, and the job's attempt count.
+  // Returns per step whether its job was resumed, and the job's attempt count and type.
   private static final String RESUME_WAITING_STEPS_SQL =
       """
             with received as (
@@ -91,8 +91,8 @@ public final class EventStore {
                    set state = 'SCHEDULED', scheduled_at = now(), updated_at = now()
                   from received r
                  where j.id = r.job_id and j.state = 'WAITING'
-                returning j.id, j.attempts)
-            select r.job_id, r.name, x.id is not null, coalesce(x.attempts, 0)
+                returning j.id, j.attempts, j.type)
+            select r.job_id, r.name, x.id is not null, coalesce(x.attempts, 0), x.type
               from received r left join resumed x on x.id = r.job_id""";
 
   private static final String DELETE_EVENTS_SQL =
@@ -447,7 +447,9 @@ public final class EventStore {
     List<Resumption> resumptions =
         db.list(
             RESUME_WAITING_STEPS_SQL,
-            row -> new Resumption(row.uuid(1), row.string(2), row.bool(3), row.integer(4)),
+            row ->
+                new Resumption(
+                    row.uuid(1), row.string(2), row.bool(3), row.integer(4), row.string(5)),
             payload,
             eventId,
             eventName,
@@ -462,6 +464,7 @@ public final class EventStore {
               null,
               "received event " + eventId));
       if (resumption.jobResumed()) {
+        db.dueNow(resumption.type());
         changes.add(
             Change.job(
                 resumption.jobId(),
@@ -511,7 +514,8 @@ public final class EventStore {
   private record PublishedEvent(UUID id, String payload) {}
 
   /** A row of {@code RESUME_WAITING_STEPS_SQL}: a step that received the event. */
-  private record Resumption(UUID jobId, String stepName, boolean jobResumed, int attempts) {}
+  private record Resumption(
+      UUID jobId, String stepName, boolean jobResumed, int attempts, String type) {}
 
   /** A row of {@code FIND_EVENT_STEP_SQL}: a step (of any kind) of a job. */
   private record EventStep(

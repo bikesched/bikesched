@@ -105,8 +105,8 @@ job.sleepUntil("until-check-in", booking.checkIn().minus(Duration.ofDays(1)));
   `sleep`). Later runs ignore the argument, so a duration changed in a deploy or a time computed
   from `Instant.now()` doesn't move a sleep that already started.
 - `sleepUntil` with a time that has passed returns right away; the step is stored as completed.
-- The job is claimed on the first poll after its wake-up time, so it wakes up to one poll interval
-  late (5 seconds by default, see [Configuration](configuration.md#builder-options)).
+- The node that suspended the job wakes up at the wake-up time; other nodes find it with their
+  next-due query, see [Due jobs start right away](configuration.md#due-jobs-start-right-away).
 - Sleeping does not use up an attempt. Cancelling a sleeping job marks the step `CANCELLED` and runs
   the compensations of its completed steps.
 - Sleeping inside a step handler or a compensation is rejected, like nested steps.
@@ -150,8 +150,9 @@ Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30)
   Without a timeout, the poll checks until it is ready or the job is cancelled.
 - The deadline stored on the first check wins: a timeout changed in a deploy doesn't move a poll
   that already started. Polling again after a timeout needs a new step name.
-- A due check runs on the next poll of a node, so up to one poll interval late (5 seconds by
-  default). For checks every few seconds, loop inside a [step](#durable-steps) instead.
+- A due check runs when it is due, like a [sleep](#sleeping) wakes up. Each check is a claim and
+  a suspension of the job; for checks every second or faster, loop inside a
+  [step](#durable-steps) instead.
 - An expected negative answer (e.g. the report failed) is a ready value too, see
   [Business outcomes as results](#business-outcomes-as-results); exceptions are for errors a retry
   may fix.

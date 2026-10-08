@@ -57,6 +57,9 @@ class HardTimeoutTest extends AbstractBikeschedTest {
                         staleWrite.countDown();
                       }
                     } else {
+                      // Only the first attempt is meant to time out; on a slow machine the
+                      // retry's step alone can take longer than TIMEOUT.
+                      job.updateTimeout(Duration.ofSeconds(10));
                       job.step("done", String.class, _ -> "\"retry\"");
                     }
                   })
