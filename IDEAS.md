@@ -142,6 +142,14 @@ minutes.
 - Outcome: a documented pattern with a test, or API support (e.g. a timeout handler that can wait
   again).
 
+### Poll step
+
+Polling an external service until it returns a result needs failed attempts, a growing loop of
+steps and sleeps, or a slot held by a loop inside a step. A dedicated
+`job.newPoll(name, type, interval)` step returns `Poll.ready(value)` or `Poll.notReady()` per check,
+suspends between checks like a sleep, keeps one row for all checks and has an optional timeout
+with a fallback. Design: [spec](docs/specs/poll-step.md).
+
 ### Stable step id for external callbacks
 
 `bikesched_steps` is keyed by `(job_id, name)`; nothing about a step is a single opaque,
