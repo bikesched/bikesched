@@ -52,8 +52,7 @@ crash of its node.
 - `JobListener.onAttemptEnded` reports `FAILED` and `COMPENSATION_FAILED` synchronously after the
   commit, by the node recording it (lost if that node dies right after the commit); enough for
   alerts via [Metrics](docs/metrics.md).
-- Open: a guaranteed hook (e.g. an outbox-like table or a dead-letter job type), and how it
-  relates to the job history.
+- Planned as incidents: see [the spec](docs/specs/incidents.md).
 
 ### Reporting events published in the caller's transaction
 
