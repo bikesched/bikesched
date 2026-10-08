@@ -156,13 +156,20 @@ IncidentSettings.builder()
   `{"incidentId": …, "jobId": …, "jobType": …, "jobState": …, "error": …}`. `IncidentJobPayload`
   is a record in `org.bikesched.incident`, so typed handlers use
   `JobType.of("alert-payments", IncidentJobPayload.class)`.
-- No loops: a failing incident job opens an incident like any job, but never schedules another
-  incident job. The node passes no incident job type when the failing job's type is one of the
-  mapped incident job types.
+- The incident job references its incident in a new column
+  `bikesched_jobs.incident_id uuid references bikesched_incidents (id) on delete set null`, set
+  only on incident jobs. A CLI or UI can show per incident whether its job ran.
+- No loops: a failing incident job opens an incident like any job (a broken alert is not silent),
+  but the failing statement schedules no incident job for a job with `incident_id` set. The marker
+  is stored with the job, so it does not depend on the nodes' mappings agreeing or staying the
+  same between scheduling and failure.
 - Without a handler for the incident job type anywhere, the job waits like any unhandled job.
 
 Rejected alternatives:
 
+- Recognizing incident jobs by their type being one of the mapped incident job types: depends on
+  every node having the same mapping, and breaks when the mapping changes while incident jobs are
+  pending.
 - Incident job type per job (`newJob(type).incidentJobType(…)`, stored in a column): survives
   inconsistent node configs, but needs a column and a setting on every scheduling call; the
   mapping belongs with the handlers.
@@ -221,7 +228,7 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
   failure opens a second incident; job history entries; log lines.
 - `JobCleanUpTest`: jobs with open incidents are kept, resolved ones deleted after the retention
   from `resolved_at`.
-- `SchemaMigratorTest`: the new table.
+- `SchemaMigratorTest`: the new table; `bikesched_jobs.incident_id`.
 - Micrometer gauge, starter properties, Kotlin DSL.
 
 ## 8. Implementation steps
@@ -246,3 +253,4 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
 - Opt-in via `BikeschedBuilder.incidents(IncidentSettings)` (§4.1).
 - `COMPENSATION_FAILED` jobs and failed occurrences of recurring jobs can only be resolved (§4.4).
 - Incident job types are mapped per failed job type in the incident settings (§4.5).
+- Incident jobs reference their incident (`bikesched_jobs.incident_id`) and never schedule another incident job (§4.5).
