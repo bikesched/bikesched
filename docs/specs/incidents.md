@@ -81,6 +81,8 @@ create table bikesched_incidents (
 );
 -- at most one open incident per job
 create unique index bikesched_incidents_open_job_idx on bikesched_incidents (job_id) where state = 'OPEN';
+-- a job's incidents (findJobIncidents, JobInfo.openIncidentId, the cascade from bikesched_jobs)
+create index bikesched_incidents_job_id_idx on bikesched_incidents (job_id);
 create index bikesched_incidents_state_created_at_idx on bikesched_incidents (state, created_at);
 ```
 
@@ -126,6 +128,12 @@ New methods on `Bikesched`:
   it into the comment (open question 3).
 - Both are recorded in the job history ("incident retried", "incident resolved").
 
+From a failed job to its incident: `JobInfo` gets `openIncidentId()` (`Optional<UUID>`), filled
+by `findJob` with a lookup on `bikesched_incidents_job_id_idx`; `findJobIncidents(jobId)` returns
+all of them. The job stores no reference itself: a job can have several incidents (retried, failed
+again), and a column would have to be kept in sync on every resolution. The opposite direction,
+from an incident job to the incident it handles, is a column (§4.5).
+
 `Incident` is an interface in the new exported package `org.bikesched.incident`, with
 `IncidentState` (`OPEN`, `RESOLVED`) and `IncidentResolution` (`RETRIED`, `RESOLVED`):
 `id()`, `jobId()`, `jobType()`, `jobState()` (`JobState`), `error()`, `state()`,
@@ -157,10 +165,10 @@ IncidentSettings.builder()
   is a record in `org.bikesched.incident`, so typed handlers use
   `JobType.of("alert-payments", IncidentJobPayload.class)`.
 - The incident job references its incident in a new column
-  `bikesched_jobs.incident_id uuid references bikesched_incidents (id) on delete set null`, set
+  `bikesched_jobs.handled_incident_id uuid references bikesched_incidents (id) on delete set null`, set
   only on incident jobs. A CLI or UI can show per incident whether its job ran.
 - No loops: a failing incident job opens an incident like any job (a broken alert is not silent),
-  but the failing statement schedules no incident job for a job with `incident_id` set. The marker
+  but the failing statement schedules no incident job for a job with `handled_incident_id` set. The marker
   is stored with the job, so it does not depend on the nodes' mappings agreeing or staying the
   same between scheduling and failure.
 - Without a handler for the incident job type anywhere, the job waits like any unhandled job.
@@ -228,7 +236,7 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
   failure opens a second incident; job history entries; log lines.
 - `JobCleanUpTest`: jobs with open incidents are kept, resolved ones deleted after the retention
   from `resolved_at`.
-- `SchemaMigratorTest`: the new table; `bikesched_jobs.incident_id`.
+- `SchemaMigratorTest`: the new table; `bikesched_jobs.handled_incident_id`.
 - Micrometer gauge, starter properties, Kotlin DSL.
 
 ## 8. Implementation steps
@@ -253,4 +261,4 @@ New `docs/incidents.md` (linked from `docs/index.md` and `jobs.md`), builder opt
 - Opt-in via `BikeschedBuilder.incidents(IncidentSettings)` (§4.1).
 - `COMPENSATION_FAILED` jobs and failed occurrences of recurring jobs can only be resolved (§4.4).
 - Incident job types are mapped per failed job type in the incident settings (§4.5).
-- Incident jobs reference their incident (`bikesched_jobs.incident_id`) and never schedule another incident job (§4.5).
+- Incident jobs reference their incident (`bikesched_jobs.handled_incident_id`) and never schedule another incident job (§4.5).
