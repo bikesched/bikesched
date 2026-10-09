@@ -92,7 +92,7 @@ public final class DueJobsListening implements AutoCloseable {
     }
     try {
       connection.close();
-    } catch (SQLException e) {
+    } catch (SQLException | RuntimeException e) {
       // aborted already; nothing left to release
     }
   }
