@@ -36,6 +36,19 @@ admin UI, alerts and bulk `retry(...)`.
 - Needs an index fitting the query (e.g. `(type, state, updated_at)`), so it costs writes on
   every state change; postponed until it is needed. Until then: SQL on `bikesched_jobs`.
 
+### Super simple admin UI
+
+bikesched has no UI; inspecting jobs needs SQL today, or the `findJobs` query API once it exists
+(see [Finding jobs](#finding-jobs) above). A super simple admin UI — a single read-only page
+listing jobs with filters by type and state, a job's history, and a button to retry a failed one
+— would make running bikesched usable without a database client.
+
+- Depends on the query API above; a new optional module (e.g. `bikesched-admin-ui`) serving the
+  page and a small JSON API, embeddable in any app (servlet, Spring MVC, plain `HttpServer`)
+  rather than a separate service.
+- Open: how much interactivity beyond read-only (retry/cancel buttons calling the existing API);
+  authentication is left to the embedding application.
+
 ### Hook for permanently failed jobs
 
 bikesched has no hook for a job ending `FAILED` or `COMPENSATION_FAILED`, e.g. to alert or move it to a dead-letter store. The
@@ -191,6 +204,22 @@ callback URL) and have it call back with just that one value.
   receives the external callback.
 - Open: the callback-receiving API shape (new method on `Bikesched`? a step kind addition?) —
   deferred until there's a concrete use case.
+
+### Job-level failure handler
+
+Steps can react to their own failure (`StepBuilder#onFailure(StepFailureHandler)`), but a job has
+no equivalent: the only way to react to a job ending `FAILED` or `COMPENSATION_FAILED` is the
+asynchronous `JobListener.onAttemptEnded` (see [Hook for permanently failed
+jobs](#hook-for-permanently-failed-jobs)), which runs after the commit and is not retried itself.
+Jobs should also come with a failure handler, registered next to the job handler, called
+synchronously with the final `JobFailure` before the job is marked failed.
+
+- Mirrors `StepFailureHandler`: e.g. `registerJobHandler(type, handler, failureHandler)` or a
+  builder option next to `registerJobHandler`.
+- Differs from the `JobListener` hook: part of the failing attempt itself (same transaction/thread
+  as recording the terminal state), not a best-effort notification after the commit.
+- Open: how it composes with compensation (run before, after, or instead of
+  `CompensationHandler`); whether it can itself fail or retry.
 
 ## Website
 

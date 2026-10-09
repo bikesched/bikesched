@@ -200,7 +200,18 @@ there are no process models (BPMN), no visual modelling and no orchestration
 across services. It is, however, a good building block for an application that wants to integrate
 nicely with an external workflow or process engine (e.g. Camunda, Temporal, AWS Step Functions): a
 step starts a process there and stores its process id, and a [poll](#polling) step durably waits
-for the process to finish, without holding a thread or a concurrency slot while it runs:
+for the process to finish, without holding a thread or a concurrency slot while it runs. The job
+is created in the same [transaction](jobs.md#transactional-scheduling) as the customer row it is
+onboarding, so one never exists without the other:
+
+```java
+try (Connection connection = dataSource.getConnection()) {
+    connection.setAutoCommit(false);
+    insertCustomer(connection, customer);
+    bikesched.newJob("onboard-customer").payload(customer).connection(connection).schedule();
+    connection.commit();
+}
+```
 
 ```java
 bikesched.registerJobHandler("onboard-customer", job -> {
