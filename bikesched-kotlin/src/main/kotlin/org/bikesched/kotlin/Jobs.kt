@@ -4,6 +4,7 @@ package org.bikesched.kotlin
 import java.util.UUID
 import org.bikesched.Bikesched
 import org.bikesched.Node
+import org.bikesched.RetryBackoff
 import org.bikesched.job.Job
 import org.bikesched.job.JobInfo
 import org.bikesched.job.Step
@@ -37,14 +38,21 @@ public inline fun <reified T> Job.payload(): T = payload(T::class.java) as T
  *
  * @param name the step name, unique within the job
  * @param compensation undoes the completed step; runs at least once, so it must be idempotent
+ * @param retryBackoff the delay before the job is retried after this step failed, instead of the
+ *   node's backoff, see `StepBuilder.retryBackoff`
+ * @param onFailure runs when the step failed in the job's last attempt, before the step and the job
+ *   are recorded as failed (the step is `FAILING` meanwhile); runs again if it throws, so it must
+ *   be idempotent, see `StepBuilder.onFailure`
  * @param handler executes the step; only called if the step has not completed in an earlier attempt
  * @throws NullPointerException if the step result is `null` and [T] is not nullable
  */
 public inline fun <reified T> Job.step(
   name: String,
   noinline compensation: ((step: Step, result: T) -> Unit)? = null,
+  retryBackoff: RetryBackoff? = null,
+  noinline onFailure: ((step: Step, failure: Exception) -> Unit)? = null,
   noinline handler: (Step) -> T,
-): T = runStep(this, name, T::class.java, compensation, handler) as T
+): T = runStep(this, name, T::class.java, compensation, retryBackoff, onFailure, handler) as T
 
 /**
  * Reads a job, see `Bikesched.findJob(UUID)`.
@@ -63,11 +71,19 @@ internal fun <T> runStep(
   name: String,
   type: Class<T>,
   compensation: ((Step, T) -> Unit)?,
+  retryBackoff: RetryBackoff?,
+  onFailure: ((Step, Exception) -> Unit)?,
   handler: (Step) -> T,
 ): Any? {
   if (type == Unit::class.java) {
     // A Unit step runs as a step without result (Void), so no Unit reaches the JsonMapper.
     val builder = job.newStep(name, Void::class.java)
+    if (retryBackoff != null) {
+      builder.retryBackoff(retryBackoff)
+    }
+    if (onFailure != null) {
+      builder.onFailure { step, failure -> onFailure(step, failure) }
+    }
     if (compensation != null) {
       @Suppress("UNCHECKED_CAST")
       builder.compensateWith { step, _ -> compensation(step, Unit as T) }
@@ -79,6 +95,12 @@ internal fun <T> runStep(
     return Unit
   }
   val builder = job.newStep(name, type)
+  if (retryBackoff != null) {
+    builder.retryBackoff(retryBackoff)
+  }
+  if (onFailure != null) {
+    builder.onFailure { step, failure -> onFailure(step, failure) }
+  }
   if (compensation != null) {
     builder.compensateWith { step, result -> compensation(step, result) }
   }

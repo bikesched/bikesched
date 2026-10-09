@@ -349,4 +349,77 @@ class StepTest extends AbstractBikeschedTest {
           .isEqualTo(1);
     }
   }
+
+  @Test
+  void failureHandlerRunsOnlyAfterAllAttemptsAreUsedUp() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-failure-handler").build()) {
+      var handled = new java.util.concurrent.CopyOnWriteArrayList<String>();
+      var states = new java.util.concurrent.CopyOnWriteArrayList<String>();
+      UUID jobId =
+          bikesched
+              .newJob("step-failure-handler")
+              .maxAttempts(2)
+              .handler(
+                  job ->
+                      job.newStep("charge", String.class)
+                          .onFailure(
+                              (step, failure) -> {
+                                states.add(stepState(job.id(), "charge"));
+                                handled.add(step.name() + ": " + failure.getMessage());
+                              })
+                          .run(
+                              step -> {
+                                throw new IllegalStateException("declined");
+                              }))
+              .schedule();
+
+      awaitState(jobId, "FAILED");
+
+      assertThat(handled).containsExactly("charge: declined");
+      assertThat(states).as("FAILING while the handler runs").containsExactly("FAILING");
+      assertThat(stepState(jobId, "charge")).isEqualTo("FAILED");
+    }
+  }
+
+  @Test
+  void failureHandlerThatThrowsRunsAgainInAnExtraAttempt() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-failure-handler-retry").build()) {
+      var calls = new java.util.concurrent.atomic.AtomicInteger();
+      UUID jobId =
+          bikesched
+              .newJob("step-failure-handler-retry")
+              .maxAttempts(1)
+              .handler(
+                  job ->
+                      job.newStep("charge", String.class)
+                          .onFailure(
+                              (step, failure) -> {
+                                if (calls.incrementAndGet() == 1) {
+                                  throw new java.io.IOException("database down");
+                                }
+                              })
+                          .run(
+                              step -> {
+                                throw new IllegalStateException("declined");
+                              }))
+              .schedule();
+
+      awaitState(jobId, "FAILED");
+
+      assertThat(calls).as("handler ran again after it failed").hasValue(2);
+      assertThat(stepState(jobId, "charge")).isEqualTo("FAILED");
+    }
+  }
+
+  private String stepState(UUID jobId, String name) throws Exception {
+    for (String state : List.of("RUNNING", "FAILING", "FAILED", "SUCCEEDED")) {
+      if (countRows(
+              "bikesched_steps",
+              "job_id = '" + jobId + "' and name = '" + name + "' and state = '" + state + "'")
+          == 1) {
+        return state;
+      }
+    }
+    return null;
+  }
 }

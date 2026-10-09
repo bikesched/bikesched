@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.bikesched.BikeschedException;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.JsonMapper;
 import org.bikesched.RetryBackoff;
@@ -45,6 +46,7 @@ import org.bikesched.job.PollTimeoutException;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.Step;
 import org.bikesched.job.StepBuilder;
+import org.bikesched.job.StepFailureHandler;
 import org.bikesched.job.StepHandler;
 import org.bikesched.job.StepJobBuilder;
 import org.slf4j.Logger;
@@ -106,6 +108,8 @@ public final class DefaultJob implements Job {
   private volatile Result result;
   private volatile JobSuspended.Suspension suspension;
   private volatile JobAttempt attempt;
+  private volatile StepRetry stepRetry;
+  private volatile boolean failureHandlingPending;
   private volatile Duration defaultEventTimeout;
   private volatile boolean lockLost;
 
@@ -627,20 +631,60 @@ public final class DefaultJob implements Job {
 
   @Override
   public <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception {
-    return step(name, resultType, handler, null);
+    return step(name, resultType, handler, null, null, null);
   }
 
-  /** Runs a step, with a compensation or without ({@code null}). */
+  /** A failed step's own retry backoff and its number of failed attempts. */
+  record StepRetry(RetryBackoff backoff, int failedAttempts) {}
+
+  /** The retry backoff of the step that made the attempt fail, {@code null} if none. */
+  StepRetry stepRetry() {
+    return stepRetry;
+  }
+
+  /**
+   * Runs a step, with a compensation or without ({@code null}), and with its own retry backoff or
+   * without ({@code null}).
+   */
   <T> T step(
       String name,
       Class<T> resultType,
       StepHandler<T> handler,
-      CompensationHandler<? super T> compensation)
+      CompensationHandler<? super T> compensation,
+      RetryBackoff retryBackoff,
+      StepFailureHandler failureHandler)
       throws Exception {
     Objects.requireNonNull(resultType, "resultType");
     JsonMapper mapper = database.jsonMapper();
+    StepHandler<T> run = handler;
+    if (retryBackoff != null && handler != null) {
+      run =
+          step -> {
+            try {
+              T result = handler.handle(step);
+              stepRetry = null;
+              return result;
+            } catch (Exception e) {
+              stepRetry = new StepRetry(retryBackoff, step.attempts());
+              throw e;
+            }
+          };
+    }
     return runStep(
-        name, handler, mapper::toJson, json -> mapper.fromJson(json, resultType), compensation);
+        name,
+        run,
+        mapper::toJson,
+        json -> mapper.fromJson(json, resultType),
+        compensation,
+        failureHandler);
+  }
+
+  /**
+   * Whether the failure handler of a failed step threw (or could not be recorded): the job gets an
+   * extra attempt to run it again, even if its attempts are used up.
+   */
+  boolean isFailureHandlingPending() {
+    return failureHandlingPending;
   }
 
   @Override
@@ -675,7 +719,8 @@ public final class DefaultJob implements Job {
       StepHandler<T> handler,
       Function<? super T, String> toJson,
       Function<String, T> fromJson,
-      CompensationHandler<? super T> compensation)
+      CompensationHandler<? super T> compensation,
+      StepFailureHandler failureHandler)
       throws Exception {
     ValidationUtil.requireName(name, "step name");
     Objects.requireNonNull(handler, "handler");
@@ -702,9 +747,21 @@ public final class DefaultJob implements Job {
         return result;
       }
       if (completed.isEmpty()) {
+        if (failureHandler != null) {
+          var failingError = database.steps().findFailingError(id, name);
+          if (failingError.isPresent()) {
+            // The handler threw or was lost in an earlier attempt: run it again, then fail the job.
+            int failedAttempts = database.steps().findStep(id, name).orElseThrow().attempts();
+            var failure =
+                new BikeschedException("Step '" + name + "' failed: " + failingError.get());
+            runFailureHandler(name, failedAttempts, failureHandler, failure);
+            throw failure;
+          }
+        }
         var stepAttempt = fenced(() -> database.steps().startStep(id, lock, name));
         if (stepAttempt.isPresent()) {
-          return executeStep(name, stepAttempt.get(), handler, toJson, compensation != null);
+          return executeStep(
+              name, stepAttempt.get(), handler, toJson, compensation != null, failureHandler);
         }
         // Completed in the meantime, or a step of another kind (e.g. still waiting for an event).
         database
@@ -1100,7 +1157,8 @@ public final class DefaultJob implements Job {
       int stepAttempt,
       StepHandler<T> handler,
       Function<? super T, String> toJson,
-      boolean compensable)
+      boolean compensable,
+      StepFailureHandler failureHandler)
       throws Exception {
     LOG.debug("Executing step {} of job {} (attempt {})", name, id, stepAttempt);
     long start = System.nanoTime();
@@ -1111,7 +1169,11 @@ public final class DefaultJob implements Job {
       String json = result == null ? null : toJson.apply(result);
       fenced(() -> database.steps().completeStep(id, lock, name, json, compensable));
     } catch (Exception e) {
-      recordStepFailure(name, stepAttempt, e, start);
+      if (failureHandler != null && attempts >= maxAttempts) {
+        failStepWithHandler(name, stepAttempt, failureHandler, e, start);
+      } else {
+        recordStepFailure(name, stepAttempt, e, start);
+      }
       throw e;
     }
     LOG.debug(
@@ -1121,6 +1183,55 @@ public final class DefaultJob implements Job {
         stepAttempt,
         millisSince(start));
     return result;
+  }
+
+  /**
+   * The step failed in the job's last attempt: marks it {@code FAILING}, runs its failure handler
+   * and only then marks it {@code FAILED}.
+   */
+  private void failStepWithHandler(
+      String name, int stepAttempt, StepFailureHandler handler, Exception failure, long start) {
+    LOG.debug(
+        "Step {} of job {} (attempt {}) is FAILING after {} ms, attempts used up: {}",
+        name,
+        id,
+        stepAttempt,
+        millisSince(start),
+        failure.toString());
+    try {
+      fenced(() -> database.steps().markStepFailing(id, lock, name, failure.toString()));
+    } catch (RuntimeException e) {
+      failure.addSuppressed(e);
+      return;
+    }
+    runFailureHandler(name, stepAttempt, handler, failure);
+  }
+
+  /**
+   * Runs the failure handler of a {@code FAILING} step, then marks the step {@code FAILED}. If that
+   * does not work, the step stays {@code FAILING} and the job gets an extra attempt.
+   */
+  private void runFailureHandler(
+      String name, int stepAttempt, StepFailureHandler handler, Exception failure) {
+    try {
+      Step step = new Step(id, name, stepAttempt);
+      stepGuard.run(
+          "the failure handler of step '" + name + "'",
+          () -> {
+            handler.handle(step, failure);
+            return null;
+          });
+      fenced(() -> database.steps().failFailingStep(id, lock, name));
+      LOG.debug("Step {} of job {} FAILED after its failure handler ran", name, id);
+    } catch (Exception e) {
+      LOG.warn(
+          "Failure handler of step {} of job {} failed, it runs again in the next attempt",
+          name,
+          id,
+          e);
+      failureHandlingPending = true;
+      failure.addSuppressed(e);
+    }
   }
 
   private void recordStepFailure(String name, int stepAttempt, Exception failure, long start) {

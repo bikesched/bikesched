@@ -149,8 +149,8 @@ create table bikesched_steps (
     constraint bikesched_steps_kind_check
         check (kind in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB', 'POLL')),
     constraint bikesched_steps_state_check
-        check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'TIMED_OUT', 'COMPENSATED',
-                         'CANCELLED')),
+        check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING', 'FAILED', 'TIMED_OUT',
+                         'COMPENSATED', 'CANCELLED')),
     -- Event waits and publishes name their event; an event wait references the event once it
     -- received it, a publish always; only event waits, child jobs and polls time out.
     constraint bikesched_steps_event_check
@@ -236,8 +236,9 @@ create table bikesched_job_history (
     constraint bikesched_job_history_state_check
         check (step_name is null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
                                                'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED')
-               or step_name is not null and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
-                                                      'TIMED_OUT', 'COMPENSATED', 'CANCELLED')),
+               or step_name is not null and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING',
+                                                      'FAILED', 'TIMED_OUT', 'COMPENSATED',
+                                                      'CANCELLED')),
     constraint bikesched_job_history_step_name_check
         check (char_length(step_name) between 1 and 200)
 );

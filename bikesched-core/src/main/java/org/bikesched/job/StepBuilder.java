@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import org.bikesched.RetryBackoff;
+
 /**
  * Builds a step of a job, created by {@link Job#newStep(String, Class)}: optionally with a
  * compensation, then run.
@@ -27,6 +29,28 @@ public interface StepBuilder<T> {
    * @return this builder
    */
   StepBuilder<T> compensateWith(CompensationHandler<? super T> compensation);
+
+  /**
+   * Sets the delay before the job is retried after this step failed (optional), replacing the
+   * node's {@link RetryBackoff} for this step. It receives the number of failed attempts of the
+   * step. A delay set with {@link JobFailure#retryAfter(java.time.Duration)} still takes
+   * precedence.
+   *
+   * @param backoff the delay of the retry after the step failed
+   * @return this builder
+   */
+  StepBuilder<T> retryBackoff(RetryBackoff backoff);
+
+  /**
+   * Sets a handler that runs when the step failed in the last attempt of its job (optional), before
+   * the step and the job are recorded as failed. The step is {@code FAILING} meanwhile; a handler
+   * that throws runs again in an extra attempt of the job. Without a handler a failing step simply
+   * fails the job.
+   *
+   * @param handler the failure handler, must be idempotent
+   * @return this builder
+   */
+  StepBuilder<T> onFailure(StepFailureHandler handler);
 
   /**
    * Runs the step like {@link Job#step(String, Class, StepHandler)}: executes it unless it

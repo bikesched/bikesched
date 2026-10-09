@@ -245,6 +245,7 @@ bikesched.cancel(orderJobId, "order withdrawn");   // releases the reservation i
 
 `newStep(name, Class).run(handler)` without `compensateWith` is the same as `step(...)`.
 
+
 - A job without completed compensable steps is cancelled or failed right away.
 - Otherwise it becomes `COMPENSATING`. A node replays its handler in compensation mode: completed
   steps return their stored results and register their compensations, and the replay ends at the
@@ -255,3 +256,28 @@ bikesched.cancel(orderJobId, "order withdrawn");   // releases the reservation i
   `COMPENSATION_FAILED` and needs manual attention.
 - Compensations run at least once, so they must be idempotent. The handler's code outside of
   steps runs again during the replay; `job.isCompensating()` tells it apart.
+
+## Retry delay per step
+
+A failed step makes the attempt fail, and the job is retried after the node's `RetryBackoff`. A step
+can have its own delay with `retryBackoff(…)` on the step builder, e.g.
+`job.newStep("charge", Payment.class).retryBackoff(RetryBackoff.exponential(Duration.ofSeconds(1), Duration.ofSeconds(30))).run(…)`.
+The backoff receives the step's number of failed attempts. `job.fail(…).retryAfter(…)` still takes
+precedence. In Kotlin: `step<Payment>("charge", retryBackoff = …) { … }`.
+
+## Failure handler per step
+
+A step can have a failure handler with `onFailure(…)` on the step builder. It runs when the step
+failed in the last attempt of its job, before the step and the job are recorded as failed:
+
+```java
+job.newStep("charge", Payment.class)
+    .onFailure((step, failure) -> orders.markFailed(orderId))
+    .run(step -> paymentService.charge(orderId));
+```
+
+The step is `FAILING` while the handler runs, then `FAILED`, and the job fails. If the handler
+throws, or the node dies before the step is recorded as failed, the job gets an extra attempt that
+runs the handler again (with a `BikeschedException` carrying the stored error), so the handler must
+be idempotent. Steps without a handler just fail. In Kotlin:
+`step<Payment>("charge", onFailure = { step, failure -> … }) { … }`.

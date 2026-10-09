@@ -2,8 +2,10 @@
 package org.bikesched.internal.job;
 
 import java.util.Objects;
+import org.bikesched.RetryBackoff;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.StepBuilder;
+import org.bikesched.job.StepFailureHandler;
 import org.bikesched.job.StepHandler;
 
 /** The {@link StepBuilder} implementation, running the step on its {@link DefaultJob}. */
@@ -13,6 +15,8 @@ final class DefaultStepBuilder<T> implements StepBuilder<T> {
   private final String name;
   private final Class<T> resultType;
   private CompensationHandler<? super T> compensation;
+  private RetryBackoff retryBackoff;
+  private StepFailureHandler failureHandler;
 
   DefaultStepBuilder(DefaultJob job, String name, Class<T> resultType) {
     this.job = job;
@@ -27,7 +31,19 @@ final class DefaultStepBuilder<T> implements StepBuilder<T> {
   }
 
   @Override
+  public StepBuilder<T> retryBackoff(RetryBackoff backoff) {
+    this.retryBackoff = Objects.requireNonNull(backoff, "backoff");
+    return this;
+  }
+
+  @Override
+  public StepBuilder<T> onFailure(StepFailureHandler handler) {
+    this.failureHandler = Objects.requireNonNull(handler, "handler");
+    return this;
+  }
+
+  @Override
   public T run(StepHandler<T> handler) throws Exception {
-    return job.step(name, resultType, handler, compensation);
+    return job.step(name, resultType, handler, compensation, retryBackoff, failureHandler);
   }
 }
