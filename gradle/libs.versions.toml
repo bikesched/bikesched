@@ -6,7 +6,7 @@ java = "26"
 # Gradle plugins
 foojay-resolver = "1.0.0"
 spotless = "8.10.3"
-kotlin = "2.4.20"
+kotlin = "2.4.21"
 dokka = "2.2.0"
 
 # Code formatting
