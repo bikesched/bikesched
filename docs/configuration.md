@@ -201,6 +201,10 @@ it applies. With Logback:
 <pattern>%d %-5level [%thread] node=%X{bikesched.nodeId} job=%X{bikesched.jobId} %logger - %msg%n</pattern>
 ```
 
+When a node starts polling, the registration message ends with the library version
+(`… (bikesched 0.1.0)`). The same version is available in code as `Bikesched.version()` and in the
+jar manifest as `Implementation-Version`; the schema is migrated to the state of that version.
+
 On startup bikesched logs the database URL (without credentials) at `DEBUG` as
 `Database: jdbc:postgresql://…`, which IDE plugins such as the
 [Testcontainers Port Updater](https://github.com/yusufugurozbek/testcontainers-port-updater) pick up.

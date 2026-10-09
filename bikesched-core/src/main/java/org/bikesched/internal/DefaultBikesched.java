@@ -41,6 +41,7 @@ import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.internal.node.NodeHeartbeat;
 import org.bikesched.internal.util.ExecutorUtil;
 import org.bikesched.internal.util.ValidationUtil;
+import org.bikesched.internal.util.Version;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobHistoryEntry;
@@ -233,13 +234,14 @@ public final class DefaultBikesched implements Bikesched {
       jobPoller.start(id);
       LOG.info(
           "bikesched node {} ({}) registered, {}polling for jobs every {} (running up to {}"
-              + " concurrently) and heartbeating every {}",
+              + " concurrently) and heartbeating every {} (bikesched {})",
           nodeName,
           id,
           settings.listenForDueJobs() ? "listening for due jobs, " : "",
           settings.pollInterval(),
           settings.maxConcurrentJobs(),
-          settings.heartbeatInterval());
+          settings.heartbeatInterval(),
+          Version.get());
       return node;
     }
   }
