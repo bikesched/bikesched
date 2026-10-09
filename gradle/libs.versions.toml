@@ -73,3 +73,4 @@ spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 hugo = { id = "io.github.fstaudt.hugo", version.ref = "hugo-plugin" }
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }

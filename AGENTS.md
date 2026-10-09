@@ -15,7 +15,7 @@ does; this file covers how to change it.
   explicit API mode (`public` and return types on every public declaration). Javadoc runs with
   `-Werror` too; also check the build log for warnings, not only failures.
 - Local database: `docker compose up -d` (prefix `POSTGRES_PORT=5433` if 5432 is taken), then
-  run an example, e.g. `./gradlew :bikesched-examples:runSimple`.
+  run an example, e.g. `./gradlew :bikesched-examples:java:runSimple`.
 - Source files start with `// SPDX-License-Identifier: Apache-2.0`; Spotless adds it (and
   `spotlessCheck` fails without it). The license is Apache 2.0 (`LICENSE`, `NOTICE`); the name
   and logo are covered by `TRADEMARKS.md` (ADR 0021).
@@ -39,7 +39,7 @@ does; this file covers how to change it.
 | `bikesched-cron` | `CronRecurrence` and `CronRecurrenceParser` (Java only, package `org.bikesched.cron`): cron expressions parsed with cron-utils; depends on core and `cron-utils` only (both `api`, cron-utils is an automatic module; tests use bikesched-annotations) |
 | `bikesched-micrometer` | `MicrometerJobListener` and `MicrometerEventListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` and `EventListener` SPIs; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |
 | `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`JobTypeHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
-| `bikesched-examples` | runnable examples (one package per scenario, each with a Testcontainers test using the shared `util.Database`), described in its own `README.md`; JSON via bikesched-jackson |
+| `bikesched-examples` | runnable examples, described in its own `README.md`, in two submodules: `java` (plain Java examples, one package per scenario, each with a Testcontainers test using the shared `util.Database`; JSON via bikesched-jackson) and `spring` (the Spring Boot example as a regular Boot application with the Spring Boot Gradle plugin, `bootRun`) |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):

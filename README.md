@@ -145,7 +145,7 @@ The [documentation](docs/index.md) covers the concepts in detail:
 Runnable examples with tests — a taxi booking saga with event waits and compensation, a cinema
 ticket order with a `JobTypeHandler`, a webhook with a polling fallback, and a Spring Boot
 application whose node and handlers are
-wired by the starter — live in the [`bikesched-examples`](bikesched-examples/README.md) module.
+wired by the starter — live in the [`bikesched-examples`](bikesched-examples/README.md) modules.
 
 ## Building
 
@@ -161,7 +161,7 @@ To try it out locally, start PostgreSQL with Docker Compose and run the
 
 ```shell
 docker compose up -d                      # POSTGRES_PORT=5433 docker compose up -d if 5432 is taken
-./gradlew :bikesched-examples:runSimple   # honors POSTGRES_PORT as well
+./gradlew :bikesched-examples:java:runSimple   # honors POSTGRES_PORT as well
 ```
 
 All dependency and tool versions are managed in `gradle/libs.versions.toml`.
