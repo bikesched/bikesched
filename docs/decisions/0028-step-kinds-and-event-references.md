@@ -1,5 +1,6 @@
 ---
 title: "28. Step kinds and plain event references"
+weight: 28
 ---
 
 # 28. Step kinds and plain event references

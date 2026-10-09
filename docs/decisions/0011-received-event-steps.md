@@ -1,5 +1,6 @@
 ---
 title: "11. Received event steps store the mapped result"
+weight: 11
 ---
 
 # 11. Received event steps store the mapped result

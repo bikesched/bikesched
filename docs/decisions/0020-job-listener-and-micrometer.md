@@ -1,5 +1,6 @@
 ---
 title: "20. Job listener SPI with Micrometer in its own module"
+weight: 20
 ---
 
 # 20. Job listener SPI with Micrometer in its own module

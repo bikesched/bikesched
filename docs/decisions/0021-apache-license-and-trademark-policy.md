@@ -1,5 +1,6 @@
 ---
 title: "21. Apache License 2.0 with a trademark policy"
+weight: 21
 ---
 
 # 21. Apache License 2.0 with a trademark policy

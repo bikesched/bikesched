@@ -1,5 +1,6 @@
 ---
 title: "30. Event listener reports committed publications only"
+weight: 30
 ---
 
 # 30. Event listener reports committed publications only

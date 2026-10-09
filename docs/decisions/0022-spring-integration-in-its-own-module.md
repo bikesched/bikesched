@@ -1,5 +1,6 @@
 ---
 title: "22. Spring integration in its own module"
+weight: 22
 ---
 
 # 22. Spring integration in its own module

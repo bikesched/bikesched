@@ -1,5 +1,6 @@
 ---
 title: "7. Job history in a separate, opt-in table"
+weight: 7
 ---
 
 # 7. Job history in a separate, opt-in table

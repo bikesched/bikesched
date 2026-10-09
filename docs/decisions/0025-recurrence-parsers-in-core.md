@@ -1,5 +1,6 @@
 ---
 title: "25. Recurrence parsers in core"
+weight: 25
 ---
 
 # 25. Recurrence parsers in core

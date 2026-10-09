@@ -1,5 +1,6 @@
 ---
 title: "1. Record architecture decisions"
+weight: 1
 ---
 
 # 1. Record architecture decisions

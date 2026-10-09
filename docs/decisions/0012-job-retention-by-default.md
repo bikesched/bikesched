@@ -1,5 +1,6 @@
 ---
 title: "12. Ended jobs deleted after a retention by default"
+weight: 12
 ---
 
 # 12. Ended jobs deleted after a retention by default

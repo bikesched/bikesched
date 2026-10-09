@@ -1,5 +1,6 @@
 ---
 title: "15. Snapshots published to GitHub Packages with maven-publish"
+weight: 15
 ---
 
 # 15. Snapshots published to GitHub Packages with maven-publish

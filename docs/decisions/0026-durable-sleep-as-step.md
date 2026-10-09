@@ -1,5 +1,6 @@
 ---
 title: "26. Durable sleep as a step without an event"
+weight: 26
 ---
 
 # 26. Durable sleep as a step without an event

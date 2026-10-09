@@ -1,5 +1,6 @@
 ---
 title: "8. Event expiry fixed when publishing"
+weight: 8
 ---
 
 # 8. Event expiry fixed when publishing

@@ -1,5 +1,6 @@
 ---
 title: "6. Text columns with length checks; messages truncated"
+weight: 6
 ---
 
 # 6. Text columns with length checks; messages truncated

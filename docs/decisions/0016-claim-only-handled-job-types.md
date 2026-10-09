@@ -1,5 +1,6 @@
 ---
 title: "16. Nodes claim only job types they handle"
+weight: 16
 ---
 
 # 16. Nodes claim only job types they handle

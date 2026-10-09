@@ -1,5 +1,6 @@
 ---
 title: "5. Recurring jobs via schedule(Recurrence)"
+weight: 5
 ---
 
 # 5. Recurring jobs via schedule(Recurrence)

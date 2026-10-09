@@ -1,5 +1,6 @@
 ---
 title: "3. Implementation in internal packages, enforced by ArchUnit"
+weight: 3
 ---
 
 # 3. Implementation in internal packages, enforced by ArchUnit

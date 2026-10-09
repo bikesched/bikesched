@@ -1,5 +1,6 @@
 ---
 title: "18. Event payloads copied into steps, no event handlers"
+weight: 18
 ---
 
 # 18. Event payloads copied into steps, no event handlers
