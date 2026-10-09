@@ -1,3 +1,7 @@
+---
+title: "19. Job handler annotations in their own module"
+---
+
 # 19. Job handler annotations in their own module
 
 Date: 2026-10-05

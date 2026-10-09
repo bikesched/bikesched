@@ -1,3 +1,7 @@
+---
+title: "11. Received event steps store the mapped result"
+---
+
 # 11. Received event steps store the mapped result
 
 Date: 2026-10-05

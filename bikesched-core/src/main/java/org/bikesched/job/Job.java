@@ -153,6 +153,37 @@ public interface Job extends EventPublisher {
   <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception;
 
   /**
+   * Executes a durable step of this job with no result, like {@link #step(String, Class,
+   * StepHandler)} with {@code Void.class}, running a plain {@link Runnable} that does not need the
+   * {@link Step} itself:
+   *
+   * <pre>{@code
+   * job.step("send-confirmation", () -> mailer.send(order, payment));
+   * }</pre>
+   *
+   * @param name the step name, unique within the job, at most 200 characters
+   * @param runnable executes the step
+   * @throws BikeschedException if the step cannot be stored
+   * @throws IllegalArgumentException if the name is blank
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
+   */
+  default void step(String name, Runnable runnable) {
+    try {
+      step(
+          name,
+          Void.class,
+          _ -> {
+            runnable.run();
+            return null;
+          });
+    } catch (Exception e) {
+      // StepHandler declares a checked Exception for other steps; this one only ever wraps a
+      // plain Runnable, which cannot throw a checked exception.
+      throw (RuntimeException) e;
+    }
+  }
+
+  /**
    * Builds a durable step that can have a compensation (a saga): if the job is cancelled, or fails
    * permanently, after the step completed, the compensation undoes it before the job ends.
    *

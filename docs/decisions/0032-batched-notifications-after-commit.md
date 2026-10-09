@@ -1,3 +1,7 @@
+---
+title: "32. Waking pollers with batched notifications after the commit"
+---
+
 # 32. Waking pollers with batched notifications after the commit
 
 Date: 2026-10-08

@@ -1,3 +1,7 @@
+---
+title: "6. Text columns with length checks; messages truncated"
+---
+
 # 6. Text columns with length checks; messages truncated
 
 Date: 2026-10-05

@@ -1,3 +1,7 @@
+---
+title: "20. Job listener SPI with Micrometer in its own module"
+---
+
 # 20. Job listener SPI with Micrometer in its own module
 
 Date: 2026-10-06

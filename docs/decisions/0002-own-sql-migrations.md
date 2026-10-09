@@ -1,3 +1,7 @@
+---
+title: "2. Own SQL migrations instead of a migration framework"
+---
+
 # 2. Own SQL migrations instead of a migration framework
 
 Date: 2026-10-05

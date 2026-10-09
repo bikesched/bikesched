@@ -1,0 +1,53 @@
+baseURL = "https://bikesched.org/"
+locale = "en-us"
+title = "bikesched"
+theme = "hextra"
+
+# Allows the raw HTML some of docs/*.md and README.md use (e.g. README.md's
+# centered logo image); safe since we control all mounted content. Hextra
+# sets this itself too, but it's harmless and explicit to repeat it.
+[markup.goldmark.renderer]
+  unsafe = true
+
+[[menu.main]]
+  name = "Docs"
+  pageRef = "/docs"
+  weight = 10
+
+[[menu.main]]
+  name = "GitHub"
+  url = "https://github.com/sbuettner/bikesched"
+  weight = 20
+  [menu.main.params]
+    icon = "github"
+
+# Shown below the page tree in the docs section's left sidebar, as a way back
+# to the overview page (the tree itself only lists the section's children).
+[[menu.sidebar]]
+  name = "Docs"
+  pageRef = "/docs"
+  weight = 1
+
+# Mount the project's README and docs/ directly, instead of copying them into
+# this module, so the website always reflects the single source of truth.
+# See docs/specs/website-project-site.md.
+[module]
+  [[module.mounts]]
+    source = "content"
+    target = "content"
+  [[module.mounts]]
+    source = "../../README.md"
+    target = "content/_index.md"
+  [[module.mounts]]
+    source = "../../docs"
+    target = "content/docs"
+    # docs/specs is internal (not linked from docs/index.md, see AGENTS.md);
+    # the two index files and the ADR template are mounted individually below
+    # under their Hugo-recognized names instead.
+    files = ["! specs/**", "! index.md", "! decisions/template.md", "! decisions/README.md"]
+  [[module.mounts]]
+    source = "../../docs/index.md"
+    target = "content/docs/_index.md"
+  [[module.mounts]]
+    source = "../../docs/decisions/README.md"
+    target = "content/docs/decisions/_index.md"

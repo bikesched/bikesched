@@ -99,9 +99,10 @@ class TypedJobTest {
 
     testNode("steps").use { bikesched ->
       bikesched.handleJobs<SendMail>(order) { mail ->
-        val receipt = step("send") { Receipt("m-${sends.incrementAndGet()}", listOf(mail.to)) }
+        val receipt =
+          step<Receipt>("send") { Receipt("m-${sends.incrementAndGet()}", listOf(mail.to)) }
         step<Unit>("confirm") { confirmations.incrementAndGet() } // no stored result
-        receipts += receipt
+        receipts.add(receipt)
         if (attempts() == 1) fail("retry once").retryAfter(10.milliseconds)
       }
       val jobId = bikesched.createJob(type = order, payload = SendMail("a@b.de", "Order"))

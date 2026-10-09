@@ -148,7 +148,7 @@ PaymentSettled settled = webhook != null
         : job.newPoll("poll-payment", PaymentSettled.class, POLL_INTERVAL)
                 .timeout(Duration.ofSeconds(30))
                 .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
-job.step("mark-paid", Void.class, _ -> { … });
+job.step("mark-paid", () -> { … });
 ```
 
 `pay(orderId, settlesAfter, webhook)` decides per job when the payment settles and whether its

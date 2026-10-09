@@ -1,3 +1,7 @@
+---
+title: "27. Publish events from jobs as durable steps"
+---
+
 # 27. Publish events from jobs as durable steps
 
 Date: 2026-10-07

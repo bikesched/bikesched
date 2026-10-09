@@ -1,3 +1,8 @@
+---
+title: "Decisions"
+weight: 12
+---
+
 # Architecture decision records
 
 Significant design decisions of bikesched, one file per decision, numbered in order, in the

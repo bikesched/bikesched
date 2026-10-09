@@ -1,3 +1,7 @@
+---
+title: "30. Event listener reports committed publications only"
+---
+
 # 30. Event listener reports committed publications only
 
 Date: 2026-10-07

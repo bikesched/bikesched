@@ -1,3 +1,8 @@
+---
+title: "Configuration"
+weight: 6
+---
+
 # Configuration
 
 A node is configured with `Bikesched.builder()`; only the data source is required.

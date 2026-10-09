@@ -1,3 +1,7 @@
+---
+title: "12. Ended jobs deleted after a retention by default"
+---
+
 # 12. Ended jobs deleted after a retention by default
 
 Date: 2026-10-05

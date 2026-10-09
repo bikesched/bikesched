@@ -1,3 +1,7 @@
+---
+title: "26. Durable sleep as a step without an event"
+---
+
 # 26. Durable sleep as a step without an event
 
 Date: 2026-10-07

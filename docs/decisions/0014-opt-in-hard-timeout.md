@@ -1,3 +1,7 @@
+---
+title: "14. Opt-in hard timeout for handlers that ignore their timeout"
+---
+
 # 14. Opt-in hard timeout for handlers that ignore their timeout
 
 Date: 2026-10-05

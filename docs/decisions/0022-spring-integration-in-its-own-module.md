@@ -1,3 +1,7 @@
+---
+title: "22. Spring integration in its own module"
+---
+
 # 22. Spring integration in its own module
 
 Date: 2026-10-06

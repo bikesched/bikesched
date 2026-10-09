@@ -1,3 +1,8 @@
+---
+title: "Spring Boot"
+weight: 10
+---
+
 # Spring Boot
 
 The module `bikesched-spring-boot-starter` (package `org.bikesched.spring`, Spring Boot 4.1) wires a

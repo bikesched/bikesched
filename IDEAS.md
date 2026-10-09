@@ -159,16 +159,14 @@ callback URL) and have it call back with just that one value.
 
 ### Project site on bikesched.org
 
-Publish a project site with GitHub Pages under the already reserved domain `bikesched.org`. Its
-sources live in a `page` directory of this repository; it presents the project (pitch, features,
-quick start) and the documentation from `docs/`.
+Deploy the `bikesched-website` Hugo site (generator, theme and content reuse decided, see
+[spec](docs/specs/website-project-site.md)) as a GitHub Pages site under the already reserved
+domain `bikesched.org`, built and published by a GitHub Actions workflow.
 
-- Generator: Jekyll, which GitHub Pages supports natively, or another simple static site generator
-  (e.g. Hugo or MkDocs). Build and deploy with GitHub Actions in either case (GitHub's recommended
-  way, and required for a `page` source directory or a generator other than Jekyll).
-- Reuse `docs/*.md` instead of copying them, e.g. by building them into the site; links between the
-  Markdown pages (`jobs.md#job-history`) must keep working on the site.
-- Custom domain: DNS records for `bikesched.org` pointing to GitHub Pages, the domain set in the
-  repository's Pages settings, HTTPS enforced.
+- Workflow: `./gradlew :bikesched-website:hugoBuild` on push to `main` (and PRs, build only),
+  publishing `bikesched-website/build/hugo/publish/` with `actions/deploy-pages`.
+- Custom domain: a `CNAME` file in the published output (`baseURL` already set to
+  `https://bikesched.org/`), DNS records for `bikesched.org` pointing to GitHub Pages, the domain
+  set in the repository's Pages settings, HTTPS enforced.
 - GitHub Pages for a private repository needs a paid plan (GitHub Pro); on the free plan the
   repository has to be public first.

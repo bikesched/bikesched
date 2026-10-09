@@ -1,3 +1,8 @@
+---
+title: "Metrics"
+weight: 9
+---
+
 # Metrics
 
 A `JobListener` set with `BikeschedBuilder.jobListener(…)` observes the jobs a node runs, an

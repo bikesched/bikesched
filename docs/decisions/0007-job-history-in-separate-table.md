@@ -1,3 +1,7 @@
+---
+title: "7. Job history in a separate, opt-in table"
+---
+
 # 7. Job history in a separate, opt-in table
 
 Date: 2026-10-05

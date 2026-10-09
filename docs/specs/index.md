@@ -13,3 +13,4 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-08 | [Poll steps](poll-step.md) | implemented | [ADR 0031](../decisions/0031-poll-steps.md) |
 | 2026-10-08 | [Incidents for permanently failed jobs](incidents.md) | draft | — |
 | 2026-10-08 | [Waking pollers with LISTEN/NOTIFY](listen-notify.md) | implemented | [ADR 0032](../decisions/0032-batched-notifications-after-commit.md) |
+| 2026-10-09 | [Project website (bikesched.org)](website-project-site.md) | in progress | — |

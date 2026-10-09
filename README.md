@@ -1,3 +1,7 @@
+---
+title: "bikesched"
+---
+
 <p align="center">
   <img src="docs/logo.svg" alt="bikesched logo: a pelican riding a bicycle with clock wheels, carrying a bag of jobs" width="200" height="200">
 </p>
@@ -33,20 +37,20 @@ goal is to keep it small and easy to drop into your app:
   (`bikesched_*`), and bikesched creates and migrates the schema on first use.
 - **Modern Java**: built for Java 26, with every job on its own virtual thread.
 
-**One thing bikesched isn't**: a workflow engine. Steps and compensation live inside a single job,
-so there are no process models (BPMN), no visual modelling and no orchestration across services.
-If that's what you're after, have a look at [Camunda](https://camunda.com) or
-similar tools.
+**One thing bikesched isn't**: [a workflow engine](docs/steps.md#workflows). Steps and compensation
+live inside a single job, so there are no process models (BPMN), no visual modelling and no
+orchestration across services. If that's what you're after, have a look at
+[Camunda](https://camunda.com) or similar tools.
 
 | Module | Contents |
 |---|---|
-| `bikesched-core` | the scheduler; depends on the PostgreSQL driver and the SLF4J API only |
-| `bikesched-jackson` | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
-| `bikesched-kotlin` | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
-| `bikesched-annotations` | job handlers declared as `@JobHandler` methods, see [Annotations](docs/annotations.md) |
-| `bikesched-cron` | cron expressions as `CronRecurrence` or as strings (`schedule("0 3 * * *")`, `@JobHandler`), via cron-utils, see [Cron expressions](docs/recurring-jobs.md#cron-expressions) |
-| `bikesched-micrometer` | Micrometer meters for claims, attempts and published events, see [Metrics](docs/metrics.md) |
-| `bikesched-spring-boot-starter` | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/spring.md) |
+| [`bikesched-core`](bikesched-core) | the scheduler; depends on the PostgreSQL driver and the SLF4J API only |
+| [`bikesched-jackson`](bikesched-jackson) | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
+| [`bikesched-kotlin`](bikesched-kotlin) | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
+| [`bikesched-annotations`](bikesched-annotations) | job handlers declared as `@JobHandler` methods, see [Annotations](docs/annotations.md) |
+| [`bikesched-cron`](bikesched-cron) | cron expressions as `CronRecurrence` or as strings (`schedule("0 3 * * *")`, `@JobHandler`), via cron-utils, see [Cron expressions](docs/recurring-jobs.md#cron-expressions) |
+| [`bikesched-micrometer`](bikesched-micrometer) | Micrometer meters for claims, attempts and published events, see [Metrics](docs/metrics.md) |
+| [`bikesched-spring-boot-starter`](bikesched-spring-boot-starter) | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/spring.md) |
 
 ## Features
 
@@ -108,10 +112,8 @@ bikesched.registerJobHandler("order", job -> {
             .receive(PaymentUpdated.class);
 
     switch (webhook.status()) {
-        case SUCCEEDED -> job.step("mark-paid", Void.class,
-                _ -> { orders.markPaid(order, paymentIntentId); return null; });
-        case FAILED -> job.step("mark-failed", Void.class,
-                _ -> { orders.markFailed(order, paymentIntentId); return null; });
+        case SUCCEEDED -> job.step("mark-paid", () -> orders.markPaid(order, paymentIntentId));
+        case FAILED -> job.step("mark-failed", () -> orders.markFailed(order, paymentIntentId));
     }
 });
 

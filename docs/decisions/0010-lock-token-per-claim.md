@@ -1,3 +1,7 @@
+---
+title: "10. A lock token per claim instead of a version column"
+---
+
 # 10. A lock token per claim instead of a version column
 
 Date: 2026-10-05

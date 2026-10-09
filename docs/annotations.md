@@ -1,3 +1,8 @@
+---
+title: "Annotations"
+weight: 8
+---
+
 # Annotations
 
 The module `bikesched-annotations` declares job handlers as methods annotated with `@JobHandler`,
