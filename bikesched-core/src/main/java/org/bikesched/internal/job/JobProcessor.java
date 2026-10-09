@@ -373,6 +373,10 @@ public final class JobProcessor {
       return recordFailure(
           job, new BikeschedException("Job timed out after " + attempt.timeout(), failure));
     } else if (failure != null) {
+      if (job.isFailureHandlingPending()) {
+        // A step's failure handler has to run again: one more attempt, whatever the maximum.
+        return recordFailure(job, failure.toString(), failure, job.attempts() + 1, null);
+      }
       return recordFailure(job, failure);
     } else {
       try {
@@ -748,13 +752,21 @@ public final class JobProcessor {
    * The node's backoff delay after the job's current attempt failed; {@code null} to retry as soon
    * as possible. A misbehaving backoff must not prevent recording the failure.
    */
-  private Duration backoffDelay(Job job) {
+  private Duration backoffDelay(DefaultJob job) {
+    var stepRetry = job.stepRetry();
+    if (stepRetry != null) {
+      return backoffDelay(job, stepRetry.backoff(), stepRetry.failedAttempts());
+    }
     return backoffDelay(job, job.attempts());
   }
 
   private Duration backoffDelay(Job job, int failedAttempt) {
+    return backoffDelay(job, retryBackoff, failedAttempt);
+  }
+
+  private Duration backoffDelay(Job job, RetryBackoff backoff, int failedAttempt) {
     try {
-      Duration delay = retryBackoff.delay(failedAttempt);
+      Duration delay = backoff.delay(failedAttempt);
       if (delay == null || delay.isNegative()) {
         LOG.warn(
             "Retry backoff returned an invalid delay {} for job {}, retrying as soon as possible",

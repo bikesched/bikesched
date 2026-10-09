@@ -98,6 +98,27 @@ public final class StepStore {
              where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
           .formatted(JOB_LOCKED);
 
+  // A step whose attempts are used up and that has a failure handler: FAILING until the handler
+  // ran, so a handler that fails is run again (FAILING is not RUNNING: no lock holder).
+  private static final String MARK_STEP_FAILING_SQL =
+      """
+            update bikesched_steps
+               set state = 'FAILING', last_error = ?, locked_by = null
+             where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
+          .formatted(JOB_LOCKED);
+
+  private static final String FAIL_FAILING_STEP_SQL =
+      """
+            update bikesched_steps
+               set state = 'FAILED', finished_at = now()
+             where job_id = ? and name = ? and state = 'FAILING' and %s"""
+          .formatted(JOB_LOCKED);
+
+  private static final String FIND_FAILING_ERROR_SQL =
+      """
+            select coalesce(last_error, '') from bikesched_steps
+             where job_id = ? and name = ? and kind = 'STEP' and state = 'FAILING'""";
+
   private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED;
 
   // Ends a RUNNING attempt whose handler suspended at a waiting step (an event wait, a sleep or a
@@ -617,6 +638,78 @@ public final class StepStore {
    */
   public void failStep(UUID jobId, JobLock lock, String name, String error) {
     fail(jobId, lock, name, error, error);
+  }
+
+  /**
+   * Marks a running step {@code FAILING}: its attempts are used up and its failure handler has yet
+   * to run. A job that ends before the step is {@link #failFailingStep failed} runs the handler
+   * again in its next attempt.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @param error description of the failure, stored as {@code last_error}
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public void markStepFailing(UUID jobId, JobLock lock, String name, String error) {
+    history.change(
+        db -> {
+          String message = ValidationUtil.truncateMessage(error);
+          if (db.update(
+                  MARK_STEP_FAILING_SQL, message, jobId, name, lock.nodeId(), jobId, lock.token())
+              > 0) {
+            history.record(db, Change.step(jobId, name, "FAILING", lock.nodeId(), error));
+          } else {
+            requireJobLock(db, jobId, lock);
+          }
+          return null;
+        },
+        e ->
+            new BikeschedException(
+                "Marking step '" + name + "' of bikesched job " + jobId + " as failing failed", e));
+  }
+
+  /**
+   * Marks a {@code FAILING} step {@code FAILED} once its failure handler ran.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public void failFailingStep(UUID jobId, JobLock lock, String name) {
+    history.change(
+        db -> {
+          if (db.update(FAIL_FAILING_STEP_SQL, jobId, name, jobId, lock.token()) > 0) {
+            history.record(db, Change.step(jobId, name, "FAILED", lock.nodeId(), null));
+          } else {
+            requireJobLock(db, jobId, lock);
+          }
+          return null;
+        },
+        e ->
+            new BikeschedException(
+                "Recording the failure of step '"
+                    + name
+                    + "' of bikesched job "
+                    + jobId
+                    + " failed",
+                e));
+  }
+
+  /**
+   * The error of a {@code FAILING} step, whose failure handler has to run (again).
+   *
+   * @param jobId the job id
+   * @param name the step name
+   * @return the stored error, or empty if the step is not {@code FAILING}
+   */
+  public Optional<String> findFailingError(UUID jobId, String name) {
+    return access.withConnection(
+        db -> db.one(FIND_FAILING_ERROR_SQL, row -> row.string(1), jobId, name),
+        e ->
+            new BikeschedException(
+                "Reading step '" + name + "' of bikesched job " + jobId + " failed", e));
   }
 
   private void fail(UUID jobId, JobLock lock, String name, String error, String detail) {
