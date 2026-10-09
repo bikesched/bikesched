@@ -265,32 +265,24 @@ and [durable steps](../docs/steps.md#durable-steps): a retry skips completed ste
 their results, so seats aren't reserved or cards charged twice.
 
 `CinemaExample` orders tickets for two customers and prints each step; `CinemaTest` checks the
- steps and their output.
- 
- ## Kotlin Shop
+steps and their output.
+
+## Kotlin Shop
 
 Package [`org.bikesched.examples.kotlin`](kotlin/src/main/kotlin/org/bikesched/examples/kotlin): a
-Ktor-based REST API with bikesched-kotlin, Exposed for database access, and kotlinx-serialization
-implementing the `JsonMapper` interface. It demonstrates a shop order workflow:
+Ktor REST API (orders, Exposed) around two jobs, in
+[`JobHandlers.kt`](kotlin/src/main/kotlin/org/bikesched/examples/kotlin/shop/JobHandlers.kt):
 
-- `POST /api/orders` creates an order, stores it in the database via Exposed, and schedules a
-  `process-order` job in the same transaction
-- The job handler offers payment options (credit card always, "buy now, pay later" for orders
-  under €100) as a durable step
-- `POST /api/orders/{id}/pay` initiates payment, scheduling a `process-payment` job that calls a
-  mock payment service (with random failures for retry demonstration)
+- `process-order` offers payment options as a durable step.
+- `process-payment` charges the order in a `charge` step with its own `retryBackoff` (exponential)
+  and an `onFailure` handler. A failing charge throws, so the step isn't stored as done and the
+  retry charges again; once the job's attempts are used up, `onFailure` marks the order `FAILED`
+  before the job fails for good — the handler runs even if the node dies right after the last
+  attempt.
 
-```kotlin
-val bikesched = bikesched {
-    dataSource = dataSource
-    jsonMapper = KotlinxSerializationJsonMapper()
-}
-bikesched.handleJobs<ProcessOrderPayload>("process-order") { payload ->
-    val options = step<PaymentOptions>("offer-payment-options") {
-        MockPaymentService.getPaymentOptions(totalAmount)
-    }
-}
-```
+`MockPaymentService` fails the first order's payment twice then succeeds, and every further
+order's payment always fails, so `ShopExample` shows both outcomes: the first order recovers via
+retry, the second ends up `FAILED` through the `onFailure` handler.
 
 ## Spring Boot
 
