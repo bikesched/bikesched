@@ -14,7 +14,7 @@ google-java-format = "1.36.1"
 ktfmt = "0.64"
 
 # Libraries
-postgresql = "42.7.13"
+postgresql = "42.7.14"
 slf4j = "2.0.20"
 logback = "1.6.5"
 junit = "6.1.3"
