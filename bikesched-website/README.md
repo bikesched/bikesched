@@ -9,6 +9,13 @@ copies, see [`hugo.toml`](site/hugo.toml) and
 
 ## Running
 
+The Hextra theme is a Git submodule (`site/themes/hextra`). Without it the site builds but is
+empty, so check it out first (once per clone, or use `git clone --recurse-submodules`):
+
+```shell
+git submodule update --init
+```
+
 ```shell
 ./gradlew :bikesched-website:hugoServer   # runs a local dev server with live reload
 ./gradlew :bikesched-website:hugoBuild    # builds the static site into build/hugo/publish/
