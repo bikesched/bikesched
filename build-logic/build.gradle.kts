@@ -7,6 +7,7 @@ dependencies {
     implementation(plugin(libs.plugins.foojay.resolver))
     implementation(plugin(libs.plugins.spotless))
     implementation(plugin(libs.plugins.kotlin.jvm))
+    implementation(plugin(libs.plugins.kotlin.serialization))
     implementation(plugin(libs.plugins.dokka))
 }
 
