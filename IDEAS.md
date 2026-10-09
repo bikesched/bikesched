@@ -47,6 +47,24 @@ crash of its node.
   alerts via [Metrics](docs/metrics.md).
 - Planned as incidents: see [the spec](docs/specs/incidents.md).
 
+### Trace propagation
+
+A job runs later, often on another node, so its work shows up in no trace: the request that
+scheduled it and the job's attempts are not connected. A dedicated module (e.g.
+`bikesched-opentelemetry`) could carry the trace context from the scheduling code into the job.
+
+- Core: a small dependency-free SPI, e.g. a propagator that captures context when a job is
+  scheduled or an event is published (a `Map<String, String>`) and wraps every attempt with it;
+  stored in a new nullable column (e.g. `context jsonb` on `bikesched_jobs`), also usable for
+  other propagated values (tenant id, correlation id into the MDC).
+- Module: captures the W3C `traceparent`/`tracestate` of the current OpenTelemetry context,
+  creates a span per attempt and per step, and propagates it to child jobs and published events.
+- Open: the attempt as a child of the scheduling span or only linked to it (a job running days
+  later or retried many times makes a long, odd parent trace); OpenTelemetry API directly or
+  Micrometer Observation (what Spring Boot and `bikesched-micrometer` use); whether a resumed
+  job (after a wait, sleep or poll) continues the same trace.
+- Outcome: one trace from the request through every attempt and step of the jobs it started.
+
 ### Reporting events published in the caller's transaction
 
 `EventListener` does not report events published with `connection(…)`: plain JDBC gives bikesched
@@ -55,6 +73,26 @@ The Spring starter could register a `TransactionSynchronization` and report afte
 the connection belongs to a Spring-managed transaction.
 
 ## Testing
+
+### Test support
+
+Testing a handler today means a real database plus Awaitility, and sleeps, event waits and polls
+make a test wait as long as the job would. A `bikesched-test` module could make handlers testable
+without timing tricks, on two levels:
+
+- Unit level, no database: a fake `Job` that runs a handler in the test thread, records steps,
+  their results and compensations, returns prepared events for `waitForEvent` and child job results
+  for `waitForJob`, and skips sleeps and polls; asserts the outcome (completed, failed, cancelled,
+  suspended at step …).
+- Integration level, real PostgreSQL: a JUnit 5 extension with a Testcontainers database and a
+  node per test (schema reset between tests); `runUntilIdle()` polls and runs due jobs in the
+  test thread instead of the poller (needs a manual poll entry point next to `autoStartPolling`),
+  `awaitJob(id, state)` instead of hand-written Awaitility, and `fastForward(jobId)` to make a
+  sleeping or polling job due now (the database decides with `now()`, so a `Clock` alone cannot
+  skip time).
+- Open: whether the unit-level fake is worth its drift from the real `Job` (it reimplements the
+  replay semantics), or whether a fast integration level is enough.
+- Outcome: handler tests that run in milliseconds and read like the handler's flow.
 
 ### Load and failure tests
 
@@ -80,6 +118,26 @@ starts the interval when the previous occurrence ended.
 - Not a boolean `fixedRate` flag on `@JobHandler`: computing from the scheduled time is neither a
   fixed rate nor a fixed delay, and the flag would do nothing for wall-clock schedules.
 - Outcome: interval jobs that never overlap their own next run and keep a gap after long runs.
+
+### Changing handlers of running jobs
+
+Jobs live across deploys: a job sleeping for days, waiting for an event or retried after a failure
+resumes with the new handler code and replays it from the top. Steps are addressed by name, so
+reordering them is safe, but other changes are not: a renamed step runs its side effect again, a
+step whose result type changed fails to read its stored result, and changed code outside steps
+may take another path than the first attempt did. Nothing in the docs or the API helps with this.
+
+- Docs first: a page on evolving handlers (safe and unsafe changes, keeping result types
+  compatible, adding a step before completed ones, removing steps, draining old jobs).
+- Handler versions: `registerJobHandler(type, version, handler)` stores the version on each new
+  job (`handler_version` column), `job.handlerVersion()` lets the handler branch for old jobs, and
+  a node claims only versions it supports (like the type filter during rolling deploys, so an old
+  node does not run a job created for new code).
+- Alternatively per change: `job.isPatched("change-id")`, recorded as a step on first evaluation,
+  so jobs that ran past that point before the change keep the old path.
+- Open: per-handler versions vs. per-change markers (or both); what happens to jobs whose version
+  no node supports any more (stuck `SCHEDULED`, an incident?).
+- Outcome: deploys that change a handler without breaking jobs already in flight.
 
 ### Idempotency keys for jobs and events
 

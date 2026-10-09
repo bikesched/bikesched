@@ -5,8 +5,9 @@ weight: 2
 
 # Jobs
 
-A job is a unit of work of a *type*. Every node polls all due jobs, regardless of their type, so all
-nodes should register the same handlers.
+A job is a unit of work of a *type*. A node claims only due jobs of the types it has handlers for,
+so different nodes can work on different types; scheduling a job needs a handler for its type on
+the scheduling node too.
 
 ## Scheduling jobs
 
