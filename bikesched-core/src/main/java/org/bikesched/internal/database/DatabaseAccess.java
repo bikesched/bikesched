@@ -54,6 +54,15 @@ public final class DatabaseAccess {
     return (int) Math.min(Integer.MAX_VALUE, Math.max(1, seconds));
   }
 
+  /** A data source may hand out no connection (e.g. while it is closing): a failure, not an NPE. */
+  private Connection connection() throws SQLException {
+    Connection connection = dataSource.getConnection();
+    if (connection == null) {
+      throw new SQLException("The data source returned no connection (is it closing?)");
+    }
+    return connection;
+  }
+
   private Sql sql(Connection connection) {
     return new Sql(connection, queryTimeoutSeconds);
   }
@@ -105,7 +114,7 @@ public final class DatabaseAccess {
    * @return the work's result
    */
   public <T> T withConnection(Sql.Work<T> work, SqlExceptionHandler onFailure) {
-    try (Connection connection = dataSource.getConnection()) {
+    try (Connection connection = connection()) {
       Sql sql = sql(connection);
       if (connection.getAutoCommit()) {
         T result = work.run(sql);
@@ -189,14 +198,14 @@ public final class DatabaseAccess {
    */
   DueJobsListening listen(String channel, SqlExceptionHandler onFailure) {
     try {
-      return DueJobsListening.open(dataSource.getConnection(), channel);
+      return DueJobsListening.open(connection(), channel);
     } catch (SQLException e) {
       throw failure(onFailure, e);
     }
   }
 
   private <T> T inTransaction(boolean readOnly, Sql.Work<T> work, SqlExceptionHandler onFailure) {
-    try (Connection connection = dataSource.getConnection()) {
+    try (Connection connection = connection()) {
       boolean autoCommit = connection.getAutoCommit();
       boolean wasReadOnly = connection.isReadOnly();
       if (autoCommit) {
