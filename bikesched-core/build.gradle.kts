@@ -12,3 +12,21 @@ dependencies {
     // Architecture rules of the package structure (ArchitectureTest).
     testImplementation(libs.archunit)
 }
+
+// Makes the library version available at runtime (Bikesched.version()).
+tasks.processResources {
+    // A local value: a lambda referencing a script property is not configuration-cache compatible.
+    val version = project.version.toString()
+    inputs.property("version", version)
+    filesMatching("org/bikesched/version.properties") { expand("version" to version) }
+}
+
+tasks.jar {
+    val version = project.version.toString()
+    manifest {
+        attributes(
+            "Implementation-Title" to "bikesched",
+            "Implementation-Version" to version,
+        )
+    }
+}

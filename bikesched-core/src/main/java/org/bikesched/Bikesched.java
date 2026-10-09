@@ -9,6 +9,7 @@ import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventPublisher;
 import org.bikesched.event.EventType;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.internal.util.Version;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
@@ -62,6 +63,16 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    */
   static BikeschedBuilder builder() {
     return new BikeschedBuilder();
+  }
+
+  /**
+   * Returns the version of the bikesched library, e.g. {@code 0.1.0} or {@code 0.2.0-SNAPSHOT}. The
+   * database schema is migrated to the state of this version when a node is built.
+   *
+   * @return the library version, or {@code "unknown"} if it cannot be determined
+   */
+  static String version() {
+    return Version.get();
   }
 
   /**
