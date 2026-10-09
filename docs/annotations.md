@@ -73,8 +73,3 @@ JobHandlers.register(bikesched, new ReportJobs());
 @JobHandler(type = "report", schedule = "0 3 * * MON-FRI")
 public void report() { … }
 ```
-
----
-
-Next: [Metrics](metrics.md) · Previous: [Kotlin](kotlin.md) ·
-[Documentation index](index.md)

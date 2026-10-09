@@ -1,6 +1,6 @@
 ---
 title: "Events"
-weight: 4
+weight: 5
 ---
 
 # Events
@@ -179,8 +179,3 @@ missed. Cancelling a waiting job marks its wait `CANCELLED`; it no longer receiv
 An `EventListener` (`BikeschedBuilder.eventListener(…)`) is told about every committed
 publication, e.g. for [Metrics](metrics.md#own-listeners); events published in the caller's
 transaction are not reported.
-
----
-
-Next: [Child jobs](child-jobs.md) · Previous: [Recurring jobs](recurring-jobs.md) ·
-[Documentation index](index.md)

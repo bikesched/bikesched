@@ -1,6 +1,6 @@
 ---
 title: "Recurring jobs"
-weight: 3
+weight: 4
 ---
 
 # Recurring jobs
@@ -103,8 +103,3 @@ bikesched.newJob("report")
 - `bikesched.removeRecurringJob(type)` stops a recurring job that is no longer registered anywhere.
 - `connection(...)` leads to a builder without `schedule(Recurrence)`, so a recurring job can't be
   scheduled in the caller's transaction.
-
----
-
-Next: [Events](events.md) · Previous: [Steps and compensation](steps.md) ·
-[Documentation index](index.md)

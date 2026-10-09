@@ -1,11 +1,21 @@
 ---
 title: "Configuration"
-weight: 6
+weight: 1
 ---
 
 # Configuration
 
 A node is configured with `Bikesched.builder()`; only the data source is required.
+
+```java
+Bikesched bikesched = Bikesched.builder()
+        .dataSource(dataSource)
+        .build();
+```
+
+The returned instance is already registered and polling: it starts working right away. Set
+`autoStartPolling(false)` to defer this, e.g. to register handlers first, and call `start()`
+afterwards (see `autoStartPolling` below).
 
 ## Builder options
 
@@ -39,32 +49,20 @@ A node is configured with `Bikesched.builder()`; only the data source is require
 
 ## Nodes
 
-Nodes send a heartbeat every 5 seconds and poll for due jobs every 10 seconds (both configurable,
-see [Builder options](#builder-options)), and in between whenever jobs become due (see [Due jobs
-start right away](#due-jobs-start-right-away)), claiming at most 10 jobs per poll and never more
-than they have free slots. When a poll fills its batch while slots are still free, the node polls
-again immediately. A node that is woken up for due jobs while all its slots are busy polls as soon
-as a slot frees up. A node
-without heartbeat for 30 seconds is considered dead: on their next node clean-up, other nodes
-release its running jobs for retry, and remove the node after another 30 seconds. If a node cannot
-record an attempt's outcome after its retries, its next node clean-up releases that inactive claim
-once it is at least one node-clean-up interval old. A node only claims jobs of the types it has
-handlers for: during a rolling deploy, nodes of the old version leave jobs of new types to the new
-ones, and a job whose type no node handles stays `SCHEDULED`. The heartbeat itself only updates the
-node's row; the clean-ups run on their own thread and intervals, so they never delay it.
+A node sends a heartbeat (every 5 seconds) and polls for due jobs (every 10 seconds), claiming up
+to `maxConcurrentJobs` at a time; see [Builder options](#builder-options) and [Due jobs start right
+away](#due-jobs-start-right-away) for the exact timing. It only claims jobs of types it has
+handlers for, so during a rolling deploy old nodes leave new job types to new nodes.
 
-A node whose heartbeat was missed (e.g. after a long GC pause or a network partition) may still be
-running jobs that other nodes have released meanwhile. Its writes are fenced: every claim of a job
-gets a new lock token (`bikesched_jobs.lock_token`), and each step write, event wait or state change
-of an attempt only takes effect while the job is still `RUNNING` with that attempt's token. This
-also holds if the same node has claimed the job again since; a running step is additionally locked
-by its node (`bikesched_steps.locked_by`). The first step, event wait or compensation the stale attempt reaches
-fails, and the node abandons the attempt without recording an outcome, logging a warning; this
-holds even if the handler catches the exception. Work done outside steps is not covered.
+A node without a heartbeat for 30 seconds (`nodeTimeout`) is considered dead: other nodes release
+its running jobs for retry on their next node clean-up and remove it after another 30 seconds. A
+dead node's writes can't do any more harm even if it is still running: every claim gets a fresh
+lock token, and the first step, event wait or compensation a stale attempt reaches fails, abandoning
+it with a warning (work outside steps is not covered).
 
-`bikesched.node()` describes the node (`name()`, `id()` once registered, `isPolling()`).
-`close()` stops polling and the heartbeat, waits up to 10 seconds for running jobs, puts jobs
-that are still running back to `SCHEDULED` for other nodes, and deregisters the node.
+`bikesched.node()` describes the node (`name()`, `id()`, `isPolling()`). `close()` stops polling and
+the heartbeat, waits up to 10 seconds for running jobs, returns still-running jobs to `SCHEDULED` for
+other nodes, and deregisters the node.
 
 ## Due jobs start right away
 
@@ -208,7 +206,3 @@ jar manifest as `Implementation-Version`; the schema is migrated to the state of
 On startup bikesched logs the database URL (without credentials) at `DEBUG` as
 `Database: jdbc:postgresql://…`, which IDE plugins such as the
 [Testcontainers Port Updater](https://github.com/yusufugurozbek/testcontainers-port-updater) pick up.
-
----
-
-Next: [Kotlin](kotlin.md) · Previous: [Child jobs](child-jobs.md) · [Documentation index](index.md)

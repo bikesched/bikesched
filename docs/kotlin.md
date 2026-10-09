@@ -74,8 +74,3 @@ Reified helpers check nullability: `payload<Order>()` throws for a job without p
 `payload<Order?>()` returns `null`. Likewise, a `handleJobs<Order>` handler is not called for a
 job without payload (the attempt fails with an `IllegalStateException`), a `handleJobs<Order?>`
 handler gets `null`.
-
----
-
-Next: [Annotations](annotations.md) · Previous: [Configuration](configuration.md) ·
-[Documentation index](index.md)

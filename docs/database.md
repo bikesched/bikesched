@@ -50,6 +50,15 @@ Messages are diagnostic text and are never rejected, so recording a failure cann
 length: errors (`last_error` of jobs and steps) and cancel messages (`cancel_message`) longer than
 4000 characters are stored truncated, ending in `… (truncated)`.
 
+## Connection pool
+
+Every store call borrows its own connection; nothing beyond the listening connection (see [Due jobs
+start right away](configuration.md#due-jobs-start-right-away)) is held for longer. Size the pool at
+least `maxConcurrentJobs` (jobs) plus a few (poller, heartbeat, clean-ups) plus one more if
+`listenForDueJobs` is on. With `PGSimpleDataSource`, the data source used by the examples and these
+docs, every statement opens a new TCP connection and authenticates; use a pool (e.g.
+[HikariCP](https://github.com/brettwooldridge/HikariCP)) in production.
+
 ## Indexes and locks
 
 Besides primary keys, the indexes cover job history cleanup, the cleanup of ended jobs (`finished_at`), polling (due `SCHEDULED`/`WAITING`/`COMPENSATING` jobs in
@@ -62,7 +71,3 @@ checking that the job is still running with the writing attempt's `lock_token`, 
 release waits for them. A job suspending at a wait for a child job locks the child's step row
 first; the child's end updates the same row, so the two serialize and the parent is never left
 waiting for a child that already ended.
-
----
-
-Previous: [Metrics](metrics.md) · [Documentation index](index.md)

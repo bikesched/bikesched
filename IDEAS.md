@@ -5,12 +5,6 @@ solution; remove an entry once it is implemented (or decided against).
 
 ## Reliability
 
-### Poller watchdog
-
-With no or a long statement timeout, a hanging connection blocks the single poller thread while the
-heartbeat (own thread) keeps the node looking alive. A watchdog could log and recover when a poll
-takes far longer than the poll interval.
-
 ### Outage incidents with a local buffer
 
 A node that cannot reach the database only logs it. It could record the outage as an incident in a
@@ -26,27 +20,12 @@ and open their incident later, in the same transaction as before ([spec](docs/sp
 
 ## Performance
 
-### Claim reports for woken polls
-
-With `LISTEN/NOTIFY`, every node handling a type polls at each due time and all but one claim
-nothing. A node could report what it claimed (count, limit, job types) on a channel of its own, so
-others with the same types skip their poll when it claimed less than its limit. Costs a notifying
-commit per woken poll and a wait for the report; worth it only with many nodes per type, after
-measuring. Sketch: [spec §6](docs/specs/listen-notify.md#6-alternatives).
-
 ### Fewer round trips per step
 
 A step reads its row, starts it and completes it, each with its own connection checkout (more with
 the job history). Combining the read and the start into one statement would roughly halve that.
 
 ## Operations
-
-### Connection pool guidance
-
-Every store call borrows its own connection. With `PGSimpleDataSource`, used by the examples and
-docs, that is a new TCP connection and authentication per statement, several per step. Document
-using a pool (e.g. HikariCP) and how to size it: job slots plus poller, heartbeat and clean-ups,
-plus the connection a listening node holds for `LISTEN/NOTIFY` for its lifetime.
 
 ### Finding jobs
 
