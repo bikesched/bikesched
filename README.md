@@ -90,9 +90,8 @@ try (Bikesched bikesched = Bikesched.builder()
 }
 ```
 
-Every node sharing the database polls all due jobs, regardless of their type, so all nodes should
-register the same handlers. A handler that throws fails the attempt; the job is retried until its
-maximum number of attempts is used up and then marked `FAILED`.
+A handler that throws fails the attempt; the job is retried until its maximum number of attempts is
+used up and then marked `FAILED`.
 
 This is where bikesched stops looking like a regular job scheduler: a handler can run **durable
 steps** and **wait for an event**, without holding a thread or re-doing work on retries or resumes:
