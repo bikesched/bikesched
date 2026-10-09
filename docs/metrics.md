@@ -75,8 +75,3 @@ transaction commits or rolls back. The payload and the event key are not part of
 ignored; `publish()` still returns the event id.
 
 A class can implement both `JobListener` and `EventListener`.
-
----
-
-Next: [Database](database.md) · Previous: [Annotations](annotations.md) ·
-[Documentation index](index.md)

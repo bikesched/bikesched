@@ -37,14 +37,14 @@ and without any coordinator besides PostgreSQL.
 
 ## Contents
 
-1. [Jobs](jobs.md): scheduling, writing handlers, retries, cancellation, job history, timeouts
-2. [Steps and compensation](steps.md): durable steps and sagas
-3. [Recurring jobs](recurring-jobs.md): schedules, cron expressions (`bikesched-cron`) and
-   occurrences
-4. [Events](events.md): waiting for and publishing events
-5. [Child jobs](child-jobs.md): starting and waiting for child jobs, job results
-6. [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
+1. [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
    logging
+2. [Jobs](jobs.md): scheduling, writing handlers, retries, cancellation, job history, timeouts
+3. [Steps and compensation](steps.md): durable steps and sagas
+4. [Recurring jobs](recurring-jobs.md): schedules, cron expressions (`bikesched-cron`) and
+   occurrences
+5. [Events](events.md): waiting for and publishing events
+6. [Child jobs](child-jobs.md): starting and waiting for child jobs, job results
 7. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
 8. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
 9. [Metrics](metrics.md): `JobListener`, `EventListener` and the Micrometer meters

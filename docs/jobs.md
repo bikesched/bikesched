@@ -1,6 +1,6 @@
 ---
 title: "Jobs"
-weight: 1
+weight: 2
 ---
 
 # Jobs
@@ -278,7 +278,3 @@ Bikesched bikesched = Bikesched.builder().dataSource(dataSource)
   side effects outside the database, and abandoned threads keep the resources they hold (e.g.
   database connections). If you use timeouts and your handlers are idempotent (see
   [Idempotency keys](steps.md#idempotency-keys)), set it, e.g. to 30 seconds to a few minutes.
-
----
-
-Next: [Steps and compensation](steps.md) · [Documentation index](index.md)

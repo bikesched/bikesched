@@ -1,6 +1,6 @@
 ---
 title: "Child jobs and job results"
-weight: 5
+weight: 6
 ---
 
 # Child jobs and job results
@@ -141,7 +141,3 @@ A failed child never fails its parent by itself: the parent decides, with a `swi
 - **Job history**: the child is "started by job … step …", the parent's step "started job …", the
   parent "suspended at step …, waiting for job …"; the child's end completes the step ("job …
   ended FAILED") and resumes the parent ("resumed by job …").
-
----
-
-Next: [Configuration](configuration.md) · Previous: [Events](events.md) · [Documentation index](index.md)

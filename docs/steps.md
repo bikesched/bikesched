@@ -1,6 +1,6 @@
 ---
 title: "Steps and compensation"
-weight: 2
+weight: 3
 ---
 
 # Steps and compensation
@@ -255,8 +255,3 @@ bikesched.cancel(orderJobId, "order withdrawn");   // releases the reservation i
   `COMPENSATION_FAILED` and needs manual attention.
 - Compensations run at least once, so they must be idempotent. The handler's code outside of
   steps runs again during the replay; `job.isCompensating()` tells it apart.
-
----
-
-Next: [Recurring jobs](recurring-jobs.md) · Previous: [Jobs](jobs.md) ·
-[Documentation index](index.md)
