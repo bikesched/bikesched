@@ -17,17 +17,25 @@ fun main() {
     app.start()
     runBlocking {
       ShopClient().use { client ->
-        val orderId = client.createOrder(listOf(OrderItem("item-1", 1), OrderItem("item-3", 1)))
-        log.info("Created order {}", orderId)
+        var orders = mutableListOf<String>()
 
-        withTimeout(30.seconds) {
-          client.awaitState(orderId, setOf(OrderState.PAYMENT_OPTIONS_RESOLVED))
-          val options = client.paymentOptions(orderId)
-          log.info("Offered payment options: {}", options)
+        orders += client.createOrder(listOf(OrderItem("item-1", 1), OrderItem("item-3", 1)))
+        log.info("Created order {}", orders.last())
 
-          client.pay(orderId, options.first())
-          val result = client.awaitState(orderId, setOf(OrderState.PAID, OrderState.FAILED))
-          log.info("Order {} finished: {}", orderId, result)
+        orders += client.createOrder(listOf(OrderItem("item-1", 1), OrderItem("item-3", 1)))
+        log.info("Created order {}", orders.last())
+
+        orders.forEach { order ->
+          val orderId = order
+          withTimeout(30.seconds) {
+            client.awaitState(orderId, setOf(OrderState.PAYMENT_OPTIONS_RESOLVED))
+            val options = client.paymentOptions(orderId)
+            log.info("Offered payment options: {}", options)
+
+            client.pay(orderId, options.first())
+            val result = client.awaitState(orderId, setOf(OrderState.PAID, OrderState.FAILED))
+            log.info("Order {} finished: {}", orderId, result)
+          }
         }
       }
     }

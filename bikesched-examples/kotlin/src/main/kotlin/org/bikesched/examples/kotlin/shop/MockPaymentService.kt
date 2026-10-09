@@ -7,17 +7,20 @@ import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /**
- * Mock payment service that fails the first two attempts of every order and succeeds on the third.
+ * Mock payment service: the first order it sees fails twice and then succeeds, every further order
+ * fails three times (with the default of three attempts the job then fails for good).
  *
- * It remembers the attempts per order id and forgets the order after the successful payment.
+ * It remembers the failed attempts per order id and forgets the order after the successful payment.
  */
 object MockPaymentService {
 
   private val log = LoggerFactory.getLogger(MockPaymentService::class.java)
 
-  private const val FAILING_ATTEMPTS = 3
+  private const val FIRST_ORDER_FAILURES = 2
+  private const val OTHER_ORDER_FAILURES = 3
 
-  private val attempts = ConcurrentHashMap<String, Int>()
+  private val failuresLeft = ConcurrentHashMap<String, Int>()
+  private var ordersSeen = 0
 
   /**
    * Process a payment for the given order.
@@ -29,15 +32,21 @@ object MockPaymentService {
   fun processPayment(orderId: String, paymentOptionId: String): PaymentResult {
     log.info("Processing payment for order {} with option {}", orderId, paymentOptionId)
 
-    // The first two attempts of an order fail, the third succeeds and clears the order's state
-    val attempt = attempts.merge(orderId, 1, Int::plus)!!
-    if (attempt <= FAILING_ATTEMPTS) {
+    val left =
+      synchronized(this) {
+        val current =
+          failuresLeft[orderId]
+            ?: (if (ordersSeen++ == 0) FIRST_ORDER_FAILURES else OTHER_ORDER_FAILURES)
+        failuresLeft[orderId] = current - 1
+        current
+      }
+    if (left > 0) {
       val error = "Payment gateway error"
       log.warn("Payment failed for order {}: {}", orderId, error)
       return PaymentResult(success = false, transactionId = null, errorMessage = error)
     }
 
-    attempts.remove(orderId)
+    failuresLeft.remove(orderId)
     val transactionId = "txn-${UUID.randomUUID()}"
     log.info("Payment successful for order {}: {}", orderId, transactionId)
     return PaymentResult(success = true, transactionId = transactionId, errorMessage = null)
