@@ -39,9 +39,10 @@ class InvoiceJobs {
 
 Anywhere else: `@Autowired Bikesched bikesched; bikesched.newJob("send-invoice").payload(…).schedule();`.
 
-The [Spring example](../bikesched-examples/README.md#spring-boot) in `bikesched-examples` runs this
-against the compose database (`./gradlew :bikesched-examples:runSpring`) and shows transactional
-scheduling and event publishing with two services that share no data.
+The [Spring example](../bikesched-examples/README.md#spring-boot), a regular Spring Boot application
+in `bikesched-examples/spring`, runs this against the compose database
+(`./gradlew :bikesched-examples:spring:bootRun`) and shows transactional scheduling and event
+publishing with two services that share no data.
 
 ## Handlers
 

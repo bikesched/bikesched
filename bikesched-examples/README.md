@@ -1,30 +1,36 @@
 # bikesched examples
 
-Runnable examples of [bikesched](../README.md), one package per scenario. Each example has a `main`
-that runs against the PostgreSQL from the repository's `compose.yaml`, and a test that runs against
-PostgreSQL 18 with Testcontainers: one container shared by all example tests, provided by the
-test class `util.Database`. Payloads, step results and events are records, mapped to JSON
-by [`bikesched-jackson`](../docs/configuration.md#jackson).
+Runnable examples of [bikesched](../README.md), one package per scenario, in two Gradle modules:
+
+| Module | Examples | Dependencies |
+|---|---|---|
+| [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets) | `bikesched-jackson`, `bikesched-annotations` |
+| [`spring`](spring) (`:bikesched-examples:spring`) | [Spring Boot](#spring-boot) | `bikesched-spring-boot-starter`, `bikesched-jackson`, Spring Data JPA |
+
+Each example has a `main` that runs against the PostgreSQL from the repository's `compose.yaml`,
+and a test that runs against PostgreSQL 18 with Testcontainers: in the `java` module, one container
+shared by all example tests, provided by the test class `util.Database`. Payloads, step results
+and events are records, mapped to JSON by [`bikesched-jackson`](../docs/configuration.md#jackson).
 
 ## Running
 
 ```shell
 docker compose up -d                      # from the repository root
-./gradlew :bikesched-examples:runSimple   # one handler, one job; honors POSTGRES_PORT, like docker compose
-./gradlew :bikesched-examples:runAnnotation  # job handlers as @JobHandler methods
-./gradlew :bikesched-examples:runEvent    # two jobs waiting for an event, published right away and 3s later
-./gradlew :bikesched-examples:runPublish  # a job publishing an event exactly once, another job waiting for it
-./gradlew :bikesched-examples:runOutcome  # declined cards as step results, an outage retried
-./gradlew :bikesched-examples:runPoll     # a webhook with a polling fallback
-./gradlew :bikesched-examples:run         # taxi booking
-./gradlew :bikesched-examples:runCinema   # cinema tickets
-./gradlew :bikesched-examples:runSpring   # Spring Boot application wired by the starter
-./gradlew :bikesched-examples:test        # the example tests, against Testcontainers
+./gradlew :bikesched-examples:java:runSimple      # one handler, one job; honors POSTGRES_PORT, like docker compose
+./gradlew :bikesched-examples:java:runAnnotation  # job handlers as @JobHandler methods
+./gradlew :bikesched-examples:java:runEvent       # two jobs waiting for an event, published right away and 3s later
+./gradlew :bikesched-examples:java:runPublish     # a job publishing an event exactly once, another job waiting for it
+./gradlew :bikesched-examples:java:runOutcome     # declined cards as step results, an outage retried
+./gradlew :bikesched-examples:java:runPoll        # a webhook with a polling fallback
+./gradlew :bikesched-examples:java:run            # taxi booking
+./gradlew :bikesched-examples:java:runCinema      # cinema tickets
+./gradlew :bikesched-examples:spring:bootRun      # Spring Boot application wired by the starter
+./gradlew :bikesched-examples:java:test :bikesched-examples:spring:test  # the example tests, against Testcontainers
 ```
 
 ## Simple
 
-Package [`org.bikesched.examples.simple`](src/main/java/org/bikesched/examples/simple): the
+Package [`org.bikesched.examples.simple`](java/src/main/java/org/bikesched/examples/simple): the
 smallest setup, one job handler and one job with a `JobPayload` record (a `UUID`):
 
 ```java
@@ -38,7 +44,7 @@ bikesched.newJob(JOB_TYPE).payload(new JobPayload(UUID.randomUUID())).schedule()
 
 ## Event
 
-Package [`org.bikesched.examples.event`](src/main/java/org/bikesched/examples/event): one job with
+Package [`org.bikesched.examples.event`](java/src/main/java/org/bikesched/examples/event): one job with
 two steps. The first sends the payload's id to `EventService`, which returns an id of its own and
 publishes an event keyed by it, with both ids as payload (`EventPayload(id, jobId)`); the second
 waits for that event:
@@ -68,7 +74,7 @@ receives it right away (see [Events](../docs/events.md)).
 
 ## Publish
 
-Package [`org.bikesched.examples.publish`](src/main/java/org/bikesched/examples/publish): a job
+Package [`org.bikesched.examples.publish`](java/src/main/java/org/bikesched/examples/publish): a job
 publishes an event as a durable step, another job waits for it. Placing an order schedules two
 jobs: `notify-customer` waits for `order-shipped` keyed by the order id, and `ship-order` hands the
 parcel over to the carrier and publishes the event:
@@ -91,7 +97,7 @@ same event id, and that `bikesched_events` holds the event once.
 
 ## Outcome
 
-Package [`org.bikesched.examples.outcome`](src/main/java/org/bikesched/examples/outcome): business
+Package [`org.bikesched.examples.outcome`](java/src/main/java/org/bikesched/examples/outcome): business
 outcomes as step results. Charging a card can end in a decline, which a retry would not change, so
 the step returns it as a result instead of throwing. `ChargeOutcome` is a sealed interface with the
 success and the expected error; the Jackson annotations keep the subtype in the stored JSON:
@@ -132,7 +138,7 @@ technical errors left to [retries](../docs/jobs.md#failures-and-retries), and
 
 ## Poll
 
-Package [`org.bikesched.examples.poll`](src/main/java/org/bikesched/examples/poll): a webhook with
+Package [`org.bikesched.examples.poll`](java/src/main/java/org/bikesched/examples/poll): a webhook with
 a polling fallback. `SimulatedPaymentProvider` settles a payment some time after it was created and
 sends a webhook, which the application's endpoint publishes as the event `payment-settled`, keyed
 by the payment id. The job waits for the webhook for two seconds and polls the provider's status
@@ -169,7 +175,7 @@ one the number of status calls equals the poll step's checks, with a single hist
 
 ## Annotation
 
-Package [`org.bikesched.examples.annotation`](src/main/java/org/bikesched/examples/annotation): job
+Package [`org.bikesched.examples.annotation`](java/src/main/java/org/bikesched/examples/annotation): job
 handlers declared as methods with `@JobHandler` (module `bikesched-annotations`). Each method takes
 the `Job`, the payload (here a `Mail` record), both or neither:
 
@@ -193,7 +199,7 @@ succeed.
 
 ## Taxi booking
 
-Package [`org.bikesched.examples.taxi`](src/main/java/org/bikesched/examples/taxi): booking a taxi
+Package [`org.bikesched.examples.taxi`](java/src/main/java/org/bikesched/examples/taxi): booking a taxi
 ride as one job (`taxi-ride`, see `TaxiBooking`) that talks to a taxi broker, a payment service and
 push notifications (simulated in `Simulated*`). The job and its two events are declared as typed
 constants (`JobType<RideRequest>`, `EventType<DriverOffer>`, `EventType<PriceDecision>`), so
@@ -230,7 +236,7 @@ cancellation by the customer and a failed approval.
 
 ## Cinema tickets
 
-Package [`org.bikesched.examples.cinema`](src/main/java/org/bikesched/examples/cinema): ordering
+Package [`org.bikesched.examples.cinema`](java/src/main/java/org/bikesched/examples/cinema): ordering
 cinema tickets as one job (`cinema-ticket-order`) with a handler class that carries its job type
 (`JobTypeHandler`). The cinema, the payment provider and the mail server are simulated with
 console output.
@@ -261,7 +267,7 @@ steps and their output.
 
 ## Spring Boot
 
-Package [`org.bikesched.examples.spring`](src/main/java/org/bikesched/examples/spring): a Spring
+Package [`org.bikesched.examples.spring`](spring/src/main/java/org/bikesched/examples/spring): a Spring
 Boot application wired entirely by [`bikesched-spring-boot-starter`](../docs/spring.md) — no builder
 code, no `BikeschedUtil`; the starter builds the node from the context's `DataSource` and discovers
 the `@JobHandler` method. The scenario is deliberately **two microservices that share no data**
@@ -290,9 +296,9 @@ public class OrderService {
 ```
 
 `FulfillmentService` stores its `Fulfillment` and publishes the `fulfillment-finished` event on the
-same transaction, so the job only resumes once the fulfillment row exists. The `DataSource` is a
-plain `@Bean` from `DatabaseUtil.composeDatabase()` (like every other example's database, honoring
-`POSTGRES_PORT`), not `spring.datasource.*` properties.
+same transaction, so the job only resumes once the fulfillment row exists. The `DataSource` is
+Spring Boot's own, from the `spring.datasource.*` properties in `application.properties` (the
+compose database, honoring `POSTGRES_PORT`).
 
 **Concepts shown:** auto-configuration and handler discovery ([Spring Boot](../docs/spring.md)),
 [transactional scheduling and event publishing](../docs/jobs.md#transactional-scheduling) from both
@@ -300,6 +306,8 @@ plain `@Bean` from `DatabaseUtil.composeDatabase()` (like every other example's 
 [event wait](../docs/events.md) that suspends the job without a thread, and JPA entities coupled by
 UUID only.
 
-`SpringExampleApplication` places one order, waits for its job and closes the context, so
-`runSpring` terminates like the other examples; `SpringExampleTest` runs the same application
-against the shared Testcontainers database and checks the order, its fulfillment and the job.
+It lives in its own module (`:bikesched-examples:spring`) with the Spring Boot Gradle plugin, so
+the plain examples stay free of Spring. `SpringExampleApplication` places one order, waits for its
+job and closes the context, so `bootRun` terminates like the other examples; `SpringExampleTest`
+runs the same application against a Testcontainers database (passed in as `spring.datasource.*`)
+and checks the order and its fulfillment.

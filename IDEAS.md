@@ -192,28 +192,6 @@ callback URL) and have it call back with just that one value.
 - Open: the callback-receiving API shape (new method on `Bikesched`? a step kind addition?) —
   deferred until there's a concrete use case.
 
-## Examples
-
-### Examples in submodules by setup
-
-`bikesched-examples` is a single module with one package per scenario, so every example shares
-one classpath: the plain Java examples get Spring Boot and JPA (only needed by the Spring
-example), and all share one `application.properties` and one `logback.xml`. A reader cannot tell
-which dependencies the plain examples need and which only Spring needs.
-
-- Split it into submodules under `bikesched-examples/` by setup, not one per example:
-  - plain Java (e.g. `bikesched-examples:java`): simple, taxi, annotation, event, poll, outcome,
-    publish and cinema, with bikesched-jackson and bikesched-annotations only, keeping a `run…`
-    task per example;
-  - Spring Boot (e.g. `bikesched-examples:spring`): a regular Spring Boot application with the
-    starter, JPA, the Spring Boot Gradle plugin (`bootRun`) and its own `application.properties`.
-- Shared test code (`util.Database`, the Testcontainers setup) moves into a small shared
-  submodule or test fixtures, so both modules use one container setup.
-- Update the examples README, the root README, `AGENTS.md` and the run commands in `docs/`
-  (`:bikesched-examples:runSimple` becomes e.g. `:bikesched-examples:java:runSimple`).
-- Outcome: the plain examples show the minimal dependencies, and the Spring example is a Spring
-  Boot application as users would build it.
-
 ## Website
 
 ### Project site on bikesched.org
