@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: Apache-2.0
+package org.bikesched.examples.kotlin.shop
+
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.slf4j.LoggerFactory
+
+private val log = LoggerFactory.getLogger("ShopExample")
+
+/**
+ * Runs the shop and, once it is up, a client that places an order, waits until the payment options
+ * are offered, pays with the first one and waits for the final state.
+ */
+fun main() {
+  ShopServer().use { app ->
+    app.start()
+    runBlocking {
+      ShopClient().use { client ->
+        val orderId = client.createOrder(listOf(OrderItem("item-1", 1), OrderItem("item-3", 1)))
+        log.info("Created order {}", orderId)
+
+        withTimeout(30.seconds) {
+          client.awaitState(orderId, setOf(OrderState.PAYMENT_OPTIONS_RESOLVED))
+          val options = client.paymentOptions(orderId)
+          log.info("Offered payment options: {}", options)
+
+          client.pay(orderId, options.first())
+          val result = client.awaitState(orderId, setOf(OrderState.PAID, OrderState.FAILED))
+          log.info("Order {} finished: {}", orderId, result)
+        }
+      }
+    }
+  }
+}

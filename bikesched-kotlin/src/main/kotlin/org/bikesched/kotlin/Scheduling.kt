@@ -11,7 +11,9 @@ import org.bikesched.job.Job
 import org.bikesched.job.JobHandler
 import org.bikesched.job.JobHandlerSettings
 import org.bikesched.job.JobSettings
+import org.bikesched.job.JobType
 import org.bikesched.job.Recurrence
+import org.bikesched.job.TypedJobHandler
 
 // Kotlin-style entry points: one call with named arguments instead of a builder chain. They use
 // the Java API underneath (registerJobHandler, newJob(...)...schedule(), newEvent(...).publish()).
@@ -130,6 +132,51 @@ public inline fun <reified T : Any> Bikesched.createJob(
     delay,
     connection,
   )
+
+/**
+ * Schedules a job of a [JobType], see `Bikesched.newJob(JobType)`:
+ * ```
+ * val sendMail = JobType.of("send-mail", SendMail::class.java)
+ * bikesched.createJob(sendMail, SendMail("a@b.de", "Hi"), delay = 5.minutes)
+ * ```
+ *
+ * The parameters are the same as for the job with a string type; the [handler] gets the payload as
+ * [T].
+ *
+ * @return the job id
+ * @throws IllegalArgumentException if both [at] and [delay] are set, or the type has no handler
+ */
+public fun <T : Any> Bikesched.createJob(
+  type: JobType<T>,
+  payload: T,
+  at: Instant? = null,
+  delay: Duration? = null,
+  priority: Int? = null,
+  maxAttempts: Int? = null,
+  timeout: Duration? = null,
+  connection: Connection? = null,
+  handler: (Job.(payload: T) -> Unit)? = null,
+): UUID {
+  require(at == null || delay == null) { "at and delay are mutually exclusive" }
+  var builder = newJob(type).payload(payload)
+  priority?.let { builder = builder.priority(it) }
+  maxAttempts?.let { builder = builder.maxAttempts(it) }
+  timeout?.let { builder = builder.timeout(it.toJavaDuration()) }
+  handler?.let { h -> builder = builder.handler(TypedJobHandler<T> { job, p -> job.h(p) }) }
+  if (connection != null) {
+    val transactional = builder.connection(connection)
+    return when {
+      at != null -> transactional.schedule(at)
+      delay != null -> transactional.schedule(delay.toJavaDuration())
+      else -> transactional.schedule()
+    }
+  }
+  return when {
+    at != null -> builder.schedule(at)
+    delay != null -> builder.schedule(delay.toJavaDuration())
+    else -> builder.schedule()
+  }
+}
 
 /**
  * Registers a recurring job without payload, see `JobBuilder.schedule(Recurrence)`:

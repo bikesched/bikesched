@@ -45,6 +45,7 @@ defaults:
 |---|---|
 | `handleJobs<T>(type) { payload -> }`, `handleJobs(type) { }` | registers the handler; the `Job` is the receiver |
 | `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id |
+| `createJob(jobType, payload, at, delay, priority, maxAttempts, timeout, connection) { … }` | the same for a `JobType<T>`: the payload has the type's payload class, the optional handler gets it as `T` |
 | `createRecurringJob(type, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout) { … }` | registers a recurring job and returns the id of its pending occurrence |
 | `Bikesched.publishEvent(name, key, payload, retention, connection)` | publishes an event and returns its id |
 | `Job.publishEvent(name, key, payload, retention, stepName)` | publishes once as a durable job step and returns the event's id, the same on every run |

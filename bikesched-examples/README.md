@@ -1,10 +1,11 @@
 # bikesched examples
 
-Runnable examples of [bikesched](../README.md), one package per scenario, in two Gradle modules:
+Runnable examples of [bikesched](../README.md), one package per scenario, in three Gradle modules:
 
 | Module | Examples | Dependencies |
 |---|---|---|
 | [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets) | `bikesched-jackson`, `bikesched-annotations` |
+| [`kotlin`](kotlin) (`:bikesched-examples:kotlin`) | [Shop](#kotlin-shop) | `bikesched-kotlin`, Ktor, Exposed, kotlinx-serialization |
 | [`spring`](spring) (`:bikesched-examples:spring`) | [Spring Boot](#spring-boot) | `bikesched-spring-boot-starter`, `bikesched-jackson`, Spring Data JPA |
 
 Each example has a `main` that runs against the PostgreSQL from the repository's `compose.yaml`,
@@ -25,6 +26,7 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:java:run            # taxi booking
 ./gradlew :bikesched-examples:java:runCinema      # cinema tickets
 ./gradlew :bikesched-examples:spring:bootRun      # Spring Boot application wired by the starter
+./gradlew :bikesched-examples:kotlin:runShop      # Kotlin shop with Ktor, Exposed, and kotlinx-serialization
 ./gradlew :bikesched-examples:java:test :bikesched-examples:spring:test  # the example tests, against Testcontainers
 ```
 
@@ -263,7 +265,32 @@ and [durable steps](../docs/steps.md#durable-steps): a retry skips completed ste
 their results, so seats aren't reserved or cards charged twice.
 
 `CinemaExample` orders tickets for two customers and prints each step; `CinemaTest` checks the
-steps and their output.
+ steps and their output.
+ 
+ ## Kotlin Shop
+
+Package [`org.bikesched.examples.kotlin`](kotlin/src/main/kotlin/org/bikesched/examples/kotlin): a
+Ktor-based REST API with bikesched-kotlin, Exposed for database access, and kotlinx-serialization
+implementing the `JsonMapper` interface. It demonstrates a shop order workflow:
+
+- `POST /api/orders` creates an order, stores it in the database via Exposed, and schedules a
+  `process-order` job in the same transaction
+- The job handler offers payment options (credit card always, "buy now, pay later" for orders
+  under €100) as a durable step
+- `POST /api/orders/{id}/pay` initiates payment, scheduling a `process-payment` job that calls a
+  mock payment service (with random failures for retry demonstration)
+
+```kotlin
+val bikesched = bikesched {
+    dataSource = dataSource
+    jsonMapper = KotlinxSerializationJsonMapper()
+}
+bikesched.handleJobs<ProcessOrderPayload>("process-order") { payload ->
+    val options = step<PaymentOptions>("offer-payment-options") {
+        MockPaymentService.getPaymentOptions(totalAmount)
+    }
+}
+```
 
 ## Spring Boot
 
