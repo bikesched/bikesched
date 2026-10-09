@@ -1,5 +1,6 @@
 ---
 title: "9. Step writes fenced by the job's lock"
+weight: 9
 ---
 
 # 9. Step writes fenced by the job's lock

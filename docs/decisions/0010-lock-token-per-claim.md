@@ -1,5 +1,6 @@
 ---
 title: "10. A lock token per claim instead of a version column"
+weight: 10
 ---
 
 # 10. A lock token per claim instead of a version column

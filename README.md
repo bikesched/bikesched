@@ -1,7 +1,3 @@
----
-title: "bikesched"
----
-
 <p align="center">
   <img src="docs/logo.svg" alt="bikesched logo: a pelican riding a bicycle with clock wheels, carrying a bag of jobs" width="200" height="200">
 </p>

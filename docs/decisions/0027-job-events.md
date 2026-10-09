@@ -1,5 +1,6 @@
 ---
 title: "27. Publish events from jobs as durable steps"
+weight: 27
 ---
 
 # 27. Publish events from jobs as durable steps

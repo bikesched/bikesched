@@ -1,5 +1,6 @@
 ---
 title: "32. Waking pollers with batched notifications after the commit"
+weight: 32
 ---
 
 # 32. Waking pollers with batched notifications after the commit

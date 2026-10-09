@@ -1,5 +1,6 @@
 ---
 title: "29. Child jobs as one step holding the outcome"
+weight: 29
 ---
 
 # 29. Child jobs as one step holding the outcome

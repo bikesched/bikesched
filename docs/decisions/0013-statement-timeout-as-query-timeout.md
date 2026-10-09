@@ -1,5 +1,6 @@
 ---
 title: "13. Statement timeout as JDBC query timeout"
+weight: 13
 ---
 
 # 13. Statement timeout as JDBC query timeout

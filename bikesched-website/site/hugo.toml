@@ -21,6 +21,12 @@ theme = "hextra"
   [menu.main.params]
     icon = "github"
 
+# README.md's own logo (docs/logo.svg), mounted as a static asset below.
+[params.navbar.logo]
+  path = "images/bikesched-logo.svg"
+  width = "24"
+  height = "24"
+
 # Shown below the page tree in the docs section's left sidebar, as a way back
 # to the overview page (the tree itself only lists the section's children).
 [[menu.sidebar]]
@@ -51,3 +57,6 @@ theme = "hextra"
   [[module.mounts]]
     source = "../../docs/decisions/README.md"
     target = "content/docs/decisions/_index.md"
+  [[module.mounts]]
+    source = "../../docs/logo.svg"
+    target = "static/images/bikesched-logo.svg"

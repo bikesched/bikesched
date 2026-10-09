@@ -1,5 +1,6 @@
 ---
 title: "2. Own SQL migrations instead of a migration framework"
+weight: 2
 ---
 
 # 2. Own SQL migrations instead of a migration framework

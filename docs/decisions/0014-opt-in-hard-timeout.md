@@ -1,5 +1,6 @@
 ---
 title: "14. Opt-in hard timeout for handlers that ignore their timeout"
+weight: 14
 ---
 
 # 14. Opt-in hard timeout for handlers that ignore their timeout

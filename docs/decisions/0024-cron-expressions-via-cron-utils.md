@@ -1,5 +1,6 @@
 ---
 title: "24. Cron expressions via cron-utils in their own module"
+weight: 24
 ---
 
 # 24. Cron expressions via cron-utils in their own module

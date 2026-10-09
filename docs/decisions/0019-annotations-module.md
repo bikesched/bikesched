@@ -1,5 +1,6 @@
 ---
 title: "19. Job handler annotations in their own module"
+weight: 19
 ---
 
 # 19. Job handler annotations in their own module

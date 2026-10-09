@@ -1,5 +1,6 @@
 ---
 title: "4. Typed job and event types next to the string-based API"
+weight: 4
 ---
 
 # 4. Typed job and event types next to the string-based API

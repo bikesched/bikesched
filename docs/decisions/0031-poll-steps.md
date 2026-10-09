@@ -1,5 +1,6 @@
 ---
 title: "31. Poll steps: one step for all checks"
+weight: 31
 ---
 
 # 31. Poll steps: one step for all checks

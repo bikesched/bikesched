@@ -1,5 +1,6 @@
 ---
 title: "17. Retrying failed jobs keeps their completed steps"
+weight: 17
 ---
 
 # 17. Retrying failed jobs keeps their completed steps
