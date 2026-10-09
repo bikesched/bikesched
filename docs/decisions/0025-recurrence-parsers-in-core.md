@@ -1,3 +1,7 @@
+---
+title: "25. Recurrence parsers in core"
+---
+
 # 25. Recurrence parsers in core
 
 Date: 2026-10-07

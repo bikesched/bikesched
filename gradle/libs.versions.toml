@@ -8,6 +8,7 @@ foojay-resolver = "1.0.0"
 spotless = "8.10.4"
 kotlin = "2.4.21"
 dokka = "2.2.0"
+hugo-plugin = "0.13.0"
 
 # Code formatting
 google-java-format = "1.36.1"
@@ -71,3 +72,4 @@ foojay-resolver = { id = "org.gradle.toolchains.foojay-resolver-convention", ver
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+hugo = { id = "io.github.fstaudt.hugo", version.ref = "hugo-plugin" }

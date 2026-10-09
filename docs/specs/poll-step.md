@@ -350,7 +350,7 @@ PaymentSettled settled = webhook != null
         .run(_ -> provider.status(paymentId) instanceof PaymentSettled s
             ? Poll.ready(s)
             : Poll.notReady());
-job.step("mark-paid", Void.class, _ -> { orders.markPaid(settled); return null; });
+job.step("mark-paid", () -> orders.markPaid(settled));
 ```
 
 - `SimulatedPaymentProvider` prints its calls (`[provider] …`, optional `PrintStream` for the

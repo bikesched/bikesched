@@ -1,3 +1,7 @@
+---
+title: "3. Implementation in internal packages, enforced by ArchUnit"
+---
+
 # 3. Implementation in internal packages, enforced by ArchUnit
 
 Date: 2026-10-05

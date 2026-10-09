@@ -1,3 +1,7 @@
+---
+title: "15. Snapshots published to GitHub Packages with maven-publish"
+---
+
 # 15. Snapshots published to GitHub Packages with maven-publish
 
 Date: 2026-10-05

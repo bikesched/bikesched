@@ -1,3 +1,8 @@
+---
+title: "Kotlin"
+weight: 7
+---
+
 # Kotlin
 
 The `bikesched-kotlin` module adds Kotlin extensions on top of the Java API, in the package

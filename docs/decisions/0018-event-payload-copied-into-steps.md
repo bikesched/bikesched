@@ -1,3 +1,7 @@
+---
+title: "18. Event payloads copied into steps, no event handlers"
+---
+
 # 18. Event payloads copied into steps, no event handlers
 
 Date: 2026-10-05

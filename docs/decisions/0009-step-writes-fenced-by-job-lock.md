@@ -1,3 +1,7 @@
+---
+title: "9. Step writes fenced by the job's lock"
+---
+
 # 9. Step writes fenced by the job's lock
 
 Date: 2026-10-05

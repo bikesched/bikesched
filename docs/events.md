@@ -1,3 +1,8 @@
+---
+title: "Events"
+weight: 4
+---
+
 # Events
 
 A handler can wait for an event as a durable step. If the event hasn't been published yet, the
@@ -13,7 +18,7 @@ bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
     Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
             .receive(Payment.class);
-    job.step("ship", Void.class, _ -> { shipping.ship(order, payment); return null; });
+    job.step("ship", () -> shipping.ship(order, payment));
 });
 
 // e.g. in a payment webhook; .connection(connection) publishes in your own transaction

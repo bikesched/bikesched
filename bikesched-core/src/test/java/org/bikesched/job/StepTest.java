@@ -243,6 +243,69 @@ class StepTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void stepWithRunnableHasNoResultAndIsNotExecutedAgainWhenJobIsRetried() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-runnable").build()) {
+      var mailCalls = new java.util.concurrent.atomic.AtomicInteger();
+      UUID jobId =
+          bikesched
+              .newJob("runnable-step")
+              .handler(
+                  job ->
+                      job.step(
+                          "mail",
+                          () -> {
+                            if (mailCalls.incrementAndGet() == 1) {
+                              throw new RuntimeException("mail server down");
+                            }
+                          }))
+              .schedule();
+
+      awaitState(jobId, "SUCCEEDED");
+
+      assertThat(mailCalls).hasValue(2);
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '"
+                      + jobId
+                      + "' and name = 'mail' and state = 'SUCCEEDED' "
+                      + "and attempts = 2 and result is null"))
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void stepWithRunnableRejectsNestedSteps() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-runnable-nested").build()) {
+      var rejected = new java.util.concurrent.CompletableFuture<Throwable>();
+      UUID jobId =
+          bikesched
+              .newJob("runnable-step-nested")
+              .maxAttempts(1)
+              .handler(
+                  job ->
+                      job.step(
+                          "outer",
+                          () -> {
+                            try {
+                              job.step("inner", String.class, _ -> "\"inner\"");
+                            } catch (Exception e) {
+                              rejected.complete(e);
+                            }
+                          }))
+              .schedule();
+
+      assertThat(rejected.get(10, java.util.concurrent.TimeUnit.SECONDS))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage(
+              "Job "
+                  + jobId
+                  + " cannot run step 'inner' while step 'outer' runs: "
+                  + "steps, event waits and sleeps cannot be nested");
+    }
+  }
+
+  @Test
   void stepNameMustNotBeBlank() throws Exception {
     try (Bikesched bikesched = testNode("node-step-blank").build()) {
       var failure = new java.util.concurrent.CompletableFuture<Throwable>();

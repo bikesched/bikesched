@@ -1,3 +1,7 @@
+---
+title: "1. Record architecture decisions"
+---
+
 # 1. Record architecture decisions
 
 Date: 2026-10-05

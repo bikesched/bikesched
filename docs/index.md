@@ -1,4 +1,8 @@
-# bikesched documentation
+---
+title: "Docs"
+---
+
+# Docs
 
 bikesched is a job scheduler for Java that keeps all of its state in PostgreSQL. Every application
 instance connected to the database is a *node*: nodes claim due jobs with

@@ -1,3 +1,8 @@
+---
+title: "Child jobs and job results"
+weight: 5
+---
+
 # Child jobs and job results
 
 A handler can start other jobs exactly once, as durable steps, and wait for them to end without

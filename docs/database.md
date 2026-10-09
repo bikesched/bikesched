@@ -1,3 +1,8 @@
+---
+title: "Database"
+weight: 11
+---
+
 # Database
 
 All state lives in plain PostgreSQL tables prefixed `bikesched_`, in the data source's default

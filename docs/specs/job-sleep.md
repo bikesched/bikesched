@@ -10,9 +10,9 @@ without holding a thread or a concurrency slot, the same way it already waits fo
 ```java
 bikesched.registerJobHandler("trial", job -> {
     Account account = job.payload(Account.class);
-    job.step("send-welcome", Void.class, _ -> { mail.welcome(account); return null; });
+    job.step("send-welcome", () -> mail.welcome(account));
     job.sleep("trial-period", Duration.ofDays(14));
-    job.step("send-trial-ended", Void.class, _ -> { mail.trialEnded(account); return null; });
+    job.step("send-trial-ended", () -> mail.trialEnded(account));
 });
 
 job.sleepUntil("until-check-in", booking.checkIn().minus(Duration.ofDays(1)));

@@ -1,0 +1,3 @@
+[submodule "bikesched-website/site/themes/hextra"]
+	path = bikesched-website/site/themes/hextra
+	url = https://github.com/imfing/hextra.git

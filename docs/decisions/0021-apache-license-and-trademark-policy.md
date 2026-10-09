@@ -1,3 +1,7 @@
+---
+title: "21. Apache License 2.0 with a trademark policy"
+---
+
 # 21. Apache License 2.0 with a trademark policy
 
 Date: 2026-10-06

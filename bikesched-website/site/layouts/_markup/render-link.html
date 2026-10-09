@@ -1,0 +1,30 @@
+{{- /*
+  Keeps GitHub-style relative links between the project's Markdown files
+  (e.g. "jobs.md#job-history") working once they are rendered as site pages.
+  A relative link that isn't a mounted page (e.g. README.md's module table
+  linking to a module directory) is rewritten to the same path on GitHub,
+  resolved against this page's own position in the repo tree (mounts mirror
+  the repo layout 1:1, see hugo.toml). See docs/specs/website-project-site.md.
+*/ -}}
+{{- $u := urls.Parse .Destination -}}
+{{- if $u.IsAbs -}}
+<a href="{{ $u.String | safeURL }}" rel="external"{{ with .Title }} title="{{ . }}"{{ end }}>{{ .Text | safeHTML }}</a>
+{{- else -}}
+  {{- $href := .Destination -}}
+  {{- $external := false -}}
+  {{- with $u.Path -}}
+    {{- $page := $.Page.GetPage . -}}
+    {{- if $page -}}
+      {{- $href = $page.RelPermalink -}}
+    {{- else -}}
+      {{- $external = true -}}
+      {{- $repoPath := path.Clean (path.Join $.Page.File.Dir .) | strings.TrimPrefix "/" -}}
+      {{- $href = printf "https://github.com/sbuettner/bikesched/tree/main/%s" $repoPath -}}
+    {{- end -}}
+    {{- with $u.Fragment }}{{ $href = printf "%s#%s" $href . }}{{ end -}}
+  {{- else -}}
+    {{- with $u.Fragment }}{{ $href = printf "#%s" . }}{{ end -}}
+  {{- end -}}
+<a href="{{ $href | safeURL }}"{{ if $external }} rel="external"{{ end }}{{ with .Title }} title="{{ . }}"{{ end }}>{{ .Text | safeHTML }}</a>
+{{- end -}}
+{{- /* chomp trailing newline */ -}}

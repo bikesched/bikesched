@@ -1,3 +1,7 @@
+---
+title: "8. Event expiry fixed when publishing"
+---
+
 # 8. Event expiry fixed when publishing
 
 Date: 2026-10-05

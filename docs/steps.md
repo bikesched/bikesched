@@ -1,3 +1,8 @@
+---
+title: "Steps and compensation"
+weight: 2
+---
+
 # Steps and compensation
 
 Steps make the work inside a job durable: a completed step is not repeated when the job is retried
@@ -17,6 +22,13 @@ bikesched.registerJobHandler("order", job -> {
         return null;                   // Void steps store no result
     });
 });
+```
+
+For a step with no result, `job.step(name, Runnable)` is shorter than `job.step(name, Void.class,
+step -> { … ; return null; })`:
+
+```java
+job.step("send-confirmation", () -> mailer.send(order, payment));
 ```
 
 - The result is mapped by the `JsonMapper` and stored in `bikesched_steps` right after the step
@@ -69,10 +81,7 @@ ChargeOutcome outcome = job.step("charge-card", ChargeOutcome.class, step -> {
             : new Declined(response.declineCode(), response.message());   // stored, not retried
 });
 switch (outcome) {
-    case Charged c -> job.step("send-receipt", Void.class, _ -> {
-        mailer.sendReceipt(order, c.receiptId());
-        return null;
-    });
+    case Charged c -> job.step("send-receipt", () -> mailer.sendReceipt(order, c.receiptId()));
     case Declined d -> job.cancel("payment declined: " + d.code());
 }
 ```
@@ -91,9 +100,9 @@ again from the top, completed steps are skipped and the sleep returns:
 ```java
 bikesched.registerJobHandler("trial", job -> {
     Account account = job.payload(Account.class);
-    job.step("send-welcome", Void.class, _ -> { mail.welcome(account); return null; });
+    job.step("send-welcome", () -> mail.welcome(account));
     job.sleep("trial-period", Duration.ofDays(14));
-    job.step("send-trial-ended", Void.class, _ -> { mail.trialEnded(account); return null; });
+    job.step("send-trial-ended", () -> mail.trialEnded(account));
 });
 
 job.sleepUntil("until-check-in", booking.checkIn().minus(Duration.ofDays(1)));
@@ -184,6 +193,39 @@ PaymentSettled settled = webhook != null
 A timeout handler may also run the poll itself. The
 [poll example](../bikesched-examples/README.md#poll) shows both paths.
 
+## Workflows
+
+Bikesched is not a workflow or process orchestration engine: 
+there are no process models (BPMN), no visual modelling and no orchestration
+across services. It is, however, a good building block for an application that wants to integrate
+nicely with an external workflow or process engine (e.g. Camunda, Temporal, AWS Step Functions): a
+step starts a process there and stores its process id, and a [poll](#polling) step durably waits
+for the process to finish, without holding a thread or a concurrency slot while it runs:
+
+```java
+bikesched.registerJobHandler("onboard-customer", job -> {
+    Customer customer = job.payload(Customer.class);
+    String processId = job.step("start-onboarding-process", String.class,
+            _ -> workflowEngine.startProcess("onboard-customer", Map.of("customerId", customer.id())));
+
+    ProcessResult result = job.newPoll("await-onboarding-process", ProcessResult.class, Duration.ofSeconds(30))
+            .timeout(Duration.ofHours(4))
+            .run(_ -> switch (workflowEngine.status(processId)) {
+                case Completed c -> Poll.ready(c.result());
+                case Running _ -> Poll.notReady();
+            });
+
+    job.step("activate-account", () -> accounts.activate(customer, result));
+});
+```
+
+- The process id is the step's result, stored like any other step result, so a retry or resume
+  does not start the process again.
+- The poll step checks the workflow engine's own status API on an interval, exactly like
+  [polling an external service](#polling); nothing about it is specific to workflow engines.
+- Business decisions, side effects and compensation stay in bikesched's jobs and steps; the
+  workflow engine only runs the process between the start step and the poll.
+
 ## Compensation
 
 Steps with side effects can declare a compensation that undoes them if the job is cancelled or
@@ -195,7 +237,7 @@ bikesched.registerJobHandler("order", job -> {
     Reservation reservation = job.newStep("reserve-payment", Reservation.class)
             .compensateWith((step, r) -> payments.release(r))   // gets the step and its stored result
             .run(_ -> payments.reserve(order));
-    job.step("ship", Void.class, _ -> { shipping.ship(order, reservation); return null; });
+    job.step("ship", () -> shipping.ship(order, reservation));
 });
 
 bikesched.cancel(orderJobId, "order withdrawn");   // releases the reservation if it was made

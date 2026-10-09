@@ -1,3 +1,7 @@
+---
+title: "29. Child jobs as one step holding the outcome"
+---
+
 # 29. Child jobs as one step holding the outcome
 
 Date: 2026-10-07

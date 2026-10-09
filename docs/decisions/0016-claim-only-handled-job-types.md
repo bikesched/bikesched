@@ -1,3 +1,7 @@
+---
+title: "16. Nodes claim only job types they handle"
+---
+
 # 16. Nodes claim only job types they handle
 
 Date: 2026-10-05

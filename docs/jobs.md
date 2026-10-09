@@ -1,3 +1,8 @@
+---
+title: "Jobs"
+weight: 1
+---
+
 # Jobs
 
 A job is a unit of work of a *type*. Every node polls all due jobs, regardless of their type, so all

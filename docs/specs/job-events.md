@@ -13,7 +13,7 @@ bikesched.registerJobHandler("ship-order", job -> {
     Order order = job.payload(Order.class);
     Shipment shipment = job.step("ship", Shipment.class, _ -> shipping.ship(order));
     job.newEvent(ORDER_SHIPPED, order.id()).payload(new Shipped(shipment.trackingId())).publish();
-    job.step("send-mail", Void.class, _ -> { mail.shipped(order); return null; });
+    job.step("send-mail", () -> mail.shipped(order));
 });
 ```
 

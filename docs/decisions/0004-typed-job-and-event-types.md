@@ -1,3 +1,7 @@
+---
+title: "4. Typed job and event types next to the string-based API"
+---
+
 # 4. Typed job and event types next to the string-based API
 
 Date: 2026-10-05

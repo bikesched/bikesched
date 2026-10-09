@@ -1,3 +1,7 @@
+---
+title: "28. Step kinds and plain event references"
+---
+
 # 28. Step kinds and plain event references
 
 Date: 2026-10-07

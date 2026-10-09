@@ -1,3 +1,8 @@
+---
+title: "Recurring jobs"
+weight: 3
+---
+
 # Recurring jobs
 
 A recurring job is a job type with a `Recurrence`. Every node registers it on startup; bikesched

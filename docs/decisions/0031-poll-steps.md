@@ -1,3 +1,7 @@
+---
+title: "31. Poll steps: one step for all checks"
+---
+
 # 31. Poll steps: one step for all checks
 
 Date: 2026-10-08
