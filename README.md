@@ -4,7 +4,8 @@
 
 # bikesched
 
-**A Java and Kotlin, PostgreSQL first job scheduler with minimal dependencies**
+**A PostgreSQL-backed job scheduler for Java and Kotlin: durable steps, events and retries, with
+minimal dependencies and no extra infrastructure**
 
 > [!NOTE]
 > bikesched is at a super early stage (`0.1.0-SNAPSHOT`) and can break at any time: APIs and the
