@@ -4,8 +4,10 @@ title: "Project website (bikesched.org)"
 
 # Specification: project website (bikesched.org)
 
-Status: **in progress** — generation implemented (module `bikesched-website`); GitHub Pages
-deployment not yet done (§4.6). See [IDEAS.md](../../IDEAS.md#project-site-on-bikeschedorg).
+Status: **implemented** — generation (module `bikesched-website`) and deployment to static.app
+(§4.6, [ADR 0035](../decisions/0035-website-hosted-on-static-app.md)) both done. The custom domain
+`bikesched.org` is not yet pointed at static.app; the site serves from
+`https://bikesched.staticdomains.app` until then.
 
 ## 1. Goal
 
@@ -104,27 +106,32 @@ Three small overrides on top of Hextra, kept to the minimum needed:
 - `[[menu.sidebar]]` entry linking back to `/docs/` (Hextra's sidebar only lists a section's
   children, not the section's own landing page).
 
-### 4.6 Deployment (not yet implemented)
+### 4.6 Deployment: static.app
 
-Narrowed from the original IDEAS.md entry down to this one remaining piece:
+Narrowed from the original IDEAS.md entry down to this one remaining piece, then changed from the
+originally planned GitHub Pages to static.app ([ADR 0035](../decisions/0035-website-hosted-on-static-app.md)):
+GitHub Pages with a custom domain and enforced HTTPS needs a paid plan for a private repository, or
+the repository going public first — a billing/visibility decision outside the scope of shipping a
+website.
 
-- A GitHub Actions workflow builds `./gradlew :bikesched-website:hugoBuild` and publishes
-  `bikesched-website/build/hugo/publish/` to GitHub Pages (`actions/configure-pages` +
-  `actions/upload-pages-artifact` + `actions/deploy-pages`), on push to `main`; pull requests only
-  build (like `build.yml` does for the rest of the project), to catch broken links or templates
-  before merging.
-- Custom domain: a `CNAME` file containing `bikesched.org` in the published output (`hugo.toml`'s
-  `baseURL` is already `https://bikesched.org/`), DNS records for `bikesched.org` pointing at
-  GitHub Pages, the domain set in the repository's Pages settings, HTTPS enforced.
-- GitHub Pages for a private repository needs a paid plan (GitHub Pro); on the free plan the
-  repository has to be public first — open question, see §9.
+`.github/workflows/website.yml` builds `./gradlew :bikesched-website:hugoBuild`, zips
+`build/hugo/publish/` with its contents at the archive root, and POSTs it to
+`https://api.static.app/v1/sites/zip` for the pre-created site (`pid` `le3rpst1ob`), authenticated
+with the `STATIC_APP_API_KEY` repository secret. It runs on push to `main` touching `docs/**`,
+`README.md` or `bikesched-website/**`, plus `workflow_dispatch` for manual runs; pull requests are
+not deployed. A `purge-cache` call follows every publish (the CDN otherwise caches assets for up to
+4 hours).
+
+Custom domain: `bikesched.org` is not yet configured on static.app or pointed at it by DNS — the
+site currently serves from the default `https://bikesched.staticdomains.app` subdomain. A one-time
+dashboard/DNS step, not automated by the workflow.
 
 ## 5. Documentation
 
-- This spec, linked from the narrowed IDEAS.md entry.
+- This spec, linked from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md).
 - No `docs/*.md` page of its own: the website is infrastructure around the existing docs, not a
   feature with its own API or user-facing concept.
-- `AGENTS.md`'s module table gets a `bikesched-website` row once deployment lands.
+- `AGENTS.md`'s module table has a `bikesched-website` row.
 
 ## 6. Testing
 
@@ -138,18 +145,15 @@ render hook or a missing theme partial fails the build).
 
 1. ~~Module, Hugo plugin, minimal site, mounts for README.md and docs/~~ (done).
 2. ~~Theme (Hextra), overrides, markdown compatibility, front matter~~ (done).
-3. GitHub Actions workflow building and deploying to GitHub Pages (pull requests: build only).
-4. Custom domain: `CNAME`, DNS records, repository Pages settings, enforce HTTPS.
+3. ~~GitHub Actions workflow building and deploying to static.app~~ (done).
+4. Custom domain: configure `bikesched.org` on static.app, DNS records, enforce HTTPS.
 5. Remove the IDEAS.md entry once the custom domain serves the site.
 
 ## 8. Effort
 
-Small: steps 3–4 are configuration (a workflow file, a `CNAME`, DNS and repository settings), no
-code.
+Small: step 4 is dashboard/DNS configuration, no code.
 
 ## 9. Open questions
 
-1. Does `bikesched` need to go public (or GitHub Pro) before Pages can serve a custom domain, and
-   if so, when is that acceptable?
-2. Who controls the `bikesched.org` DNS zone, and what exact records does GitHub Pages currently
-   ask for (`A`/`AAAA` apex records plus a `CNAME` for `www`, or the other way around)?
+1. Who controls the `bikesched.org` DNS zone, and what exact records does static.app ask for to
+   serve a custom domain?

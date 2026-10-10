@@ -23,3 +23,19 @@ val checkHugoTheme by tasks.registering {
 tasks.matching { it.name in setOf("hugo", "hugoBuild", "hugoServer") }.configureEach {
     dependsOn(checkHugoTheme)
 }
+
+// The Hextra theme ships default placeholder logo artwork (images/logo.svg, images/logo-dark.svg)
+// that Hugo's module mount system has no clean way to exclude per-file without also dropping the
+// theme's other implicit mounts (assets, layouts, i18n, data) and breaking the whole site (tried;
+// see git history). Nothing references them (the navbar uses images/bikesched-logo.svg, mounted
+// from docs/logo.svg instead), so delete them from the published output after the build.
+val removeUnusedThemeLogos by tasks.registering(Delete::class) {
+    delete(
+        layout.buildDirectory.file("hugo/publish/images/logo.svg"),
+        layout.buildDirectory.file("hugo/publish/images/logo-dark.svg"),
+    )
+}
+
+tasks.named("hugoBuild") {
+    finalizedBy(removeUnusedThemeLogos)
+}
