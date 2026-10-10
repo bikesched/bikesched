@@ -113,8 +113,8 @@ class ShopServer(private val port: Int = 8080) : AutoCloseable {
   }
 
   override fun close() {
-    server?.stop(500, 1000)
     bikesched?.close()
+    server?.stop(500, 1000)
     (dataSource as? AutoCloseable)?.close()
   }
 }

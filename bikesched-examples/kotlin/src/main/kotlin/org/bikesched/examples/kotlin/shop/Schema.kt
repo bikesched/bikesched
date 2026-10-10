@@ -12,6 +12,7 @@ object Items : Table("shop_items") {
   val id: Column<String> = text("id")
   val name: Column<String> = text("name")
   val price: Column<BigDecimal> = decimal("price", 12, 2)
+  val currency: Column<String> = varchar("currency", 3)
 
   override val primaryKey = PrimaryKey(id)
 }
@@ -21,6 +22,7 @@ object Orders : Table("shop_orders") {
   val id: Column<UUID> = javaUUID("id")
   val state: Column<String> = text("state")
   val totalAmount: Column<BigDecimal> = decimal("total_amount", 12, 2)
+  val currency: Column<String> = varchar("currency", 3)
 
   override val primaryKey = PrimaryKey(id)
 }

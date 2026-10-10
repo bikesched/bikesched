@@ -12,12 +12,12 @@ object FixtureItems {
 
   val items: List<Item> =
     listOf(
-      Item(id = "item-1", name = "Wireless Mouse", price = euro("29.99")),
-      Item(id = "item-2", name = "Mechanical Keyboard", price = euro("89.99")),
-      Item(id = "item-3", name = "USB-C Hub", price = euro("49.99")),
-      Item(id = "item-4", name = "Monitor Stand", price = euro("59.99")),
-      Item(id = "item-5", name = "Webcam HD", price = euro("79.99")),
-      Item(id = "item-6", name = "Desk Lamp", price = euro("34.99")),
+      Item(id = "item-1", name = "Wireless Mouse", price = "29.99".euro()),
+      Item(id = "item-2", name = "Mechanical Keyboard", price = "89.99".euro()),
+      Item(id = "item-3", name = "USB-C Hub", price = "49.99".euro()),
+      Item(id = "item-4", name = "Monitor Stand", price = "59.99".euro()),
+      Item(id = "item-5", name = "Webcam HD", price = "79.99".euro()),
+      Item(id = "item-6", name = "Desk Lamp", price = "34.99".euro()),
     )
 
   private val itemsById: Map<String, Item> = items.associateBy { it.id }
@@ -34,6 +34,7 @@ object FixtureItems {
           it[Items.id] = item.id
           it[Items.name] = item.name
           it[Items.price] = item.price.toBigDecimal()
+          it[Items.currency] = item.price.currencyCode()
         }
       }
       log.info("Loaded {} fixture items", missing.size)
