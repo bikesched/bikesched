@@ -8,7 +8,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
 
-/** An order to be fulfilled; marked fulfilled once its job received the fulfillment event. */
+/**
+ * An order to be fulfilled; marked fulfilled once its job received the fulfillment event, or failed
+ * by the job's failure handler.
+ */
 @Entity
 @Table(name = "orders")
 public class Order {
@@ -20,6 +23,7 @@ public class Order {
   private String customer;
   private String item;
   private boolean fulfilled;
+  private boolean failed;
 
   protected Order() {}
 
@@ -46,5 +50,13 @@ public class Order {
 
   public void markFulfilled() {
     this.fulfilled = true;
+  }
+
+  public boolean isFailed() {
+    return failed;
+  }
+
+  public void markFailed() {
+    this.failed = true;
   }
 }

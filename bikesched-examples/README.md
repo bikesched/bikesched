@@ -289,7 +289,7 @@ retry, the second ends up `FAILED` through the `onFailure` handler.
 Package [`org.bikesched.examples.spring`](spring/src/main/java/org/bikesched/examples/spring): a Spring
 Boot application wired entirely by [`bikesched-spring-boot-starter`](../docs/spring.md) — no builder
 code, no `BikeschedUtil`; the starter builds the node from the context's `DataSource` and discovers
-the `@JobHandler` method. The scenario is deliberately **two microservices that share no data**
+the `@JobHandler` and `@JobFailureHandler` methods. The scenario is deliberately **two microservices that share no data**
 (in one JVM here): `OrderService` and `FulfillmentService` talk only through a bikesched job payload
 and a keyed event, each owns its own JPA entity, and `Fulfillment` references the order by a plain
 `UUID` column — no foreign key, no association.
@@ -307,9 +307,15 @@ public class OrderService {
 
   @JobHandler(type = "fulfill-order")                                             // found by the starter
   public void fulfill(Job job, FulfillOrder command) throws Exception {
-    var fulfillmentId = job.step("fulfill", UUID.class, _ -> fulfillment.fulfill(command.orderId()));
+    Order order = orders.findById(command.orderId()).orElseThrow();
+    var fulfillmentId = job.step("fulfill", UUID.class, _ -> fulfillment.fulfill(order.getId(), order.getItem()));
     job.awaitEvent("await-fulfillment", FULFILLMENT_FINISHED, fulfillmentId.toString());
-    orders.findById(command.orderId()).orElseThrow().markFulfilled(); // …
+    order.markFulfilled(); // …
+  }
+
+  @JobFailureHandler(type = "fulfill-order")                                      // once all attempts failed
+  public void fulfillmentFailed(FailedJob failed, FulfillOrder command) {
+    orders.findById(command.orderId()).orElseThrow().markFailed(); // …
   }
 }
 ```
@@ -317,16 +323,17 @@ public class OrderService {
 `FulfillmentService` stores its `Fulfillment` and publishes the `fulfillment-finished` event on the
 same transaction, so the job only resumes once the fulfillment row exists. The `DataSource` is
 Spring Boot's own, from the `spring.datasource.*` properties in `application.properties` (the
-compose database, honoring `POSTGRES_PORT`).
+compose database, honoring `POSTGRES_PORT`). Items out of stock make the `fulfill` step throw;
+once the job's attempts are used up, the `@JobFailureHandler` marks the order failed.
 
 **Concepts shown:** auto-configuration and handler discovery ([Spring Boot](../docs/spring.md)),
 [transactional scheduling and event publishing](../docs/jobs.md#transactional-scheduling) from both
 "services", a [durable step](../docs/steps.md#durable-steps) whose result keys the
-[event wait](../docs/events.md) that suspends the job without a thread, and JPA entities coupled by
-UUID only.
+[event wait](../docs/events.md) that suspends the job without a thread, a
+[job failure handler](../docs/jobs.md#failure-handlers) and JPA entities coupled by UUID only.
 
 It lives in its own module (`:bikesched-examples:spring`) with the Spring Boot Gradle plugin, so
-the plain examples stay free of Spring. `SpringExampleApplication` places one order, waits for its
-job and closes the context, so `bootRun` terminates like the other examples; `SpringExampleTest`
-runs the same application against a Testcontainers database (passed in as `spring.datasource.*`)
-and checks the order and its fulfillment.
+the plain examples stay free of Spring. `SpringExampleApplication` places two orders (a bike and an
+out-of-stock unicorn), waits for their jobs and closes the context, so `bootRun` terminates like the
+other examples; `SpringExampleTest` runs the same application against a Testcontainers database
+(passed in as `spring.datasource.*`) and checks the fulfilled and the failed order.

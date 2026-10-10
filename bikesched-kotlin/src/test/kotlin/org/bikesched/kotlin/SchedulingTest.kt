@@ -83,6 +83,47 @@ class SchedulingTest {
   }
 
   @Test
+  fun `failure handlers get the failed job as receiver and the payload`() {
+    val handled = CopyOnWriteArrayList<String>()
+    val reports = unique("failing-report")
+    val pings = unique("failing-ping")
+    val created = unique("failing-created")
+    testNode("job-failure").use { bikesched ->
+      bikesched.handleJobs<Report>(reports) { error("report service down") }
+      bikesched.handleJobFailures<Report>(reports) { report ->
+        handled += "${report.name}: ${error()}"
+      }
+      bikesched.handleJobs(pings) { error("down") }
+      bikesched.handleJobFailures(pings) { handled += "ping ${state()}" }
+      val ids =
+        listOf(
+          bikesched.createJob(type = reports, payload = Report("sales"), maxAttempts = 1),
+          bikesched.createJob(type = pings, maxAttempts = 1),
+          bikesched.createJob(
+            type = created,
+            payload = Report("stock"),
+            maxAttempts = 1,
+            onFailure = { report -> handled += "created ${report.name}" },
+          ) {
+            error("boom")
+          },
+        )
+
+      ids.forEach { id ->
+        await().untilAsserted {
+          assertThat(bikesched.findJobOrNull(id)?.state()).isEqualTo(JobState.FAILED)
+        }
+      }
+      assertThat(handled)
+        .containsExactlyInAnyOrder(
+          "sales: java.lang.IllegalStateException: report service down",
+          "ping FAILED",
+          "created stock",
+        )
+    }
+  }
+
+  @Test
   fun `sleep takes a kotlin Duration`() {
     val ran = CopyOnWriteArrayList<String>()
     testNode("sleep").use { bikesched ->

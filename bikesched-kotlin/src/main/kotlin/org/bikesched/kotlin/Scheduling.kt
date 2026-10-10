@@ -7,12 +7,15 @@ import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 import org.bikesched.Bikesched
+import org.bikesched.job.FailedJob
 import org.bikesched.job.Job
+import org.bikesched.job.JobFailureHandler
 import org.bikesched.job.JobHandler
 import org.bikesched.job.JobHandlerSettings
 import org.bikesched.job.JobSettings
 import org.bikesched.job.JobType
 import org.bikesched.job.Recurrence
+import org.bikesched.job.TypedJobFailureHandler
 import org.bikesched.job.TypedJobHandler
 
 // Kotlin-style entry points: one call with named arguments instead of a builder chain. They use
@@ -51,6 +54,38 @@ public fun Bikesched.handleJobs(type: String, handler: Job.() -> Unit): Bikesche
   registerJobHandler(type, JobHandler { job -> job.handler() })
 
 /**
+ * Registers the failure handler of [type], see `Bikesched.registerJobFailureHandler`: it runs
+ * before a job of the type ends `FAILED` or `COMPENSATION_FAILED`, with the [FailedJob] as receiver
+ * and the payload mapped to [T]:
+ * ```
+ * bikesched.handleJobFailures<SendMail>("send-mail") { mail -> deadLetters.add(id(), mail, error()) }
+ * ```
+ *
+ * A job without payload makes the failure handler fail (and run again) unless [T] is nullable.
+ *
+ * @return this instance
+ * @throws IllegalArgumentException if the type is blank or already has a failure handler
+ */
+public inline fun <reified T> Bikesched.handleJobFailures(
+  type: String,
+  noinline handler: FailedJob.(payload: T) -> Unit,
+): Bikesched =
+  registerJobFailureHandler(type, typedJobFailureHandler(type, T::class.java, null is T, handler))
+
+/**
+ * Registers the failure handler of [type] for jobs that need no payload, with the [FailedJob] as
+ * receiver:
+ * ```
+ * bikesched.handleJobFailures("cleanup") { alerts.send("cleanup failed: ${error()}") }
+ * ```
+ *
+ * @return this instance
+ * @throws IllegalArgumentException if the type is blank or already has a failure handler
+ */
+public fun Bikesched.handleJobFailures(type: String, handler: FailedJob.() -> Unit): Bikesched =
+  registerJobFailureHandler(type, JobFailureHandler { failed -> failed.handler() })
+
+/**
  * Schedules a job without payload, see `Bikesched.newJob(String)`:
  * ```
  * bikesched.createJob(type = "cleanup", delay = 5.minutes)
@@ -64,6 +99,8 @@ public fun Bikesched.handleJobs(type: String, handler: Job.() -> Unit): Bikesche
  * @param maxAttempts its maximum number of attempts; defaults to 3
  * @param timeout the maximum duration of an attempt; defaults to the node's default
  * @param connection stores the job in the caller's transaction, see `JobBuilder.connection`
+ * @param onFailure handles failed jobs of this type, registered unless the type already has a
+ *   failure handler, see [handleJobFailures]
  * @param handler executes jobs of this type, registered unless the type already has a handler
  * @return the job id
  * @throws IllegalArgumentException if both [at] and [delay] are set, or the type has no handler
@@ -76,6 +113,7 @@ public fun Bikesched.createJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   connection: Connection? = null,
+  onFailure: (FailedJob.() -> Unit)? = null,
   handler: (Job.() -> Unit)? = null,
 ): UUID =
   scheduleJob(
@@ -87,6 +125,7 @@ public fun Bikesched.createJob(
       maxAttempts,
       timeout,
       handler?.let { JobHandler { job -> job.it() } },
+      onFailure?.let { JobFailureHandler { failed -> failed.it() } },
     ),
     at,
     delay,
@@ -101,8 +140,8 @@ public fun Bikesched.createJob(
  * bikesched.createJob(type = "send-mail", payload = SendMail("a@b.de", "Hi")) { mail -> mailer.send(mail) }
  * ```
  *
- * The parameters are the same as for the job without payload; the [handler] gets the payload as
- * [T].
+ * The parameters are the same as for the job without payload; the [handler] and [onFailure] get the
+ * payload as [T].
  *
  * @return the job id
  * @throws IllegalArgumentException if both [at] and [delay] are set, or the type has no handler
@@ -116,6 +155,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   connection: Connection? = null,
+  noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   noinline handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID =
   scheduleJob(
@@ -127,6 +167,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
       maxAttempts,
       timeout,
       handler?.let { typedJobHandler(type, T::class.java, false, it) },
+      onFailure?.let { typedJobFailureHandler(type, T::class.java, false, it) },
     ),
     at,
     delay,
@@ -140,8 +181,8 @@ public inline fun <reified T : Any> Bikesched.createJob(
  * bikesched.createJob(sendMail, SendMail("a@b.de", "Hi"), delay = 5.minutes)
  * ```
  *
- * The parameters are the same as for the job with a string type; the [handler] gets the payload as
- * [T].
+ * The parameters are the same as for the job with a string type; the [handler] and [onFailure] get
+ * the payload as [T].
  *
  * @return the job id
  * @throws IllegalArgumentException if both [at] and [delay] are set, or the type has no handler
@@ -155,6 +196,7 @@ public fun <T : Any> Bikesched.createJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   connection: Connection? = null,
+  onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID {
   require(at == null || delay == null) { "at and delay are mutually exclusive" }
@@ -163,6 +205,9 @@ public fun <T : Any> Bikesched.createJob(
   maxAttempts?.let { builder = builder.maxAttempts(it) }
   timeout?.let { builder = builder.timeout(it.toJavaDuration()) }
   handler?.let { h -> builder = builder.handler(TypedJobHandler<T> { job, p -> job.h(p) }) }
+  onFailure?.let { h ->
+    builder = builder.failureHandler(TypedJobFailureHandler<T> { failed, p -> failed.h(p) })
+  }
   if (connection != null) {
     val transactional = builder.connection(connection)
     return when {
@@ -192,6 +237,8 @@ public fun <T : Any> Bikesched.createJob(
  * @param priority the priority of its occurrences, higher runs first; defaults to 0
  * @param maxAttempts the maximum number of attempts per occurrence; defaults to 3
  * @param timeout the maximum duration of an attempt; defaults to the node's default
+ * @param onFailure handles failed occurrences, registered unless the type already has a failure
+ *   handler, see [handleJobFailures]
  * @param handler executes jobs of this type, registered unless the type already has a handler
  * @return the id of the pending occurrence
  * @throws IllegalArgumentException if both [firstRun] and [delay] are set, or the type has no
@@ -205,6 +252,7 @@ public fun Bikesched.createRecurringJob(
   priority: Int? = null,
   maxAttempts: Int? = null,
   timeout: Duration? = null,
+  onFailure: (FailedJob.() -> Unit)? = null,
   handler: (Job.() -> Unit)? = null,
 ): UUID =
   registerRecurringJob(
@@ -217,6 +265,7 @@ public fun Bikesched.createRecurringJob(
       maxAttempts,
       timeout,
       handler?.let { JobHandler { job -> job.it() } },
+      onFailure?.let { JobFailureHandler { failed -> failed.it() } },
     ),
     firstRun,
     delay,
@@ -231,8 +280,8 @@ public fun Bikesched.createRecurringJob(
  * }
  * ```
  *
- * The parameters are the same as for the recurring job without payload; the [handler] gets the
- * payload as [T].
+ * The parameters are the same as for the recurring job without payload; the [handler] and
+ * [onFailure] get the payload as [T].
  *
  * @return the id of the pending occurrence
  * @throws IllegalArgumentException if both [firstRun] and [delay] are set, or the type has no
@@ -247,6 +296,7 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
   priority: Int? = null,
   maxAttempts: Int? = null,
   timeout: Duration? = null,
+  noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   noinline handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID =
   registerRecurringJob(
@@ -259,6 +309,7 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
       maxAttempts,
       timeout,
       handler?.let { typedJobHandler(type, T::class.java, false, it) },
+      onFailure?.let { typedJobFailureHandler(type, T::class.java, false, it) },
     ),
     firstRun,
     delay,
@@ -321,14 +372,17 @@ internal class JobOptions(
   private val maxAttempts: Int?,
   private val timeout: Duration?,
   private val handler: JobHandler?,
+  private val failureHandler: JobFailureHandler? = null,
 ) {
 
   fun <B : JobHandlerSettings<B, Any>> applyTo(builder: B): B {
-    val b = applySettingsTo(builder)
-    return handler?.let { b.handler(it) } ?: b
+    var b = applySettingsTo(builder)
+    handler?.let { b = b.handler(it) }
+    failureHandler?.let { b = b.failureHandler(it) }
+    return b
   }
 
-  /** Applies all options but the handler, for child jobs, which have none. */
+  /** Applies all options but the handlers, for child jobs, which have none. */
   fun <B : JobSettings<B, Any>> applySettingsTo(builder: B): B {
     var b = builder
     payload?.let { b = b.payload(it) }
@@ -382,6 +436,24 @@ internal fun registerRecurringJob(
     delay != null -> builder.schedule(recurrence, delay.toJavaDuration())
     else -> builder.schedule(recurrence)
   }
+}
+
+/**
+ * Maps the payload to [payloadType] and runs the typed failure [handler] with the failed job as
+ * receiver.
+ */
+@PublishedApi
+internal fun <T> typedJobFailureHandler(
+  type: String,
+  payloadType: Class<*>,
+  nullable: Boolean,
+  handler: FailedJob.(T) -> Unit,
+): JobFailureHandler = JobFailureHandler { failed ->
+  val payload = failed.payload(payloadType)
+  if (payload == null && !nullable) {
+    throw IllegalStateException("Job ${failed.id()} of type $type has no payload")
+  }
+  @Suppress("UNCHECKED_CAST") failed.handler(payload as T)
 }
 
 /** Maps the payload to [payloadType] and runs the typed [handler] with the job as receiver. */

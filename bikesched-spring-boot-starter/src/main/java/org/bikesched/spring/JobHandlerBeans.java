@@ -68,7 +68,8 @@ final class JobHandlerBeans {
     }
     if (nodeClosed) {
       LOG.debug(
-          "bikesched: bean '{}' declares @JobHandler methods, but the node is closed; not registering",
+          "bikesched: bean '{}' declares @JobHandler/@JobFailureHandler methods, but the node is"
+              + " closed; not registering",
           beanName);
       return 0;
     }
@@ -80,14 +81,15 @@ final class JobHandlerBeans {
         warnings().forEach(warning -> warning.warn(bound));
         bound.registerOn(node);
         LOG.debug(
-            "bikesched registered job type {} from bean '{}' method {}",
+            "bikesched registered {} {} from bean '{}' method {}",
+            bound.isFailureHandler() ? "the failure handler of job type" : "job type",
             bound.type(),
             beanName,
             bound.method());
       }
     } catch (IllegalArgumentException e) {
       throw new HandlerRegistrationException(
-          "bikesched cannot register the @JobHandler methods of bean '"
+          "bikesched cannot register the @JobHandler/@JobFailureHandler methods of bean '"
               + beanName
               + "': "
               + e.getMessage(),

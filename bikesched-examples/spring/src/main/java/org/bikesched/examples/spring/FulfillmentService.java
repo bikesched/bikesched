@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.examples.spring;
 
+import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
@@ -12,6 +13,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Fulfills an order on another thread: it stores the {@link Fulfillment} and publishes the {@link
  * #FULFILLMENT_FINISHED} event on the same transaction connection, so both are committed together.
+ * Items out of stock are rejected right away.
  */
 @Service
 public class FulfillmentService {
@@ -35,8 +37,18 @@ public class FulfillmentService {
     this.transactions = transactions;
   }
 
-  /** Starts the fulfillment and returns the id the job waits for. */
-  public UUID fulfill(UUID orderId) {
+  /** Items that can't be fulfilled. */
+  static final Set<String> OUT_OF_STOCK = Set.of("Unicorn");
+
+  /**
+   * Starts the fulfillment and returns the id the job waits for.
+   *
+   * @throws IllegalStateException if the item is out of stock
+   */
+  public UUID fulfill(UUID orderId, String item) {
+    if (OUT_OF_STOCK.contains(item)) {
+      throw new IllegalStateException(item + " is out of stock");
+    }
     UUID fulfillmentId = UUID.randomUUID();
     Thread.ofVirtual()
         .name("fulfillment")

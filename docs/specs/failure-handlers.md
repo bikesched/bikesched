@@ -1,7 +1,9 @@
 # Specification: failure handlers for jobs and steps
 
-Status: **implemented** (core, step rework in `bikesched-kotlin`; ADR 0033). User docs:
-`docs/jobs.md#failure-handlers`, `docs/steps.md#failure-handler-per-step`.
+Status: **implemented** (core, step rework in `bikesched-kotlin`, job failure handlers in
+`bikesched-kotlin`, `bikesched-annotations` and the Spring starter; ADR 0033). User docs:
+`docs/jobs.md#failure-handlers`, `docs/steps.md#failure-handler-per-step`, `docs/kotlin.md`,
+`docs/annotations.md`, `docs/spring.md#handlers`.
 
 ## 1. Goal
 
@@ -44,10 +46,15 @@ In scope:
   state, the reworked `StepFailureHandler`, the builder option `failureHandlerAttempts`.
 - Kotlin, examples and docs for the step rework (its API breaks).
 - `JobResult.orElse(T fallback)` for parents falling back on a failed child job.
+- Job failure handlers in the integrations (added after the core): Kotlin
+  `handleJobFailures<T>(type) { payload -> }` and `onFailure = { payload -> }` on
+  `createJob`/`createRecurringJob`, with the `FailedJob` as receiver; `@JobFailureHandler(type)`
+  methods (`FailedJob` and/or payload) found by `JobHandlers.scan`/`register` next to `@JobHandler`
+  (`AnnotatedJobHandler.isFailureHandler()`); the Spring starter registers them and
+  `JobTypeFailureHandler` beans. The Spring example marks an out-of-stock order failed.
 
 Not in scope:
 
-- Kotlin, annotations and Spring starter wiring for job failure handlers (follow-up).
 - Job failure handlers changing the outcome (retry, resolve): once failing, the job's outcome is
   final.
 - Failure handlers for sleeps, event waits, polls and child job steps.
@@ -297,3 +304,7 @@ None.
    (`ValidationUtil.truncateMessage`), so every run sees the same `error()`.
 6. `JobClaim` gets the component `failing` (next to `compensation`); for a failing claim `attempt`
    counts the runs of the failure handler.
+7. `@JobHandler` and `@JobFailureHandler` stay separate annotations scanned by the same
+   `JobHandlers`, so one class holds a job type's handler and its failure handler; a method carrying
+   both is rejected. A `@JobFailureHandler` method declaring a `Job` (or a `@JobHandler` one a
+   `FailedJob`) is rejected instead of being taken for the payload.

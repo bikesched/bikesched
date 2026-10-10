@@ -12,7 +12,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Runs the Spring Boot application against a PostgreSQL 18 container (Testcontainers): the {@link
- * SpringExampleApplication} runner places an order, waits for its job to succeed and closes the
+ * SpringExampleApplication} runner places two orders, waits for their jobs to end and closes the
  * context.
  */
 class SpringExampleTest {
@@ -37,8 +37,10 @@ class SpringExampleTest {
                 "--bikesched.node-name=spring-test-" + UUID.randomUUID())) {
       assertThat(context.isActive()).isFalse(); // the runner closed it once the job succeeded
     }
-    // The order is marked fulfilled, and its fulfillment was stored.
-    assertThat(count("orders", "where fulfilled = true")).isOne();
+    // One order is marked fulfilled, and its fulfillment was stored; the order out of stock was
+    // marked failed by the @JobFailureHandler.
+    assertThat(count("orders", "where fulfilled and not failed and item = 'Bike'")).isOne();
+    assertThat(count("orders", "where failed and not fulfilled and item = 'Unicorn'")).isOne();
     assertThat(count("fulfillments", "")).isOne();
   }
 

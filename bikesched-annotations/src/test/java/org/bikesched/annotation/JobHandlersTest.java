@@ -12,6 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.job.FailedJob;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
@@ -94,6 +95,57 @@ class JobHandlersTest {
     assertThat(jobs.calls)
         .containsExactlyInAnyOrder(
             "send-mail a@x attempt 1", "log-mail b@x", "ping", "flaky attempt 2");
+  }
+
+  public static class PaymentJobs {
+    final List<String> calls = new CopyOnWriteArrayList<>();
+
+    @JobHandler(type = "annotated-charge")
+    public void charge(Mail mail) {
+      throw new IllegalStateException("declined");
+    }
+
+    @JobFailureHandler(type = "annotated-charge")
+    public void chargeFailed(Mail mail, FailedJob failed) {
+      calls.add("failed " + mail.to() + ": " + failed.error());
+    }
+
+    @JobHandler(type = "annotated-ping-failing")
+    public void ping() {
+      throw new IllegalStateException("down");
+    }
+
+    @JobFailureHandler(type = "annotated-ping-failing")
+    public void pingFailed() {
+      calls.add("ping failed");
+    }
+  }
+
+  @Test
+  void annotatedFailureHandlersRunForFailedJobs() {
+    var jobs = new PaymentJobs();
+    try (Bikesched bikesched = node()) {
+      assertThat(JobHandlers.register(bikesched, jobs)).hasSize(4);
+
+      List<UUID> ids =
+          List.of(
+              bikesched
+                  .newJob(JobType.of("annotated-charge", Mail.class))
+                  .payload(new Mail("a@x"))
+                  .maxAttempts(1)
+                  .schedule(),
+              bikesched.newJob("annotated-ping-failing").maxAttempts(1).schedule());
+      for (UUID id : ids) {
+        await()
+            .atMost(Duration.ofSeconds(15))
+            .until(() -> bikesched.findJob(id).orElseThrow().state(), JobState.FAILED::equals);
+      }
+      assertThatThrownBy(() -> JobHandlers.register(bikesched, new PaymentJobs()))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+    assertThat(jobs.calls)
+        .containsExactlyInAnyOrder(
+            "failed a@x: java.lang.IllegalStateException: declined", "ping failed");
   }
 
   public static class RecurringJobs {

@@ -4,6 +4,7 @@ package org.bikesched.examples.spring;
 import static org.awaitility.Awaitility.await;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.job.JobState;
@@ -15,8 +16,9 @@ import org.springframework.context.annotation.Bean;
 
 /**
  * A Spring Boot application: {@code bikesched-spring-boot-starter} wires the {@link Bikesched} node
- * from the {@code DataSource}, discovers the {@link OrderService} handler and polls with the
- * application. The runner places one order and closes the context once its job ended.
+ * from the {@code DataSource}, discovers the {@link OrderService} handlers and polls with the
+ * application. The runner places two orders, one of them out of stock, and closes the context once
+ * their jobs ended.
  *
  * <p>Run with {@code ./gradlew :bikesched-examples:spring:bootRun}; the {@code DataSource} comes
  * from {@code spring.datasource.*} in {@code application.properties}, which honors {@code
@@ -29,18 +31,23 @@ public class SpringExampleApplication {
     SpringApplication.run(SpringExampleApplication.class, args);
   }
 
-  /** Places one order, waits for its job to succeed, then closes the application. */
+  /**
+   * Places an order that succeeds and one whose item is out of stock, waits for their jobs to end,
+   * then closes the application.
+   */
   @Bean
   ApplicationRunner run(
       OrderService orders, Bikesched bikesched, ConfigurableApplicationContext context) {
     return _ -> {
-      UUID jobId = orders.placeOrder("alice@example.com", "Bike");
-      await()
-          .atMost(Duration.ofSeconds(30))
-          .until(
-              () -> bikesched.findJob(jobId).orElseThrow().state(),
-              state -> state == JobState.SUCCEEDED);
-      System.out.println("Order job " + jobId + " " + JobState.SUCCEEDED);
+      UUID bike = orders.placeOrder("alice@example.com", "Bike");
+      UUID unicorn = orders.placeOrder("bob@example.com", "Unicorn");
+      for (UUID jobId : List.of(bike, unicorn)) {
+        JobState state =
+            await()
+                .atMost(Duration.ofSeconds(30))
+                .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+        System.out.println("Order job " + jobId + " " + state);
+      }
       context.close();
     };
   }
