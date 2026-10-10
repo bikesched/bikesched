@@ -34,9 +34,8 @@ execution engines like [Inngest](https://www.inngest.com) and [Restate](https://
 goal is to keep it small and easy to drop into your app:
 
 - **Just two runtime dependencies** in the core: the PostgreSQL JDBC driver and the SLF4J API. No
-  framework, no migration tool, no JSON library — a nod to
-  [Choose Boring Technology](https://boringtechnology.club/): PostgreSQL and SLF4J are about as
-  boring (well-understood, unsurprising) as it gets.
+  framework, no migration tool, no JSON library, in the spirit of
+  [boring technology](https://boringtechnology.club/).
 - **Extension modules when you want them**: Jackson for typed payloads, Kotlin extensions, Spring
   Boot auto-configuration, cron expressions and Micrometer metrics. Pull in only what you use.
 - **PostgreSQL is all you need**: jobs, durable steps, events and nodes live in plain tables
