@@ -196,16 +196,12 @@ callback URL) and have it call back with just that one value.
 
 ## Website
 
-### Project site on bikesched.org
+### Custom domain for bikesched.org
 
-Deploy the `bikesched-website` Hugo site (generator, theme and content reuse decided, see
-[spec](docs/specs/website-project-site.md)) as a GitHub Pages site under the already reserved
-domain `bikesched.org`, built and published by a GitHub Actions workflow.
-
-- Workflow: `./gradlew :bikesched-website:hugoBuild` on push to `main` (and PRs, build only),
-  publishing `bikesched-website/build/hugo/publish/` with `actions/deploy-pages`.
-- Custom domain: a `CNAME` file in the published output (`baseURL` already set to
-  `https://bikesched.org/`), DNS records for `bikesched.org` pointing to GitHub Pages, the domain
-  set in the repository's Pages settings, HTTPS enforced.
-- GitHub Pages for a private repository needs a paid plan (GitHub Pro); on the free plan the
-  repository has to be public first.
+`bikesched-website` is generated with Hugo and deployed to static.app on every push to `main`
+touching `docs/**`, `README.md` or `bikesched-website/**` (see
+[spec](docs/specs/website-project-site.md),
+[ADR 0035](docs/decisions/0035-website-hosted-on-static-app.md)). The site currently serves from
+the default `https://bikesched.staticdomains.app` subdomain; the already reserved domain
+`bikesched.org` still needs to be configured on static.app and pointed at it by DNS, with HTTPS
+enforced, before `hugo.toml`'s `baseURL` (already `https://bikesched.org/`) matches reality.
