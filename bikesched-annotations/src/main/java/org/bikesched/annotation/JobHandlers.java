@@ -33,14 +33,17 @@ public final class JobHandlers {
   private JobHandlers() {}
 
   /**
-   * Registers the {@link JobHandler @JobHandler} methods of the object on the node.
+   * Registers the {@link JobHandler @JobHandler} and {@link JobFailureHandler @JobFailureHandler}
+   * methods of the object on the node.
    *
    * @param bikesched the node
    * @param target the object declaring the methods
-   * @return the registered handlers, ordered by job type
-   * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler}),
-   *     two methods handle the same type, the node already has a handler for one of the types, or a
-   *     schedule is not supported by exactly one of the node's {@code RecurrenceParser}s
+   * @return the registered handlers: the job handlers, then the failure handlers, each ordered by
+   *     job type
+   * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler} and
+   *     {@link JobFailureHandler}), two methods handle the same type, the node already has a
+   *     handler (or failure handler) for one of the types, or a schedule is not supported by
+   *     exactly one of the node's {@code RecurrenceParser}s
    */
   public static List<AnnotatedJobHandler> register(Bikesched bikesched, Object target) {
     Objects.requireNonNull(bikesched, "bikesched");
@@ -50,17 +53,19 @@ public final class JobHandlers {
   }
 
   /**
-   * Registers the {@link JobHandler @JobHandler} methods of {@code targetClass}, invoked through
-   * {@code bean} — the same object for a plain bean, the proxy for a proxied one (so the advice
-   * applies).
+   * Registers the {@link JobHandler @JobHandler} and {@link JobFailureHandler @JobFailureHandler}
+   * methods of {@code targetClass}, invoked through {@code bean} — the same object for a plain
+   * bean, the proxy for a proxied one (so the advice applies).
    *
    * @param bikesched the node
    * @param bean the instance the methods are invoked on
    * @param targetClass the class declaring the annotated methods, e.g. the target class of a proxy
-   * @return the registered handlers, ordered by job type
-   * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler}),
-   *     two methods handle the same type, the node already has a handler for one of the types, or a
-   *     schedule is not supported by exactly one of the node's {@code RecurrenceParser}s
+   * @return the registered handlers: the job handlers, then the failure handlers, each ordered by
+   *     job type
+   * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler} and
+   *     {@link JobFailureHandler}), two methods handle the same type, the node already has a
+   *     handler (or failure handler) for one of the types, or a schedule is not supported by
+   *     exactly one of the node's {@code RecurrenceParser}s
    */
   public static List<AnnotatedJobHandler> register(
       Bikesched bikesched, Object bean, Class<?> targetClass) {
@@ -72,13 +77,14 @@ public final class JobHandlers {
   }
 
   /**
-   * Finds the {@link JobHandler @JobHandler} methods of the object (declared by its class or a
-   * superclass) without registering them.
+   * Finds the {@link JobHandler @JobHandler} and {@link JobFailureHandler @JobFailureHandler}
+   * methods of the object (declared by its class or a superclass) without registering them.
    *
    * @param target the object declaring the methods
-   * @return its handlers, ordered by job type; empty if it has no annotated methods
-   * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler}) or
-   *     two methods handle the same type
+   * @return its job handlers, then its failure handlers, each ordered by job type; empty if it has
+   *     no annotated methods
+   * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler} and
+   *     {@link JobFailureHandler}) or two methods handle the same type
    */
   public static List<AnnotatedJobHandler> scan(Object target) {
     Objects.requireNonNull(target, "target");
@@ -86,20 +92,21 @@ public final class JobHandlers {
   }
 
   /**
-   * Finds the {@link JobHandler @JobHandler} methods of a class (or of a superclass) without
-   * registering or binding them; bind them with {@link AnnotatedJobHandler#bindTo(Object)}. Use
-   * this for an object whose runtime class is a proxy: pass the class that declares the
-   * annotations, not the proxy class.
+   * Finds the {@link JobHandler @JobHandler} and {@link JobFailureHandler @JobFailureHandler}
+   * methods of a class (or of a superclass) without registering or binding them; bind them with
+   * {@link AnnotatedJobHandler#bindTo(Object)}. Use this for an object whose runtime class is a
+   * proxy: pass the class that declares the annotations, not the proxy class.
    *
    * @param targetClass the class declaring the methods
-   * @return its handlers, ordered by job type; empty if it has no annotated methods
-   * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler}) or
-   *     two methods handle the same type
+   * @return its job handlers, then its failure handlers, each ordered by job type; empty if it has
+   *     no annotated methods
+   * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler} and
+   *     {@link JobFailureHandler}) or two methods handle the same type
    */
   public static List<AnnotatedJobHandler> scan(Class<?> targetClass) {
     Objects.requireNonNull(targetClass, "targetClass");
-    // Keyed by type, with a prefix telling job handlers and failure handlers apart.
-    Map<String, AnnotatedJobHandler> byType = new HashMap<>();
+    Map<String, AnnotatedJobHandler> jobHandlers = new HashMap<>();
+    Map<String, AnnotatedJobHandler> failureHandlers = new HashMap<>();
     for (Class<?> type = targetClass; type != null; type = type.getSuperclass()) {
       for (Method method : type.getDeclaredMethods()) {
         if (method.isBridge()) {
@@ -113,38 +120,49 @@ public final class JobHandlers {
                   + method
                   + " is annotated with both @JobHandler and @JobFailureHandler; use two methods");
         }
-        AnnotatedJobHandler handler;
         if (annotation != null) {
-          handler = handler(method, annotation.type(), annotation.schedule(), false);
+          add(
+              jobHandlers,
+              handler(method, annotation.type(), annotation.schedule(), false),
+              "Job type '%s' is handled by two methods: %s and %s");
         } else if (failureAnnotation != null) {
-          handler = handler(method, failureAnnotation.type(), "", true);
-        } else {
-          continue;
-        }
-        String key = (handler.isFailureHandler() ? "failure:" : "job:") + handler.type();
-        AnnotatedJobHandler other = byType.putIfAbsent(key, handler);
-        if (other != null && !overrides(other.method(), method)) {
-          throw new IllegalArgumentException(
-              (handler.isFailureHandler() ? "Failed jobs of type '" : "Job type '")
-                  + handler.type()
-                  + (handler.isFailureHandler() ? "' are" : "' is")
-                  + " handled by two methods: "
-                  + other.method()
-                  + " and "
-                  + method);
+          add(
+              failureHandlers,
+              handler(method, failureAnnotation.type(), "", true),
+              "Failed jobs of type '%s' are handled by two methods: %s and %s");
         }
       }
     }
-    var handlers = new ArrayList<>(byType.values());
-    handlers.sort(
-        Comparator.comparing(AnnotatedJobHandler::type)
-            .thenComparing(AnnotatedJobHandler::isFailureHandler));
+    var handlers = new ArrayList<AnnotatedJobHandler>();
+    handlers.addAll(byType(jobHandlers));
+    handlers.addAll(byType(failureHandlers));
     return List.copyOf(handlers);
   }
 
   /**
-   * Whether the class (or a superclass) declares {@link JobHandler @JobHandler} methods; a cheap
-   * check for scanning many classes, without validating the methods.
+   * Adds a handler found while walking up the class hierarchy, unless a subclass method found
+   * earlier overrides it; two methods for the same type fail with the formatted {@code duplicate}
+   * message (type, first method, second method).
+   */
+  private static void add(
+      Map<String, AnnotatedJobHandler> handlers, AnnotatedJobHandler handler, String duplicate) {
+    AnnotatedJobHandler other = handlers.putIfAbsent(handler.type(), handler);
+    if (other != null && !overrides(other.method(), handler.method())) {
+      throw new IllegalArgumentException(
+          duplicate.formatted(handler.type(), other.method(), handler.method()));
+    }
+  }
+
+  private static List<AnnotatedJobHandler> byType(Map<String, AnnotatedJobHandler> handlers) {
+    return handlers.values().stream()
+        .sorted(Comparator.comparing(AnnotatedJobHandler::type))
+        .toList();
+  }
+
+  /**
+   * Whether the class (or a superclass) declares {@link JobHandler @JobHandler} or {@link
+   * JobFailureHandler @JobFailureHandler} methods; a cheap check for scanning many classes, without
+   * validating the methods.
    *
    * @param targetClass the class to check
    * @return whether it has annotated methods

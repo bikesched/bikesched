@@ -215,6 +215,20 @@ class JobHandlersScanTest {
     public void none() {}
   }
 
+  public static class FailureHandlersFirst {
+    @JobFailureHandler(type = "a")
+    public void aFailed() {}
+
+    @JobFailureHandler(type = "b")
+    public void bFailed() {}
+
+    @JobHandler(type = "c")
+    public void c() {}
+
+    @JobHandler(type = "b")
+    public void b() {}
+  }
+
   @Test
   void findsFailureHandlersNextToJobHandlers() {
     List<AnnotatedJobHandler> handlers = JobHandlers.scan(FailureHandlers.class);
@@ -224,6 +238,10 @@ class JobHandlersScanTest {
         .containsExactly("charge", "charge failed", "none failed", "payload-and-failed failed");
     assertThat(handlers.get(1).payloadType()).contains(Mail.class);
     assertThat(handlers.get(1).schedule()).isEmpty();
+    // Job handlers first, then failure handlers, each ordered by type.
+    assertThat(JobHandlers.scan(FailureHandlersFirst.class))
+        .extracting(handler -> handler.type() + (handler.isFailureHandler() ? " failed" : ""))
+        .containsExactly("b", "c", "a failed", "b failed");
     assertThat(JobHandlers.hasAnnotatedMethods(FailureHandlers.class)).isTrue();
   }
 
