@@ -46,9 +46,10 @@ publishing with two services that share no data.
 
 ## Handlers
 
-Discovery finds every bean with `@JobHandler` methods — including AOP-proxied ones (`@Transactional`,
+Discovery finds every bean with `@JobHandler` or `@JobFailureHandler` methods — including AOP-proxied ones (`@Transactional`,
 `@Cacheable`, …) — and invokes them **through the proxy**, so the advice applies. Beans implementing
-`JobTypeHandler` are registered the same way. Registration happens before polling starts, so a node
+`JobTypeHandler` or `JobTypeFailureHandler` are registered the same way (plain `JobHandler` and
+`JobFailureHandler` beans carry no job type and are ignored). Registration happens before polling starts, so a node
 never claims a job it cannot run; a bean created later (`@Lazy`, prototype) registers when it is
 created. Duplicates fail startup with a message naming the bean and the method — there is no way to
 downgrade this to a warning, and none intended. See [Annotations](annotations.md) for the method

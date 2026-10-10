@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import org.bikesched.job.FailedJob;
 import org.bikesched.job.Job;
 import org.junit.jupiter.api.Test;
 
@@ -198,6 +199,82 @@ class JobHandlersScanTest {
     assertThat(bound.isBound()).isTrue();
     assertThat(bound.type()).isEqualTo(unbound.type());
     assertThat(bound.method()).isEqualTo(unbound.method());
+  }
+
+  public static class FailureHandlers {
+    @JobHandler(type = "charge")
+    public void charge(Mail mail) {}
+
+    @JobFailureHandler(type = "charge")
+    public void chargeFailed(FailedJob failed, Mail mail) {}
+
+    @JobFailureHandler(type = "payload-and-failed")
+    public void payloadAndFailed(Mail mail, FailedJob failed) {}
+
+    @JobFailureHandler(type = "none")
+    public void none() {}
+  }
+
+  @Test
+  void findsFailureHandlersNextToJobHandlers() {
+    List<AnnotatedJobHandler> handlers = JobHandlers.scan(FailureHandlers.class);
+
+    assertThat(handlers)
+        .extracting(handler -> handler.type() + (handler.isFailureHandler() ? " failed" : ""))
+        .containsExactly("charge", "charge failed", "none failed", "payload-and-failed failed");
+    assertThat(handlers.get(1).payloadType()).contains(Mail.class);
+    assertThat(handlers.get(1).schedule()).isEmpty();
+    assertThat(JobHandlers.hasAnnotatedMethods(FailureHandlers.class)).isTrue();
+  }
+
+  public static class BothAnnotations {
+    @JobHandler(type = "x")
+    @JobFailureHandler(type = "x")
+    public void handle() {}
+  }
+
+  public static class FailureHandlerWithJob {
+    @JobFailureHandler(type = "x")
+    public void handle(Job job) {}
+  }
+
+  public static class HandlerWithFailedJob {
+    @JobHandler(type = "x")
+    public void handle(FailedJob job) {}
+  }
+
+  public static class TwoFailedJobs {
+    @JobFailureHandler(type = "x")
+    public void handle(FailedJob job, FailedJob other) {}
+  }
+
+  public static class SameFailureTypeTwice {
+    @JobFailureHandler(type = "x")
+    public void first() {}
+
+    @JobFailureHandler(type = "x")
+    public void second() {}
+  }
+
+  @Test
+  void rejectsInvalidFailureHandlerMethods() {
+    assertThatThrownBy(() -> JobHandlers.scan(new BothAnnotations()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageEndingWith(
+            "is annotated with both @JobHandler and @JobFailureHandler; use two methods");
+    assertThatThrownBy(() -> JobHandlers.scan(new FailureHandlerWithJob()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("@JobFailureHandler method ")
+        .hasMessageEndingWith("has a Job parameter; it gets the FailedJob");
+    assertThatThrownBy(() -> JobHandlers.scan(new HandlerWithFailedJob()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageEndingWith("has a FailedJob parameter; it gets the Job");
+    assertThatThrownBy(() -> JobHandlers.scan(new TwoFailedJobs()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageEndingWith("has two FailedJob parameters");
+    assertThatThrownBy(() -> JobHandlers.scan(new SameFailureTypeTwice()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("Failed jobs of type 'x' are handled by two methods");
   }
 
   @Test

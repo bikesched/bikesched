@@ -44,9 +44,10 @@ defaults:
 | Function | Arguments |
 |---|---|
 | `handleJobs<T>(type) { payload -> }`, `handleJobs(type) { }` | registers the handler; the `Job` is the receiver |
-| `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id |
-| `createJob(jobType, payload, at, delay, priority, maxAttempts, timeout, connection) { … }` | the same for a `JobType<T>`: the payload has the type's payload class, the optional handler gets it as `T` |
-| `createRecurringJob(type, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout) { … }` | registers a recurring job and returns the id of its pending occurrence |
+| `handleJobFailures<T>(type) { payload -> }`, `handleJobFailures(type) { }` | registers the [failure handler](jobs.md#failure-handlers); the `FailedJob` is the receiver |
+| `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection, onFailure) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id |
+| `createJob(jobType, payload, at, delay, priority, maxAttempts, timeout, connection, onFailure) { … }` | the same for a `JobType<T>`: the payload has the type's payload class, the optional handlers get it as `T` |
+| `createRecurringJob(type, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout, onFailure) { … }` | registers a recurring job and returns the id of its pending occurrence |
 | `Bikesched.publishEvent(name, key, payload, retention, connection)` | publishes an event and returns its id |
 | `Job.publishEvent(name, key, payload, retention, stepName)` | publishes once as a durable job step and returns the event's id, the same on every run |
 | `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result (e.g. `waitForEvent<Payment?>(…, timeout = 3.days) { null }`), without fallback the job fails permanently like with the default event timeout |
@@ -57,7 +58,8 @@ defaults:
 
 The optional trailing handler of `createJob` and `createRecurringJob` is registered for the type
 unless it already has one; with a `payload` it gets the payload as its type, otherwise only the
-`Job`.
+`Job`. `onFailure = { payload -> … }` (with the `FailedJob` as receiver) registers the type's
+failure handler the same way.
 
 ## Helpers for the Java API
 

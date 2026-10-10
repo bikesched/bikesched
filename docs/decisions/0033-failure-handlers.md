@@ -63,4 +63,5 @@ Rejected:
 - The failure handler must be registered on every node handling the type: the failing node decides
   by its own registration. A node claiming a `FAILING` job without a failure handler ends the job.
 - `StepFailureHandler` changed incompatibly (`handle(FailingStep<T>)`).
-- Follow-ups: Kotlin, annotation and Spring starter support for job failure handlers.
+- Kotlin (`handleJobFailures`, `onFailure`), annotations (`@JobFailureHandler`) and the Spring
+  starter support job failure handlers next to the job handlers.

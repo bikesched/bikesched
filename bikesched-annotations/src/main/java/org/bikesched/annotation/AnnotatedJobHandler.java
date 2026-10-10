@@ -8,11 +8,11 @@ import java.lang.reflect.Method;
 import java.util.Objects;
 import java.util.Optional;
 import org.bikesched.Bikesched;
-import org.bikesched.job.Job;
 import org.bikesched.job.JobType;
 
 /**
- * A job handler found on a {@link JobHandler @JobHandler} method, see {@link
+ * A job handler found on a {@link JobHandler @JobHandler} method, or a failure handler found on a
+ * {@link JobFailureHandler @JobFailureHandler} method (see {@link #isFailureHandler()}), see {@link
  * JobHandlers#scan(Class)}; {@link #bindTo(Object)} binds it to an instance and {@link
  * #registerOn(Bikesched)} registers it.
  *
@@ -28,9 +28,10 @@ public final class AnnotatedJobHandler {
   private final int parameterCount;
   private final int jobIndex;
   private final int payloadIndex;
+  private final boolean failureHandler;
   private final Object target; // null while unbound
   private final MethodHandle
-      invoker; // bound to target and adapted to (Job, Object); null while unbound
+      invoker; // bound to target and adapted to (Job or FailedJob, Object); null while unbound
 
   AnnotatedJobHandler(
       String type,
@@ -40,6 +41,7 @@ public final class AnnotatedJobHandler {
       int parameterCount,
       int jobIndex,
       int payloadIndex,
+      boolean failureHandler,
       Object target,
       MethodHandle invoker) {
     this.type = Objects.requireNonNull(type, "type");
@@ -49,8 +51,19 @@ public final class AnnotatedJobHandler {
     this.parameterCount = parameterCount;
     this.jobIndex = jobIndex;
     this.payloadIndex = payloadIndex;
+    this.failureHandler = failureHandler;
     this.target = target;
     this.invoker = invoker;
+  }
+
+  /**
+   * Whether the method is a failure handler ({@link JobFailureHandler @JobFailureHandler}) rather
+   * than a job handler ({@link JobHandler @JobHandler}).
+   *
+   * @return {@code true} for a failure handler
+   */
+  public boolean isFailureHandler() {
+    return failureHandler;
   }
 
   /**
@@ -133,6 +146,7 @@ public final class AnnotatedJobHandler {
         parameterCount,
         jobIndex,
         payloadIndex,
+        failureHandler,
         target,
         adapt(bound, parameterCount, jobIndex, payloadIndex));
   }
@@ -149,8 +163,9 @@ public final class AnnotatedJobHandler {
   /**
    * Registers this handler on the node: with a payload parameter as the handler of {@code
    * JobType.of(type, payloadType)}, so the node rejects the type with another payload class;
-   * otherwise as the handler of the job type name. With a schedule, it also registers the recurring
-   * job, parsing the schedule with the node's {@code RecurrenceParser}s.
+   * otherwise as the handler of the job type name. A failure handler is registered as the type's
+   * failure handler the same way. With a schedule, it also registers the recurring job, parsing the
+   * schedule with the node's {@code RecurrenceParser}s.
    *
    * @param bikesched the node
    * @throws IllegalStateException if the handler is not bound, see {@link #bindTo(Object)}
@@ -162,6 +177,14 @@ public final class AnnotatedJobHandler {
     if (invoker == null) {
       throw new IllegalStateException(
           "Job handler " + this + " is not bound to a target; call bindTo(Object) first");
+    }
+    if (failureHandler) {
+      if (payloadType == null) {
+        bikesched.registerJobFailureHandler(type, failed -> invoke(failed, null));
+      } else {
+        registerTypedFailureHandler(bikesched, JobType.of(type, payloadType));
+      }
+      return;
     }
     if (payloadType == null) {
       bikesched.registerJobHandler(type, job -> invoke(job, null));
@@ -199,18 +222,25 @@ public final class AnnotatedJobHandler {
     bikesched.registerJobHandler(jobType, this::invoke);
   }
 
+  private <T> void registerTypedFailureHandler(Bikesched bikesched, JobType<T> jobType) {
+    bikesched.registerJobFailureHandler(jobType, this::invoke);
+  }
+
   private <T> void scheduleTyped(Bikesched bikesched, JobType<T> jobType) {
     bikesched.newJob(jobType).schedule(schedule);
   }
 
-  /** Calls the bound method; its exceptions are passed on unchanged. */
-  private void invoke(Job job, Object payload) throws Exception {
+  /**
+   * Calls the bound method with the {@code Job} (or {@code FailedJob}) and the payload; its
+   * exceptions are passed on unchanged.
+   */
+  private void invoke(Object job, Object payload) throws Exception {
     try {
       invoker.invoke(job, payload);
     } catch (Exception | Error e) {
       throw e;
     } catch (Throwable e) {
-      throw new IllegalStateException("Job handler method " + method + " failed", e);
+      throw new IllegalStateException("Handler method " + method + " failed", e);
     }
   }
 
@@ -233,6 +263,13 @@ public final class AnnotatedJobHandler {
 
   @Override
   public String toString() {
-    return "AnnotatedJobHandler[type=" + type + ", method=" + method + ", bound=" + isBound() + "]";
+    return "AnnotatedJobHandler[type="
+        + type
+        + (failureHandler ? ", failure handler" : "")
+        + ", method="
+        + method
+        + ", bound="
+        + isBound()
+        + "]";
   }
 }

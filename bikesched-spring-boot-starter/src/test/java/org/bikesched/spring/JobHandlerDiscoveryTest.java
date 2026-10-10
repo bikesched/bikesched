@@ -11,10 +11,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
+import org.bikesched.annotation.JobFailureHandler;
 import org.bikesched.annotation.JobHandler;
+import org.bikesched.job.FailedJob;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
+import org.bikesched.job.JobTypeFailureHandler;
 import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.RecurrenceParser;
@@ -99,6 +102,37 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
                       .schedule();
               await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
               assertThat(ReportHandler.handled).containsExactly("weekly");
+            });
+  }
+
+  @Test
+  void registersFailureHandlerMethodsAndJobTypeFailureHandlerBeans() {
+    PaymentJobs.handled.clear();
+    InvoiceHandler.handled.clear();
+    runner()
+        .withBean("dataSource", DataSource.class, () -> dataSource())
+        .withBean("paymentJobs", PaymentJobs.class, PaymentJobs::new)
+        .withBean("invoices", InvoiceHandler.class, InvoiceHandler::new)
+        .withPropertyValues("bikesched.node-name=" + unique("failure-handler-node"))
+        .run(
+            context -> {
+              Bikesched node = context.getBean(Bikesched.class);
+              UUID charge =
+                  node.newJob("discover-charge")
+                      .payload(new PaymentJobs.Charge("o1"))
+                      .maxAttempts(1)
+                      .schedule();
+              UUID invoice =
+                  node.newJob(InvoiceHandler.TYPE)
+                      .payload(new InvoiceHandler.Invoice("i1"))
+                      .maxAttempts(1)
+                      .schedule();
+              for (UUID id : List.of(charge, invoice)) {
+                await()
+                    .until(() -> node.findJob(id).orElseThrow().state(), JobState.FAILED::equals);
+              }
+              assertThat(PaymentJobs.handled).containsExactly("o1");
+              assertThat(InvoiceHandler.handled).containsExactly("i1");
             });
   }
 
@@ -300,6 +334,51 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
     @Override
     public void handle(Job job, Report report) {
       handled.add(report.name());
+    }
+  }
+
+  /** A bean with a job handler that always fails and its {@code @JobFailureHandler}. */
+  public static class PaymentJobs {
+
+    public record Charge(String orderId) {}
+
+    public static final List<String> handled = new CopyOnWriteArrayList<>();
+
+    @JobHandler(type = "discover-charge")
+    public void charge(Charge charge) {
+      throw new IllegalStateException("declined");
+    }
+
+    @JobFailureHandler(type = "discover-charge")
+    public void chargeFailed(FailedJob failed, Charge charge) {
+      handled.add(charge.orderId());
+    }
+  }
+
+  /** A class-per-handler bean with its failure handler, registered via both interfaces. */
+  public static class InvoiceHandler
+      implements JobTypeHandler<InvoiceHandler.Invoice>,
+          JobTypeFailureHandler<InvoiceHandler.Invoice> {
+
+    public record Invoice(String id) {}
+
+    static final JobType<Invoice> TYPE = JobType.of("type-failure-handler-invoice", Invoice.class);
+
+    public static final List<String> handled = new CopyOnWriteArrayList<>();
+
+    @Override
+    public JobType<Invoice> type() {
+      return TYPE;
+    }
+
+    @Override
+    public void handle(Job job, Invoice invoice) {
+      throw new IllegalStateException("cannot invoice");
+    }
+
+    @Override
+    public void handle(FailedJob failed, Invoice invoice) {
+      handled.add(invoice.id());
     }
   }
 

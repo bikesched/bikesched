@@ -12,11 +12,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.bikesched.Bikesched;
+import org.bikesched.job.FailedJob;
 import org.bikesched.job.Job;
 
 /**
- * Finds the {@link JobHandler @JobHandler} methods of an object — or of a class, for objects whose
- * runtime class is a proxy — and registers them as job handlers:
+ * Finds the {@link JobHandler @JobHandler} and {@link JobFailureHandler @JobFailureHandler} methods
+ * of an object — or of a class, for objects whose runtime class is a proxy — and registers them as
+ * job handlers and failure handlers:
  *
  * <pre>{@code
  * JobHandlers.register(bikesched, new MailJobs(mailServer));          // a plain object
@@ -96,20 +98,37 @@ public final class JobHandlers {
    */
   public static List<AnnotatedJobHandler> scan(Class<?> targetClass) {
     Objects.requireNonNull(targetClass, "targetClass");
+    // Keyed by type, with a prefix telling job handlers and failure handlers apart.
     Map<String, AnnotatedJobHandler> byType = new HashMap<>();
     for (Class<?> type = targetClass; type != null; type = type.getSuperclass()) {
       for (Method method : type.getDeclaredMethods()) {
-        JobHandler annotation = method.getAnnotation(JobHandler.class);
-        if (annotation == null || method.isBridge()) {
+        if (method.isBridge()) {
           continue;
         }
-        AnnotatedJobHandler handler = handler(method, annotation.type(), annotation.schedule());
-        AnnotatedJobHandler other = byType.putIfAbsent(handler.type(), handler);
+        JobHandler annotation = method.getAnnotation(JobHandler.class);
+        JobFailureHandler failureAnnotation = method.getAnnotation(JobFailureHandler.class);
+        if (annotation != null && failureAnnotation != null) {
+          throw new IllegalArgumentException(
+              "Method "
+                  + method
+                  + " is annotated with both @JobHandler and @JobFailureHandler; use two methods");
+        }
+        AnnotatedJobHandler handler;
+        if (annotation != null) {
+          handler = handler(method, annotation.type(), annotation.schedule(), false);
+        } else if (failureAnnotation != null) {
+          handler = handler(method, failureAnnotation.type(), "", true);
+        } else {
+          continue;
+        }
+        String key = (handler.isFailureHandler() ? "failure:" : "job:") + handler.type();
+        AnnotatedJobHandler other = byType.putIfAbsent(key, handler);
         if (other != null && !overrides(other.method(), method)) {
           throw new IllegalArgumentException(
-              "Job type '"
+              (handler.isFailureHandler() ? "Failed jobs of type '" : "Job type '")
                   + handler.type()
-                  + "' is handled by two methods: "
+                  + (handler.isFailureHandler() ? "' are" : "' is")
+                  + " handled by two methods: "
                   + other.method()
                   + " and "
                   + method);
@@ -117,7 +136,9 @@ public final class JobHandlers {
       }
     }
     var handlers = new ArrayList<>(byType.values());
-    handlers.sort(Comparator.comparing(AnnotatedJobHandler::type));
+    handlers.sort(
+        Comparator.comparing(AnnotatedJobHandler::type)
+            .thenComparing(AnnotatedJobHandler::isFailureHandler));
     return List.copyOf(handlers);
   }
 
@@ -132,7 +153,9 @@ public final class JobHandlers {
     Objects.requireNonNull(targetClass, "targetClass");
     for (Class<?> type = targetClass; type != null; type = type.getSuperclass()) {
       for (Method method : type.getDeclaredMethods()) {
-        if (!method.isBridge() && method.isAnnotationPresent(JobHandler.class)) {
+        if (!method.isBridge()
+            && (method.isAnnotationPresent(JobHandler.class)
+                || method.isAnnotationPresent(JobFailureHandler.class))) {
           return true;
         }
       }
@@ -147,42 +170,60 @@ public final class JobHandlers {
   }
 
   /** Validates an annotated method and describes it; the handler is not bound to an instance. */
-  private static AnnotatedJobHandler handler(Method method, String type, String schedule) {
+  private static AnnotatedJobHandler handler(
+      Method method, String type, String schedule, boolean failureHandler) {
+    String annotation = failureHandler ? "@JobFailureHandler" : "@JobHandler";
+    Class<?> contextType = failureHandler ? FailedJob.class : Job.class;
     if (type == null || type.isBlank()) {
-      throw invalid(method, "has no job type");
+      throw invalid(annotation, method, "has no job type");
     }
     int modifiers = method.getModifiers();
     if (!Modifier.isPublic(modifiers)) {
-      throw invalid(method, "is not public");
+      throw invalid(annotation, method, "is not public");
     }
     if (Modifier.isStatic(modifiers)) {
-      throw invalid(method, "is static");
+      throw invalid(annotation, method, "is static");
     }
     if (method.getReturnType() != void.class) {
-      throw invalid(method, "does not return void");
+      throw invalid(annotation, method, "does not return void");
     }
     Class<?>[] parameters = method.getParameterTypes();
     Type[] genericParameters = method.getGenericParameterTypes();
     if (parameters.length > 2) {
-      throw invalid(method, "has more than two parameters (at most the Job and the payload)");
+      throw invalid(
+          annotation, method, "has more than two parameters (at most the Job and the payload)");
     }
     int jobIndex = -1;
     int payloadIndex = -1;
     for (int i = 0; i < parameters.length; i++) {
-      if (parameters[i] == Job.class) {
+      if (parameters[i] == contextType) {
         if (jobIndex >= 0) {
-          throw invalid(method, "has two Job parameters");
+          throw invalid(
+              annotation, method, "has two " + contextType.getSimpleName() + " parameters");
         }
         jobIndex = i;
+      } else if (parameters[i] == Job.class || parameters[i] == FailedJob.class) {
+        throw invalid(
+            annotation,
+            method,
+            "has a "
+                + parameters[i].getSimpleName()
+                + " parameter; it gets the "
+                + contextType.getSimpleName());
       } else {
         if (payloadIndex >= 0) {
-          throw invalid(method, "has two payload parameters (at most the Job and the payload)");
+          throw invalid(
+              annotation, method, "has two payload parameters (at most the Job and the payload)");
         }
         if (parameters[i].isPrimitive()) {
-          throw invalid(method, "has a primitive payload parameter; use an object, e.g. a record");
+          throw invalid(
+              annotation,
+              method,
+              "has a primitive payload parameter; use an object, e.g. a record");
         }
         if (!(genericParameters[i] instanceof Class<?>)) {
           throw invalid(
+              annotation,
               method,
               "has a generic payload parameter ("
                   + genericParameters[i].getTypeName()
@@ -192,7 +233,7 @@ public final class JobHandlers {
       }
     }
     if (schedule == null) {
-      throw invalid(method, "has no schedule expression");
+      throw invalid(annotation, method, "has no schedule expression");
     }
     return new AnnotatedJobHandler(
         type,
@@ -202,11 +243,13 @@ public final class JobHandlers {
         parameters.length,
         jobIndex,
         payloadIndex,
+        failureHandler,
         null,
         null);
   }
 
-  private static IllegalArgumentException invalid(Method method, String problem) {
-    return new IllegalArgumentException("@JobHandler method " + method + " " + problem);
+  private static IllegalArgumentException invalid(
+      String annotation, Method method, String problem) {
+    return new IllegalArgumentException(annotation + " method " + method + " " + problem);
   }
 }
