@@ -141,6 +141,23 @@ may take another path than the first attempt did. Nothing in the docs or the API
   no node supports any more (stuck `SCHEDULED`, an incident?).
 - Outcome: deploys that change a handler without breaking jobs already in flight.
 
+### Durable timeout handlers for event waits and polls
+
+The `TimeoutHandler` of event waits and polls gets no context and its result is not stored: it
+runs again on every replay, so it must not have side effects. Step failure handlers already get a
+context, run counted and store `resolve(result)`.
+
+To decide between:
+
+- Reusing the step failure handler: `.timeout(d).onFailure(failing -> failing.resolve(x))`. One
+  concept for steps, waits and polls, but a timeout isn't retryable (runs right away, not only in
+  the last attempt), is often a business branch rather than a failure, and `error()` is made up.
+- A durable timeout handler: `.timeout(d).onTimeout(timedOut -> timedOut.resolve(x))`, with the
+  same `resolve` and attempt semantics under its own name.
+
+Either way: the string-based `EventWait` needs its type before `receive(Class)`, the stored
+fallback must be JSON-mappable, and Kotlin follows.
+
 ### Idempotency keys for jobs and events
 
 A caller that retries (a webhook delivered twice, a request retried after a timeout) schedules the
