@@ -3,6 +3,7 @@ package org.bikesched.examples.kotlin.shop
 
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.java.javaUUID
 import java.math.BigDecimal
 import java.util.UUID
 
