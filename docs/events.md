@@ -16,8 +16,8 @@ copies the payload into the step, so later runs return it even after the event w
 ```java
 bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
-    Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
-            .receive(Payment.class);
+    Payment payment = job.waitForEvent("await-payment", "payment-received", order.id(), Payment.class)
+            .receive();
     job.step("ship", () -> shipping.ship(order, payment));
 });
 
@@ -28,8 +28,8 @@ UUID eventId = bikesched.newEvent("payment-received", order.id())
 ```
 
 - An event is identified by its name and key and goes to every step waiting for it.
-- `receive(Payment.class)` returns the payload mapped by the `JsonMapper`; the step stores the
-  payload as it is.
+- `receive()` returns the payload mapped to the class given to `waitForEvent` by the `JsonMapper`;
+  the step stores the payload as it is.
 - To derive something from the payload, do it after `receive`: a pure conversion can run again on
   every resume; anything with side effects belongs in a [step](steps.md) after the wait. To keep
   the stored copy small, keep the event's payload small (e.g. ids instead of whole documents).
@@ -75,7 +75,8 @@ Other paths:
 - **Published before the wait:** the step is created `SUCCEEDED` with the latest unexpired event's
   payload right away; the job is never suspended.
 - **Timeout:** the job becomes due at `wait_until`. Its next run finds the deadline passed and marks
-  the step `TIMED_OUT`; `receive` returns the timeout handler's result, on this and every later run.
+  the step `TIMED_OUT`; the job fails, unless the wait's failure handler resolves it with a
+  fallback, which `receive` returns on this and every later run. See [Timeouts](#timeouts).
 - **Cancellation:** cancelling the job marks a `WAITING` step `CANCELLED`; it no longer receives
   events.
 - **Later runs** (after another wait or a retry) return the step's copy of the payload, also after
@@ -121,12 +122,12 @@ bikesched.newEvent(PAYMENT_RECEIVED, order.id()).payload(payment).publish();   /
 ```
 
 `awaitEvent` returns the payload directly, as the result of the wait step. For a
-[timeout](#timeouts) with a fallback, use `waitForEvent` with the type instead; `receive()` then
-needs no class:
+[timeout](#timeouts) or a fallback, use `waitForEvent` with the type instead:
 
 ```java
 Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id())
-        .timeout(Duration.ofDays(3), () -> null)   // the result type is already known
+        .timeout(Duration.ofDays(3))
+        .onFailure(failing -> failing.resolve(null))
         .receive();
 ```
 
@@ -136,20 +137,31 @@ see [Payload design](configuration.md#payload-design).
 
 ## Timeouts
 
-To stop waiting after a while, add a timeout; its handler's result is returned instead of the
-payload. Unlike the payload, it is not stored: the timeout handler runs every time the job's
-handler reaches the timed-out wait, so it should only produce a fallback, or run a
-[step](steps.md#durable-steps) for one with side effects (unlike a step handler, a timeout handler
-may run steps):
+To stop waiting after a while, add a timeout. Once it passes, the wait fails with an
+`EventTimeoutException` and the job fails without further attempts (waiting again would time out
+again). Without a timeout of its own, a wait uses the node's `defaultEventTimeout`, if set.
+
+To continue instead, give the wait a failure handler, the same as a
+[step's](steps.md#failure-handler-per-step): it may resolve the wait with a fallback, which
+`receive` returns.
 
 ```java
-Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
-        .<Payment>timeout(Duration.ofDays(3), () -> null)   // the type is needed for a null result
-        .receive(Payment.class);
+Payment payment = job.waitForEvent("await-payment", "payment-received", order.id(), Payment.class)
+        .timeout(Duration.ofDays(3))
+        .onFailure(failing -> failing.resolve(Payment.MISSING))
+        .receive();
 ```
 
-Without a timeout of its own, a wait uses the node's `defaultEventTimeout`, if set: once it passes,
-the job fails permanently with an `EventTimeoutException`.
+- The handler runs right away once the wait timed out, whatever attempt of the job it is. Its
+  `error()` is the `EventTimeoutException`'s `toString()`.
+- The step goes from `TIMED_OUT` to `FAILING` while the handler runs, then `SUCCEEDED` with the
+  fallback (stored and returned on later runs like a received payload) or `FAILED`, and the job
+  fails.
+- A handler that throws runs again in an extra attempt of the job, up to the node's
+  `failureHandlerAttempts` runs, so it must be idempotent.
+- Like every failure handler, it cannot run steps, waits or polls. To fall back on a poll, resolve
+  with `null` and poll after `receive`, see
+  [Webhooks with a polling fallback](steps.md#webhooks-with-a-polling-fallback).
 
 ## Retention
 

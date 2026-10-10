@@ -12,7 +12,7 @@ public enum JobState {
 
   /**
    * Waiting for an event, a child job or the end of a sleep, see {@link Job#waitForEvent(String,
-   * String, String)}, {@link Job#waitForJob(java.util.UUID, Class)} and {@link Job#sleep}.
+   * String, String, Class)}, {@link Job#waitForJob(java.util.UUID, Class)} and {@link Job#sleep}.
    */
   WAITING,
 

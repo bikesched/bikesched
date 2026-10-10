@@ -149,7 +149,8 @@ every second if it doesn't arrive:
 ```java
 String paymentId = job.step("create-payment", String.class, step -> provider.createPayment(…));
 PaymentSettled webhook = job.waitForEvent("await-webhook", PAYMENT_SETTLED, paymentId)
-        .timeout(WEBHOOK_TIMEOUT, () -> null)
+        .timeout(WEBHOOK_TIMEOUT)
+        .onFailure(failing -> failing.resolve(null))   // no webhook in time: poll instead
         .receive();
 PaymentSettled settled = webhook != null
         ? webhook
@@ -229,7 +230,8 @@ payloads need no casts or `Class` arguments.
 
 **Concepts shown:** [durable steps](../docs/steps.md#durable-steps),
 [compensation](../docs/steps.md#compensation), [cancellation](../docs/jobs.md#cancellation) from
-inside and outside the handler, and [event waits with timeouts](../docs/events.md#timeouts). The
+inside and outside the handler, and [event waits with timeouts](../docs/events.md#timeouts) resolved
+with a fallback by their failure handler. The
 waits suspend the job without holding a thread; publishing an event resumes it.
 
 `TaxiBookingExample` plays three rides (booked, cancelled by the customer, failed approval) and

@@ -4,9 +4,9 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.util.Objects;
 import org.bikesched.RetryBackoff;
-import org.bikesched.event.TimeoutHandler;
 import org.bikesched.job.PollBuilder;
 import org.bikesched.job.PollHandler;
+import org.bikesched.job.StepFailureHandler;
 
 /** The {@link PollBuilder} implementation, running the poll on its {@link DefaultJob}. */
 final class DefaultPollBuilder<T> implements PollBuilder<T> {
@@ -16,7 +16,7 @@ final class DefaultPollBuilder<T> implements PollBuilder<T> {
   private final Class<T> resultType;
   private final RetryBackoff interval;
   private Duration timeout;
-  private TimeoutHandler<? extends T> timeoutHandler;
+  private StepFailureHandler<T> failureHandler;
 
   DefaultPollBuilder(DefaultJob job, String name, Class<T> resultType, RetryBackoff interval) {
     this.job = job;
@@ -28,14 +28,12 @@ final class DefaultPollBuilder<T> implements PollBuilder<T> {
   @Override
   public PollBuilder<T> timeout(Duration timeout) {
     this.timeout = requirePositive(timeout);
-    this.timeoutHandler = null;
     return this;
   }
 
   @Override
-  public PollBuilder<T> timeout(Duration timeout, TimeoutHandler<? extends T> handler) {
-    this.timeout = requirePositive(timeout);
-    this.timeoutHandler = Objects.requireNonNull(handler, "handler");
+  public PollBuilder<T> onFailure(StepFailureHandler<T> handler) {
+    this.failureHandler = Objects.requireNonNull(handler, "handler");
     return this;
   }
 
@@ -50,6 +48,6 @@ final class DefaultPollBuilder<T> implements PollBuilder<T> {
   @Override
   public T run(PollHandler<T> handler) throws Exception {
     Objects.requireNonNull(handler, "handler");
-    return job.poll(name, resultType, interval, timeout, timeoutHandler, handler);
+    return job.poll(name, resultType, interval, timeout, failureHandler, handler);
   }
 }

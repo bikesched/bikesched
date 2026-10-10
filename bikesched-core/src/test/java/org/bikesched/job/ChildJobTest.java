@@ -585,7 +585,7 @@ class ChildJobTest extends AbstractBikeschedTest {
                       failure.set(e);
                       return;
                     }
-                    job.waitForEvent("go", "child-type-go", "k").receive(String.class);
+                    job.waitForEvent("go", "child-type-go", "k", String.class).receive();
                   })
               .schedule();
 
@@ -665,7 +665,7 @@ class ChildJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-child-cancel-parent").build()) {
       bikesched.registerJobHandler(
           "child-cancel-parent-child",
-          job -> job.waitForEvent("go", "child-cancel-parent-go", "k").receive(String.class));
+          job -> job.waitForEvent("go", "child-cancel-parent-go", "k", String.class).receive());
       UUID parentId =
           bikesched
               .newJob("child-cancel-parent")
@@ -698,7 +698,7 @@ class ChildJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-child-compensate").build()) {
       bikesched.registerJobHandler(
           "child-compensate-child",
-          job -> job.waitForEvent("go", "child-compensate-go", "k").receive(String.class));
+          job -> job.waitForEvent("go", "child-compensate-go", "k", String.class).receive());
       UUID parentId =
           bikesched
               .newJob("child-compensate")
@@ -772,7 +772,7 @@ class ChildJobTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-child-orphan").build()) {
       bikesched.registerJobHandler(
           "child-orphan-child",
-          job -> job.waitForEvent("go", "child-orphan-go", "k").receive(String.class));
+          job -> job.waitForEvent("go", "child-orphan-go", "k", String.class).receive());
       UUID parentId =
           bikesched
               .newJob("child-orphan-parent")
@@ -798,7 +798,7 @@ class ChildJobTest extends AbstractBikeschedTest {
         testNode("node-child-timeout").jobHistory(Duration.ofHours(1)).build()) {
       bikesched.registerJobHandler(
           "child-timeout-child",
-          job -> job.waitForEvent("go", "child-timeout-go", "k").receive(String.class));
+          job -> job.waitForEvent("go", "child-timeout-go", "k", String.class).receive());
       var timeout = new AtomicReference<>(Duration.ofMillis(300));
       UUID parentId =
           bikesched

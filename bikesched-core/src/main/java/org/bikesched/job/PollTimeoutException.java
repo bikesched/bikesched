@@ -7,13 +7,13 @@ import org.bikesched.BikeschedException;
 
 /**
  * Thrown by {@link PollBuilder#run(PollHandler)} when a poll with a {@link
- * PollBuilder#timeout(Duration) timeout} but without a timeout handler was not ready by its
- * deadline. The job then fails without further attempts ({@code FAILED}, with this exception's
- * message as {@code last_error}), even if the handler catches this exception: retrying would time
- * out again.
+ * PollBuilder#timeout(Duration) timeout} was not ready by its deadline. The job then fails without
+ * further attempts ({@code FAILED}, with this exception's message as {@code last_error}), even if
+ * the handler catches this exception: retrying would time out again.
  *
- * <p>To react to a timeout instead, give the poll a timeout handler with {@link
- * PollBuilder#timeout(Duration, org.bikesched.event.TimeoutHandler)}.
+ * <p>To react to a timeout instead, give the poll a {@link
+ * PollBuilder#onFailure(StepFailureHandler) failure handler}; its {@code error()} is this
+ * exception's {@code toString()}.
  */
 public final class PollTimeoutException extends BikeschedException {
 

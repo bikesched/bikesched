@@ -32,8 +32,8 @@ import org.slf4j.LoggerFactory;
  * <ol>
  *   <li>{@link Job#cancel(String) cancelled}: {@code CANCELLED}, no retry
  *   <li>{@link Job#fail(String) failed explicitly}: retried with the handler's retry settings
- *   <li>{@link Job#waitForEvent(String, String, String) waiting for an event}, a child job or the
- *       end of a sleep: {@code WAITING}
+ *   <li>{@link Job#waitForEvent(String, String, String, Class) waiting for an event}, a child job
+ *       or the end of a sleep: {@code WAITING}
  *   <li>timed out, or threw: retried after the node's {@link RetryBackoff} while attempts remain,
  *       otherwise {@code FAILED}
  *   <li>returned normally: {@code SUCCEEDED}, with the result set by {@link Job#complete(Object)}

@@ -90,7 +90,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
       UUID jobId =
           bikesched
               .newJob(unique("history-wait"))
-              .handler(job -> job.waitForEvent("await", event, "order-1").receive(String.class))
+              .handler(job -> job.waitForEvent("await", event, "order-1", String.class).receive())
               .schedule();
       awaitState(jobId, "WAITING");
 

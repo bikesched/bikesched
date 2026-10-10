@@ -114,8 +114,9 @@ public final class EventStore {
   /**
    * The outcome of waiting for an event.
    *
-   * @param state {@code SUCCEEDED} (received, see {@code json}), {@code TIMED_OUT} or {@code
-   *     WAITING}
+   * @param state {@code SUCCEEDED} (received, see {@code json}, or resolved by its failure
+   *     handler), {@code TIMED_OUT}, {@code FAILING} (its failure handler has to run again), {@code
+   *     FAILED} or {@code WAITING}
    * @param json the received event's payload as stored with the step; JSON text, may be {@code
    *     null}
    * @param waitUntil the deadline of a {@code WAITING} step, {@code null} if none
@@ -123,10 +124,10 @@ public final class EventStore {
   public record EventWait(String state, String json, Instant waitUntil) {}
 
   /**
-   * Waits for an event as a step of a job: returns the step's earlier outcome (received or timed
-   * out) if any, receives the latest published event with that name and key (its payload is stored
-   * with the step), or marks the step {@code WAITING}. Runs in one transaction holding the event's
-   * advisory lock.
+   * Waits for an event as a step of a job: returns the step's earlier outcome (received, timed out,
+   * failing or failed) if any, receives the latest published event with that name and key (its
+   * payload is stored with the step), or marks the step {@code WAITING}. Runs in one transaction
+   * holding the event's advisory lock.
    *
    * @param jobId the job id
    * @param lock the lock of the job's claim (node and token)
@@ -187,7 +188,7 @@ public final class EventStore {
               case "SUCCEEDED" -> {
                 return new EventWait(found.state(), found.result(), null);
               }
-              case "TIMED_OUT" -> {
+              case "TIMED_OUT", "FAILING", "FAILED" -> {
                 return new EventWait(found.state(), null, null);
               }
               default -> { // WAITING

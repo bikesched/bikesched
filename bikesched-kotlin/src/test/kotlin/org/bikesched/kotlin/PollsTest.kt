@@ -4,7 +4,6 @@ package org.bikesched.kotlin
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.milliseconds
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.awaitility.Awaitility.await
 import org.bikesched.job.JobState
 import org.bikesched.job.Poll
@@ -62,7 +61,7 @@ class PollsTest {
             "never-ready",
             interval = 50.milliseconds,
             timeout = 150.milliseconds,
-            onTimeout = { null },
+            onFailure = { it.resolve(null) },
           ) {
             Poll.notReady()
           }
@@ -79,28 +78,32 @@ class PollsTest {
   }
 
   @Test
-  fun `onTimeout requires a timeout`() {
-    val type = unique("poll-invalid")
-    val errors = CopyOnWriteArrayList<Throwable>()
+  fun `onFailure resolves a Unit poll whose check fails in the last attempt`() {
+    val type = unique("poll-unit-failure")
+    val errors = CopyOnWriteArrayList<String>()
+    val results = CopyOnWriteArrayList<Any?>()
 
-    testNode("polls-invalid").use { bikesched ->
+    testNode("polls-unit-failure").use { bikesched ->
       bikesched.handleJobs(type) {
-        errors +=
-          runCatching {
-            poll<String?>("p", interval = 50.milliseconds, onTimeout = { null }) {
-              Poll.ready(null)
-            }
+        results +=
+          poll<Unit>(
+            "p",
+            interval = 50.milliseconds,
+            onFailure = { failing ->
+              errors += failing.error()
+              failing.resolve(Unit)
+            },
+          ) {
+            error("status service down")
           }
-            .exceptionOrNull()!!
       }
-      val jobId = bikesched.createJob(type = type)
+      val jobId = bikesched.createJob(type = type, maxAttempts = 1)
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
       }
-      assertThatThrownBy { throw errors.single() }
-        .isInstanceOf(IllegalArgumentException::class.java)
-        .hasMessage("onTimeout requires a timeout")
+      assertThat(errors).containsExactly("java.lang.IllegalStateException: status service down")
+      assertThat(results).containsExactly(Unit)
     }
   }
 }

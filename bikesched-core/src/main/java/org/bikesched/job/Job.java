@@ -13,7 +13,6 @@ import org.bikesched.event.EventPublisher;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
-import org.bikesched.event.TypedEventWait;
 
 /**
  * A job being executed, as seen by its {@link JobHandler}.
@@ -231,21 +230,23 @@ public interface Job extends EventPublisher {
   boolean isCompensating();
 
   /**
-   * Starts waiting for an event, as a durable step; {@link EventWait#receive(Class)} returns its
-   * payload once the event published with the given name and key was received. If it has not been
-   * published yet, the job's attempt ends in {@code receive} (it does not return) and the job is
-   * suspended in state {@code WAITING}, using no thread and no concurrency slot. Once someone
-   * {@link Bikesched#newEvent(String, String) publishes} the event, the job is scheduled again and
-   * its handler runs again from the start: completed steps are skipped, and {@code receive} now
-   * returns the payload, which was stored with the step when the event arrived.
+   * Starts waiting for an event, as a durable step; {@link EventWait#receive()} returns its
+   * payload, mapped to {@code payloadType}, once the event published with the given name and key
+   * was received. If it has not been published yet, the job's attempt ends in {@code receive} (it
+   * does not return) and the job is suspended in state {@code WAITING}, using no thread and no
+   * concurrency slot. Once someone {@link Bikesched#newEvent(String, String) publishes} the event,
+   * the job is scheduled again and its handler runs again from the start: completed steps are
+   * skipped, and {@code receive} now returns the payload, which was stored with the step when the
+   * event arrived.
    *
    * <pre>{@code
    * bikesched.registerJobHandler("order", job -> {
    *     Order order = job.payload(Order.class);
    *     job.step("create-invoice", Invoice.class, step -> billing.createInvoice(order));
-   *     Payment payment = job.waitForEvent("await-payment", "payment-received", order.id())
-   *             .timeout(Duration.ofDays(3), () -> Payment.missing())   // optional
-   *             .receive(Payment.class);
+   *     Payment payment = job.waitForEvent("await-payment", "payment-received", order.id(), Payment.class)
+   *             .timeout(Duration.ofDays(3))                                // optional
+   *             .onFailure(failing -> failing.resolve(Payment.MISSING))     // optional
+   *             .receive();
    *     job.step("ship", Void.class, step -> {
    *         shipping.ship(order, payment);
    *         return null;
@@ -275,21 +276,25 @@ public interface Job extends EventPublisher {
    * @param eventName the name of the event, e.g. {@code payment-received}, at most 200 characters
    * @param eventKey identifies the event instance waited for, e.g. an order id, at most 500
    *     characters
-   * @return the wait, to set an optional timeout and receive the event
+   * @param payloadType the class the payload is mapped to
+   * @param <T> the payload type
+   * @return the wait, to set an optional timeout and failure handler and receive the payload
    * @throws IllegalArgumentException if the step or event name is blank
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  EventWait waitForEvent(String stepName, String eventName, String eventKey);
+  <T> EventWait<T> waitForEvent(
+      String stepName, String eventName, String eventKey, Class<T> payloadType);
 
   /**
-   * Waits for an event of an {@link EventType}, like {@link #waitForEvent(String, String, String)},
-   * receiving its payload mapped to the type's payload class:
+   * Waits for an event of an {@link EventType}, like {@link #waitForEvent(String, String, String,
+   * Class)} with the type's name and payload class:
    *
    * <pre>{@code
    * static final EventType<Payment> PAYMENT_RECEIVED = EventType.of("payment-received", Payment.class);
    *
    * Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id())
-   *         .timeout(Duration.ofDays(3), () -> null)   // optional
+   *         .timeout(Duration.ofDays(3))                            // optional
+   *         .onFailure(failing -> failing.resolve(null))            // optional
    *         .receive();
    * }</pre>
    *
@@ -300,11 +305,11 @@ public interface Job extends EventPublisher {
    * @param eventKey identifies the event instance waited for, e.g. an order id, at most 500
    *     characters
    * @param <T> the payload type
-   * @return the wait, to set an optional timeout and receive the payload
+   * @return the wait, to set an optional timeout and failure handler and receive the payload
    * @throws IllegalArgumentException if the step name is blank
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  <T> TypedEventWait<T> waitForEvent(String stepName, EventType<T> eventType, String eventKey);
+  <T> EventWait<T> waitForEvent(String stepName, EventType<T> eventType, String eventKey);
 
   /**
    * Waits for an event of an {@link EventType} and returns its payload, mapped to the type's
@@ -314,11 +319,11 @@ public interface Job extends EventPublisher {
    * Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, order.id());
    * }</pre>
    *
-   * <p>The wait is a durable step like with {@link #waitForEvent(String, String, String)}: if the
-   * event has not been published yet, the job's attempt ends here (the method does not return) and
-   * the job is suspended until it is; later runs of the handler return the payload stored with the
-   * step. The node's {@link BikeschedBuilder#defaultEventTimeout(Duration) default event timeout}
-   * applies, if any; for a timeout of its own with a fallback result, use {@link
+   * <p>The wait is a durable step like with {@link #waitForEvent(String, EventType, String)}: if
+   * the event has not been published yet, the job's attempt ends here (the method does not return)
+   * and the job is suspended until it is; later runs of the handler return the payload stored with
+   * the step. The node's {@link BikeschedBuilder#defaultEventTimeout(Duration) default event
+   * timeout} applies, if any; for a timeout of its own or a fallback result, use {@link
    * #waitForEvent(String, EventType, String)}.
    *
    * @param stepName the step name, unique within the job, at most 200 characters
@@ -357,7 +362,7 @@ public interface Job extends EventPublisher {
    * suspended the job wakes up at the wake-up time, other nodes find it with every {@link
    * BikeschedBuilder#pollInterval(Duration) interval poll}. Sleeping does not use up an attempt;
    * like waiting for an event, it reruns the code outside of steps, and the same rules apply (see
-   * {@link #waitForEvent(String, String, String)}).
+   * {@link #waitForEvent(String, String, String, Class)}).
    *
    * @param stepName the step name, unique within the job, at most 200 characters
    * @param duration how long to sleep, positive
@@ -410,7 +415,7 @@ public interface Job extends EventPublisher {
    * attempt; the next attempt checks again right away. A due check runs when it is due, like a
    * sleep ends (see {@link #sleep(String, Duration)}). Like waiting for an event, polling reruns
    * the code outside of steps, and the same rules apply (see {@link #waitForEvent(String, String,
-   * String)}).
+   * String, Class)}).
    *
    * @param name the step name, unique within the job, at most 200 characters
    * @param resultType the type of the ready value, used to read the stored value back
@@ -513,8 +518,8 @@ public interface Job extends EventPublisher {
    * turns any other outcome into an exception). To wait for several children, start them all, then
    * wait for one after the other: children that ended already return right away. Waiting does not
    * use up an attempt; like waiting for an event, it reruns the code outside of steps, and the same
-   * rules apply (see {@link #waitForEvent(String, String, String)}). The child's outcome stays with
-   * the step after the child was deleted (job retention).
+   * rules apply (see {@link #waitForEvent(String, String, String, Class)}). The child's outcome
+   * stays with the step after the child was deleted (job retention).
    *
    * @param childJobId the id {@link StepJobBuilder#schedule()} returned
    * @param resultType the type of the child's result

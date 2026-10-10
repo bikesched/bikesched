@@ -118,14 +118,15 @@ class StepTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     var builtOutside = job.newStep("built-outside", String.class);
-                    var waitOutside = job.waitForEvent("wait-outside", "nested", "key-1");
+                    var waitOutside =
+                        job.waitForEvent("wait-outside", "nested", "key-1", String.class);
                     List<java.util.concurrent.Callable<?>> nested =
                         List.of(
                             () -> job.step("inner", String.class, _ -> "\"inner\""),
                             () -> job.newStep("inner-builder", String.class),
                             () -> builtOutside.run(_ -> "\"inner\""),
-                            () -> job.waitForEvent("inner-wait", "nested", "key-1"),
-                            () -> waitOutside.receive(String.class),
+                            () -> job.waitForEvent("inner-wait", "nested", "key-1", String.class),
+                            () -> waitOutside.receive(),
                             () ->
                                 java.util.concurrent.CompletableFuture.supplyAsync(
                                         () -> {

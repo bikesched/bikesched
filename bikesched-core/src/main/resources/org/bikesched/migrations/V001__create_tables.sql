@@ -162,12 +162,13 @@ create table bikesched_steps (
         check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING', 'FAILED', 'TIMED_OUT',
                          'COMPENSATED', 'CANCELLED')),
     -- Event waits and publishes name their event; an event wait references the event once it
-    -- received it, a publish always; only event waits, child jobs and polls time out.
+    -- received it (not if its failure handler resolved it after a timeout: it keeps last_error), a
+    -- publish always; only event waits, child jobs and polls time out.
     constraint bikesched_steps_event_check
         check ((event_name is not null) = (kind in ('EVENT_WAIT', 'EVENT_PUBLISH'))
                and (event_name is null) = (event_key is null)
                and case kind
-                       when 'EVENT_WAIT' then (event_id is not null) = (state = 'SUCCEEDED')
+                       when 'EVENT_WAIT' then (event_id is not null) = (state = 'SUCCEEDED' and last_error is null)
                        when 'EVENT_PUBLISH' then event_id is not null
                        else event_id is null
                    end

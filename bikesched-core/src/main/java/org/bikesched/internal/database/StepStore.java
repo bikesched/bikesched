@@ -132,10 +132,19 @@ public final class StepStore {
              where job_id = ? and name = ? and state = 'FAILING' and %s"""
           .formatted(JOB_LOCKED);
 
+  // A wait or poll that timed out and has a failure handler: FAILING like a step whose attempts are
+  // used up. finished_at is set again once the handler ran.
+  private static final String MARK_TIMED_OUT_STEP_FAILING_SQL =
+      """
+            update bikesched_steps
+               set state = 'FAILING', last_error = ?, failure_attempts = 0, finished_at = null
+             where job_id = ? and name = ? and state = 'TIMED_OUT' and %s"""
+          .formatted(JOB_LOCKED);
+
   private static final String FIND_FAILING_ERROR_SQL =
       """
             select coalesce(last_error, '') from bikesched_steps
-             where job_id = ? and name = ? and kind = 'STEP' and state = 'FAILING'""";
+             where job_id = ? and name = ? and kind = ? and state = 'FAILING'""";
 
   private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED;
 
@@ -704,6 +713,34 @@ public final class StepStore {
   }
 
   /**
+   * Marks a {@code TIMED_OUT} event wait or poll {@code FAILING}: its failure handler has yet to
+   * run. A job that ends before the step is {@link #failFailingStep failed} or {@link
+   * #resolveFailingStep resolved} runs the handler again in its next attempt.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @param error description of the timeout, stored as {@code last_error}
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public void markTimedOutStepFailing(UUID jobId, JobLock lock, String name, String error) {
+    history.change(
+        db -> {
+          String message = ValidationUtil.truncateMessage(error);
+          if (db.update(MARK_TIMED_OUT_STEP_FAILING_SQL, message, jobId, name, jobId, lock.token())
+              > 0) {
+            history.record(db, Change.step(jobId, name, "FAILING", lock.nodeId(), error));
+          } else {
+            requireJobLock(db, jobId, lock);
+          }
+          return null;
+        },
+        e ->
+            new BikeschedException(
+                "Marking step '" + name + "' of bikesched job " + jobId + " as failing failed", e));
+  }
+
+  /**
    * Marks a {@code FAILING} step {@code FAILED} once its failure handler ran (or was given up).
    *
    * @param jobId the job id
@@ -800,11 +837,12 @@ public final class StepStore {
    *
    * @param jobId the job id
    * @param name the step name
-   * @return the stored error, or empty if the step is not {@code FAILING}
+   * @param kind the kind of step, see {@link StoredStep}
+   * @return the stored error, or empty if the step is not {@code FAILING} or of another kind
    */
-  public Optional<String> findFailingError(UUID jobId, String name) {
+  public Optional<String> findFailingError(UUID jobId, String name, String kind) {
     return access.withConnection(
-        db -> db.one(FIND_FAILING_ERROR_SQL, row -> row.string(1), jobId, name),
+        db -> db.one(FIND_FAILING_ERROR_SQL, row -> row.string(1), jobId, name, kind),
         e ->
             new BikeschedException(
                 "Reading step '" + name + "' of bikesched job " + jobId + " failed", e));
@@ -923,7 +961,8 @@ public final class StepStore {
    * A poll step after {@link #startPoll}.
    *
    * @param state {@code RUNNING} (a check started), {@code WAITING} (the next check is not due
-   *     yet), {@code SUCCEEDED} (ready in an earlier run) or {@code TIMED_OUT}
+   *     yet), {@code SUCCEEDED} (ready in an earlier run), {@code TIMED_OUT} or {@code FAILING}
+   *     (its failure handler has to run again)
    * @param result the ready value as JSON text if {@code SUCCEEDED}, may be {@code null}
    * @param checks the number of checks so far, including a started one
    * @param waitUntil the time of the next check if {@code WAITING}
@@ -989,7 +1028,7 @@ public final class StepStore {
           }
           boolean waiting = found.state().equals("WAITING");
           return switch (found.state()) {
-            case "SUCCEEDED", "TIMED_OUT" ->
+            case "SUCCEEDED", "TIMED_OUT", "FAILING" ->
                 new PollStep(found.state(), found.result(), found.checks(), null, false);
             case "WAITING", "FAILED", "RUNNING" -> {
               if (waiting && !found.due()) {

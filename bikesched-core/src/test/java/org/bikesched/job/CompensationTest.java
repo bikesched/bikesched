@@ -233,8 +233,9 @@ class CompensationTest extends AbstractBikeschedTest {
                     job.newStep("reserve", String.class)
                         .compensateWith((_, result) -> compensated.add(result))
                         .run(_ -> "42");
-                    job.waitForEvent("await-driver", "driver-accepted", job.id().toString())
-                        .receive(String.class);
+                    job.waitForEvent(
+                            "await-driver", "driver-accepted", job.id().toString(), String.class)
+                        .receive();
                     job.step("never", String.class, _ -> "0");
                   })
               .schedule();

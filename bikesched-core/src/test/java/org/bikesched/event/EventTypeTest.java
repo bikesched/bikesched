@@ -100,7 +100,8 @@ class EventTypeTest extends AbstractBikeschedTest {
               job ->
                   received.complete(
                       job.waitForEvent("await", paid, "order-2")
-                          .timeout(Duration.ofMillis(200), () -> new Payment("none", 0))
+                          .timeout(Duration.ofMillis(200))
+                          .onFailure(failing -> failing.resolve(new Payment("none", 0)))
                           .receive()))
           .schedule();
 

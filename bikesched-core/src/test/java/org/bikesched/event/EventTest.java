@@ -43,8 +43,9 @@ class EventTest extends AbstractBikeschedTest {
                         String.class,
                         step -> "{\"invoice\": " + invoices.incrementAndGet() + "}");
                     String payment =
-                        job.waitForEvent("await-payment", "payment-received", "order-1")
-                            .receive(String.class);
+                        job.waitForEvent(
+                                "await-payment", "payment-received", "order-1", String.class)
+                            .receive();
                     received.add(payment);
                   })
               .schedule();
@@ -91,7 +92,7 @@ class EventTest extends AbstractBikeschedTest {
       receiverId =
           bikesched
               .newJob("job-event-receiver")
-              .handler(job -> job.waitForEvent("receive", "job-event", key).receive(String.class))
+              .handler(job -> job.waitForEvent("receive", "job-event", key, String.class).receive())
               .schedule();
       awaitState(receiverId, "WAITING");
       UUID jobId =
@@ -101,7 +102,7 @@ class EventTest extends AbstractBikeschedTest {
                   job -> {
                     publishedIds.add(
                         job.newEvent("job-event", key).payload("\"payload\"").publish());
-                    job.waitForEvent("continue", "continue-job", key).receive(String.class);
+                    job.waitForEvent("continue", "continue-job", key, String.class).receive();
                   })
               .schedule();
       awaitState(jobId, "WAITING");
@@ -143,7 +144,7 @@ class EventTest extends AbstractBikeschedTest {
               .newJob("event-step-kind")
               .handler(
                   job -> {
-                    job.waitForEvent("approval", "approved", "kind-1").receive(String.class);
+                    job.waitForEvent("approval", "approved", "kind-1", String.class).receive();
                     try {
                       job.step("approval", String.class, step -> "regular");
                     } catch (IllegalStateException e) {
@@ -170,8 +171,8 @@ class EventTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     results.add(
-                        job.waitForEvent("first", "step-done", "copied-1").receive(String.class));
-                    job.waitForEvent("second", "step-done", "copied-2").receive(String.class);
+                        job.waitForEvent("first", "step-done", "copied-1", String.class).receive());
+                    job.waitForEvent("second", "step-done", "copied-2", String.class).receive();
                   })
               .schedule();
       awaitState(jobId, "WAITING");
@@ -206,8 +207,8 @@ class EventTest extends AbstractBikeschedTest {
                   job -> {
                     runs.incrementAndGet();
                     assertThat(
-                            job.waitForEvent("approval", "approved", "early-1")
-                                .receive(String.class))
+                            job.waitForEvent("approval", "approved", "early-1", String.class)
+                                .receive())
                         .isEqualTo("\"yes\"");
                   })
               .schedule();
@@ -224,7 +225,7 @@ class EventTest extends AbstractBikeschedTest {
           bikesched
               .newJob("event-broadcast")
               .handler(
-                  job -> job.waitForEvent("wait", "released", "batch-1").receive(String.class));
+                  job -> job.waitForEvent("wait", "released", "batch-1", String.class).receive());
       UUID first = newJob.schedule();
       UUID second = newJob.schedule();
       awaitState(first, "WAITING");
@@ -249,7 +250,8 @@ class EventTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void waitWithTimeoutReturnsTheTimeoutHandlersResultAfterTheDeadline() throws Exception {
+  void waitWithTimeoutReturnsTheFailureHandlersFallbackAfterTheDeadline() throws Exception {
+    List<String> errors = new CopyOnWriteArrayList<>();
     List<String> results = new CopyOnWriteArrayList<>();
     try (Bikesched bikesched = node("node-event-timeout")) {
       UUID jobId =
@@ -258,11 +260,16 @@ class EventTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     String approval =
-                        job.waitForEvent("approval", "approved", "timeout-1")
-                            .timeout(Duration.ofMillis(300), () -> "timed out")
-                            .receive(String.class);
+                        job.waitForEvent("approval", "approved", "timeout-1", String.class)
+                            .timeout(Duration.ofMillis(300))
+                            .onFailure(
+                                failing -> {
+                                  errors.add(failing.error());
+                                  failing.resolve("\"timed out\"");
+                                })
+                            .receive();
                     results.add(approval);
-                    if (approval.equals("timed out")) {
+                    if (approval.equals("\"timed out\"")) {
                       job.cancel("not approved in time");
                     }
                   })
@@ -274,42 +281,55 @@ class EventTest extends AbstractBikeschedTest {
           .isEqualTo(1);
       awaitState(jobId, "CANCELLED");
 
-      assertThat(results).containsExactly("timed out");
+      String message =
+          "org.bikesched.event.EventTimeoutException: Waiting for event approved/timeout-1 in step"
+              + " 'approval' timed out after PT0.3S";
+      assertThat(results).containsExactly("\"timed out\"");
+      assertThat(errors).containsExactly(message);
       assertThat(
               countRows(
                   "bikesched_steps",
-                  "job_id = '" + jobId + "' and name = 'approval' and state = 'TIMED_OUT'"))
+                  "job_id = '"
+                      + jobId
+                      + "' and name = 'approval' and state = 'SUCCEEDED' and event_id is null"
+                      + " and result = '\"timed out\"'::jsonb and failure_attempts = 1"
+                      + " and last_error = '"
+                      + message.replace("'", "''")
+                      + "'"))
+          .as("resolved: the fallback is stored, the timeout kept as last_error")
           .isOne();
     }
   }
 
   @Test
-  void timeoutHandlerCanRunAStep() throws Exception {
-    List<String> results = new CopyOnWriteArrayList<>();
+  void failureHandlerOfAWaitCannotRunAStep() throws Exception {
+    List<String> rejected = new CopyOnWriteArrayList<>();
     try (Bikesched bikesched = node("node-event-timeout-step")) {
       UUID jobId =
           bikesched
               .newJob("event-timeout-step")
               .handler(
-                  job -> {
-                    String payment =
-                        job.waitForEvent("await-payment", "paid", "timeout-step-1")
-                            .timeout(
-                                Duration.ofMillis(300),
-                                () -> job.step("fetch-payment", String.class, _ -> "\"fetched\""))
-                            .receive(String.class);
-                    results.add(payment);
-                  })
+                  job ->
+                      job.waitForEvent("await-payment", "paid", "timeout-step-1", String.class)
+                          .timeout(Duration.ofMillis(300))
+                          .onFailure(
+                              failing -> {
+                                try {
+                                  job.step("fetch-payment", String.class, _ -> "\"fetched\"");
+                                } catch (IllegalStateException e) {
+                                  rejected.add(e.getMessage());
+                                }
+                                failing.resolve(null);
+                              })
+                          .receive())
               .schedule();
 
       awaitState(jobId, "SUCCEEDED");
 
-      assertThat(results).containsExactly("\"fetched\"");
+      assertThat(rejected).singleElement().asString().contains("fetch-payment");
       assertThat(
-              countRows(
-                  "bikesched_steps",
-                  "job_id = '" + jobId + "' and name = 'fetch-payment' and state = 'SUCCEEDED'"))
-          .isOne();
+              countRows("bikesched_steps", "job_id = '" + jobId + "' and name = 'fetch-payment'"))
+          .isZero();
     }
   }
 
@@ -323,9 +343,9 @@ class EventTest extends AbstractBikeschedTest {
               .handler(
                   job ->
                       results.add(
-                          job.waitForEvent("approval", "approved", "in-time-1")
-                              .<String>timeout(Duration.ofMinutes(5), () -> null)
-                              .receive(String.class)))
+                          job.waitForEvent("approval", "approved", "in-time-1", String.class)
+                              .timeout(Duration.ofMinutes(5))
+                              .receive()))
               .schedule();
       awaitState(jobId, "WAITING");
 
@@ -352,7 +372,7 @@ class EventTest extends AbstractBikeschedTest {
                   job -> {
                     runs.incrementAndGet();
                     try {
-                      job.waitForEvent("wait", "never", "default-1").receive(String.class);
+                      job.waitForEvent("wait", "never", "default-1", String.class).receive();
                     } catch (EventTimeoutException e) {
                       thrown.add(e);
                       throw e;
@@ -364,9 +384,9 @@ class EventTest extends AbstractBikeschedTest {
               .newJob("event-own-timeout")
               .handler(
                   job ->
-                      job.waitForEvent("wait", "never", "own-1")
-                          .<String>timeout(Duration.ofMinutes(5), () -> null)
-                          .receive(String.class))
+                      job.waitForEvent("wait", "never", "own-1", String.class)
+                          .timeout(Duration.ofMinutes(5))
+                          .receive())
               .schedule();
 
       awaitState(jobId, "FAILED");
@@ -396,7 +416,7 @@ class EventTest extends AbstractBikeschedTest {
       UUID jobId =
           bikesched
               .newJob("event-tx")
-              .handler(job -> job.waitForEvent("wait", "shipped", "tx-1").receive(String.class))
+              .handler(job -> job.waitForEvent("wait", "shipped", "tx-1", String.class).receive())
               .schedule();
       awaitState(jobId, "WAITING");
 
@@ -423,7 +443,7 @@ class EventTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     try {
-                      job.waitForEvent("wait", "done", "caught-1").receive(String.class);
+                      job.waitForEvent("wait", "done", "caught-1", String.class).receive();
                     } catch (Throwable t) {
                       throw new IllegalStateException("swallowed " + t.getClass().getSimpleName());
                     }
@@ -444,7 +464,8 @@ class EventTest extends AbstractBikeschedTest {
               .newJob("event-then-fail")
               .handler(
                   job -> {
-                    payloads.add(job.waitForEvent("wait", "done", "fail-1").receive(String.class));
+                    payloads.add(
+                        job.waitForEvent("wait", "done", "fail-1", String.class).receive());
                     if (job.attempts() == 1) {
                       throw new IllegalStateException("boom");
                     }
@@ -477,7 +498,7 @@ class EventTest extends AbstractBikeschedTest {
             "event-race",
             job -> {
               Thread.sleep(ThreadLocalRandom.current().nextInt(20));
-              job.waitForEvent("wait", "race", job.payload(String.class)).receive(String.class);
+              job.waitForEvent("wait", "race", job.payload(String.class), String.class).receive();
             });
       }
       List<UUID> jobIds = new ArrayList<>();
@@ -532,7 +553,7 @@ class EventTest extends AbstractBikeschedTest {
               .handler(
                   job ->
                       received.complete(
-                          job.waitForEvent("wait", "signal", key).receive(String.class)))
+                          job.waitForEvent("wait", "signal", key, String.class).receive()))
               .schedule();
       awaitState(jobId, "WAITING");
 

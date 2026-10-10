@@ -252,7 +252,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
 
   /**
    * Starts building an event; {@link EventBuilder#publish()} publishes it to the steps waiting for
-   * it (see {@link Job#waitForEvent(String, String, String)}), whose jobs then continue:
+   * it (see {@link Job#waitForEvent(String, String, String, Class)}), whose jobs then continue:
    *
    * <pre>{@code
    * bikesched.newEvent("payment-received", orderId)

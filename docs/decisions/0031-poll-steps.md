@@ -9,7 +9,8 @@ Date: 2026-10-08
 
 ## Status
 
-Accepted
+Accepted; the timeout handler is superseded by
+[ADR 0034](0034-wait-timeouts-as-failures.md).
 
 ## Context
 
