@@ -17,7 +17,7 @@ object Items : Table("shop_items") {
 
 /** Exposed table for orders. */
 object Orders : Table("shop_orders") {
-  val id: Column<UUID> = uuid("id")
+  val id: Column<UUID> = javaUUID("id")
   val state: Column<String> = text("state")
   val totalAmount: Column<BigDecimal> = decimal("total_amount", 12, 2)
 
@@ -26,7 +26,7 @@ object Orders : Table("shop_orders") {
 
 /** Exposed table for the items of an order and their amounts. */
 object OrderItems : Table("shop_order_items") {
-  val orderId: Column<UUID> = uuid("order_id").references(Orders.id)
+  val orderId: Column<UUID> = javaUUID("order_id").references(Orders.id)
   val itemId: Column<String> = text("item_id").references(Items.id)
   val amount: Column<Int> = integer("amount")
 
@@ -35,7 +35,7 @@ object OrderItems : Table("shop_order_items") {
 
 /** Exposed table for the payment options offered for an order. */
 object OrderPaymentOptions : Table("shop_order_payment_options") {
-  val orderId: Column<UUID> = uuid("order_id").references(Orders.id)
+  val orderId: Column<UUID> = javaUUID("order_id").references(Orders.id)
   val paymentOptionId: Column<String> = text("payment_option_id")
   val name: Column<String> = text("name")
 
