@@ -56,6 +56,8 @@ orchestration across services. If that's what you're after, have a look at
 - Jobs start as soon as they are due: nodes notify each other with PostgreSQL `LISTEN/NOTIFY`,
   polling is only the safety net
 - Durable **steps** whose results survive retries, with optional **compensation** (sagas)
+- **Failure handlers** for permanently failed jobs (e.g. a dead-letter table) and for steps (with a
+  fallback result)
 - **Cancellation** from within a handler or from outside
 - **Recurring jobs** with fixed-rate, daily, weekly or custom schedules
 - **Events**: jobs wait for an event without holding a thread and resume when it is published
@@ -128,8 +130,8 @@ resume on another node after a crash; here it's `job.step(...)` and `job.waitFor
 
 The [documentation](docs/index.md) covers the concepts in detail:
 
-- [Jobs](docs/jobs.md): scheduling, writing handlers, retries, cancellation, history, retention,
-  timeouts
+- [Jobs](docs/jobs.md): scheduling, writing handlers, retries, failure handlers, cancellation,
+  history, retention, timeouts
 - [Steps and compensation](docs/steps.md)
 - [Recurring jobs](docs/recurring-jobs.md)
 - [Events](docs/events.md)

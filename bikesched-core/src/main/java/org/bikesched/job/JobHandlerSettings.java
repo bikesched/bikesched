@@ -51,4 +51,26 @@ public interface JobHandlerSettings<B extends JobHandlerSettings<B, P>, P>
    * @see org.bikesched.Bikesched#registerJobHandler(JobType, TypedJobHandler)
    */
   B handler(TypedJobHandler<? super P> handler);
+
+  /**
+   * Sets the failure handler of this job type (optional). It is registered under the job type when
+   * the job is scheduled, like {@link #handler(JobHandler)}: <strong>if a failure handler is
+   * already registered for the type, that one is kept and this one is ignored</strong>.
+   *
+   * @param handler handles failed jobs of this type
+   * @return this builder
+   * @see org.bikesched.Bikesched#registerJobFailureHandler(String, JobFailureHandler)
+   */
+  B failureHandler(JobFailureHandler handler);
+
+  /**
+   * Sets a failure handler receiving the payload mapped to the payload type (the {@link JobType}'s
+   * payload class, {@code Object} for a job type given as a string). Registered like {@link
+   * #failureHandler(JobFailureHandler)}.
+   *
+   * @param handler handles failed jobs of this type
+   * @return this builder
+   * @see org.bikesched.Bikesched#registerJobFailureHandler(JobType, TypedJobFailureHandler)
+   */
+  B failureHandler(TypedJobFailureHandler<? super P> handler);
 }

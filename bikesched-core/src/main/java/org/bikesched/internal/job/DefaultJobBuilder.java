@@ -8,9 +8,11 @@ import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.job.JobBuilder;
+import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.TransactionalJobBuilder;
+import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
 
 /** The {@link JobBuilder} implementation. */
@@ -38,6 +40,16 @@ public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
   }
 
   @Override
+  public JobBuilder<P> failureHandler(JobFailureHandler handler) {
+    return setFailureHandler(handler);
+  }
+
+  @Override
+  public JobBuilder<P> failureHandler(TypedJobFailureHandler<? super P> handler) {
+    return setFailureHandler(handler);
+  }
+
+  @Override
   public TransactionalJobBuilder<P> connection(Connection connection) {
     return new DefaultTransactionalJobBuilder<>(
         this, Objects.requireNonNull(connection, "connection"));
@@ -51,7 +63,7 @@ public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
   @Override
   public UUID schedule(Instant at) {
     Objects.requireNonNull(at, "at");
-    return scheduler.schedule(newJob(at), handler, null);
+    return scheduler.schedule(newJob(at), handler, failureHandler, null);
   }
 
   @Override
@@ -61,7 +73,7 @@ public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
 
   @Override
   public UUID schedule(Recurrence recurrence) {
-    return scheduler.scheduleRecurring(recurringJob(recurrence), handler, null);
+    return scheduler.scheduleRecurring(recurringJob(recurrence), handler, failureHandler, null);
   }
 
   @Override
@@ -72,7 +84,7 @@ public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
   @Override
   public UUID schedule(Recurrence recurrence, Instant firstRun) {
     Objects.requireNonNull(firstRun, "firstRun");
-    return scheduler.scheduleRecurring(recurringJob(recurrence), handler, firstRun);
+    return scheduler.scheduleRecurring(recurringJob(recurrence), handler, failureHandler, firstRun);
   }
 
   @Override

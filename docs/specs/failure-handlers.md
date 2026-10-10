@@ -1,6 +1,7 @@
 # Specification: failure handlers for jobs and steps
 
-Status: **draft**, open questions settled (§9).
+Status: **implemented** (core, step rework in `bikesched-kotlin`; ADR 0033). User docs:
+`docs/jobs.md#failure-handlers`, `docs/steps.md#failure-handler-per-step`.
 
 ## 1. Goal
 
@@ -95,7 +96,8 @@ public interface FailedJob {
 ```
 
 `FailedJob` is an interface because `payload(Class)` needs the node's `JsonMapper`; it has no
-steps, waits or sleeps. Registering again for a type replaces the handler. The typed variant
+steps, waits or sleeps. Registering again for a type throws, like `registerJobHandler` (§10.1).
+The typed variant
 mirrors `registerJobHandler(JobType, TypedJobHandler)`: the payload arrives mapped (`null` if the
 job has none), e.g.
 
@@ -121,7 +123,7 @@ bikesched.registerJobHandler(handler).registerJobFailureHandler(handler);
 The job builders (`JobBuilder`, `TransactionalJobBuilder`) get the counterpart of `handler(…)` in
 `JobHandlerSettings`, with the same semantics: registered when the job is scheduled, and **an
 already registered failure handler for the type is kept** (so the same scheduling code can run
-repeatedly), unlike `registerJobFailureHandler`, which replaces it:
+repeatedly), unlike `registerJobFailureHandler`, which throws then:
 
 ```java
 // JobHandlerSettings<B, P>
@@ -277,3 +279,21 @@ None.
   register its failure handler implicitly (§4.2).
 - The job builders get `failureHandler(…)`, like `handler(…)`: registered at `schedule()`, an
   existing failure handler is kept; `StepJobBuilder` gets none (§4.2).
+
+## 10. Decided while implementing
+
+1. `registerJobFailureHandler` throws for a type that already has a failure handler instead of
+   replacing it: `registerJobHandler` throws too, and a second registration is usually a bug. The
+   builders' `failureHandler(…)` keeps an existing one, like `handler(…)`.
+2. The compensation replay registers compensations only for compensable steps
+   (`StepStore.CompletedStep.compensable()`), so a resolved step is skipped even when another step
+   triggers the compensation.
+3. The statements ending a running job (`COMPLETE_JOB_SQL`, `FAIL_JOB_SQL`, `CANCEL_JOB_SQL`, the
+   compensation statements) and `REQUEST_CANCEL_SQL` exclude a claim running the failure handler
+   (`failing_state is null`); only `END_FAILING_SQL` and `RETRY_FAILURE_HANDLER_SQL` end it.
+4. A cancelled job whose compensations fail permanently ends `COMPENSATION_FAILED`, so its failure
+   handler runs too; a plain cancellation does not.
+5. A step failure handler gets the truncated stored text on its first run too
+   (`ValidationUtil.truncateMessage`), so every run sees the same `error()`.
+6. `JobClaim` gets the component `failing` (next to `compensation`); for a failing claim `attempt`
+   counts the runs of the failure handler.

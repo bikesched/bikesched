@@ -53,6 +53,36 @@ class SchedulingTest {
   }
 
   @Test
+  fun `step failure handler gets the stored error and resolves with a fallback`() {
+    val seen = CopyOnWriteArrayList<String>()
+    testNode("step-on-failure").use { bikesched ->
+      val id =
+        bikesched.createJob(type = unique("step-on-failure"), maxAttempts = 1) {
+          val report =
+            step<Report>(
+              "fetch",
+              onFailure = { failing ->
+                seen += failing.error()
+                failing.resolve(Report("fallback"))
+              },
+            ) {
+              error("report service down")
+            }
+          step<Unit>("notify", onFailure = { failing -> failing.resolve(Unit) }) {
+            error("mail down")
+          }
+          seen += report.name
+        }
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(id)?.state()).isEqualTo(JobState.SUCCEEDED)
+      }
+      assertThat(seen)
+        .containsExactly("java.lang.IllegalStateException: report service down", "fallback")
+    }
+  }
+
+  @Test
   fun `sleep takes a kotlin Duration`() {
     val ran = CopyOnWriteArrayList<String>()
     testNode("sleep").use { bikesched ->

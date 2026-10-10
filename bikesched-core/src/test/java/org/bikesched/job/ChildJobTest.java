@@ -326,6 +326,12 @@ class ChildJobTest extends AbstractBikeschedTest {
                 assertThat(e.result()).isEqualTo(outcomes.get(1));
               })
           .hasMessageEndingWith("failed: java.lang.IllegalStateException: broken");
+      assertThat(outcomes)
+          .extracting(outcome -> outcome.orElse("\"fallback\""))
+          .as("orElse: the result of a succeeded child, the fallback otherwise")
+          .containsExactly("\"ok\"", "\"fallback\"", "\"fallback\"", "\"fallback\"");
+      assertThat(new JobResult.TimedOut<String>(parentId).orElse("\"fallback\""))
+          .isEqualTo("\"fallback\"");
     }
   }
 

@@ -43,3 +43,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0030](0030-event-listener.md) | Event listener reports committed publications only | Accepted |
 | [0031](0031-poll-steps.md) | Poll steps: one step for all checks | Accepted |
 | [0032](0032-batched-notifications-after-commit.md) | Waking pollers with batched notifications after the commit | Accepted |
+| [0033](0033-failure-handlers.md) | Failure handlers for jobs and steps | Accepted |

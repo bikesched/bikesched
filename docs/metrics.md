@@ -33,8 +33,9 @@ Bikesched bikesched =
 | `bikesched.event.deliveries` | counter | `event.name` | waiting steps that received an event when it was published |
 
 `outcome` is the `JobAttemptOutcome` in lower case: `succeeded`, `retrying`, `failed`, `cancelled`,
-`waiting`, `compensating`, `compensated`, `compensation_retrying`, `compensation_failed` or
-`not_recorded` (the job was released while it ran, or the database write failed; it runs again).
+`waiting`, `compensating`, `compensated`, `compensation_retrying`, `compensation_failed`, `failing`
+(the job's [failure handler](jobs.md#failure-handlers) runs next; its run then reports `failed` or
+`compensation_failed`), `failure_handler_retrying` or `not_recorded` (the job was released while it ran, or the database write failed; it runs again).
 Alert e.g. on `failed` and `compensation_failed`.
 
 The event meters count an event once, when it is published; a step that starts waiting later and

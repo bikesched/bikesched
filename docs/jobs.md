@@ -147,6 +147,43 @@ retry. Occurrences of recurring jobs can't be retried (`IllegalArgumentException
 occurrence runs anyway. Neither can [child jobs](child-jobs.md): their parent may have the outcome
 already, so the parent starts a new child instead.
 
+## Failure handlers
+
+A job type can have a failure handler. It runs before a job of the type ends `FAILED` or
+`COMPENSATION_FAILED`, whatever made it fail: an exception or a timeout in the last attempt, an
+abandoned attempt, a dead node, `fail(…)` without remaining attempts, or failed compensations. Use
+it e.g. to move the job to a dead-letter table or to alert someone:
+
+```java
+bikesched.registerJobFailureHandler("charge", failed ->
+    deadLetters.insert(failed.id(), failed.type(), failed.payload(), failed.error()));
+
+bikesched.registerJobFailureHandler(CHARGE, (failed, charge) ->   // a JobType<Charge>
+    deadLetters.insert(failed.id(), charge.orderId(), failed.error()));
+```
+
+The handler gets a `FailedJob`: `id()`, `type()`, `payload()`/`payload(Class)`, `state()` (`FAILED`
+or `COMPENSATION_FAILED`, the state the job ends in) and `error()`, the stored `last_error`. It gets
+no exception: it runs in a claim of its own, possibly on another node.
+
+- The job is `FAILING` until the handler ran, then it ends; the job's outcome is final, the handler
+  only reacts to it. Compensations run first.
+- A handler that throws or times out (the job's timeout applies) runs again after the node's retry
+  backoff, up to `failureHandlerAttempts` runs (default 3, see
+  [Configuration](configuration.md#builder-options)); then the job ends anyway, `last_error` keeps
+  the job's error. It runs at least once, so it must be idempotent.
+- What happens when a job ends happens after the handler: the parent of a
+  [child job](child-jobs.md) receives the outcome, the next occurrence of a recurring job is
+  scheduled.
+- Register it on every node handling the type, like the job handler: the node failing a job decides
+  by its own registration. A node claiming a `FAILING` job without one ends the job and logs a
+  warning. Registering a second one for a type throws.
+- Class-based: `JobTypeFailureHandler<T>` carries its `JobType`, like `JobTypeHandler`; one class can
+  implement both and is registered with `registerJobHandler(handler)` and
+  `registerJobFailureHandler(handler)`.
+- The job builders take one too, registered when the job is scheduled unless the type has one:
+  `bikesched.newJob(CHARGE).handler(…).failureHandler((failed, charge) -> …).schedule()`.
+
 ## Cancellation
 
 ```java
@@ -218,7 +255,8 @@ A job that waited for an event and was retried once could show:
 - A [poll](steps.md#polling) records its first wait and its outcome, not every check: its
   further claims and suspensions are left out.
 - Also recorded: cancellations, compensation (`COMPENSATING`, compensation attempts,
-  `COMPENSATED` steps), jobs released by a stopping node or from a dead node, occurrences moved to
+  `COMPENSATED` steps), failure handlers (`FAILING`, their runs and failures, steps resolved by
+  their failure handler), jobs released by a stopping node or from a dead node, occurrences moved to
   a changed recurrence or deleted with their recurring job.
 - Only nodes with the history enabled record: enable it on all nodes, or the history has gaps.
   `findJobHistory` reads the table on any node.

@@ -5,6 +5,7 @@ import java.util.UUID
 import org.bikesched.Bikesched
 import org.bikesched.Node
 import org.bikesched.RetryBackoff
+import org.bikesched.job.FailingStep
 import org.bikesched.job.Job
 import org.bikesched.job.JobInfo
 import org.bikesched.job.Step
@@ -41,8 +42,9 @@ public inline fun <reified T> Job.payload(): T = payload(T::class.java) as T
  * @param retryBackoff the delay before the job is retried after this step failed, instead of the
  *   node's backoff, see `StepBuilder.retryBackoff`
  * @param onFailure runs when the step failed in the job's last attempt, before the step and the job
- *   are recorded as failed (the step is `FAILING` meanwhile); runs again if it throws, so it must
- *   be idempotent, see `StepBuilder.onFailure`
+ *   are recorded as failed (the step is `FAILING` meanwhile); may resolve the step with a fallback
+ *   result (`failing.resolve(x)`) so the job continues; runs again if it throws, so it must be
+ *   idempotent, see `StepBuilder.onFailure`
  * @param handler executes the step; only called if the step has not completed in an earlier attempt
  * @throws NullPointerException if the step result is `null` and [T] is not nullable
  */
@@ -50,7 +52,7 @@ public inline fun <reified T> Job.step(
   name: String,
   noinline compensation: ((step: Step, result: T) -> Unit)? = null,
   retryBackoff: RetryBackoff? = null,
-  noinline onFailure: ((step: Step, failure: Exception) -> Unit)? = null,
+  noinline onFailure: ((failing: FailingStep<T>) -> Unit)? = null,
   noinline handler: (Step) -> T,
 ): T = runStep(this, name, T::class.java, compensation, retryBackoff, onFailure, handler) as T
 
@@ -72,7 +74,7 @@ internal fun <T> runStep(
   type: Class<T>,
   compensation: ((Step, T) -> Unit)?,
   retryBackoff: RetryBackoff?,
-  onFailure: ((Step, Exception) -> Unit)?,
+  onFailure: ((FailingStep<T>) -> Unit)?,
   handler: (Step) -> T,
 ): Any? {
   if (type == Unit::class.java) {
@@ -82,7 +84,8 @@ internal fun <T> runStep(
       builder.retryBackoff(retryBackoff)
     }
     if (onFailure != null) {
-      builder.onFailure { step, failure -> onFailure(step, failure) }
+      @Suppress("UNCHECKED_CAST")
+      builder.onFailure { failing -> onFailure(UnitFailingStep(failing) as FailingStep<T>) }
     }
     if (compensation != null) {
       @Suppress("UNCHECKED_CAST")
@@ -99,10 +102,23 @@ internal fun <T> runStep(
     builder.retryBackoff(retryBackoff)
   }
   if (onFailure != null) {
-    builder.onFailure { step, failure -> onFailure(step, failure) }
+    builder.onFailure { failing -> onFailure(failing) }
   }
   if (compensation != null) {
     builder.compensateWith { step, result -> compensation(step, result) }
   }
   return builder.run { handler(it) }
+}
+
+/** A failing [Unit] step, run as a `Void` step: resolving it with [Unit] stores no result. */
+private class UnitFailingStep(private val delegate: FailingStep<Void>) : FailingStep<Unit> {
+  override fun jobId(): UUID = delegate.jobId()
+
+  override fun name(): String = delegate.name()
+
+  override fun error(): String = delegate.error()
+
+  override fun resolve(result: Unit) {
+    delegate.resolve(null)
+  }
 }

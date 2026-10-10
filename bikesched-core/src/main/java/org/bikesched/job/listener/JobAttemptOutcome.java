@@ -22,6 +22,14 @@ public enum JobAttemptOutcome {
   /** The compensation failed permanently. */
   COMPENSATION_FAILED,
   /**
+   * The job failed permanently (or its compensation did) and has a failure handler: the job is
+   * {@code FAILING} until the handler ran; that attempt then reports {@link #FAILED} or {@link
+   * #COMPENSATION_FAILED}.
+   */
+  FAILING,
+  /** The failure handler failed, it runs again. */
+  FAILURE_HANDLER_RETRYING,
+  /**
    * Nothing was recorded: the job was released while it ran (e.g. after missed heartbeats) or the
    * database write failed. The job runs again.
    */

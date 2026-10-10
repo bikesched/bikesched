@@ -97,6 +97,7 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
             "bikesched.heartbeat-interval=10s",
             "bikesched.node-timeout=60s",
             "bikesched.retry-backoff.fixed=2s",
+            "bikesched.failure-handler-attempts=5",
             "bikesched.event-retention=3d")
         .run(
             context -> {
@@ -109,6 +110,7 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
               assertThat(properties.heartbeatInterval()).isEqualTo(Duration.ofSeconds(10));
               assertThat(properties.nodeTimeout()).isEqualTo(Duration.ofSeconds(60));
               assertThat(properties.retryBackoff().fixed()).isEqualTo(Duration.ofSeconds(2));
+              assertThat(properties.failureHandlerAttempts()).isEqualTo(5);
               assertThat(properties.eventRetention()).isEqualTo(Duration.ofDays(3));
             });
   }

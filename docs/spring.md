@@ -150,6 +150,7 @@ keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and f
 | `bikesched.default-job-timeout` | none | |
 | `bikesched.default-event-timeout` | none | |
 | `bikesched.retry-backoff.fixed` or `bikesched.retry-backoff.exponential.{initial,max}` | none | mutually exclusive; other combinations fail the context |
+| `bikesched.failure-handler-attempts` | 3 | |
 | `bikesched.event-retention` | 7 days | |
 | `bikesched.event-clean-up-interval` | 1 hour | |
 | `bikesched.node-clean-up-interval` | 15 seconds | |

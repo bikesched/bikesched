@@ -65,8 +65,8 @@ private val processPaymentHandler = TypedJobHandler<ProcessPaymentPayload> { job
   val result = job.step<PaymentResult>(
     name = "charge",
     retryBackoff = RetryBackoff.exponential(Duration.ofSeconds(2), Duration.ofSeconds(30)),
-    onFailure = { _, failure ->
-      log.error("Payment for order {} failed for good: {}", payload.orderId, failure.message)
+    onFailure = { failing ->
+      log.error("Payment for order {} failed for good: {}", payload.orderId, failing.error())
       Queries.setOrderState(orderId, OrderState.FAILED.name)
     },
   ) { step ->

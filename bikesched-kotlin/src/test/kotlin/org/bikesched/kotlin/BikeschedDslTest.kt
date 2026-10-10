@@ -31,6 +31,7 @@ class BikeschedDslTest {
       defaultJobTimeout = 5.minutes
       defaultEventTimeout = 1.minutes
       retryBackoff = exponentialBackoff(1.seconds, 1.minutes)
+      failureHandlerAttempts = 5
       eventRetention = 1.minutes
       eventCleanUpInterval = 10.minutes
       nodeCleanUpInterval = 30.seconds

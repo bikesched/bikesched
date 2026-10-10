@@ -77,6 +77,36 @@ class JobStoreTest extends AbstractStoreTest {
   }
 
   @Test
+  void releasingAJobWhoseFailureHandlerRunsPutsItBackToFailing() throws SQLException {
+    UUID node = registerNode("node-failing");
+    UUID jobId = UUID.randomUUID();
+    execute(
+        "insert into bikesched_jobs (id, type, state, failing_state, failure_attempts, locked_by,"
+            + " lock_token, locked_at) values ('"
+            + jobId
+            + "', 'test', 'RUNNING', 'FAILED', 1, '"
+            + node
+            + "', gen_random_uuid(), now())");
+
+    assertThat(database.jobs().releaseJobs(node)).isOne();
+
+    assertThat(
+            count(
+                "id = '"
+                    + jobId
+                    + "' and state = 'FAILING' and failing_state = 'FAILED' and locked_by is null"))
+        .isOne();
+    assertThat(database.jobs().claimJobs(node, Set.of("test"), 10))
+        .singleElement()
+        .satisfies(
+            claimed -> {
+              assertThat(claimed.failingState()).isEqualTo("FAILED");
+              assertThat(claimed.failureAttempts()).isEqualTo(2);
+              assertThat(claimed.attempts()).isZero();
+            });
+  }
+
+  @Test
   void retryJobSchedulesFailedJobsAgain() throws SQLException {
     UUID failed = UUID.randomUUID();
     UUID compensated = UUID.randomUUID();

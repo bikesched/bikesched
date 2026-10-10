@@ -103,7 +103,7 @@ public final class JobStore {
       INSERT_JOB_SQL
           + """
 
-            on conflict (type) where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')
+            on conflict (type) where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING')
             do nothing""";
 
   // Moves a pending (not yet running) occurrence to a new recurrence; returns the old description.
@@ -121,7 +121,7 @@ public final class JobStore {
   private static final String FIND_PENDING_OCCURRENCE_SQL =
       """
             select id, scheduled_at, state from bikesched_jobs
-             where type = ? and recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING')""";
+             where type = ? and recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING')""";
 
   // Running occurrences cannot be deleted; finishing them schedules no successor on nodes that no
   // longer have the recurring job registered.
@@ -140,27 +140,29 @@ public final class JobStore {
   // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
   // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
   // releases the row locks, so no other node can pick them up afterwards. Claiming a COMPENSATING
-  // job counts a compensation attempt instead of an attempt (compensated_state stays set). Only
-  // jobs of types the node has handlers for: during a rolling deploy, nodes of the old version
-  // leave
+  // job counts a compensation attempt instead of an attempt (compensated_state stays set), claiming
+  // a FAILING job a run of its failure handler (failing_state stays set). Only jobs of types the
+  // node has handlers for: during a rolling deploy, nodes of the old version leave
   // jobs of new types to the new ones (the type is a key column of the polling index, so the filter
   // is checked on index entries, in claim order, without visiting other rows).
   private static final String CLAIM_JOBS_SQL =
       """
             update bikesched_jobs
                set state = 'RUNNING', locked_by = ?, lock_token = gen_random_uuid(), locked_at = now(),
-                   attempts = attempts + case when compensated_state is null then 1 else 0 end,
-                   compensation_attempts = compensation_attempts + case when compensated_state is null then 0 else 1 end,
+                   attempts = attempts + case when compensated_state is null and failing_state is null then 1 else 0 end,
+                   compensation_attempts = compensation_attempts
+                       + case when compensated_state is not null and failing_state is null then 1 else 0 end,
+                   failure_attempts = failure_attempts + case when failing_state is null then 0 else 1 end,
                    updated_at = now()
              where id in (select id from bikesched_jobs
-                           where state in ('SCHEDULED', 'WAITING', 'COMPENSATING') and scheduled_at <= now()
+                           where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING') and scheduled_at <= now()
                              and type = any(?)
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
             returning id, type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, recurrence, fixed_rate_at,
                       compensated_state, compensation_attempts, cancel_requested_at is not null, cancel_message,
-                      locked_by, lock_token, parent_job_id""";
+                      locked_by, lock_token, parent_job_id, failing_state, failure_attempts, last_error""";
 
   private static final String FIND_JOB_SQL =
       """
@@ -171,7 +173,7 @@ public final class JobStore {
             update bikesched_jobs
                set state = 'SUCCEEDED', result = ?::jsonb, locked_by = null, lock_token = null, locked_at = null,
                    finished_at = now(), updated_at = now()
-             where id = ? and lock_token = ? and state = 'RUNNING'
+             where id = ? and lock_token = ? and state = 'RUNNING' and failing_state is null
             returning attempts""";
 
   // Whether a job has completed steps to compensate; joined into the statements ending a job. A
@@ -197,6 +199,7 @@ public final class JobStore {
                    locked_by = null, lock_token = null, locked_at = null, last_error = ?, updated_at = now()
               from %s
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensated_state is null
+               and j.failing_state is null
             returning j.state, j.attempts, j.type, j.scheduled_at"""
           .formatted(COMPENSATE_SQL);
 
@@ -209,7 +212,8 @@ public final class JobStore {
             update bikesched_steps set state = 'CANCELLED', locked_by = null, finished_at = now()
              where job_id = ? and state in ('WAITING', 'RUNNING')
                and exists (select 1 from bikesched_jobs
-                            where id = ? and lock_token = ? and state = 'RUNNING' and compensated_state is null)
+                            where id = ? and lock_token = ? and state = 'RUNNING' and compensated_state is null
+                              and failing_state is null)
             returning name""";
 
   // Bikesched.retry(jobId): a FAILED job runs again with all its attempts, keeping its completed
@@ -219,7 +223,7 @@ public final class JobStore {
       """
             update bikesched_jobs
                set state = 'SCHEDULED', attempts = 0, compensated_state = null, compensation_attempts = 0,
-                   cancel_requested_at = null, cancel_message = null,
+                   failure_attempts = 0, cancel_requested_at = null, cancel_message = null,
                    scheduled_at = now(), finished_at = null, updated_at = now()
              where id = ? and state = 'FAILED' and recurrence is null and parent_job_id is null
             returning state, attempts, type, scheduled_at""";
@@ -239,24 +243,38 @@ public final class JobStore {
                    scheduled_at = case when state in ('SCHEDULED', 'WAITING') then now() else scheduled_at end,
                    updated_at = now()
              where id = ? and state in ('SCHEDULED', 'WAITING', 'RUNNING') and compensated_state is null
+               and failing_state is null
             returning state, attempts, type, scheduled_at""";
 
-  // All compensations of a compensating job ran: it ends in the state it was compensated for.
+  // All compensations of a compensating job ran: it ends in the state it was compensated for, or
+  // is FAILING first if it failed and its type has a failure handler on this node (p.*).
   private static final String COMPLETE_COMPENSATION_SQL =
       """
-            update bikesched_jobs
-               set state = compensated_state, locked_by = null, lock_token = null, locked_at = null, finished_at = now(), updated_at = now()
-             where id = ? and lock_token = ? and state = 'RUNNING' and compensated_state is not null
-            returning state, attempts, type, scheduled_at""";
+            update bikesched_jobs j
+               set state = case when j.compensated_state = 'FAILED' and p.failure_handler then 'FAILING'
+                                else j.compensated_state end,
+                   failing_state = case when j.compensated_state = 'FAILED' and p.failure_handler then 'FAILED' end,
+                   scheduled_at = case when j.compensated_state = 'FAILED' and p.failure_handler then now()
+                                       else j.scheduled_at end,
+                   finished_at = case when j.compensated_state = 'FAILED' and p.failure_handler then null else now() end,
+                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+              from (values (?::boolean)) as p (failure_handler)
+             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensated_state is not null
+               and j.failing_state is null
+            returning j.state, j.attempts, j.type, j.scheduled_at""";
 
   // A failed compensation attempt: compensating again (after the delay, if any) while compensation
-  // attempts remain (max_attempts applies to them as well), otherwise COMPENSATION_FAILED.
+  // attempts remain (max_attempts applies to them as well), otherwise COMPENSATION_FAILED, or
+  // FAILING first if its type has a failure handler on this node.
   private static final String FAIL_COMPENSATION_SQL =
       """
             update bikesched_jobs j
-               set state = case when j.compensation_attempts >= j.max_attempts
-                                then 'COMPENSATION_FAILED' else 'COMPENSATING' end,
-                   finished_at = case when j.compensation_attempts >= j.max_attempts then now() end,
+               set state = case when j.compensation_attempts < j.max_attempts then 'COMPENSATING'
+                                when p.failure_handler then 'FAILING' else 'COMPENSATION_FAILED' end,
+                   failing_state = case when j.compensation_attempts >= j.max_attempts and p.failure_handler
+                                        then 'COMPENSATION_FAILED' end,
+                   finished_at = case when j.compensation_attempts >= j.max_attempts and not p.failure_handler
+                                      then now() end,
                    scheduled_at = case when j.compensation_attempts < j.max_attempts
                                             and p.retry_after_millis is not null
                                        then now() + p.retry_after_millis * interval '1 millisecond'
@@ -264,12 +282,14 @@ public final class JobStore {
                    last_error = case when j.compensation_attempts >= j.max_attempts
                                      then p.error else j.last_error end,
                    locked_by = null, lock_token = null, locked_at = null, updated_at = now()
-              from (values (?::text, ?::bigint)) as p (error, retry_after_millis)
+              from (values (?::text, ?::bigint, ?::boolean)) as p (error, retry_after_millis, failure_handler)
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensated_state is not null
+               and j.failing_state is null
             returning j.state, j.max_attempts, j.scheduled_at, j.attempts, j.type""";
 
   // A failed attempt: retried (back to SCHEDULED) while attempts remain, otherwise FAILED, or
-  // COMPENSATING first if it has steps to compensate. The handler may set a new maximum number of
+  // COMPENSATING first if it has steps to compensate, or FAILING first if its type has a failure
+  // handler on this node. The handler may set a new maximum number of
   // attempts and delay the next attempt (p.*); all expressions see the row's old values, hence the
   // coalesce for the effective maximum. A retry of a job whose cancellation was requested is due
   // right away (and then cancelled).
@@ -278,28 +298,57 @@ public final class JobStore {
             update bikesched_jobs j
                set max_attempts = coalesce(p.max_attempts, j.max_attempts),
                    state = case when j.attempts < coalesce(p.max_attempts, j.max_attempts) then 'SCHEDULED'
-                                when c.compensate then 'COMPENSATING' else 'FAILED' end,
+                                when c.compensate then 'COMPENSATING'
+                                when p.failure_handler then 'FAILING' else 'FAILED' end,
                    compensated_state = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
                                                  and c.compensate then 'FAILED' end,
+                   failing_state = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
+                                             and not c.compensate and p.failure_handler then 'FAILED' end,
                    finished_at = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
-                                           and not c.compensate then now() end,
+                                           and not c.compensate and not p.failure_handler then now() end,
                    scheduled_at = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
-                                       then case when c.compensate then now() else j.scheduled_at end
+                                       then case when c.compensate or p.failure_handler then now()
+                                                 else j.scheduled_at end
                                        when j.cancel_requested_at is not null then now()
                                        when p.retry_after_millis is not null
                                        then now() + p.retry_after_millis * interval '1 millisecond'
                                        else j.scheduled_at end,
                    locked_by = null, lock_token = null, locked_at = null, last_error = p.error, updated_at = now()
-              from (values (?::text, ?::integer, ?::bigint)) as p (error, max_attempts, retry_after_millis),
+              from (values (?::text, ?::integer, ?::bigint, ?::boolean))
+                       as p (error, max_attempts, retry_after_millis, failure_handler),
                    %s
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensated_state is null
+               and j.failing_state is null
             returning j.state, j.max_attempts, j.scheduled_at, j.attempts, j.type"""
           .formatted(COMPENSATE_SQL);
+
+  // The failure handler of a FAILING job ran (or was given up, or has no handler on this node): the
+  // job ends in the state it was failing for.
+  private static final String END_FAILING_SQL =
+      """
+            update bikesched_jobs
+               set state = failing_state, failing_state = null, finished_at = now(),
+                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+             where id = ? and lock_token = ? and state = 'RUNNING' and failing_state is not null
+            returning state, attempts, type, scheduled_at""";
+
+  // The failure handler of a FAILING job failed: it runs again (after the delay, if any). The job
+  // keeps its last_error.
+  private static final String RETRY_FAILURE_HANDLER_SQL =
+      """
+            update bikesched_jobs j
+               set state = 'FAILING',
+                   scheduled_at = now() + coalesce(p.retry_after_millis, 0) * interval '1 millisecond',
+                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+              from (values (?::bigint)) as p (retry_after_millis)
+             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.failing_state is not null
+            returning j.state, j.attempts, j.type, j.scheduled_at""";
 
   private static final String RELEASE_JOBS_SQL =
       """
             update bikesched_jobs
-               set state = case when compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
+               set state = case when failing_state is not null then 'FAILING'
+                                when compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
                    locked_by = null, lock_token = null, locked_at = null, updated_at = now()
              where locked_by = ? and state = 'RUNNING'
             returning id, state, attempts, type""";
@@ -310,7 +359,8 @@ public final class JobStore {
   private static final String RELEASE_INACTIVE_JOBS_SQL =
       """
             update bikesched_jobs
-               set state = case when compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
+               set state = case when failing_state is not null then 'FAILING'
+                                when compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
                    locked_by = null, lock_token = null, locked_at = null, updated_at = now()
              where locked_by = ? and state = 'RUNNING'
                and locked_at < now() - make_interval(secs => ?)
@@ -324,7 +374,8 @@ public final class JobStore {
   private static final String RELEASE_JOBS_OF_DEAD_NODES_SQL =
       """
             update bikesched_jobs j
-               set state = case when j.compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
+               set state = case when j.failing_state is not null then 'FAILING'
+                                when j.compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
                    locked_by = null, lock_token = null, locked_at = null, updated_at = now()
               from bikesched_nodes n
              where j.locked_by = n.id
@@ -495,6 +546,9 @@ public final class JobStore {
   }
 
   private static String claimDetail(ClaimedJob job) {
+    if (job.failingState() != null) {
+      return "failure handler run " + job.failureAttempts();
+    }
     if (job.compensatedState() != null) {
       return "compensation attempt " + job.compensationAttempts();
     }
@@ -809,6 +863,11 @@ public final class JobStore {
     public boolean compensating() {
       return state.equals("COMPENSATING");
     }
+
+    /** Whether the job's failure handler runs next. */
+    public boolean failing() {
+      return state.equals("FAILING");
+    }
   }
 
   /**
@@ -904,24 +963,30 @@ public final class JobStore {
 
   /**
    * Ends a compensating job claimed by the node, once all its compensations ran, in the state it
-   * was compensated for ({@code CANCELLED} or {@code FAILED}); inserts the next occurrence of its
-   * recurring job in the same transaction.
+   * was compensated for ({@code CANCELLED} or {@code FAILED}; {@code FAILING} first for a failed
+   * job with a failure handler); inserts the next occurrence of its recurring job in the same
+   * transaction once it ended.
    *
    * @param jobId the job id
    * @param lock the lock of the claim (node and token)
+   * @param failureHandler whether the job type has a failure handler on this node
    * @param next the next occurrence, {@code null} if none
    * @param parentJobId the parent of a child job, whose step receives the outcome; {@code null} if
    *     none
    * @return the job's new state; empty if the job is not compensating on this node (anymore)
    */
   public Optional<EndedJob> completeCompensation(
-      UUID jobId, JobLock lock, NewJob next, UUID parentJobId) {
+      UUID jobId, JobLock lock, boolean failureHandler, NewJob next, UUID parentJobId) {
     return access.inTransaction(
         db -> {
           Optional<ChangedJob> ended =
-              db.one(COMPLETE_COMPENSATION_SQL, ChangedJob::from, jobId, lock.token());
+              db.one(
+                  COMPLETE_COMPENSATION_SQL, ChangedJob::from, failureHandler, jobId, lock.token());
           if (ended.isEmpty()) {
             return Optional.<EndedJob>empty();
+          }
+          if (ended.get().state().equals("FAILING")) {
+            db.dueAt(ended.get().type(), ended.get().scheduledAt());
           }
           history.record(
               db,
@@ -932,7 +997,8 @@ public final class JobStore {
                   lock.nodeId(),
                   "compensated"));
           childEnded(db, jobId, ended.get().state(), parentJobId);
-          boolean scheduled = next != null && insertOccurrence(db, next);
+          boolean scheduled =
+              next != null && !ended.get().state().equals("FAILING") && insertOccurrence(db, next);
           return Optional.of(new EndedJob(ended.get().state(), scheduled));
         },
         e ->
@@ -949,13 +1015,21 @@ public final class JobStore {
    * @param lock the lock of the claim (node and token)
    * @param error description of the failure, stored as {@code last_error} once final
    * @param retryAfter delay of the next compensation attempt, {@code null} for as soon as possible
+   * @param failureHandler whether the job type has a failure handler on this node: the job is
+   *     {@code FAILING} instead of {@code COMPENSATION_FAILED} then
    * @param next the next occurrence, {@code null} if none
    * @param parentJobId the parent of a child job, whose step receives the outcome if the job ends
    *     {@code COMPENSATION_FAILED}; {@code null} if none
    * @return the job after recording the failure; empty if it is not compensating on this node
    */
   public Optional<FailedJob> failCompensation(
-      UUID jobId, JobLock lock, String error, Duration retryAfter, NewJob next, UUID parentJobId) {
+      UUID jobId,
+      JobLock lock,
+      String error,
+      Duration retryAfter,
+      boolean failureHandler,
+      NewJob next,
+      UUID parentJobId) {
     return access.inTransaction(
         db -> {
           Optional<FailedJob> failed =
@@ -964,6 +1038,7 @@ public final class JobStore {
                   FailedJob::from,
                   ValidationUtil.truncateMessage(error),
                   Sql.millis(retryAfter),
+                  failureHandler,
                   jobId,
                   lock.token());
           if (failed.isPresent()) {
@@ -1123,7 +1198,7 @@ public final class JobStore {
    */
   public Optional<FailedJob> failJob(
       UUID jobId, JobLock lock, String error, Integer maxAttempts, Duration retryAfter) {
-    return failJob(jobId, lock, error, maxAttempts, retryAfter, null, null);
+    return failJob(jobId, lock, error, maxAttempts, retryAfter, false, null, null);
   }
 
   /**
@@ -1131,6 +1206,8 @@ public final class JobStore {
    * job fails permanently, the next occurrence of its recurring job is inserted in the same
    * transaction.
    *
+   * @param failureHandler whether the job type has a failure handler on this node: the job is
+   *     {@code FAILING} instead of {@code FAILED} then
    * @param next the next occurrence, {@code null} if none
    * @param parentJobId the parent of a child job, whose step receives the outcome if the job ends
    *     {@code FAILED}; {@code null} if none
@@ -1141,6 +1218,7 @@ public final class JobStore {
       String error,
       Integer maxAttempts,
       Duration retryAfter,
+      boolean failureHandler,
       NewJob next,
       UUID parentJobId) {
     return access.inTransaction(
@@ -1152,6 +1230,7 @@ public final class JobStore {
                   ValidationUtil.truncateMessage(error),
                   Sql.typed(maxAttempts, Types.INTEGER),
                   Sql.millis(retryAfter),
+                  failureHandler,
                   jobId,
                   jobId,
                   lock.token());
@@ -1178,10 +1257,90 @@ public final class JobStore {
   }
 
   /**
+   * Ends a {@code FAILING} job claimed by the node in the state it was failing for ({@code FAILED}
+   * or {@code COMPENSATION_FAILED}), once its failure handler ran; inserts the next occurrence of
+   * its recurring job in the same transaction.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the claim (node and token)
+   * @param detail recorded in the job history
+   * @param next the next occurrence, {@code null} if none
+   * @param parentJobId the parent of a child job, whose step receives the outcome; {@code null} if
+   *     none
+   * @return the job's new state; empty if the job is not failing on this node (anymore)
+   */
+  public Optional<EndedJob> endFailing(
+      UUID jobId, JobLock lock, String detail, NewJob next, UUID parentJobId) {
+    return access.inTransaction(
+        db -> {
+          Optional<ChangedJob> ended =
+              db.one(END_FAILING_SQL, ChangedJob::from, jobId, lock.token());
+          if (ended.isEmpty()) {
+            return Optional.<EndedJob>empty();
+          }
+          history.record(
+              db,
+              Change.job(
+                  jobId, ended.get().state(), ended.get().attempts(), lock.nodeId(), detail));
+          childEnded(db, jobId, ended.get().state(), parentJobId);
+          boolean scheduled = next != null && insertOccurrence(db, next);
+          return Optional.of(new EndedJob(ended.get().state(), scheduled));
+        },
+        e ->
+            new BikeschedException(
+                "Recording the end of failing bikesched job " + jobId + " failed", e));
+  }
+
+  /**
+   * Records a failed run of the failure handler of a {@code FAILING} job claimed by the node: it
+   * runs again after the delay.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the claim (node and token)
+   * @param error description of the handler's failure, recorded in the job history only
+   * @param retryAfter delay of the next run, {@code null} for as soon as possible
+   * @return when the handler runs again; empty if the job is not failing on this node (anymore)
+   */
+  public Optional<Instant> retryFailureHandler(
+      UUID jobId, JobLock lock, String error, Duration retryAfter) {
+    return history.change(
+        db -> {
+          Optional<ChangedJob> failing =
+              db.one(
+                  RETRY_FAILURE_HANDLER_SQL,
+                  ChangedJob::from,
+                  Sql.millis(retryAfter),
+                  jobId,
+                  lock.token());
+          if (failing.isEmpty()) {
+            return Optional.<Instant>empty();
+          }
+          db.dueAt(failing.get().type(), failing.get().scheduledAt());
+          history.record(
+              db,
+              Change.job(
+                  jobId,
+                  "FAILING",
+                  failing.get().attempts(),
+                  lock.nodeId(),
+                  "failure handler failed: "
+                      + error
+                      + " (runs again at "
+                      + failing.get().scheduledAt()
+                      + ")"));
+          return Optional.of(failing.get().scheduledAt());
+        },
+        e ->
+            new BikeschedException(
+                "Recording the failed failure handler of bikesched job " + jobId + " failed", e));
+  }
+
+  /**
    * A job after recording a failed attempt or compensation attempt.
    *
    * @param state {@code SCHEDULED} (retried), {@code COMPENSATING} (compensating now, or again),
-   *     {@code FAILED} or {@code COMPENSATION_FAILED}
+   *     {@code FAILING} (its failure handler runs next), {@code FAILED} or {@code
+   *     COMPENSATION_FAILED}
    * @param maxAttempts its maximum number of (compensation) attempts
    * @param scheduledAt when it runs next (only meaningful unless it ended)
    * @param attempts its number of attempts
@@ -1204,6 +1363,11 @@ public final class JobStore {
       return state.equals("COMPENSATING");
     }
 
+    /** Whether the job's failure handler runs next. */
+    public boolean failing() {
+      return state.equals("FAILING");
+    }
+
     /** Whether the job ended ({@code FAILED} or {@code COMPENSATION_FAILED}). */
     public boolean ended() {
       return state.equals("FAILED") || state.equals("COMPENSATION_FAILED");
@@ -1220,11 +1384,11 @@ public final class JobStore {
     }
 
     /**
-     * A retried or compensating job is due again (right away or after its delay): the failing node
-     * wakes itself up for it, other nodes are not told.
+     * A retried, compensating or failing job is due again (right away or after its delay): the
+     * failing node wakes itself up for it, other nodes are not told.
      */
     void reportDue(Sql db) {
-      if (retried() || compensating()) {
+      if (retried() || compensating() || failing()) {
         db.dueAt(type, scheduledAt);
       }
     }
@@ -1352,7 +1516,7 @@ public final class JobStore {
       """
             select ceil(extract(epoch from min(scheduled_at) - now()) * 1000)::bigint
               from bikesched_jobs
-             where state in ('SCHEDULED', 'WAITING', 'COMPENSATING')
+             where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING')
                and scheduled_at > now() and scheduled_at <= now() + ? * interval '1 millisecond'
                and type = any(?)""";
 
@@ -1452,6 +1616,10 @@ public final class JobStore {
    * @param cancelMessage the message of that request, may be {@code null}
    * @param lock the claiming node and the token of the claim; the attempt's writes are fenced by it
    * @param parentJobId the job that started this one as a child, {@code null} if none
+   * @param failingState {@code FAILED} or {@code COMPENSATION_FAILED} if the job was claimed to run
+   *     its failure handler, {@code null} otherwise
+   * @param failureAttempts the number of runs of its failure handler including the claimed one
+   * @param lastError the stored description of its last failure, may be {@code null}
    */
   public record ClaimedJob(
       UUID id,
@@ -1469,7 +1637,10 @@ public final class JobStore {
       boolean cancelRequested,
       String cancelMessage,
       JobLock lock,
-      UUID parentJobId) {
+      UUID parentJobId,
+      String failingState,
+      int failureAttempts,
+      String lastError) {
 
     /** Maps a row of {@code CLAIM_JOBS_SQL}. */
     static ClaimedJob from(Sql.Row row) throws SQLException {
@@ -1489,7 +1660,10 @@ public final class JobStore {
           row.bool(13),
           row.string(14),
           new JobLock(row.uuid(15), row.uuid(16)),
-          row.uuid(17));
+          row.uuid(17),
+          row.string(18),
+          row.integer(19),
+          row.string(20));
     }
   }
 }

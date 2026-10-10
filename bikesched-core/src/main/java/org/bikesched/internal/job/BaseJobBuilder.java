@@ -8,9 +8,11 @@ import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.internal.database.NewJob;
+import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobSettings;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
 
 /**
@@ -27,10 +29,12 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
   /** Stores the jobs built by the job builders; implemented by the owning bikesched node. */
   public interface Scheduler {
     /** {@code connection} is the caller's connection, or {@code null} to use bikesched's own. */
-    UUID schedule(NewJob job, JobHandler handler, Connection connection);
+    UUID schedule(
+        NewJob job, JobHandler handler, JobFailureHandler failureHandler, Connection connection);
 
     /** Registers a recurring job; {@code firstRun} is {@code null} for the schedule's next run. */
-    UUID scheduleRecurring(RecurringJob job, JobHandler handler, Instant firstRun);
+    UUID scheduleRecurring(
+        RecurringJob job, JobHandler handler, JobFailureHandler failureHandler, Instant firstRun);
 
     /** Parses a recurrence expression with the node's recurrence parsers. */
     Recurrence parseRecurrence(String expression);
@@ -48,6 +52,9 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
   /** Set by the builders implementing {@code JobHandlerSettings}, otherwise {@code null}. */
   JobHandler handler;
 
+  /** Set by the builders implementing {@code JobHandlerSettings}, otherwise {@code null}. */
+  JobFailureHandler failureHandler;
+
   int priority = DEFAULT_PRIORITY;
   int maxAttempts = DEFAULT_MAX_ATTEMPTS;
   Duration timeout;
@@ -64,6 +71,7 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
     this(settings.type, settings.payloadType, settings.jsonMapper, settings.scheduler);
     this.payload = settings.payload;
     this.handler = settings.handler;
+    this.failureHandler = settings.failureHandler;
     this.priority = settings.priority;
     this.maxAttempts = settings.maxAttempts;
     this.timeout = settings.timeout;
@@ -88,6 +96,17 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
   B setHandler(TypedJobHandler<? super P> handler) {
     Objects.requireNonNull(handler, "handler");
     return setHandler(job -> handler.handle(job, job.payload(payloadType)));
+  }
+
+  /** Sets the failure handler, for the builders implementing {@code JobHandlerSettings}. */
+  B setFailureHandler(JobFailureHandler handler) {
+    this.failureHandler = Objects.requireNonNull(handler, "handler");
+    return self();
+  }
+
+  /** Sets a failure handler receiving the mapped payload. */
+  B setFailureHandler(TypedJobFailureHandler<? super P> handler) {
+    return setFailureHandler(JobRegistry.typed(handler, payloadType));
   }
 
   @Override

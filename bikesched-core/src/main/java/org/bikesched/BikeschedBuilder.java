@@ -38,6 +38,7 @@ public final class BikeschedBuilder {
   static final Duration DEFAULT_JOB_RETENTION = Duration.ofDays(7);
   static final Duration DEFAULT_JOB_CLEAN_UP_INTERVAL = Duration.ofHours(1);
   static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
+  static final int DEFAULT_FAILURE_HANDLER_ATTEMPTS = 3;
 
   private DataSource dataSource;
   private String nodeName;
@@ -52,6 +53,7 @@ public final class BikeschedBuilder {
   private Duration defaultJobTimeout;
   private Duration defaultEventTimeout;
   private RetryBackoff retryBackoff = RetryBackoff.none();
+  private int failureHandlerAttempts = DEFAULT_FAILURE_HANDLER_ATTEMPTS;
   private Duration eventRetention = DEFAULT_EVENT_RETENTION;
   private Duration nodeCleanUpInterval = DEFAULT_NODE_CLEAN_UP_INTERVAL;
   private Duration eventCleanUpInterval = DEFAULT_EVENT_CLEAN_UP_INTERVAL;
@@ -167,6 +169,26 @@ public final class BikeschedBuilder {
    */
   public BikeschedBuilder retryBackoff(RetryBackoff retryBackoff) {
     this.retryBackoff = Objects.requireNonNull(retryBackoff, "retryBackoff");
+    return this;
+  }
+
+  /**
+   * Sets how often this node runs a failure handler before giving up on it (optional, default 3):
+   * the {@link org.bikesched.job.JobFailureHandler failure handler of a job type} and the {@link
+   * org.bikesched.job.StepBuilder#onFailure(org.bikesched.job.StepFailureHandler) failure handler
+   * of a step}. A run counts once it started, so a handler that crashes the node counts too. Once
+   * given up, the job ends ({@code FAILED} or {@code COMPENSATION_FAILED}), or the step is {@code
+   * FAILED} and the job fails.
+   *
+   * @param failureHandlerAttempts the number of runs, at least 1
+   * @return this builder
+   */
+  public BikeschedBuilder failureHandlerAttempts(int failureHandlerAttempts) {
+    if (failureHandlerAttempts < 1) {
+      throw new IllegalArgumentException(
+          "failureHandlerAttempts must be >= 1: " + failureHandlerAttempts);
+    }
+    this.failureHandlerAttempts = failureHandlerAttempts;
     return this;
   }
 
@@ -489,6 +511,7 @@ public final class BikeschedBuilder {
             autoStartPolling,
             defaultJobTimeout,
             retryBackoff,
+            failureHandlerAttempts,
             eventRetention,
             defaultEventTimeout,
             nodeCleanUpInterval,

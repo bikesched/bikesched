@@ -32,7 +32,13 @@ public enum JobState {
   COMPENSATING,
 
   /** Compensating its steps failed permanently; needs manual attention. */
-  COMPENSATION_FAILED;
+  COMPENSATION_FAILED,
+
+  /**
+   * Failed permanently (or its compensation did), its {@link JobFailureHandler failure handler}
+   * runs before it ends {@code FAILED} or {@code COMPENSATION_FAILED}.
+   */
+  FAILING;
 
   /**
    * Returns whether a job in this state has ended, i.e. no longer runs.

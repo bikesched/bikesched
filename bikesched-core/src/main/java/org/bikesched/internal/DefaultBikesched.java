@@ -43,10 +43,12 @@ import org.bikesched.internal.util.ExecutorUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.internal.util.Version;
 import org.bikesched.job.JobBuilder;
+import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -122,6 +124,7 @@ public final class DefaultBikesched implements Bikesched {
                 settings.defaultEventTimeout(),
                 settings.eventRetention(),
                 settings.retryBackoff(),
+                settings.failureHandlerAttempts(),
                 settings.hardTimeoutGrace(),
                 settings.jobListener(),
                 settings.eventListener()),
@@ -269,6 +272,26 @@ public final class DefaultBikesched implements Bikesched {
     registry.requirePayloadType(type);
     Class<T> payloadType = type.payloadType();
     return registerJobHandler(type.name(), job -> handler.handle(job, job.payload(payloadType)));
+  }
+
+  @Override
+  public Bikesched registerJobFailureHandler(String type, JobFailureHandler handler) {
+    requireValidType(type);
+    Objects.requireNonNull(handler, "handler");
+    if (!registry.registerFailureHandler(type, handler)) {
+      throw new IllegalArgumentException(
+          "A failure handler for job type '" + type + "' is already registered");
+    }
+    LOG.debug("bikesched node {} registered failure handler for job type {}", nodeName, type);
+    return this;
+  }
+
+  @Override
+  public <T> Bikesched registerJobFailureHandler(
+      JobType<T> type, TypedJobFailureHandler<? super T> handler) {
+    Objects.requireNonNull(handler, "handler");
+    registry.requirePayloadType(type);
+    return registerJobFailureHandler(type.name(), JobRegistry.typed(handler, type.payloadType()));
   }
 
   @Override
