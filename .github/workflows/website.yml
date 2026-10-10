@@ -1,0 +1,66 @@
+# Builds the project website (bikesched-website, see docs/specs/website-project-site.md) and
+# publishes it to static.app whenever docs/ or the main README.md change on main. Pull requests
+# are not deployed, only pushes to main.
+
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive # the Hextra theme (bikesched-website/site/themes/hextra)
+
+      # Same version as `java` in gradle/libs.versions.toml; Gradle runs on it and uses it as the
+      # toolchain (no auto-provisioning needed).
+      - name: Set up JDK 26
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '26'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build website
+        run: ./gradlew :bikesched-website:hugoBuild
+
+      # The static.app zip API serves index.html and the other files/folders from the zip root, so
+      # the archive is created from inside the publish directory (zip stores paths relative to the
+      # current directory).
+      - name: Zip website
+        working-directory: bikesched-website/build/hugo/publish
+        run: zip -r "${GITHUB_WORKSPACE}/site.zip" .
+
+      - name: Publish to static.app
+        env:
+          API_KEY: ${{ secrets.STATIC_APP_API_KEY }}
+        run: |
+          response=$(curl -sS -w '\n%{http_code}' --oauth2-bearer "${API_KEY}" -X POST https://api.static.app/v1/sites/zip \
+            -F "archive=@site.zip" \
+            -F "pid=le3rpst1ob")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "$body"
+          if [ "$http_code" -ge 400 ] || ! echo "$body" | grep -q '"status":"success"'; then
+            echo "static.app deploy failed (HTTP $http_code)"
+            exit 1
+          fi
