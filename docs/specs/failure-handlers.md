@@ -39,8 +39,8 @@ or on another node, and timeouts, abandoned attempts and dead nodes have no exce
 
 In scope:
 
-- Core: `registerJobFailureHandler`, the `FAILING` job state, the reworked
-  `StepFailureHandler`, the builder option `failureHandlerAttempts`.
+- Core: `registerJobFailureHandler`, `failureHandler(…)` on the job builders, the `FAILING` job
+  state, the reworked `StepFailureHandler`, the builder option `failureHandlerAttempts`.
 - Kotlin, examples and docs for the step rework (its API breaks).
 - `JobResult.orElse(T fallback)` for parents falling back on a failed child job.
 
@@ -117,6 +117,26 @@ class ChargeHandler implements JobTypeHandler<Charge>, JobTypeFailureHandler<Cha
 var handler = new ChargeHandler();
 bikesched.registerJobHandler(handler).registerJobFailureHandler(handler);
 ```
+
+The job builders (`JobBuilder`, `TransactionalJobBuilder`) get the counterpart of `handler(…)` in
+`JobHandlerSettings`, with the same semantics: registered when the job is scheduled, and **an
+already registered failure handler for the type is kept** (so the same scheduling code can run
+repeatedly), unlike `registerJobFailureHandler`, which replaces it:
+
+```java
+// JobHandlerSettings<B, P>
+B failureHandler(JobFailureHandler handler);
+B failureHandler(TypedJobFailureHandler<? super P> handler);
+
+bikesched.newJob(CHARGE)
+    .handler((job, charge) -> payments.charge(charge))
+    .failureHandler((failed, charge) -> deadLetters.insert(failed.id(), charge))
+    .payload(charge)
+    .schedule();
+```
+
+`StepJobBuilder` (child jobs) gets none, as it has no `handler(…)`: a child job type registers its
+handlers on its own.
 
 New job state `FAILING`, like `COMPENSATING`, with two columns:
 
@@ -217,7 +237,8 @@ The child's failure handler still runs before the parent continues (§4.2).
   a node without the handler ends a `FAILING` job; the parent continues and the next recurring
   occurrence is scheduled only after the handler ran; `FailedJob` fields; the typed variant gets the
   mapped payload (and `null` without one); a class implementing `JobTypeHandler` and
-  `JobTypeFailureHandler` registers both; history and log lines.
+  `JobTypeFailureHandler` registers both; `failureHandler(…)` on the job builders registers at
+  `schedule()` and keeps an already registered one; history and log lines.
 - `StepTest`: `resolve` continues the job with the result and a replay returns it; without it the
   job fails; the handler gets the stored error; a throwing handler is given up after
   `failureHandlerAttempts`; resolve wins over a throw; a resolved step with `compensateWith` is not
@@ -254,3 +275,5 @@ None.
 - Typed and class-based job failure handlers (`TypedJobFailureHandler`, `JobTypeFailureHandler`)
   next to the string-based one, like the job handlers. Registering a `JobTypeHandler` does not
   register its failure handler implicitly (§4.2).
+- The job builders get `failureHandler(…)`, like `handler(…)`: registered at `schedule()`, an
+  existing failure handler is kept; `StepJobBuilder` gets none (§4.2).
