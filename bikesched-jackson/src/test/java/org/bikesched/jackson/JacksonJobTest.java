@@ -58,8 +58,8 @@ class JacksonJobTest {
           job -> {
             Order order = job.payload(Order.class);
             Payment payment =
-                job.waitForEvent("await-payment", "payment-received", order.id())
-                    .receive(Payment.class);
+                job.waitForEvent("await-payment", "payment-received", order.id(), Payment.class)
+                    .receive();
             Receipt stored =
                 job.step(
                     "create-receipt",

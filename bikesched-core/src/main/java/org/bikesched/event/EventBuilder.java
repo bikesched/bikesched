@@ -18,9 +18,9 @@ import org.bikesched.JsonMapper;
  * }</pre>
  *
  * <p>Publishing stores the event and hands it to every step currently waiting for it (same name and
- * key, see {@link org.bikesched.job.Job#waitForEvent(String, String, String)}); their jobs continue
- * right away. The event is kept for its {@link #retention(Duration) retention}, so a step that
- * starts waiting for it later still receives it. Not thread-safe.
+ * key, see {@link org.bikesched.job.Job#waitForEvent(String, String, String, Class)}); their jobs
+ * continue right away. The event is kept for its {@link #retention(Duration) retention}, so a step
+ * that starts waiting for it later still receives it. Not thread-safe.
  *
  * @param <P> the payload type: {@code Object} for an event name given as a string, the payload
  *     class of an {@link EventType}

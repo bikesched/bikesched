@@ -115,7 +115,8 @@ public final class PollExample {
           // Step 2: wait for the webhook, at most WEBHOOK_TIMEOUT.
           PaymentSettled webhook =
               job.waitForEvent("await-webhook", PAYMENT_SETTLED, paymentId)
-                  .timeout(WEBHOOK_TIMEOUT, () -> null)
+                  .timeout(WEBHOOK_TIMEOUT)
+                  .onFailure(failing -> failing.resolve(null)) // no webhook: poll instead
                   .receive();
 
           // Step 3, only without the webhook: poll the provider until the payment settled. Each

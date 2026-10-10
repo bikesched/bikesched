@@ -33,7 +33,7 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0020](0020-job-listener-and-micrometer.md) | Job listener SPI with Micrometer in its own module | Accepted |
 | [0021](0021-apache-license-and-trademark-policy.md) | Apache License 2.0 with a trademark policy | Accepted |
 | [0022](0022-spring-integration-in-its-own-module.md) | Spring integration in its own module | Accepted |
-| [0023](0023-steps-cannot-be-nested.md) | Steps cannot be nested | Accepted |
+| [0023](0023-steps-cannot-be-nested.md) | Steps cannot be nested | Accepted, timeout handlers superseded by [0034](0034-wait-timeouts-as-failures.md) |
 | [0024](0024-cron-expressions-via-cron-utils.md) | Cron expressions via cron-utils in their own module | Accepted |
 | [0025](0025-recurrence-parsers-in-core.md) | Recurrence parsers in core | Accepted |
 | [0026](0026-durable-sleep-as-step.md) | Durable sleep as a step without an event | Accepted |
@@ -41,6 +41,7 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0028](0028-step-kinds-and-event-references.md) | Step kinds and plain event references | Accepted |
 | [0029](0029-child-jobs-as-steps.md) | Child jobs as one step holding the outcome | Accepted |
 | [0030](0030-event-listener.md) | Event listener reports committed publications only | Accepted |
-| [0031](0031-poll-steps.md) | Poll steps: one step for all checks | Accepted |
+| [0031](0031-poll-steps.md) | Poll steps: one step for all checks | Accepted, timeout handler superseded by [0034](0034-wait-timeouts-as-failures.md) |
 | [0032](0032-batched-notifications-after-commit.md) | Waking pollers with batched notifications after the commit | Accepted |
 | [0033](0033-failure-handlers.md) | Failure handlers for jobs and steps | Accepted |
+| [0034](0034-wait-timeouts-as-failures.md) | Timeouts of event waits and polls handled by failure handlers | Accepted |

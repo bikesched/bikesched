@@ -50,10 +50,10 @@ defaults:
 | `createRecurringJob(type, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout, onFailure) { … }` | registers a recurring job and returns the id of its pending occurrence |
 | `Bikesched.publishEvent(name, key, payload, retention, connection)` | publishes an event and returns its id |
 | `Job.publishEvent(name, key, payload, retention, stepName)` | publishes once as a durable job step and returns the event's id, the same on every run |
-| `waitForEvent<T>(step, name, key, timeout) { fallback }` (in a handler) | waits for an event and returns its payload; once the `timeout` passes, the fallback's result (e.g. `waitForEvent<Payment?>(…, timeout = 3.days) { null }`), without fallback the job fails permanently like with the default event timeout |
+| `waitForEvent<T>(step, name, key, timeout, onFailure)` (in a handler) | waits for an event and returns its payload; once the `timeout` (or the default event timeout) passes, the job fails, unless `onFailure = { failing -> … }` resolves the wait with a fallback (e.g. `waitForEvent<Payment?>(…, timeout = 3.days, onFailure = { it.resolve(null) })`) |
 | `step<T>(name, compensation, retryBackoff, onFailure) { … }` (in a handler) | runs a durable step; the optional `compensation = { step, result -> … }` undoes it if the job is cancelled or fails permanently; `onFailure = { failing -> … }` handles its failure in the job's last attempt and may `failing.resolve(x)` it with a fallback |
 | `startJob(type, payload, stepName, at, delay, priority, maxAttempts, timeout, compensation)` (in a handler) | starts a [child job](child-jobs.md) once as a durable step and returns its id, the same on every run; the optional `compensation = { step, childId -> … }` e.g. cancels it |
-| `poll<T>(name, interval, timeout, onTimeout) { step -> … }` (in a handler) | polls until the trailing handler returns `Poll.ready(value)`, checking every `interval` (a `Duration` or a `RetryBackoff`); once the optional `timeout` passes, the result of `onTimeout`, without it the job fails with a `PollTimeoutException`; a `poll<Unit>` stores no value |
+| `poll<T>(name, interval, timeout, onFailure) { step -> … }` (in a handler) | polls until the trailing handler returns `Poll.ready(value)`, checking every `interval` (a `Duration` or a `RetryBackoff`); once the optional `timeout` passes, the job fails with a `PollTimeoutException`, unless `onFailure = { failing -> … }` resolves the poll (it also handles a check failing in the last attempt); a `poll<Unit>` stores no value |
 | `awaitJob<T>(childJobId, timeout)` (in a handler) | waits for a child job and returns its `JobResult<T>`; `JobResult.TimedOut` once the optional `timeout` passed |
 
 The optional trailing handler of `createJob` and `createRecurringJob` is registered for the type
@@ -67,7 +67,6 @@ failure handler the same way.
 |---|---|
 | `bikesched { … }` | `Bikesched.builder()…build()` |
 | `job.payload<T>()` | `payload(T.class)` |
-| `receive<T>()`, `receive<T>(timeout) { fallback }`, `receiveOrNull<T>(timeout)` on the Java `waitForEvent(step, name, key)` | `receive(T.class)`, `timeout(…, handler).receive(T.class)` |
 | `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `sleep(String, Duration)`, `every(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
 | `findJobOrNull(id)`, `node.idOrNull` | `Optional` |
 

@@ -85,9 +85,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 ## API conventions
 
 - Callback interfaces are `<X>Handler` with one `handle(...)` method (`JobHandler`, `StepHandler`,
-  `TimeoutHandler`, `CompensationHandler`); they receive the context object (e.g.
-  the `Step`), not just a value. Exception: `JobTypeHandler` adds `type()` for class-based handlers
-  registered without a separate type argument.
+  `StepFailureHandler`, `CompensationHandler`); they receive the context object (e.g. the `Step`,
+  the `FailingStep`), not just a value. Exception: `JobTypeHandler` adds `type()` for class-based
+  handlers registered without a separate type argument.
 - Observers are `<X>Listener` SPIs with `on<Event>(record)` default no-op methods (`job.listener.JobListener`, `event.listener.EventListener`),
   called synchronously; their exceptions are logged and ignored. Each event passes one record, so
   fields can be added without breaking implementations.
@@ -124,7 +124,8 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - Kotlin-style entry points are extensions on `Bikesched` with named arguments and an optional
   trailing handler, implemented with the Java builders underneath: `handleJobs<T>(type) { payload -> }`
   (the `Job` is the receiver), `createJob(…)`, `createRecurringJob(…)`, `publishEvent(…)`, and in
-  handlers `step<T>(name, compensation = …) { }` and `waitForEvent<T>(step, name, key, timeout) { }`.
+  handlers `step<T>(name, compensation = …) { }` and
+  `waitForEvent<T>(step, name, key, timeout, onFailure = …)`.
 - Reified helpers do the `as T` cast inline, so a non-null `T` with a `null` value throws. `Unit`
   steps run as `Void` steps (no `Unit` reaches the `JsonMapper`).
 - Use distinct names rather than overloading a Java member: a member always wins over an extension

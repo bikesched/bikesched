@@ -36,7 +36,7 @@ class TextLengthTest extends AbstractBikeschedTest {
               .handler(
                   job ->
                       received.complete(
-                          job.waitForEvent(stepName, eventName, eventKey).receive(String.class)))
+                          job.waitForEvent(stepName, eventName, eventKey, String.class).receive()))
               .schedule();
       awaitState(jobId, "WAITING");
 

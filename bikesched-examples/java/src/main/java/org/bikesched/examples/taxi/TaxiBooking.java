@@ -164,7 +164,8 @@ public final class TaxiBooking {
     // 2. Wait until a driver accepts the ride with a price.
     DriverOffer offer =
         job.waitForEvent("await-driver", DRIVER_ACCEPTED, ride.rideId())
-            .timeout(driverTimeout, () -> null)
+            .timeout(driverTimeout)
+            .onFailure(failing -> failing.resolve(null)) // no driver in time
             .receive();
     if (offer == null) {
       job.step(
@@ -199,7 +200,8 @@ public final class TaxiBooking {
         });
     PriceDecision decision =
         job.waitForEvent("await-price-decision", PRICE_DECIDED, ride.rideId())
-            .timeout(priceTimeout, () -> new PriceDecision(false))
+            .timeout(priceTimeout)
+            .onFailure(failing -> failing.resolve(new PriceDecision(false))) // no answer: declined
             .receive();
     if (!decision.accepted()) {
       job.cancel("The customer did not accept the price"); // withdraws the request

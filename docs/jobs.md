@@ -101,7 +101,7 @@ A handler receives the `Job` being executed:
 | `step(name, Class, handler)` | run a durable step, see [Durable steps](steps.md#durable-steps) |
 | `newStep(name, Class)` | build a step with a compensation, see [Compensation](steps.md#compensation) |
 | `newEvent(name, key)`, `newEvent(eventType, key)` | publish once as a durable step, see [Publishing from jobs](events.md#publishing-from-jobs) |
-| `waitForEvent(step, name, key)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](events.md) |
+| `waitForEvent(step, name, key, Class)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](events.md) |
 | `awaitEvent(step, eventType, key)` | wait for an event and return its typed payload, see [Typed events](events.md#typed-events) |
 | `sleep(step, Duration)`, `sleepUntil(step, Instant)` | pause the job without holding a thread, see [Sleeping](steps.md#sleeping) |
 | `newPoll(step, Class, interval)…run(handler)` | check an external service until a result is ready, see [Polling](steps.md#polling) |

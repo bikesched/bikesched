@@ -254,9 +254,8 @@ class SchedulingTest {
             name = eventName,
             key = "never",
             timeout = 100.milliseconds,
-          ) {
-            null
-          }
+            onFailure = { it.resolve(null) },
+          )
         results += "$answer / $late"
       }
       val jobId = bikesched.createJob(type = type, payload = Report("r-1"))
@@ -277,16 +276,10 @@ class SchedulingTest {
     val type = unique("wait-timeout")
     val never = unique("never")
     val seenAttempts = CopyOnWriteArrayList<Int>()
-    val errors = CopyOnWriteArrayList<String>()
 
     testNode("wait-timeout").use { bikesched ->
       bikesched.handleJobs(type) {
         seenAttempts += attempts()
-        try {
-          waitForEvent<Report?>(step = "missing", name = "nothing", key = "k", onTimeout = { null })
-        } catch (e: IllegalArgumentException) {
-          errors += e.message.orEmpty()
-        }
         waitForEvent<Report>(step = "await", name = never, key = "k", timeout = 100.milliseconds)
 
         step<TypedEventTest.Payment>(name = "") {
@@ -298,7 +291,6 @@ class SchedulingTest {
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.FAILED)
       }
-      assertThat(errors).contains("onTimeout requires a timeout")
       assertThat(seenAttempts.distinct()).`as`("no retries after the timeout").containsExactly(1)
     }
   }
@@ -311,9 +303,9 @@ class SchedulingTest {
 
     testNode("event").use { bikesched ->
       bikesched.handleJobs(type) {
-        received += waitForEvent("with-payload", eventName, "a").receive<Report>()
+        received += waitForEvent<Report>("with-payload", eventName, "a")
         publishEvent(name = "${eventName}-published", key = "event", payload = Report("shipped"))
-        received += waitForEvent("without-payload", eventName, "b").receive<Report?>()
+        received += waitForEvent<Report?>("without-payload", eventName, "b")
       }
       val jobId = bikesched.createJob(type = type)
       await().untilAsserted {

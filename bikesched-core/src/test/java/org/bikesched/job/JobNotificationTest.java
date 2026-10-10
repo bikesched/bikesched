@@ -91,7 +91,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
       worker.registerJobHandler(
           "notify-event",
           job -> {
-            job.waitForEvent("wait", "notify-paid", job.id().toString()).receive(String.class);
+            job.waitForEvent("wait", "notify-paid", job.id().toString(), String.class).receive();
             received.put(job.id(), Instant.now());
           });
       UUID jobId = worker.newJob("notify-event").schedule();
@@ -144,7 +144,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
           });
       worker.registerJobHandler(
           "notify-cancel",
-          job -> job.waitForEvent("wait", "notify-never", "x").receive(String.class));
+          job -> job.waitForEvent("wait", "notify-never", "x", String.class).receive());
       UUID failed = worker.newJob("notify-retry").maxAttempts(1).schedule();
       UUID waiting = worker.newJob("notify-cancel").schedule();
       awaitState(failed, "FAILED");
@@ -215,9 +215,10 @@ class JobNotificationTest extends AbstractBikeschedTest {
           "notify-deadline",
           job -> {
             step(job, "start", () -> run(runs, "deadline"));
-            job.waitForEvent("wait", "notify-never", job.id().toString())
-                .timeout(Duration.ofSeconds(1), () -> "timed out")
-                .receive(String.class);
+            job.waitForEvent("wait", "notify-never", job.id().toString(), String.class)
+                .timeout(Duration.ofSeconds(1))
+                .onFailure(failing -> failing.resolve("\"timed out\""))
+                .receive();
             run(runs, "deadline");
           });
       worker.registerJobHandler("notify-delayed", recordStart());
@@ -287,8 +288,8 @@ class JobNotificationTest extends AbstractBikeschedTest {
       worker.registerJobHandler(
           "notify-caller-event",
           job -> {
-            job.waitForEvent("wait", "notify-caller-paid", job.id().toString())
-                .receive(String.class);
+            job.waitForEvent("wait", "notify-caller-paid", job.id().toString(), String.class)
+                .receive();
             received.put(job.id(), Instant.now());
           });
       client.registerJobHandler("notify-caller", _ -> {});

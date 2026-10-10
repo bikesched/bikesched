@@ -42,7 +42,7 @@ class EventListenerTest extends AbstractBikeschedTest {
       UUID waiting =
           bikesched
               .newJob(unique("listener-receiver"))
-              .handler(job -> job.waitForEvent("wait", eventName, "k-1").receive(String.class))
+              .handler(job -> job.waitForEvent("wait", eventName, "k-1", String.class).receive())
               .schedule();
       awaitState(waiting, "WAITING");
 
@@ -90,7 +90,7 @@ class EventListenerTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     returned.add(job.newEvent(eventName, "k").publish());
-                    job.waitForEvent("continue", continueName, "k").receive(String.class);
+                    job.waitForEvent("continue", continueName, "k", String.class).receive();
                   })
               .schedule();
       awaitState(jobId, "WAITING");

@@ -260,7 +260,7 @@ class PollTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void aTimeoutHandlerResultIsReturnedOnEveryRunAndNotStored() throws Exception {
+  void aFallbackResolvedAfterTheTimeoutIsStoredAndReturnedOnLaterRuns() throws Exception {
     List<String> results = new CopyOnWriteArrayList<>();
     var fallbacks = new AtomicInteger();
     try (Bikesched bikesched = testNode("node-poll-fallback").build()) {
@@ -271,17 +271,24 @@ class PollTest extends AbstractBikeschedTest {
                   job -> {
                     results.add(
                         job.newPoll("p", String.class, SHORT)
-                            .timeout(
-                                Duration.ofMillis(200),
-                                () -> "fallback " + fallbacks.incrementAndGet())
+                            .timeout(Duration.ofMillis(200))
+                            .onFailure(
+                                failing ->
+                                    failing.resolve(
+                                        "\"fallback " + fallbacks.incrementAndGet() + "\""))
                             .run(_ -> Poll.notReady()));
                     job.sleep("replay", Duration.ofMillis(100));
                   })
               .schedule();
 
       awaitState(jobId, "SUCCEEDED");
-      assertThat(results).containsExactly("fallback 1", "fallback 2");
-      assertThat(countSteps(jobId, "name = 'p' and state = 'TIMED_OUT' and result is null"))
+      assertThat(results).containsExactly("\"fallback 1\"", "\"fallback 1\"");
+      assertThat(
+              countSteps(
+                  jobId,
+                  "name = 'p' and state = 'SUCCEEDED' and result = '\"fallback 1\"'::jsonb"
+                      + " and last_error like 'org.bikesched.job.PollTimeoutException: Polling in"
+                      + " step ''p'' timed out after PT0.2S%'"))
           .isEqualTo(1);
     }
   }
@@ -426,7 +433,8 @@ class PollTest extends AbstractBikeschedTest {
                                 });
                     String fallback =
                         job.newPoll("timed-out", String.class, SHORT)
-                            .timeout(SHORT, () -> "fallback")
+                            .timeout(SHORT)
+                            .onFailure(failing -> failing.resolve("\"fallback\""))
                             .run(
                                 _ -> {
                                   calls.add("check timed-out");
@@ -434,7 +442,13 @@ class PollTest extends AbstractBikeschedTest {
                                 });
                     job.newStep("ship", String.class)
                         .compensateWith((step, result) -> calls.add("compensate ship " + result))
-                        .run(_ -> "\"" + ready.replace("\"", "") + "-" + fallback + "\"");
+                        .run(
+                            _ ->
+                                "\""
+                                    + ready.replace("\"", "")
+                                    + "-"
+                                    + fallback.replace("\"", "")
+                                    + "\"");
                     if (!job.isCompensating()) {
                       throw new IllegalStateException("fails permanently");
                     }
@@ -509,7 +523,7 @@ class PollTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void anEventWaitsTimeoutHandlerMayPoll() throws Exception {
+  void aTimedOutEventWaitFallsBackToAPoll() throws Exception {
     String eventName = "poll-event-" + UUID.randomUUID();
     List<String> results = new CopyOnWriteArrayList<>();
     try (Bikesched bikesched = testNode("node-poll-event").build()) {
@@ -517,19 +531,22 @@ class PollTest extends AbstractBikeschedTest {
           bikesched
               .newJob("poll-event")
               .handler(
-                  job ->
-                      results.add(
-                          job.waitForEvent("webhook", eventName, "k")
-                              .<String>timeout(
-                                  SHORT,
-                                  () ->
-                                      job.newPoll("p", String.class, SHORT)
-                                          .run(
-                                              step ->
-                                                  step.attempts() < 2
-                                                      ? Poll.notReady()
-                                                      : Poll.ready("\"polled\"")))
-                              .receive(String.class)))
+                  job -> {
+                    String webhook =
+                        job.waitForEvent("webhook", eventName, "k", String.class)
+                            .timeout(SHORT)
+                            .onFailure(failing -> failing.resolve(null))
+                            .receive();
+                    results.add(
+                        webhook != null
+                            ? webhook
+                            : job.newPoll("p", String.class, SHORT)
+                                .run(
+                                    step ->
+                                        step.attempts() < 2
+                                            ? Poll.notReady()
+                                            : Poll.ready("\"polled\"")));
+                  })
               .schedule();
 
       awaitState(jobId, "SUCCEEDED");

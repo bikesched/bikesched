@@ -9,7 +9,6 @@ import java.util.Objects;
 import javax.sql.DataSource;
 import org.bikesched.event.EventTimeoutException;
 import org.bikesched.event.EventWait;
-import org.bikesched.event.TimeoutHandler;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.internal.Internals;
 import org.bikesched.internal.Settings;
@@ -194,10 +193,11 @@ public final class BikeschedBuilder {
 
   /**
    * Sets the default timeout of waits for events (optional, default none: jobs wait until the event
-   * is published). Applies to {@link Job#waitForEvent(String, String, String) waits} without a
-   * {@link EventWait#timeout(Duration, TimeoutHandler) timeout} of their own, counted from when the
-   * step first started waiting. Once it passed, the wait throws an {@link EventTimeoutException}
-   * and the job fails without further attempts.
+   * is published). Applies to {@link Job#waitForEvent(String, String, String, Class) waits} without
+   * a {@link EventWait#timeout(Duration) timeout} of their own, counted from when the step first
+   * started waiting. Once it passed, the wait throws an {@link EventTimeoutException} and the job
+   * fails without further attempts, unless the wait's {@link
+   * EventWait#onFailure(org.bikesched.job.StepFailureHandler) failure handler} resolves it.
    *
    * @param timeout the default timeout, positive
    * @return this builder
@@ -217,7 +217,7 @@ public final class BikeschedBuilder {
    *
    * @param retention how long events are kept, positive
    * @return this builder
-   * @see Job#waitForEvent(String, String, String)
+   * @see Job#waitForEvent(String, String, String, Class)
    */
   public BikeschedBuilder eventRetention(Duration retention) {
     Objects.requireNonNull(retention, "retention");

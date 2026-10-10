@@ -23,7 +23,7 @@ class TypedEventTest {
 
     testNode("typed-event").use { bikesched ->
       bikesched.handleJobs<Order>(order) { order ->
-        payments += waitForEvent("await-payment", paymentReceived, order.id).receive<Payment>()
+        payments += waitForEvent<Payment>("await-payment", paymentReceived, order.id)
       }
       val jobId = bikesched.createJob(type = order, payload = Order("o-1", 100))
       await().untilAsserted {
@@ -48,11 +48,21 @@ class TypedEventTest {
     testNode("event-timeout").use { bikesched ->
       bikesched.handleJobs<Order>(order) { o ->
         val payment =
-          waitForEvent("await", paymentReceived, o.id).receiveOrNull<Payment>(100.milliseconds)
+          waitForEvent<Payment?>(
+            "await",
+            paymentReceived,
+            o.id,
+            100.milliseconds,
+            onFailure = { it.resolve(null) },
+          )
         val fallback =
-          waitForEvent("await-fallback", paymentReceived, o.id).receive<Payment>(100.milliseconds) {
-            Payment(o.id, 0)
-          }
+          waitForEvent<Payment>(
+            "await-fallback",
+            paymentReceived,
+            o.id,
+            100.milliseconds,
+            onFailure = { it.resolve(Payment(o.id, 0)) },
+          )
         results += "$payment / $fallback"
       }
       val jobId = bikesched.createJob(type = order, payload = Order("o-2", 50))
@@ -73,11 +83,15 @@ class TypedEventTest {
     testNode("untyped").use { bikesched ->
       bikesched.registerJobHandler(type) { job ->
         results += job.payload<Order>()
-        results += job.waitForEvent("wait", eventName, "k").receive<Payment>()
+        results += job.waitForEvent<Payment>("wait", eventName, "k")
         results +=
-          job.waitForEvent("wait-timeout", eventName, "other").receive<Payment?>(1.milliseconds) {
-            null
-          }
+          job.waitForEvent<Payment?>(
+            "wait-timeout",
+            eventName,
+            "other",
+            1.milliseconds,
+            onFailure = { it.resolve(null) },
+          )
       }
       val jobId = bikesched.newJob(type).payload(Order("o-3", 7)).schedule()
       await().untilAsserted {

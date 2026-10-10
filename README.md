@@ -106,8 +106,9 @@ bikesched.registerJobHandler("order", job -> {
             _ -> stripe.createPaymentIntent(order).id());
 
     // Suspends (no thread held) until Stripe's webhook reports on this payment intent
-    PaymentUpdated webhook = job.waitForEvent("await-payment", "payment-intent-updated", paymentIntentId)
-            .receive(PaymentUpdated.class);
+    PaymentUpdated webhook = job.waitForEvent("await-payment", "payment-intent-updated", paymentIntentId,
+                    PaymentUpdated.class)
+            .receive();
 
     switch (webhook.status()) {
         case SUCCEEDED -> job.step("mark-paid", () -> orders.markPaid(order, paymentIntentId));

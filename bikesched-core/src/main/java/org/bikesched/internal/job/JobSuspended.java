@@ -8,11 +8,11 @@ import org.bikesched.event.EventWait;
 import org.bikesched.job.Job;
 
 /**
- * Thrown by {@link EventWait#receive(Class)}, {@link Job#sleep}, {@link Job#waitForJob} and polls
- * to end the handler's attempt while the job waits for an event, sleeps, waits for a child job or
- * for the next check of a poll; bikesched then suspends the job (state {@code WAITING}) and runs
- * the handler again once the event is published, the job wakes up, the child ended or the next
- * check is due.
+ * Thrown by {@link EventWait#receive()}, {@link Job#sleep}, {@link Job#waitForJob} and polls to end
+ * the handler's attempt while the job waits for an event, sleeps, waits for a child job or for the
+ * next check of a poll; bikesched then suspends the job (state {@code WAITING}) and runs the
+ * handler again once the event is published, the job wakes up, the child ended or the next check is
+ * due.
  *
  * <p>An {@link Error} rather than an exception, so a {@code catch (Exception e)} in the handler
  * does not swallow it by accident. Even if the handler catches it anyway, the job is suspended once

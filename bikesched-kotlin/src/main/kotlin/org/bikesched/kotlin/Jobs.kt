@@ -37,6 +37,15 @@ public inline fun <reified T> Job.payload(): T = payload(T::class.java) as T
  *     }
  * ```
  *
+ * With [onFailure], a step that failed in the job's last attempt can be handled before the job
+ * fails, e.g. resolved with a fallback result so the job continues, see `StepBuilder.onFailure`:
+ * ```
+ * val rate =
+ *     step<Rate>("fetch-rate", onFailure = { failing -> failing.resolve(Rate.DEFAULT) }) {
+ *         rates.fetch(currency)
+ *     }
+ * ```
+ *
  * @param name the step name, unique within the job
  * @param compensation undoes the completed step; runs at least once, so it must be idempotent
  * @param retryBackoff the delay before the job is retried after this step failed, instead of the
@@ -111,7 +120,7 @@ internal fun <T> runStep(
 }
 
 /** A failing [Unit] step, run as a `Void` step: resolving it with [Unit] stores no result. */
-private class UnitFailingStep(private val delegate: FailingStep<Void>) : FailingStep<Unit> {
+internal class UnitFailingStep(private val delegate: FailingStep<Void>) : FailingStep<Unit> {
   override fun jobId(): UUID = delegate.jobId()
 
   override fun name(): String = delegate.name()

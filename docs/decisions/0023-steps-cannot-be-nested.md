@@ -9,7 +9,8 @@ Date: 2026-10-07
 
 ## Status
 
-Accepted
+Accepted; the unguarded timeout handlers of event waits are superseded by
+[ADR 0034](0034-wait-timeouts-as-failures.md).
 
 ## Context
 

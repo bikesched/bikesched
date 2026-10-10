@@ -4,7 +4,7 @@ package org.bikesched.kotlin
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 import org.bikesched.RetryBackoff
-import org.bikesched.event.TimeoutHandler
+import org.bikesched.job.FailingStep
 import org.bikesched.job.Job
 import org.bikesched.job.Poll
 import org.bikesched.job.PollBuilder
@@ -25,26 +25,28 @@ import org.bikesched.job.Step
  * }
  * ```
  *
- * Once [timeout] has passed, the result of [onTimeout] is returned (not stored); without
- * [onTimeout] the job fails permanently with a [PollTimeoutException]. A poll of [Unit] runs as a
- * poll without a value (no [Unit] reaches the `JsonMapper`).
+ * Once [timeout] has passed, the job fails without further attempts with a [PollTimeoutException],
+ * unless [onFailure] resolves the poll (`failing.resolve(x)`): then the fallback is stored and
+ * returned, see `PollBuilder.onFailure`. A poll of [Unit] runs as a poll without a value (no [Unit]
+ * reaches the `JsonMapper`).
  *
  * @param name the step name, unique within the job
  * @param interval the time between checks, positive
  * @param timeout how long to poll at most, counted from the first check
- * @param onTimeout the result if the poll is not ready in time; requires a [timeout]
+ * @param onFailure runs right away once the poll timed out, or when a check threw in the job's last
+ *   attempt (the step is `FAILING` meanwhile); may resolve it with a fallback result so the job
+ *   continues; runs again if it throws, so it must be idempotent
  * @param handler checks once; receives the step with the number of the check (`attempts`)
  * @throws NullPointerException if the result is `null` and [T] is not nullable
- * @throws IllegalArgumentException if [onTimeout] is given without a [timeout]
  */
 public inline fun <reified T> Job.poll(
   name: String,
   interval: Duration,
   timeout: Duration? = null,
-  noinline onTimeout: (() -> T)? = null,
+  noinline onFailure: ((failing: FailingStep<T>) -> Unit)? = null,
   noinline handler: (Step) -> Poll<T>,
 ): T =
-  pollOf(T::class.java, timeout, onTimeout, handler) { type ->
+  pollOf(T::class.java, timeout, onFailure, handler) { type ->
     newPoll(name, type, interval.toJavaDuration())
   }
     as T
@@ -61,33 +63,35 @@ public inline fun <reified T> Job.poll(
  * @param name the step name, unique within the job
  * @param interval the time between checks, by the number of the check that was not ready
  * @param timeout how long to poll at most, counted from the first check
- * @param onTimeout the result if the poll is not ready in time; requires a [timeout]
+ * @param onFailure handles a timeout or a check failing in the job's last attempt, see [poll]
  * @param handler checks once; receives the step with the number of the check (`attempts`)
  * @throws NullPointerException if the result is `null` and [T] is not nullable
- * @throws IllegalArgumentException if [onTimeout] is given without a [timeout]
  */
 public inline fun <reified T> Job.poll(
   name: String,
   interval: RetryBackoff,
   timeout: Duration? = null,
-  noinline onTimeout: (() -> T)? = null,
+  noinline onFailure: ((failing: FailingStep<T>) -> Unit)? = null,
   noinline handler: (Step) -> Poll<T>,
 ): T =
-  pollOf(T::class.java, timeout, onTimeout, handler) { type -> newPoll(name, type, interval) } as T
+  pollOf(T::class.java, timeout, onFailure, handler) { type -> newPoll(name, type, interval) } as T
 
 @PublishedApi
 internal fun <T> pollOf(
   type: Class<*>,
   timeout: Duration?,
-  onTimeout: (() -> T)?,
+  onFailure: ((FailingStep<T>) -> Unit)?,
   handler: (Step) -> Poll<T>,
   newPoll: (Class<*>) -> PollBuilder<*>,
 ): Any? {
-  require(onTimeout == null || timeout != null) { "onTimeout requires a timeout" }
   if (type == Unit::class.java) {
     // A Unit poll runs as a poll without value (Void), so no Unit reaches the JsonMapper.
-    @Suppress("UNCHECKED_CAST") val poll = newPoll(Void::class.java) as PollBuilder<Void?>
-    withTimeout(poll, timeout, onTimeout?.let { fallback -> { fallback().let { null } } })
+    @Suppress("UNCHECKED_CAST") val poll = newPoll(Void::class.java) as PollBuilder<Void>
+    timeout?.let { poll.timeout(it.toJavaDuration()) }
+    if (onFailure != null) {
+      @Suppress("UNCHECKED_CAST")
+      poll.onFailure { failing -> onFailure(UnitFailingStep(failing) as FailingStep<T>) }
+    }
     poll.run { step ->
       val outcome = handler(step)
       if (outcome is Poll.NotReady<*>) Poll.NotReady(outcome.retryAfter()) else Poll.ready(null)
@@ -95,17 +99,9 @@ internal fun <T> pollOf(
     return Unit
   }
   @Suppress("UNCHECKED_CAST") val poll = newPoll(type) as PollBuilder<T>
-  withTimeout(poll, timeout, onTimeout)
+  timeout?.let { poll.timeout(it.toJavaDuration()) }
+  if (onFailure != null) {
+    poll.onFailure { failing -> onFailure(failing) }
+  }
   return poll.run { handler(it) }
-}
-
-private fun <T> withTimeout(poll: PollBuilder<T>, timeout: Duration?, onTimeout: (() -> T)?) {
-  if (timeout == null) {
-    return
-  }
-  if (onTimeout == null) {
-    poll.timeout(timeout.toJavaDuration())
-  } else {
-    poll.timeout(timeout.toJavaDuration(), TimeoutHandler { onTimeout() })
-  }
 }

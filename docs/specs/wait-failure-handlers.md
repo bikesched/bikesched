@@ -1,6 +1,7 @@
 # Specification: failure handlers for event waits and polls
 
-Status: **draft**, open questions settled; ready to implement.
+Status: **implemented** (core, Kotlin, examples; ADR 0034). User docs: `docs/events.md#timeouts`,
+`docs/steps.md#polling`, `docs/kotlin.md`.
 
 ## 1. Goal
 
@@ -124,8 +125,8 @@ No new column or state: `FAILING`, `failure_attempts` and `last_error` exist on
   wait is `SUCCEEDED` without an event. It becomes `(event_id is not null) = (state =
   'SUCCEEDED' and last_error is null)`: resolved steps keep their `last_error`, and an event wait
   has none otherwise. No explicit marker column.
-- `StepStore`: the failing statements (`MARK_STEP_FAILING_SQL`, `FIND_FAILING_ERROR_SQL`) accept
-  `EVENT_WAIT` and `POLL` steps, the mark from `TIMED_OUT` instead of `RUNNING`. Event wait and
+- `StepStore`: `MARK_TIMED_OUT_STEP_FAILING_SQL` marks a `TIMED_OUT` wait or poll `FAILING`;
+  `FIND_FAILING_ERROR_SQL` takes the step kind. Event wait and
   poll statements return `FAILING`/`FAILED` as their state, so the job routes to the handler.
 - The job history records `FAILING` and then `SUCCEEDED`/`FAILED` for the step, as for steps.
 - Changed in `V001` in place.
@@ -194,3 +195,22 @@ None.
 2. A resolved event wait is told apart by `last_error` in the constraint, no marker column (4.3).
 3. The string-based `waitForEvent` takes the payload class; `EventWait<T>` replaces `EventWait`,
    `EventWait.Timed` and `TypedEventWait` (4.1).
+
+## 10. Decided while implementing
+
+1. A separate statement (`MARK_TIMED_OUT_STEP_FAILING_SQL`) marks a timed-out step `FAILING`
+   instead of widening `MARK_STEP_FAILING_SQL`, which needs a `RUNNING` step locked by the node.
+   The history keeps the `TIMED_OUT` entry before `FAILING`.
+2. A wait or poll that stays `FAILING` (its handler threw) is handled again on the next attempt;
+   unless resolved, the job fails without further attempts, also when the failure was a poll
+   check (that only happens in the last attempt anyway). Otherwise a job whose timeout came in an
+   early attempt would be retried into the same timeout.
+3. The job's error for a poll still `FAILING` on a later attempt is `Poll '<name>' failed:
+   <stored error>`; an event wait rebuilds its `EventTimeoutException` message.
+4. Compensation replays end at a wait or poll that timed out, is `FAILING` or `FAILED` (before,
+   a `TIMED_OUT` one ran its timeout handler again); a resolved one returns its fallback.
+5. `StepStore.findFailingError` takes the step kind, so a step and a wait of the same name can't
+   pick up each other's error.
+6. Kotlin: the last parameter of `waitForEvent<T>` is now `onFailure`, so a trailing lambda binds
+   to it (`waitForEvent<Report?>(…, timeout = 1.hours) { it.resolve(null) }`); docs and tests use
+   the named argument.

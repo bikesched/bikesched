@@ -141,8 +141,8 @@ Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30)
 |---|---|---|
 | returns `Poll.ready(value)` | `SUCCEEDED`, the value stored | continues |
 | returns `Poll.notReady()` | `WAITING` until the next check | suspended, the attempt given back |
-| returns `Poll.notReady()` after the deadline | `TIMED_OUT` | fails with a `PollTimeoutException`, or gets the timeout handler's result |
-| throws | `FAILED` | the attempt fails and is retried (with the node's retry backoff); the next attempt checks right away |
+| returns `Poll.notReady()` after the deadline | `TIMED_OUT` | fails with a `PollTimeoutException`, unless the failure handler resolves the poll |
+| throws | `FAILED` | the attempt fails and is retried (with the node's retry backoff); the next attempt checks right away. In the last attempt the failure handler runs, if any |
 
 - A poll is one row in `bikesched_steps` for all its checks; the step's `attempts` counts them, and
   the poll handler receives it as `step.attempts()`. Checks that are not ready don't use up
@@ -154,9 +154,12 @@ Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30)
   check, e.g. from a `Retry-After` header.
 - `timeout(Duration)` stops polling after the given time, counted from the first check; the last
   check runs at the deadline. Then the job fails without further attempts with a
-  `PollTimeoutException`, or, with `timeout(Duration, handler)`, `run` returns the handler's
-  result. Like an event wait's timeout handler, it is not stored and runs on every replay.
-  Without a timeout, the poll checks until it is ready or the job is cancelled.
+  `PollTimeoutException`. Without a timeout, the poll checks until it is ready or the job is
+  cancelled.
+- `onFailure(…)` sets a [failure handler](#failure-handler-per-step), the same as a step's. It runs
+  right away once the poll timed out, and when a check throws in the job's last attempt. It may
+  resolve the poll with a fallback, which `run` returns and which is stored like a ready value:
+  `.timeout(Duration.ofHours(2)).onFailure(failing -> failing.resolve(Report.UNAVAILABLE))`.
 - The deadline stored on the first check wins: a timeout changed in a deploy doesn't move a poll
   that already started. Polling again after a timeout needs a new step name.
 - A due check runs when it is due, like a [sleep](#sleeping) wakes up. Each check is a claim and
@@ -181,7 +184,8 @@ it doesn't arrive:
 
 ```java
 PaymentSettled webhook = job.waitForEvent("await-webhook", PAYMENT_SETTLED, paymentId)
-        .timeout(Duration.ofSeconds(30), () -> null)
+        .timeout(Duration.ofSeconds(30))
+        .onFailure(failing -> failing.resolve(null))   // no webhook in time: poll instead
         .receive();
 PaymentSettled settled = webhook != null
         ? webhook
@@ -190,7 +194,7 @@ PaymentSettled settled = webhook != null
                 .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
 ```
 
-A timeout handler may also run the poll itself. The
+The failure handler can't poll itself (it can't run steps), so the poll comes after the wait. The
 [poll example](../bikesched-examples/README.md#poll) shows both paths.
 
 ## Workflows
@@ -308,5 +312,9 @@ Rate rate = job.newStep("fetch-rate", Rate.class)
   `failureHandlerAttempts` runs (default 3, see [Configuration](configuration.md#builder-options))
   the step is `FAILED` without it.
 - Steps without a handler just fail.
+
+[Event waits](events.md#timeouts) and [polls](#polling) take the same `onFailure(…)`: it handles
+their timeout (right away, not only in the last attempt) and a poll check failing in the last
+attempt.
 
 In Kotlin: `step<Rate>("fetch-rate", onFailure = { failing -> failing.resolve(Rate.DEFAULT) }) { … }`.

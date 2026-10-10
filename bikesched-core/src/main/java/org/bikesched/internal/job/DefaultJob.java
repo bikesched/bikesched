@@ -17,11 +17,10 @@ import org.bikesched.BikeschedException;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.JsonMapper;
 import org.bikesched.RetryBackoff;
+import org.bikesched.event.EventTimeoutException;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
-import org.bikesched.event.TimeoutHandler;
-import org.bikesched.event.TypedEventWait;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.event.listener.EventPublication;
 import org.bikesched.event.listener.EventSource;
@@ -783,7 +782,7 @@ public final class DefaultJob implements Job {
       }
       if (completed.isEmpty()) {
         if (failureHandler != null) {
-          var failingError = database.steps().findFailingError(id, name);
+          var failingError = database.steps().findFailingError(id, name, "STEP");
           if (failingError.isPresent()) {
             // The handler threw or was lost in an earlier attempt: run it again, then fail the job
             // (unless it resolves the step).
@@ -854,26 +853,25 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public EventWait waitForEvent(String stepName, String eventName, String eventKey) {
+  public <T> EventWait<T> waitForEvent(
+      String stepName, String eventName, String eventKey, Class<T> payloadType) {
     ValidationUtil.requireName(stepName, "step name");
     ValidationUtil.requireName(eventName, "event name");
     ValidationUtil.requireKey(eventKey, "event key");
+    Objects.requireNonNull(payloadType, "payloadType");
     stepGuard.requireNoneRunning("wait for an event as step '" + stepName + "'");
-    return new DefaultEventWait(this, stepName, eventName, eventKey);
+    return new DefaultEventWait<>(this, stepName, eventName, eventKey, payloadType);
   }
 
   @Override
-  public <T> TypedEventWait<T> waitForEvent(
-      String stepName, EventType<T> eventType, String eventKey) {
+  public <T> EventWait<T> waitForEvent(String stepName, EventType<T> eventType, String eventKey) {
     Objects.requireNonNull(eventType, "eventType");
-    return new DefaultTypedEventWait<>(
-        waitForEvent(stepName, eventType.name(), eventKey), eventType.payloadType());
+    return waitForEvent(stepName, eventType.name(), eventKey, eventType.payloadType());
   }
 
   @Override
   public <T> T awaitEvent(String stepName, EventType<T> eventType, String eventKey) {
-    Objects.requireNonNull(eventType, "eventType");
-    return waitForEvent(stepName, eventType.name(), eventKey).receive(eventType.payloadType());
+    return waitForEvent(stepName, eventType, eventKey).receive();
   }
 
   @Override
@@ -930,22 +928,21 @@ public final class DefaultJob implements Job {
 
   /**
    * Polls as a step: returns the ready value (checked in this run, or stored by an earlier one) or
-   * the timeout handler's result once the poll timed out, or suspends the job by throwing {@link
+   * the fallback its failure handler resolved it with, or suspends the job by throwing {@link
    * JobSuspended} until the next check. The arguments were validated by the {@link
    * DefaultPollBuilder}.
    *
    * @param timeout how long to poll at most, counted from the first check; {@code null} for no
    *     limit
-   * @param timeoutHandler produces the result after the timeout; {@code null} to fail the job with
-   *     a {@link PollTimeoutException}. Runs on every run that reaches the timed-out poll, its
-   *     result is not stored
+   * @param failureHandler handles a timeout, and a check failing in the job's last attempt; {@code
+   *     null} to fail the job (with a {@link PollTimeoutException} after a timeout)
    */
   <T> T poll(
       String name,
       Class<T> resultType,
       RetryBackoff interval,
       Duration timeout,
-      TimeoutHandler<? extends T> timeoutHandler,
+      StepFailureHandler<T> failureHandler,
       PollHandler<T> handler)
       throws Exception {
     stepGuard.requireNoneRunning("poll as step '" + name + "'");
@@ -956,12 +953,12 @@ public final class DefaultJob implements Job {
         var stored = database.steps().findStep(id, name);
         stored.ifPresent(step -> requireStepKind(name, step.kind(), "POLL", "a poll"));
         String state = stored.map(StepStore.StoredStep::state).orElse("");
-        return switch (state) {
-          case "SUCCEEDED" -> reader(resultType).apply(stored.get().result());
-          case "TIMED_OUT" -> pollTimedOut(name, stored.get().attempts(), timeout, timeoutHandler);
-          default -> throw new CompensationReplayEnded(name);
-        };
+        if (state.equals("SUCCEEDED")) {
+          return reader(resultType).apply(stored.get().result());
+        }
+        throw new CompensationReplayEnded(name); // it failed or timed out: the job ended there
       }
+      Function<? super T, String> toJson = database.jsonMapper()::toJson;
       var poll = fenced(() -> database.steps().startPoll(id, lock, name, timeout));
       switch (poll.state()) {
         case "SUCCEEDED" -> {
@@ -969,7 +966,16 @@ public final class DefaultJob implements Job {
           return reader(resultType).apply(poll.result());
         }
         case "TIMED_OUT" -> {
-          return pollTimedOut(name, poll.checks(), timeout, timeoutHandler);
+          return timedOut(name, failureHandler, toJson, pollTimeout(name, poll.checks(), timeout));
+        }
+        case "FAILING" -> {
+          String error = database.steps().findFailingError(id, name, "POLL").orElse("");
+          return stillFailing(
+              name,
+              failureHandler,
+              toJson,
+              error,
+              new BikeschedException("Poll '" + name + "' failed: " + error));
         }
         case "WAITING" -> {
           LOG.debug(
@@ -981,7 +987,7 @@ public final class DefaultJob implements Job {
               new JobSuspended.PollSuspension(name, poll.checks(), poll.waitUntil(), true));
         }
         default -> {
-          return check(name, interval, timeout, timeoutHandler, handler, poll);
+          return check(name, interval, timeout, failureHandler, toJson, handler, poll);
         }
       }
     } finally {
@@ -994,7 +1000,8 @@ public final class DefaultJob implements Job {
       String name,
       RetryBackoff interval,
       Duration timeout,
-      TimeoutHandler<? extends T> timeoutHandler,
+      StepFailureHandler<T> failureHandler,
+      Function<? super T, String> toJson,
       PollHandler<T> handler,
       StepStore.PollStep poll)
       throws Exception {
@@ -1027,6 +1034,13 @@ public final class DefaultJob implements Job {
         case Poll.NotReady<T> later -> notReady = later;
       }
     } catch (Exception e) {
+      if (failureHandler != null && attempts >= maxAttempts) {
+        Resolved<T> resolved = failStepWithHandler(name, check, failureHandler, toJson, e, start);
+        if (resolved != null) {
+          return resolved.result();
+        }
+        throw e;
+      }
       LOG.debug(
           "Step {} of job {} (check {}) FAILED in {} ms: {}",
           name,
@@ -1046,7 +1060,7 @@ public final class DefaultJob implements Job {
     var wait = fenced(() -> database.steps().waitPoll(id, lock, name, delay));
     if (wait.timedOut()) {
       LOG.debug("Step {} of job {} timed out after check {}", name, id, check);
-      return pollTimedOut(name, wait.checks(), timeout, timeoutHandler);
+      return timedOut(name, failureHandler, toJson, pollTimeout(name, wait.checks(), timeout));
     }
     LOG.debug(
         "Step {} of job {}: check {} not ready, checking again at {}, suspending the job",
@@ -1082,23 +1096,73 @@ public final class DefaultJob implements Job {
     return Duration.ZERO;
   }
 
-  /** The result of a timed-out poll: the timeout handler's, or the job fails without retries. */
-  private <T> T pollTimedOut(
-      String name, int checks, Duration timeout, TimeoutHandler<? extends T> timeoutHandler)
-      throws Exception {
-    if (timeoutHandler != null) {
-      return timeoutHandler.handle();
-    }
-    String message =
+  private static PollTimeoutException pollTimeout(String name, int checks, Duration timeout) {
+    return new PollTimeoutException(
         "Polling in step '"
             + name
             + "' timed out"
             + (timeout == null ? "" : " after " + timeout)
             + " ("
             + checks
-            + (checks == 1 ? " check)" : " checks)");
-    fail(message).remainingAttempts(0); // polling again would time out again
-    throw new PollTimeoutException(message);
+            + (checks == 1 ? " check)" : " checks)"));
+  }
+
+  /**
+   * A wait or poll that timed out ({@code TIMED_OUT}): its failure handler runs right away (waiting
+   * or polling again would time out again) and may resolve it; otherwise the job fails without
+   * further attempts with the timeout exception.
+   *
+   * @return the result the step was resolved with
+   */
+  private <T> T timedOut(
+      String name,
+      StepFailureHandler<T> handler,
+      Function<? super T, String> toJson,
+      BikeschedException timeout) {
+    if (handler != null) {
+      String error = ValidationUtil.truncateMessage(timeout.toString());
+      LOG.debug("Step {} of job {} is FAILING: {}", name, id, timeout.getMessage());
+      fenced(() -> database.steps().markTimedOutStepFailing(id, lock, name, error));
+      Resolved<T> resolved = handleFailingStep(name, handler, toJson, error, timeout);
+      if (resolved != null) {
+        return resolved.result();
+      }
+    }
+    throw failWithoutRetry(timeout);
+  }
+
+  /**
+   * A wait or poll still {@code FAILING}: its failure handler threw or was lost in an earlier
+   * attempt, so it runs again; unless it resolves the step, the job fails without further attempts.
+   *
+   * @return the result the step was resolved with
+   */
+  private <T> T stillFailing(
+      String name,
+      StepFailureHandler<T> handler,
+      Function<? super T, String> toJson,
+      String error,
+      BikeschedException failure) {
+    if (handler != null) {
+      Resolved<T> resolved = handleFailingStep(name, handler, toJson, error, failure);
+      if (resolved != null) {
+        return resolved.result();
+      }
+    }
+    throw failWithoutRetry(failure);
+  }
+
+  /**
+   * Fails the job without further attempts, unless a failure handler has to run again (the job then
+   * gets an extra attempt).
+   *
+   * @return the failure, to throw
+   */
+  private BikeschedException failWithoutRetry(BikeschedException failure) {
+    if (!failureHandlingPending) {
+      fail(failure.getMessage()).remainingAttempts(0);
+    }
+    return failure;
   }
 
   private JobSuspended suspendPoll(JobSuspended.PollSuspension polling) {
@@ -1119,22 +1183,25 @@ public final class DefaultJob implements Job {
 
   /**
    * Waits for an event as a step and returns the received event's payload (stored as the step's
-   * result when the event arrived, in this or an earlier run), the timeout handler's result if the
-   * wait timed out, or suspends the job by throwing {@link JobSuspended}. The names were validated
-   * by {@link #waitForEvent(String, String, String)}.
+   * result when the event arrived, in this or an earlier run), the fallback its failure handler
+   * resolved it with once the wait timed out, or suspends the job by throwing {@link JobSuspended}.
+   * The names were validated by {@link #waitForEvent(String, String, String, Class)}.
    *
-   * @param read reads the payload (JSON text, may be {@code null})
-   * @param onTimeout produces the result if the wait timed out; runs on every run that reaches the
-   *     timed-out wait, its result is not stored
+   * @param timeout how long to wait at most, counted from the first wait; {@code null} for no limit
+   * @param failureHandler handles a timeout; {@code null} to fail the job with an {@link
+   *     EventTimeoutException}
+   * @param timeoutMessage the message of the {@link EventTimeoutException}
    */
   <T> T awaitEventStep(
       String stepName,
       String eventName,
       String eventKey,
       Duration timeout,
-      Function<String, ? extends T> read,
-      StepCall<? extends T> onTimeout)
-      throws Exception {
+      Class<T> payloadType,
+      StepFailureHandler<T> failureHandler,
+      String timeoutMessage) {
+    Function<String, T> read = reader(payloadType);
+    Function<? super T, String> toJson = database.jsonMapper()::toJson;
     stepGuard.requireNoneRunning("wait for an event as step '" + stepName + "'");
     Runnable restoreStepName = putStepName(stepName);
     try {
@@ -1143,12 +1210,10 @@ public final class DefaultJob implements Job {
         var step = database.steps().findStep(id, stepName);
         step.ifPresent(
             stored -> requireStepKind(stepName, stored.kind(), "EVENT_WAIT", "an event wait"));
-        String state = step.map(StepStore.StoredStep::state).orElse("");
-        return switch (state) {
-          case "SUCCEEDED" -> read.apply(step.get().result());
-          case "TIMED_OUT" -> onTimeout.call();
-          default -> throw new CompensationReplayEnded(stepName);
-        };
+        if (step.map(StepStore.StoredStep::state).filter("SUCCEEDED"::equals).isPresent()) {
+          return read.apply(step.get().result());
+        }
+        throw new CompensationReplayEnded(stepName); // it timed out: the job ended there
       }
       var wait =
           fenced(
@@ -1165,8 +1230,15 @@ public final class DefaultJob implements Job {
               id,
               eventName,
               eventKey);
-          return onTimeout.call();
+          return timedOut(
+              stepName, failureHandler, toJson, new EventTimeoutException(timeoutMessage));
         }
+        case "FAILING" -> {
+          String error = database.steps().findFailingError(id, stepName, "EVENT_WAIT").orElse("");
+          return stillFailing(
+              stepName, failureHandler, toJson, error, new EventTimeoutException(timeoutMessage));
+        }
+        case "FAILED" -> throw failWithoutRetry(new EventTimeoutException(timeoutMessage));
         default -> {
           var waiting =
               new JobSuspended.EventSuspension(stepName, eventName, eventKey, wait.waitUntil());
