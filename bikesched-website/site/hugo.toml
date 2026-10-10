@@ -60,3 +60,6 @@ theme = "hextra"
   [[module.mounts]]
     source = "../../docs/logo.svg"
     target = "static/images/bikesched-logo.svg"
+  [[module.mounts]]
+    source = "static"
+    target = "static"
