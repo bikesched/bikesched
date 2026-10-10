@@ -17,15 +17,14 @@ fun main() {
     app.start()
     runBlocking {
       ShopClient().use { client ->
-        var orders = mutableListOf<String>()
+        var orders = mutableSetOf<String>()
 
         orders += client.createOrder(listOf(OrderItem("item-1", 1), OrderItem("item-3", 1)))
-        log.info("Created order {}", orders.last())
-
-        orders += client.createOrder(listOf(OrderItem("item-1", 1), OrderItem("item-3", 1)))
-        log.info("Created order {}", orders.last())
+        orders += client.createOrder(listOf(OrderItem("item-3", 1), OrderItem("item-5", 2)))
 
         orders.forEach { order ->
+          log.info("Created order {}", order)
+
           val orderId = order
           withTimeout(30.seconds) {
             client.awaitState(orderId, setOf(OrderState.PAYMENT_OPTIONS_RESOLVED))

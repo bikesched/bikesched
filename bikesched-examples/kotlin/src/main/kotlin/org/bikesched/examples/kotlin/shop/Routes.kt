@@ -50,7 +50,7 @@ fun Route.shopRoutes(bikesched: Bikesched) {
 
       // Calculate total amount
       val totalAmount =
-        orderRequest.items.fold(euro("0")) { sum, item ->
+        orderRequest.items.fold("0".euro()) { sum, item ->
           val shopItem =
             FixtureItems.find(item.itemId)
               ?: throw IllegalStateException("Item ${item.itemId} not found")
@@ -64,6 +64,7 @@ fun Route.shopRoutes(bikesched: Bikesched) {
           it[Orders.id] = UUID.fromString(orderId)
           it[Orders.state] = OrderState.RESOLVING_PAYMENT_OPTIONS.name
           it[Orders.totalAmount] = totalAmount.toBigDecimal()
+          it[Orders.currency] = totalAmount.currencyCode()
         }
 
         orderRequest.items.forEach { orderItem ->

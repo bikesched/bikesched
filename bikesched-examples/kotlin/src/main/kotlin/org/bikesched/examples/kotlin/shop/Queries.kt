@@ -16,7 +16,7 @@ object Queries {
   /** Looks up an order by ID, returns (state, totalAmount) or null. */
   fun findOrder(orderId: UUID): Pair<String, MonetaryAmount>? = transaction {
     Orders.selectAll().where { Orders.id eq orderId }.firstOrNull()?.let { row ->
-      row[Orders.state] to euro(row[Orders.totalAmount])
+      row[Orders.state] to moneyOf(row[Orders.totalAmount], row[Orders.currency])
     }
   }
 

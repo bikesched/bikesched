@@ -64,7 +64,7 @@ object MockPaymentService {
     options.add(PaymentOption(id = "credit_card", name = "Credit Card"))
 
     // Buy now, pay later for orders under 100 EUR
-    if (totalAmount.isLessThan(euro("100"))) {
+    if (totalAmount.isLessThan("100".euro())) {
       options.add(PaymentOption(id = "buy_now_pay_later", name = "Buy Now, Pay Later"))
     }
 

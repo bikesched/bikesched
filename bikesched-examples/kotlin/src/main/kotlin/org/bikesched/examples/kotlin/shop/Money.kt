@@ -13,11 +13,17 @@ import org.javamoney.moneta.Money
 /** The currency of all amounts in the shop. */
 const val SHOP_CURRENCY = "EUR"
 
-/** Creates an amount in the shop currency, e.g. `euro("29.99")`. */
-fun euro(amount: String): MonetaryAmount = euro(BigDecimal(amount))
+/** Creates an amount in the shop currency, e.g. `"29.99".euro()`. */
+fun String.euro(): MonetaryAmount = BigDecimal(this).euro()
 
 /** Creates an amount in the shop currency. */
-fun euro(amount: BigDecimal): MonetaryAmount = Money.of(amount, SHOP_CURRENCY)
+fun BigDecimal.euro(): MonetaryAmount = Money.of(this, SHOP_CURRENCY)
+
+/** Creates an amount from the number and the currency code stored in the database. */
+fun moneyOf(amount: BigDecimal, currency: String): MonetaryAmount = Money.of(amount, currency)
+
+/** The currency code of an amount, as stored in the database. */
+fun MonetaryAmount.currencyCode(): String = currency.currencyCode
 
 /** The numeric part of an amount, as stored in the database. */
 fun MonetaryAmount.toBigDecimal(): BigDecimal = number.numberValue(BigDecimal::class.java)
