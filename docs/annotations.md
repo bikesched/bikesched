@@ -51,7 +51,7 @@ the method and the problem, not when a job runs.
 
 | Method | Does |
 |---|---|
-| `JobHandlers.register(bikesched, target)` | registers all annotated methods of `target`; returns them |
+| `JobHandlers.register(bikesched, target)` | registers all annotated methods of `target`; returns them, job handlers first, then failure handlers |
 | `JobHandlers.scan(target)` | finds and checks them without registering; each `AnnotatedJobHandler` has `type()`, `isFailureHandler()`, `payloadType()`, `schedule()`, `method()` and `registerOn(bikesched)` |
 
 A method with a payload parameter is registered for `JobType.of(type, payloadClass)`, so the node
