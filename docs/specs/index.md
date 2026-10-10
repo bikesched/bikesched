@@ -11,6 +11,7 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-07 | [Child jobs and job results](child-jobs.md) | implemented | [ADR 0029](../decisions/0029-child-jobs-as-steps.md) |
 | 2026-10-07 | [Event listener](event-listener.md) | implemented | [ADR 0030](../decisions/0030-event-listener.md) |
 | 2026-10-08 | [Poll steps](poll-step.md) | implemented | [ADR 0031](../decisions/0031-poll-steps.md) |
-| 2026-10-08 | [Incidents for permanently failed jobs](incidents.md) | draft | — |
+| 2026-10-08 | [Incidents for permanently failed jobs](incidents.md) | on hold | — |
 | 2026-10-08 | [Waking pollers with LISTEN/NOTIFY](listen-notify.md) | implemented | [ADR 0032](../decisions/0032-batched-notifications-after-commit.md) |
 | 2026-10-09 | [Project website (bikesched.org)](website-project-site.md) | in progress | — |
+| 2026-10-10 | [Failure handlers for jobs and steps](failure-handlers.md) | draft | — |

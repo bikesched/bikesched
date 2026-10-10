@@ -1,6 +1,7 @@
 # Specification: incidents for permanently failed jobs
 
-Status: **draft**, open questions settled (§9).
+Status: **on hold**: job failure handlers ([spec](failure-handlers.md)) cover dead-letter tables
+and alerts; resumed when an operator inbox (admin UI) needs incidents.
 
 ## 1. Goal
 
