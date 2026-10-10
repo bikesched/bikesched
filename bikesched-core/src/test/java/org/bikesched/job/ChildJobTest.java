@@ -135,8 +135,16 @@ class ChildJobTest extends AbstractBikeschedTest {
     try (logs;
         Bikesched bikesched =
             testNode("node-child-basic").jobHistory(Duration.ofHours(1)).build()) {
+      // The child ends only once its parent waits for it, so the test always takes the path it
+      // asserts: the parent suspends WAITING, the child's end resumes it. (A child ending before
+      // the suspension is covered by aChildEndingWhileTheParentSuspendsMakesTheParentDue.)
       bikesched.registerJobHandler(
-          "child-basic-child", job -> job.complete("{\"echo\": " + job.payload() + "}"));
+          "child-basic-child",
+          job -> {
+            UUID parent = bikesched.findJob(job.id()).orElseThrow().parentJobId().orElseThrow();
+            await().until(() -> count("id = '" + parent + "' and state = 'WAITING'") == 1);
+            job.complete("{\"echo\": " + job.payload() + "}");
+          });
       UUID parentId =
           bikesched
               .newJob("child-basic-parent")
