@@ -14,4 +14,4 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-08 | [Incidents for permanently failed jobs](incidents.md) | on hold | — |
 | 2026-10-08 | [Waking pollers with LISTEN/NOTIFY](listen-notify.md) | implemented | [ADR 0032](../decisions/0032-batched-notifications-after-commit.md) |
 | 2026-10-09 | [Project website (bikesched.org)](website-project-site.md) | in progress | — |
-| 2026-10-10 | [Failure handlers for jobs and steps](failure-handlers.md) | draft | — |
+| 2026-10-10 | [Failure handlers for jobs and steps](failure-handlers.md) | implemented | [ADR 0033](../decisions/0033-failure-handlers.md) |

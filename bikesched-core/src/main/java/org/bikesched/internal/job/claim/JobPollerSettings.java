@@ -19,6 +19,7 @@ import org.bikesched.job.listener.JobListener;
  * @param defaultEventTimeout timeout of event waits without their own; {@code null} for none
  * @param eventRetention how long events published by the jobs are kept, unless they set their own
  * @param retryBackoff delay of the retry after a failed attempt
+ * @param failureHandlerAttempts how often a failure handler runs before it is given up
  * @param hardTimeoutGrace how long after its timeout an attempt whose handler ignores the interrupt
  *     is abandoned; {@code null} for no hard timeout
  * @param jobListener observes the jobs the node runs
@@ -33,6 +34,7 @@ public record JobPollerSettings(
     Duration defaultEventTimeout,
     Duration eventRetention,
     RetryBackoff retryBackoff,
+    int failureHandlerAttempts,
     Duration hardTimeoutGrace,
     JobListener jobListener,
     EventListener eventListener) {

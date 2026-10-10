@@ -42,14 +42,26 @@ class DueJobsWritePathsTest {
   /** Statements that make no job due now for other nodes, and why. */
   private static final Map<String, String> SILENT =
       Map.of(
-          "JobStore.CLAIM_JOBS_SQL", "the job runs",
-          "JobStore.COMPLETE_JOB_SQL", "the job ends",
-          "JobStore.COMPLETE_COMPENSATION_SQL", "the job ends",
-          "JobStore.FAIL_JOB_SQL", "the attempt's own node wakes up for the retry (dueAt)",
-          "JobStore.CANCEL_JOB_SQL", "the job ends, or its node wakes up to compensate (dueAt)",
-          "JobStore.FAIL_COMPENSATION_SQL", "the attempt's own node wakes up for the retry (dueAt)",
-          "StepStore.SUSPEND_JOB_SQL", "the attempt's own node wakes up at the due time (dueAt)",
-          "JobStore.RESCHEDULE_OCCURRENCE_SQL", "moves a pending occurrence (dueAt)");
+          "JobStore.CLAIM_JOBS_SQL",
+          "the job runs",
+          "JobStore.COMPLETE_JOB_SQL",
+          "the job ends",
+          "JobStore.COMPLETE_COMPENSATION_SQL",
+          "the job ends, or its node wakes up for the failure handler (dueAt)",
+          "JobStore.END_FAILING_SQL",
+          "the job ends",
+          "JobStore.RETRY_FAILURE_HANDLER_SQL",
+          "the attempt's own node wakes up for the failure handler's retry (dueAt)",
+          "JobStore.FAIL_JOB_SQL",
+          "the attempt's own node wakes up for the retry or the failure handler (dueAt)",
+          "JobStore.CANCEL_JOB_SQL",
+          "the job ends, or its node wakes up to compensate (dueAt)",
+          "JobStore.FAIL_COMPENSATION_SQL",
+          "the attempt's own node wakes up for the retry (dueAt)",
+          "StepStore.SUSPEND_JOB_SQL",
+          "the attempt's own node wakes up at the due time (dueAt)",
+          "JobStore.RESCHEDULE_OCCURRENCE_SQL",
+          "moves a pending occurrence (dueAt)");
 
   @Test
   void everyStatementWritingJobsIsClassified() throws IllegalAccessException {
@@ -83,6 +95,6 @@ class DueJobsWritePathsTest {
           .as("%s is classified but no longer writes jobs (or was renamed)", name)
           .containsKey(name);
     }
-    assertThat(writes).hasSize(18);
+    assertThat(writes).hasSize(20);
   }
 }

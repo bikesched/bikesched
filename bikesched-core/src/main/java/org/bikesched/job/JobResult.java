@@ -17,6 +17,7 @@ import java.util.UUID;
  *     case JobResult.TimedOut<Receipt> t -> throw new IllegalStateException("no timeout set");
  * };
  * Parcel parcel = job.waitForJob(packId, Parcel.class).orElseThrow(); // or simply this
+ * Label label = job.waitForJob(labelId, Label.class).orElse(Label.NONE); // or with a fallback
  * }</pre>
  *
  * <p>A child that was cancelled or failed after its compensations ran is {@link Cancelled} resp.
@@ -85,6 +86,20 @@ public sealed interface JobResult<T> {
    */
   default boolean isSucceeded() {
     return this instanceof Succeeded<T>;
+  }
+
+  /**
+   * Returns the child's result if it succeeded, otherwise the fallback: for a failed, cancelled or
+   * compensation-failed child, and when the wait timed out.
+   *
+   * @param fallback the value to return unless the child succeeded, may be {@code null}
+   * @return the result ({@code null} if the child set none), or the fallback
+   */
+  default T orElse(T fallback) {
+    if (this instanceof Succeeded<T>(var _, T result)) {
+      return result;
+    }
+    return fallback;
   }
 
   /**

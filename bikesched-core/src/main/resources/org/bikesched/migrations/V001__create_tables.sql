@@ -20,7 +20,7 @@ create table bikesched_nodes (
 
 create index bikesched_nodes_last_heartbeat_at_idx on bikesched_nodes (last_heartbeat_at);
 
--- Jobs are claimed by nodes with:  ... where state in ('SCHEDULED', 'WAITING', 'COMPENSATING')
+-- Jobs are claimed by nodes with:  ... where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING')
 --                                  and scheduled_at <= now()
 --                                  order by priority desc, scheduled_at for update skip locked
 -- A WAITING job waits for an event (see bikesched_events), for a child job or sleeps; its
@@ -29,6 +29,8 @@ create index bikesched_nodes_last_heartbeat_at_idx on bikesched_nodes (last_hear
 -- A job that is cancelled or fails permanently after completing steps with a compensation is
 -- COMPENSATING (compensated_state: the state it ends in) until its compensations ran, or
 -- COMPENSATION_FAILED once they failed in max_attempts compensation attempts.
+-- A job of a type with a failure handler that would end FAILED or COMPENSATION_FAILED is FAILING
+-- (failing_state: the state it ends in) until its failure handler ran (failure_attempts: its runs).
 -- A child job (parent_job_id set) was started by a step of its parent (kind CHILD_JOB); ending it
 -- completes that step with its outcome. parent_job_id only references the parent (no FK): the
 -- parent may be deleted after its retention while the child still runs.
@@ -47,6 +49,8 @@ create table bikesched_jobs (
                                                 -- unlike scheduled_at not moved by retries or event waits
     compensated_state     text,                 -- CANCELLED or FAILED: the state a compensating job ends in
     compensation_attempts integer not null default 0,
+    failing_state text,                         -- FAILED or COMPENSATION_FAILED: the state a FAILING job ends in
+    failure_attempts integer not null default 0, -- runs of its failure handler
     cancel_requested_at   timestamptz,          -- Bikesched.cancel(jobId): cancelled on its next claim
     cancel_message        text,
     result       jsonb,                         -- Job.complete(result); only set when SUCCEEDED
@@ -60,13 +64,18 @@ create table bikesched_jobs (
     finished_at  timestamptz,
     constraint bikesched_jobs_state_check
         check (state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'CANCELLED',
-                         'COMPENSATING', 'COMPENSATION_FAILED')),
+                         'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING')),
     constraint bikesched_jobs_attempts_check
-        check (attempts >= 0 and max_attempts >= 1 and compensation_attempts >= 0),
+        check (attempts >= 0 and max_attempts >= 1 and compensation_attempts >= 0
+               and failure_attempts >= 0),
     constraint bikesched_jobs_compensated_state_check
         check (compensated_state in ('CANCELLED', 'FAILED')
-               and state in ('RUNNING', 'COMPENSATING', 'COMPENSATION_FAILED', compensated_state)
+               and state in ('RUNNING', 'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING', compensated_state)
                or compensated_state is null and state not in ('COMPENSATING', 'COMPENSATION_FAILED')),
+    -- A FAILING job (RUNNING while its failure handler runs) knows the state it ends in.
+    constraint bikesched_jobs_failing_check
+        check (failing_state in ('FAILED', 'COMPENSATION_FAILED') and state in ('FAILING', 'RUNNING')
+               or failing_state is null and state <> 'FAILING'),
     constraint bikesched_jobs_timeout_check
         check (timeout_millis > 0),
     constraint bikesched_jobs_lock_check
@@ -86,13 +95,13 @@ create table bikesched_jobs (
 -- Polling index: only due-able jobs, in claim order. The type lets the claim skip jobs of types
 -- the node has no handlers for on index entries.
 create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at, type)
-    where state in ('SCHEDULED', 'WAITING', 'COMPENSATING');
+    where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING');
 
 -- Recurring jobs (identified by their job type): at most one pending occurrence each. Finishing an
 -- occurrence inserts the next one in the same transaction; registering a recurring job and the
 -- node's repair insert one with "on conflict do nothing" if it is missing.
 create unique index bikesched_jobs_recurring_idx on bikesched_jobs (type)
-    where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING');
+    where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING');
 
 -- Deleting finished jobs after the job retention (only ended jobs have finished_at).
 create index bikesched_jobs_finished_at_idx on bikesched_jobs (finished_at)
@@ -132,6 +141,7 @@ create table bikesched_steps (
     state       text        not null default 'RUNNING',
     result      jsonb,
     attempts    integer     not null default 0,
+    failure_attempts integer not null default 0, -- runs of its failure handler while FAILING
     locked_by   uuid,                   -- the node running the step (no FK: may outlive a dead node)
     last_error  text,
     event_name  text,
@@ -235,7 +245,8 @@ create table bikesched_job_history (
     primary key (job_id, seq),
     constraint bikesched_job_history_state_check
         check (step_name is null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
-                                               'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED')
+                                               'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED',
+                                               'FAILING')
                or step_name is not null and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING',
                                                       'FAILED', 'TIMED_OUT', 'COMPENSATED',
                                                       'CANCELLED')),

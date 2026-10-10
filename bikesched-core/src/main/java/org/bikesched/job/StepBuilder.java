@@ -43,14 +43,17 @@ public interface StepBuilder<T> {
 
   /**
    * Sets a handler that runs when the step failed in the last attempt of its job (optional), before
-   * the step and the job are recorded as failed. The step is {@code FAILING} meanwhile; a handler
-   * that throws runs again in an extra attempt of the job. Without a handler a failing step simply
-   * fails the job.
+   * the step and the job are recorded as failed. The handler may {@linkplain
+   * FailingStep#resolve(Object) resolve} the step with a fallback result instead, so the job
+   * continues. The step is {@code FAILING} meanwhile; a handler that throws runs again in an extra
+   * attempt of the job, up to the node's {@link
+   * org.bikesched.BikeschedBuilder#failureHandlerAttempts(int) failureHandlerAttempts} runs.
+   * Without a handler a failing step simply fails the job.
    *
    * @param handler the failure handler, must be idempotent
    * @return this builder
    */
-  StepBuilder<T> onFailure(StepFailureHandler handler);
+  StepBuilder<T> onFailure(StepFailureHandler<T> handler);
 
   /**
    * Runs the step like {@link Job#step(String, Class, StepHandler)}: executes it unless it

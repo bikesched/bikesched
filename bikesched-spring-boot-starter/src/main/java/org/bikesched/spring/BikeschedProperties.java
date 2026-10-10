@@ -41,6 +41,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param defaultJobTimeout timeout for jobs scheduled without one
  * @param defaultEventTimeout timeout for event waits without one
  * @param retryBackoff delay before retrying a failed attempt
+ * @param failureHandlerAttempts how often a failure handler runs before it is given up
  * @param eventRetention how long published events are kept for steps waiting later
  * @param eventCleanUpInterval how often expired events are deleted
  * @param nodeCleanUpInterval how often the node releases the jobs of dead nodes
@@ -68,6 +69,7 @@ public record BikeschedProperties(
     Duration defaultJobTimeout,
     Duration defaultEventTimeout,
     Backoff retryBackoff,
+    Integer failureHandlerAttempts,
     Duration eventRetention,
     Duration eventCleanUpInterval,
     Duration nodeCleanUpInterval,
@@ -142,6 +144,9 @@ public record BikeschedProperties(
     }
     if (retryBackoff != null) {
       builder.retryBackoff(backoff());
+    }
+    if (failureHandlerAttempts != null) {
+      builder.failureHandlerAttempts(failureHandlerAttempts);
     }
     if (eventRetention != null) {
       builder.eventRetention(eventRetention);

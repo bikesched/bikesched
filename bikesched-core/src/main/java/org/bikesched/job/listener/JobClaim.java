@@ -10,12 +10,18 @@ import java.util.UUID;
  *
  * @param jobId the job's id
  * @param jobType the job's type
- * @param attempt the attempt (counted separately for compensation)
+ * @param attempt the attempt (counted separately for compensation and for the failure handler)
  * @param compensation whether the job's steps are being compensated
+ * @param failing whether the job's failure handler runs (the job is {@code FAILING})
  * @param delay how long after it was due the job was claimed, zero if not later
  */
 public record JobClaim(
-    UUID jobId, String jobType, int attempt, boolean compensation, Duration delay) {
+    UUID jobId,
+    String jobType,
+    int attempt,
+    boolean compensation,
+    boolean failing,
+    Duration delay) {
 
   /** Checks the components. */
   public JobClaim {

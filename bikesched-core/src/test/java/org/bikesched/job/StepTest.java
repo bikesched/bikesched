@@ -363,9 +363,14 @@ class StepTest extends AbstractBikeschedTest {
                   job ->
                       job.newStep("charge", String.class)
                           .onFailure(
-                              (step, failure) -> {
+                              failing -> {
                                 states.add(stepState(job.id(), "charge"));
-                                handled.add(step.name() + ": " + failure.getMessage());
+                                handled.add(
+                                    failing.jobId()
+                                        + " "
+                                        + failing.name()
+                                        + ": "
+                                        + failing.error());
                               })
                           .run(
                               step -> {
@@ -375,16 +380,25 @@ class StepTest extends AbstractBikeschedTest {
 
       awaitState(jobId, "FAILED");
 
-      assertThat(handled).containsExactly("charge: declined");
+      assertThat(handled)
+          .as("the stored error, not the exception")
+          .containsExactly(jobId + " charge: java.lang.IllegalStateException: declined");
       assertThat(states).as("FAILING while the handler runs").containsExactly("FAILING");
       assertThat(stepState(jobId, "charge")).isEqualTo("FAILED");
+      assertThat(
+              count(
+                  "id = '"
+                      + jobId
+                      + "' and last_error = 'java.lang.IllegalStateException: declined'"))
+          .as("the job fails with the step's exception")
+          .isEqualTo(1);
     }
   }
 
   @Test
-  void failureHandlerThatThrowsRunsAgainInAnExtraAttempt() throws Exception {
+  void failureHandlerThatThrowsRunsAgainWithTheStoredError() throws Exception {
     try (Bikesched bikesched = testNode("node-step-failure-handler-retry").build()) {
-      var calls = new java.util.concurrent.atomic.AtomicInteger();
+      var errors = new java.util.concurrent.CopyOnWriteArrayList<String>();
       UUID jobId =
           bikesched
               .newJob("step-failure-handler-retry")
@@ -393,8 +407,9 @@ class StepTest extends AbstractBikeschedTest {
                   job ->
                       job.newStep("charge", String.class)
                           .onFailure(
-                              (step, failure) -> {
-                                if (calls.incrementAndGet() == 1) {
+                              failing -> {
+                                errors.add(failing.error());
+                                if (errors.size() == 1) {
                                   throw new java.io.IOException("database down");
                                 }
                               })
@@ -406,8 +421,145 @@ class StepTest extends AbstractBikeschedTest {
 
       awaitState(jobId, "FAILED");
 
-      assertThat(calls).as("handler ran again after it failed").hasValue(2);
+      assertThat(errors)
+          .as("handler ran again in an extra attempt, with the same error")
+          .containsExactly(
+              "java.lang.IllegalStateException: declined",
+              "java.lang.IllegalStateException: declined");
       assertThat(stepState(jobId, "charge")).isEqualTo("FAILED");
+      assertThat(count("id = '" + jobId + "' and attempts = 2")).isEqualTo(1);
+    }
+  }
+
+  @Test
+  void failureHandlerIsGivenUpAfterFailureHandlerAttempts() throws Exception {
+    try (Bikesched bikesched =
+        testNode("node-step-failure-handler-give-up").failureHandlerAttempts(2).build()) {
+      var calls = new java.util.concurrent.atomic.AtomicInteger();
+      UUID jobId =
+          bikesched
+              .newJob("step-failure-handler-give-up")
+              .maxAttempts(1)
+              .handler(
+                  job ->
+                      job.newStep("charge", String.class)
+                          .onFailure(
+                              failing -> {
+                                calls.incrementAndGet();
+                                throw new java.io.IOException("database down");
+                              })
+                          .run(
+                              step -> {
+                                throw new IllegalStateException("declined");
+                              }))
+              .schedule();
+
+      awaitState(jobId, "FAILED");
+
+      assertThat(calls).as("two runs, then given up").hasValue(2);
+      assertThat(stepState(jobId, "charge")).isEqualTo("FAILED");
+      assertThat(count("id = '" + jobId + "' and attempts = 2"))
+          .as("one extra attempt for the second run")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void failureHandlerResolvesTheStepAndTheJobContinues() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-failure-handler-resolve").build()) {
+      var rates = new java.util.concurrent.CopyOnWriteArrayList<String>();
+      UUID jobId =
+          bikesched
+              .newJob("step-failure-handler-resolve")
+              .maxAttempts(1)
+              .handler(
+                  job -> {
+                    String rate =
+                        job.newStep("fetch-rate", String.class)
+                            .onFailure(failing -> failing.resolve("\"1.0\""))
+                            .run(
+                                step -> {
+                                  throw new java.io.IOException("rates down");
+                                });
+                    rates.add(rate);
+                    if (rates.size() == 1) {
+                      job.sleep("replay", java.time.Duration.ofMillis(10));
+                    }
+                  })
+              .schedule();
+
+      awaitState(jobId, "SUCCEEDED");
+
+      assertThat(rates)
+          .as("the fallback, also on the replay after the sleep")
+          .containsExactly("\"1.0\"", "\"1.0\"");
+      assertThat(stepState(jobId, "fetch-rate")).isEqualTo("SUCCEEDED");
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '"
+                      + jobId
+                      + "' and name = 'fetch-rate' and result = '\"1.0\"'::jsonb"
+                      + " and not compensable"
+                      + " and last_error = 'java.io.IOException: rates down'"))
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void resolvingWinsOverAnExceptionThrownAfterwards() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-failure-handler-resolve-throw").build()) {
+      UUID jobId =
+          bikesched
+              .newJob("step-failure-handler-resolve-throw")
+              .maxAttempts(1)
+              .handler(
+                  job ->
+                      job.newStep("fetch-rate", String.class)
+                          .onFailure(
+                              failing -> {
+                                failing.resolve("\"1.0\"");
+                                throw new IllegalStateException("after resolving");
+                              })
+                          .run(
+                              step -> {
+                                throw new java.io.IOException("rates down");
+                              }))
+              .schedule();
+
+      awaitState(jobId, "SUCCEEDED");
+      assertThat(stepState(jobId, "fetch-rate")).isEqualTo("SUCCEEDED");
+    }
+  }
+
+  @Test
+  void aResolvedStepIsNotCompensated() throws Exception {
+    try (Bikesched bikesched = testNode("node-step-failure-handler-no-compensation").build()) {
+      var compensated = new java.util.concurrent.CopyOnWriteArrayList<String>();
+      UUID jobId =
+          bikesched
+              .newJob("step-failure-handler-no-compensation")
+              .maxAttempts(1)
+              .handler(
+                  job -> {
+                    job.newStep("reserve", String.class)
+                        .compensateWith((step, r) -> compensated.add(step.name()))
+                        .run(step -> "\"reserved\"");
+                    job.newStep("fetch-rate", String.class)
+                        .compensateWith((step, r) -> compensated.add(step.name()))
+                        .onFailure(failing -> failing.resolve("\"1.0\""))
+                        .run(
+                            step -> {
+                              throw new java.io.IOException("rates down");
+                            });
+                    job.fail("then failed");
+                  })
+              .schedule();
+
+      awaitState(jobId, "FAILED");
+      assertThat(compensated)
+          .as("only the step that ran its side effect")
+          .containsExactly("reserve");
     }
   }
 

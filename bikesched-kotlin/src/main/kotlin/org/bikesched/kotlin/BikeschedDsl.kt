@@ -98,6 +98,12 @@ public class BikeschedSpec internal constructor() {
   public var retryBackoff: RetryBackoff? = null
 
   /**
+   * How often a failure handler runs before it is given up (see
+   * `BikeschedBuilder.failureHandlerAttempts`); defaults to 3.
+   */
+  public var failureHandlerAttempts: Int? = null
+
+  /**
    * How long events published through this node are kept, unless an event sets its own retention;
    * defaults to 7 days.
    */
@@ -176,6 +182,7 @@ public class BikeschedSpec internal constructor() {
     defaultJobTimeout?.let { builder.defaultJobTimeout(it.toJavaDuration()) }
     defaultEventTimeout?.let { builder.defaultEventTimeout(it.toJavaDuration()) }
     retryBackoff?.let(builder::retryBackoff)
+    failureHandlerAttempts?.let(builder::failureHandlerAttempts)
     eventRetention?.let { builder.eventRetention(it.toJavaDuration()) }
     eventCleanUpInterval?.let { builder.eventCleanUpInterval(it.toJavaDuration()) }
     nodeCleanUpInterval?.let { builder.nodeCleanUpInterval(it.toJavaDuration()) }

@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.job.JobBuilder;
+import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
@@ -52,10 +53,12 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
 
   /** Stores a job built by a {@link JobBuilder}; registers its handler first if given and new. */
   @Override
-  public UUID schedule(NewJob job, JobHandler handler, Connection connection) {
+  public UUID schedule(
+      NewJob job, JobHandler handler, JobFailureHandler failureHandler, Connection connection) {
     beforeDatabaseAccess.run();
     String type = job.type();
     requireHandler(type, handler);
+    registerFailureHandler(type, failureHandler);
     UUID jobId = UUID.randomUUID();
     if (connection == null) {
       database.jobs().insertJob(jobId, job);
@@ -91,10 +94,12 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
 
   /** Registers a recurring job, see {@link JobBuilder#schedule(Recurrence)}. */
   @Override
-  public UUID scheduleRecurring(RecurringJob job, JobHandler handler, Instant firstRun) {
+  public UUID scheduleRecurring(
+      RecurringJob job, JobHandler handler, JobFailureHandler failureHandler, Instant firstRun) {
     beforeDatabaseAccess.run();
     String type = job.type();
     requireHandler(type, handler);
+    registerFailureHandler(type, failureHandler);
     Instant now = Instant.now();
     Instant first = firstRun != null ? firstRun : job.nextRun(now, now);
     var registration = database.jobs().registerRecurringJob(job.occurrence(first));
@@ -159,5 +164,17 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
       }
     }
     registry.requireHandler(type);
+  }
+
+  /** Registers a builder's failure handler, if given, unless the type has one. */
+  private void registerFailureHandler(String type, JobFailureHandler failureHandler) {
+    if (failureHandler == null) {
+      return;
+    }
+    if (registry.registerFailureHandler(type, failureHandler)) {
+      LOG.info("bikesched node {} registered failure handler for job type {}", nodeName, type);
+    } else {
+      LOG.debug("Failure handler for job type {} already registered, keeping it", type);
+    }
   }
 }

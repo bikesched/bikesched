@@ -283,12 +283,30 @@ failed in the last attempt of its job, before the step and the job are recorded 
 
 ```java
 job.newStep("charge", Payment.class)
-    .onFailure((step, failure) -> orders.markFailed(orderId))
+    .onFailure(failing -> orders.markFailed(orderId, failing.error()))
     .run(step -> paymentService.charge(orderId));
 ```
 
-The step is `FAILING` while the handler runs, then `FAILED`, and the job fails. If the handler
-throws, or the node dies before the step is recorded as failed, the job gets an extra attempt that
-runs the handler again (with a `BikeschedException` carrying the stored error), so the handler must
-be idempotent. Steps without a handler just fail. In Kotlin:
-`step<Payment>("charge", onFailure = { step, failure -> … }) { … }`.
+The handler gets a `FailingStep` with the job id, the step name and the stored error (the
+exception's `toString()`), never the exception itself: it may run again in a later attempt or on
+another node, where only the stored text exists.
+
+It can also resolve the step with a fallback result, so the job continues; this is how a step gets
+its retries first and a fallback after them:
+
+```java
+Rate rate = job.newStep("fetch-rate", Rate.class)
+    .onFailure(failing -> failing.resolve(Rate.DEFAULT))
+    .run(step -> rates.fetch(currency));
+```
+
+- The step is `FAILING` while the handler runs, then `FAILED` and the job fails, or `SUCCEEDED`
+  with the fallback if resolved (stored and returned on later runs like any step result).
+- A resolved step is not compensated, even with `compensateWith`: its side effect failed.
+- If the handler throws, or the node dies before the outcome is recorded, the job gets an extra
+  attempt that runs the handler again, so it must be idempotent. After the node's
+  `failureHandlerAttempts` runs (default 3, see [Configuration](configuration.md#builder-options))
+  the step is `FAILED` without it.
+- Steps without a handler just fail.
+
+In Kotlin: `step<Rate>("fetch-rate", onFailure = { failing -> failing.resolve(Rate.DEFAULT) }) { … }`.

@@ -44,7 +44,7 @@ public final class StepStore {
 
   private static final String FIND_STEP_SQL =
       """
-            select kind, state, result::text, attempts from bikesched_steps where job_id = ? and name = ?""";
+            select kind, state, result::text, attempts, compensable from bikesched_steps where job_id = ? and name = ?""";
 
   // Starts an attempt of a regular step that has not succeeded yet; returns its attempt number.
   // Returns no row if the step already succeeded (e.g. concurrently), was compensated since, is
@@ -55,7 +55,7 @@ public final class StepStore {
             select ?, ?, 'RUNNING', 1, ?, now()
              where %s
             on conflict (job_id, name) do update
-               set state = 'RUNNING', attempts = bikesched_steps.attempts + 1,
+               set state = 'RUNNING', attempts = bikesched_steps.attempts + 1, failure_attempts = 0,
                    locked_by = excluded.locked_by, started_at = now(), finished_at = null
              where bikesched_steps.kind = 'STEP' and bikesched_steps.state not in ('SUCCEEDED', 'COMPENSATED')
             returning attempts"""
@@ -103,8 +103,26 @@ public final class StepStore {
   private static final String MARK_STEP_FAILING_SQL =
       """
             update bikesched_steps
-               set state = 'FAILING', last_error = ?, locked_by = null
+               set state = 'FAILING', last_error = ?, locked_by = null, failure_attempts = 0
              where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
+          .formatted(JOB_LOCKED);
+
+  // A run of the failure handler of a FAILING step starts: counted before it runs, so a run that
+  // crashes the node counts too.
+  private static final String START_FAILURE_HANDLER_SQL =
+      """
+            update bikesched_steps set failure_attempts = failure_attempts + 1
+             where job_id = ? and name = ? and state = 'FAILING' and %s
+            returning failure_attempts"""
+          .formatted(JOB_LOCKED);
+
+  // The failure handler resolved the FAILING step with a fallback result: SUCCEEDED, but never
+  // compensated (its side effect failed). The error stays for reference.
+  private static final String RESOLVE_FAILING_STEP_SQL =
+      """
+            update bikesched_steps
+               set state = 'SUCCEEDED', result = ?::jsonb, compensable = false, finished_at = now()
+             where job_id = ? and name = ? and state = 'FAILING' and %s"""
           .formatted(JOB_LOCKED);
 
   private static final String FAIL_FAILING_STEP_SQL =
@@ -235,8 +253,10 @@ public final class StepStore {
    * @param result its stored result (an event wait: a copy of the received event's payload) as JSON
    *     text
    * @param attempts its number of attempts
+   * @param compensable whether it has a compensation to run if its job is cancelled or fails
    */
-  public record StoredStep(String kind, String state, String result, int attempts) {}
+  public record StoredStep(
+      String kind, String state, String result, int attempts, boolean compensable) {}
 
   /**
    * Looks up a step of a job.
@@ -250,7 +270,9 @@ public final class StepStore {
         db ->
             db.one(
                 FIND_STEP_SQL,
-                row -> new StoredStep(row.string(1), row.string(2), row.string(3), row.integer(4)),
+                row ->
+                    new StoredStep(
+                        row.string(1), row.string(2), row.string(3), row.integer(4), row.bool(5)),
                 jobId,
                 name),
         e ->
@@ -264,9 +286,11 @@ public final class StepStore {
    * @param kind what the step does, see {@link StoredStep}
    * @param result its stored result as JSON text, may be {@code null}
    * @param compensated whether its compensation ran already
+   * @param compensable whether it has a compensation; not for a step its failure handler resolved
    * @param attempts the number of attempts it took
    */
-  public record CompletedStep(String kind, String result, boolean compensated, int attempts) {}
+  public record CompletedStep(
+      String kind, String result, boolean compensated, boolean compensable, int attempts) {}
 
   /**
    * A step of a job starting a child job.
@@ -458,10 +482,20 @@ public final class StepStore {
                 switch (step.state()) {
                   case "SUCCEEDED" ->
                       Optional.of(
-                          new CompletedStep(step.kind(), step.result(), false, step.attempts()));
+                          new CompletedStep(
+                              step.kind(),
+                              step.result(),
+                              false,
+                              step.compensable(),
+                              step.attempts()));
                   case "COMPENSATED" ->
                       Optional.of(
-                          new CompletedStep(step.kind(), step.result(), true, step.attempts()));
+                          new CompletedStep(
+                              step.kind(),
+                              step.result(),
+                              true,
+                              step.compensable(),
+                              step.attempts()));
                   default -> Optional.empty();
                 });
   }
@@ -670,18 +704,19 @@ public final class StepStore {
   }
 
   /**
-   * Marks a {@code FAILING} step {@code FAILED} once its failure handler ran.
+   * Marks a {@code FAILING} step {@code FAILED} once its failure handler ran (or was given up).
    *
    * @param jobId the job id
    * @param lock the lock of the job's claim (node and token)
    * @param name the step name
+   * @param detail recorded in the job history, {@code null} for none
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void failFailingStep(UUID jobId, JobLock lock, String name) {
+  public void failFailingStep(UUID jobId, JobLock lock, String name, String detail) {
     history.change(
         db -> {
           if (db.update(FAIL_FAILING_STEP_SQL, jobId, name, jobId, lock.token()) > 0) {
-            history.record(db, Change.step(jobId, name, "FAILED", lock.nodeId(), null));
+            history.record(db, Change.step(jobId, name, "FAILED", lock.nodeId(), detail));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -695,6 +730,69 @@ public final class StepStore {
                     + jobId
                     + " failed",
                 e));
+  }
+
+  /**
+   * Counts a run of the failure handler of a {@code FAILING} step, before it runs.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @return the number of runs including this one; empty if the step is not {@code FAILING}
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public Optional<Integer> startFailureHandler(UUID jobId, JobLock lock, String name) {
+    return access.withConnection(
+        db -> {
+          Optional<Integer> run =
+              db.one(
+                  START_FAILURE_HANDLER_SQL,
+                  row -> row.integer(1),
+                  jobId,
+                  name,
+                  jobId,
+                  lock.token());
+          if (run.isEmpty()) {
+            requireJobLock(db, jobId, lock);
+          }
+          return run;
+        },
+        e ->
+            new BikeschedException(
+                "Starting the failure handler of step '"
+                    + name
+                    + "' of bikesched job "
+                    + jobId
+                    + " failed",
+                e));
+  }
+
+  /**
+   * Marks a {@code FAILING} step {@code SUCCEEDED} with the fallback result its failure handler
+   * resolved it with; it is not compensable.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param name the step name
+   * @param result the result as JSON text, may be {@code null}
+   * @throws JobLockLostException if the job is no longer running on the node
+   */
+  public void resolveFailingStep(UUID jobId, JobLock lock, String name, String result) {
+    history.change(
+        db -> {
+          if (db.update(RESOLVE_FAILING_STEP_SQL, result, jobId, name, jobId, lock.token()) > 0) {
+            history.record(
+                db,
+                Change.step(
+                    jobId, name, "SUCCEEDED", lock.nodeId(), "resolved by its failure handler"));
+          } else {
+            requireJobLock(db, jobId, lock);
+          }
+          return null;
+        },
+        e ->
+            new BikeschedException(
+                "Resolving step '" + name + "' of bikesched job " + jobId + " failed", e));
   }
 
   /**

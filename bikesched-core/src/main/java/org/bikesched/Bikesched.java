@@ -12,12 +12,15 @@ import org.bikesched.event.NodeEventBuilder;
 import org.bikesched.internal.util.Version;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
+import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
+import org.bikesched.job.JobTypeFailureHandler;
 import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
 
 /**
@@ -136,6 +139,58 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
   default <T> Bikesched registerJobHandler(JobTypeHandler<T> handler) {
     Objects.requireNonNull(handler, "handler");
     return registerJobHandler(Objects.requireNonNull(handler.type(), "handler.type()"), handler);
+  }
+
+  /**
+   * Registers the failure handler of a job type: it runs before a job of the type ends {@code
+   * FAILED} or {@code COMPENSATION_FAILED}, e.g. to move it to a dead-letter table, see {@link
+   * JobFailureHandler}. The job's outcome is final at that point.
+   *
+   * <pre>{@code
+   * bikesched.registerJobFailureHandler("charge", failed ->
+   *     deadLetters.insert(failed.id(), failed.type(), failed.payload(), failed.error()));
+   * }</pre>
+   *
+   * <p>Like the job handler, register it on every node that handles the type: the node failing a
+   * job decides by its own registration whether the job becomes {@code FAILING}.
+   *
+   * @param type the job type, not blank, at most 200 characters
+   * @param handler handles the failed jobs
+   * @return this instance
+   * @throws IllegalArgumentException if the type is blank or already has a failure handler
+   */
+  Bikesched registerJobFailureHandler(String type, JobFailureHandler handler);
+
+  /**
+   * Registers the failure handler of a {@link JobType}; it receives the payload mapped to the
+   * type's payload class. Like {@link #registerJobFailureHandler(String, JobFailureHandler)}
+   * otherwise.
+   *
+   * @param type the job type and its payload class
+   * @param handler handles the failed jobs; receives the job and its payload
+   * @param <T> the payload type
+   * @return this instance
+   * @throws IllegalArgumentException if the type already has a failure handler, or this node
+   *     already uses the type's name with another payload class
+   */
+  <T> Bikesched registerJobFailureHandler(
+      JobType<T> type, TypedJobFailureHandler<? super T> handler);
+
+  /**
+   * Registers a failure handler that carries its job type, see {@link JobTypeFailureHandler}; like
+   * {@link #registerJobFailureHandler(JobType, TypedJobFailureHandler)
+   * registerJobFailureHandler(handler.type(), handler)}.
+   *
+   * @param handler handles the failed jobs of {@link JobTypeFailureHandler#type()}
+   * @param <T> the payload type
+   * @return this instance
+   * @throws IllegalArgumentException if the type already has a failure handler, or this node
+   *     already uses the type's name with another payload class
+   */
+  default <T> Bikesched registerJobFailureHandler(JobTypeFailureHandler<T> handler) {
+    Objects.requireNonNull(handler, "handler");
+    return registerJobFailureHandler(
+        Objects.requireNonNull(handler.type(), "handler.type()"), handler);
   }
 
   /**

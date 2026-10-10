@@ -32,6 +32,7 @@ afterwards (see `autoStartPolling` below).
 | `nodeTimeout(Duration)` | 30 seconds | time without heartbeat after which other nodes consider the node dead and release its jobs; the builder rejects a value not longer than `heartbeatInterval` |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.fixed(Duration.ofSeconds(30))` or `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))` (doubling, each delay randomly shortened by up to half); a handler's `job.fail().retryAfter(…)` takes precedence |
+| `failureHandlerAttempts(int)` | 3 | how often a [job's](jobs.md#failure-handlers) or [step's](steps.md#failure-handler-per-step) failure handler runs before it is given up; a run counts once it started, so a run that crashes the node counts too |
 | `jsonMapper(JsonMapper)` | JSON strings only | maps payloads, step results and event payloads to and from JSON, see [JSON mapping](#json-mapping) |
 | `eventRetention(Duration)` | 7 days | how long events published through this node are kept for steps that start waiting later, unless an event sets its own `retention(...)`, see [Retention](events.md#retention) |
 | `eventCleanUpInterval(Duration)` | 1 hour | how often the node deletes expired events |

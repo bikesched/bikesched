@@ -138,6 +138,8 @@ public final class JobPoller implements DueTimes {
             id,
             nodeName,
             registry::handler,
+            registry::failureHandler,
+            settings.failureHandlerAttempts(),
             registry::recurringJob,
             timeoutExecutor,
             settings.defaultJobTimeout(),
@@ -362,6 +364,7 @@ public final class JobPoller implements DueTimes {
                             database,
                             claimed,
                             settings.eventRetention(),
+                            settings.failureHandlerAttempts(),
                             scheduler,
                             settings.eventListener()))
                 .toList();

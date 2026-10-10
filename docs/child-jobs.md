@@ -110,8 +110,9 @@ JobResult<Receipt> result = job.waitForJob(chargeId, Receipt.class, Duration.ofH
 | `CompensationFailed` | `COMPENSATION_FAILED` | `jobId`, `error` |
 | `TimedOut` | still running when the parent's wait timed out | `jobId` |
 
-A failed child never fails its parent by itself: the parent decides, with a `switch` or with
-`orElseThrow()`, which returns the result or throws a `JobFailedException` carrying the outcome.
+A failed child never fails its parent by itself: the parent decides, with a `switch`, with
+`orElseThrow()`, which returns the result or throws a `JobFailedException` carrying the outcome,
+or with `orElse(fallback)`, which returns the fallback for every outcome but `Succeeded`.
 `isSucceeded()` tells success apart.
 
 ## Cancellation, compensation and retries

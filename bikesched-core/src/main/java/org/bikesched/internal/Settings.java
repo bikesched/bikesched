@@ -33,6 +33,7 @@ import org.bikesched.job.listener.JobListener;
  * @param defaultJobTimeout maximum duration of a job attempt for jobs without a timeout of their
  *     own; {@code null} for none
  * @param retryBackoff delay of the retry after a failed attempt
+ * @param failureHandlerAttempts how often a failure handler runs before it is given up
  * @param eventRetention how long events published through this node are kept for steps that start
  *     waiting later, unless the event sets its own retention
  * @param defaultEventTimeout maximum wait for an event for waits without a timeout of their own;
@@ -63,6 +64,7 @@ public record Settings(
     boolean autoStartPolling,
     Duration defaultJobTimeout,
     RetryBackoff retryBackoff,
+    int failureHandlerAttempts,
     Duration eventRetention,
     Duration defaultEventTimeout,
     Duration nodeCleanUpInterval,
@@ -94,6 +96,10 @@ public record Settings(
     Objects.requireNonNull(jobHistoryCleanUpInterval, "jobHistoryCleanUpInterval");
     Objects.requireNonNull(jobRetention, "jobRetention");
     Objects.requireNonNull(jobCleanUpInterval, "jobCleanUpInterval");
+    if (failureHandlerAttempts < 1) {
+      throw new IllegalArgumentException(
+          "failureHandlerAttempts must be >= 1: " + failureHandlerAttempts);
+    }
     if (maxConcurrentJobs < 1) {
       throw new IllegalArgumentException("maxConcurrentJobs must be >= 1: " + maxConcurrentJobs);
     }

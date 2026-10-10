@@ -16,7 +16,7 @@ final class DefaultStepBuilder<T> implements StepBuilder<T> {
   private final Class<T> resultType;
   private CompensationHandler<? super T> compensation;
   private RetryBackoff retryBackoff;
-  private StepFailureHandler failureHandler;
+  private StepFailureHandler<T> failureHandler;
 
   DefaultStepBuilder(DefaultJob job, String name, Class<T> resultType) {
     this.job = job;
@@ -37,7 +37,7 @@ final class DefaultStepBuilder<T> implements StepBuilder<T> {
   }
 
   @Override
-  public StepBuilder<T> onFailure(StepFailureHandler handler) {
+  public StepBuilder<T> onFailure(StepFailureHandler<T> handler) {
     this.failureHandler = Objects.requireNonNull(handler, "handler");
     return this;
   }

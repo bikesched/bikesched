@@ -7,8 +7,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJobFailureHandler;
 
 /**
  * The job types a node knows: their handlers, its recurring jobs and the payload classes of typed
@@ -17,6 +19,7 @@ import org.bikesched.job.JobType;
 public final class JobRegistry {
 
   private final Map<String, JobHandler> handlers = new ConcurrentHashMap<>();
+  private final Map<String, JobFailureHandler> failureHandlers = new ConcurrentHashMap<>();
   private final Map<String, RecurringJob> recurringJobs = new ConcurrentHashMap<>();
 
   /** Payload classes of the job types used with a {@link JobType} on this node, by name. */
@@ -59,6 +62,42 @@ public final class JobRegistry {
    */
   public JobHandler handler(String type) {
     return handlers.get(type);
+  }
+
+  /**
+   * Registers the failure handler of a job type unless it has one.
+   *
+   * @param type the job type
+   * @param handler its failure handler
+   * @return {@code false} if the type already had a failure handler (which is kept)
+   */
+  public boolean registerFailureHandler(String type, JobFailureHandler handler) {
+    Objects.requireNonNull(handler, "handler");
+    return failureHandlers.putIfAbsent(type, handler) == null;
+  }
+
+  /**
+   * Adapts a failure handler receiving the mapped payload.
+   *
+   * @param handler the typed failure handler
+   * @param payloadType the payload class
+   * @param <T> the payload type
+   * @return the failure handler
+   */
+  public static <T> JobFailureHandler typed(
+      TypedJobFailureHandler<? super T> handler, Class<T> payloadType) {
+    Objects.requireNonNull(handler, "handler");
+    return failed -> handler.handle(failed, failed.payload(payloadType));
+  }
+
+  /**
+   * The failure handler of a job type.
+   *
+   * @param type the job type
+   * @return the failure handler, {@code null} if none is registered
+   */
+  public JobFailureHandler failureHandler(String type) {
+    return failureHandlers.get(type);
   }
 
   /**
