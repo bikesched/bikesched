@@ -37,7 +37,7 @@ jackson = "3.2.3"
 
 # bikesched-examples:kotlin
 ktor = "3.6.0"
-exposed = "0.59.0"
+exposed = "0.61.0"
 kotlinx-serialization = "1.9.0"
 moneta = "1.4.5"
 
