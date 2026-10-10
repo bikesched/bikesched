@@ -1,6 +1,6 @@
 # Builds the project website (bikesched-website, see docs/specs/website-project-site.md) and
-# publishes it to static.app whenever docs/ or the main README.md change on main. Pull requests
-# are not deployed, only pushes to main.
+# publishes it to static.app whenever docs/, the main README.md or the bikesched-website module
+# itself change on main. Pull requests are not deployed, only pushes to main.
 
 name: Website
 
@@ -10,6 +10,7 @@ on:
     paths:
       - 'docs/**'
       - 'README.md'
+      - 'bikesched-website/**'
   workflow_dispatch: {}
 
 permissions:
