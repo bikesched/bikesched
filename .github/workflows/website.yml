@@ -65,3 +65,19 @@ jobs:
             echo "static.app deploy failed (HTTP $http_code)"
             exit 1
           fi
+
+      # The CDN caches assets for up to 4 hours (cache-control: max-age=14400), so without this a
+      # deploy's new files can stay invisible behind a cache hit for that long.
+      - name: Purge static.app cache
+        env:
+          API_KEY: ${{ secrets.STATIC_APP_API_KEY }}
+        run: |
+          response=$(curl -sS -w '\n%{http_code}' --oauth2-bearer "${API_KEY}" -X POST \
+            https://api.static.app/v1/sites/le3rpst1ob/purge-cache)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "$body"
+          if [ "$http_code" -ge 400 ] || ! echo "$body" | grep -q '"status":"success"'; then
+            echo "static.app cache purge failed (HTTP $http_code)"
+            exit 1
+          fi
