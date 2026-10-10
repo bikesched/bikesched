@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.examples.kotlin.shop
 
-import org.jetbrains.exposed.sql.Column
-import org.jetbrains.exposed.sql.Table
+import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.Table
 import java.math.BigDecimal
 import java.util.UUID
 
