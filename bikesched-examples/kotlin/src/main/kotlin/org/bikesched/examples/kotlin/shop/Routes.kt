@@ -11,9 +11,10 @@ import java.util.UUID
 import javax.money.MonetaryAmount
 import org.bikesched.Bikesched
 import org.bikesched.kotlin.createJob
-import org.jetbrains.exposed.sql.insert
-import org.jetbrains.exposed.sql.transactions.transaction
-import org.jetbrains.exposed.sql.update
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.update
 import org.slf4j.LoggerFactory
 
 /**

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.examples.kotlin.shop
 
-import org.jetbrains.exposed.sql.insert
-import org.jetbrains.exposed.sql.selectAll
-import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.slf4j.LoggerFactory
 
 /** The small set of items that can be purchased. */
