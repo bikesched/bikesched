@@ -29,6 +29,7 @@ class DueJobsWritePathsTest {
   private static final Set<String> NOTIFYING =
       Set.of(
           "JobStore.INSERT_JOB_SQL",
+          "JobStore.INSERT_KEYED_JOB_SQL",
           "JobStore.INSERT_CHILD_JOB_SQL",
           "JobStore.INSERT_OCCURRENCE_SQL",
           "JobStore.RESUME_PARENT_SQL",
@@ -95,6 +96,6 @@ class DueJobsWritePathsTest {
           .as("%s is classified but no longer writes jobs (or was renamed)", name)
           .containsKey(name);
     }
-    assertThat(writes).hasSize(20);
+    assertThat(writes).hasSize(21);
   }
 }

@@ -28,7 +28,8 @@ import org.bikesched.BikeschedException;
  * {@link Duration} store a one-off job; a {@link Recurrence} registers a recurring job (see {@link
  * #schedule(Recurrence)}). {@link #connection(Connection)} continues with a {@link
  * TransactionalJobBuilder} storing a one-off job in the caller's transaction; it keeps the settings
- * made so far.
+ * made so far. {@link #idempotencyKey(String)} continues with an {@link IdempotentJobBuilder},
+ * which schedules a one-off job only once per key.
  *
  * <p>Every one-off {@code schedule} call stores a new job, so a builder can be reused to schedule
  * several jobs with the same settings. Not thread-safe.
@@ -66,6 +67,17 @@ public interface JobBuilder<P> extends JobHandlerSettings<JobBuilder<P>, P> {
    * @return a builder with the settings made so far, storing the job on the connection
    */
   TransactionalJobBuilder<P> connection(Connection connection);
+
+  /**
+   * Continues with a one-off job that has an idempotency key: while a job of this type has the key,
+   * scheduling returns that job's id instead of storing another one. See {@link
+   * IdempotentJobBuilder}.
+   *
+   * @param idempotencyKey the key, unique per job type, not blank, at most 500 characters
+   * @return a builder with the settings made so far, scheduling the job unless the key is taken
+   * @throws IllegalArgumentException if the key is blank or too long
+   */
+  IdempotentJobBuilder<P> idempotencyKey(String idempotencyKey);
 
   /**
    * Schedules the job to run as soon as possible.

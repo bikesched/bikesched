@@ -12,16 +12,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.bikesched.examples.poll.PollExample.PaymentSettled;
 import org.bikesched.examples.poll.PollExample.Webhook;
+import org.bikesched.examples.poll.PollExample.WebhookDelivery;
 
 /**
  * A payment provider that settles payments asynchronously: a created payment settles after a while
- * and the provider sends a webhook, unless the payment asks for the webhook to be lost. Its status
- * can be polled at any time.
+ * and the provider sends a webhook, unless the payment asks for the webhook to be lost (or to be
+ * delivered twice). Its status can be polled at any time.
  */
 public final class SimulatedPaymentProvider {
 
   private final PrintStream out;
-  private final Consumer<PaymentSettled> webhookEndpoint;
+  private final Consumer<WebhookDelivery> webhookEndpoint;
   private final Map<String, String> paymentsByIdempotencyKey = new ConcurrentHashMap<>();
   private final Map<String, PaymentSettled> settled = new ConcurrentHashMap<>();
   private final Map<String, AtomicInteger> statusCalls = new ConcurrentHashMap<>();
@@ -32,7 +33,7 @@ public final class SimulatedPaymentProvider {
    * @param out where the provider prints its calls
    * @param webhookEndpoint receives the webhooks, as the application's webhook endpoint would
    */
-  public SimulatedPaymentProvider(PrintStream out, Consumer<PaymentSettled> webhookEndpoint) {
+  public SimulatedPaymentProvider(PrintStream out, Consumer<WebhookDelivery> webhookEndpoint) {
     this.out = out;
     this.webhookEndpoint = webhookEndpoint;
   }
@@ -73,8 +74,18 @@ public final class SimulatedPaymentProvider {
       out.printf("%s [provider] settled %s, webhook lost%n", PollExample.timestamp(), paymentId);
       return;
     }
-    out.printf("%s [provider] settled %s, sending webhook%n", PollExample.timestamp(), paymentId);
-    webhookEndpoint.accept(payment);
+    var delivery =
+        new WebhookDelivery("evt_" + UUID.randomUUID().toString().substring(0, 8), payment);
+    out.printf(
+        "%s [provider] settled %s, sending webhook %s%n",
+        PollExample.timestamp(), paymentId, delivery.deliveryId());
+    webhookEndpoint.accept(delivery);
+    if (webhook == Webhook.DELIVERED_TWICE) {
+      out.printf(
+          "%s [provider] sending webhook %s again%n",
+          PollExample.timestamp(), delivery.deliveryId());
+      webhookEndpoint.accept(delivery);
+    }
   }
 
   /**

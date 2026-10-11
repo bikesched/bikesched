@@ -1,10 +1,10 @@
 -- bikesched schema v1: nodes, jobs, steps, events and the job history.
 -- States are text + CHECK constraints (not Postgres enums) so adding states later is a cheap migration.
 -- Names (node names, job types, step and event names, recurrence descriptions) have at most 200
--- characters, event keys at most 500: most are indexed, and B-tree entries are limited to about
--- 2.7 kB. The library checks the same limits (ValidationUtil) before writing. Messages (last_error,
--- cancel_message) are not indexed and have no constraint: the library truncates them to 4000
--- characters, so recording a failure never fails on its length.
+-- characters, event keys and idempotency keys at most 500: most are indexed, and B-tree entries are
+-- limited to about 2.7 kB. The library checks the same limits (ValidationUtil) before writing.
+-- Messages (last_error, cancel_message) are not indexed and have no constraint: the library
+-- truncates them to 4000 characters, so recording a failure never fails on its length.
 
 -- Every application instance (node) registers itself here and heartbeats periodically.
 -- Nodes whose heartbeat is too old are considered dead; their RUNNING jobs can be rescheduled.
@@ -55,6 +55,7 @@ create table bikesched_jobs (
     cancel_message        text,
     result       jsonb,                         -- Job.complete(result); only set when SUCCEEDED
     parent_job_id uuid,                         -- the job that started this one as a child
+    idempotency_key text,                       -- dedups scheduling: unique per type while the job exists
     locked_by    uuid        references bikesched_nodes (id),
     lock_token   uuid,                          -- new for every claim: fences the claim's writes
     locked_at    timestamptz,
@@ -85,6 +86,8 @@ create table bikesched_jobs (
         check (char_length(type) between 1 and 200),
     constraint bikesched_jobs_recurrence_check
         check (char_length(recurrence) between 1 and 200),
+    constraint bikesched_jobs_idempotency_key_check
+        check (char_length(idempotency_key) between 1 and 500),
     constraint bikesched_jobs_result_check
         check (result is null or state = 'SUCCEEDED'),
     -- Children are never recurring.
@@ -102,6 +105,12 @@ create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled
 -- node's repair insert one with "on conflict do nothing" if it is missing.
 create unique index bikesched_jobs_recurring_idx on bikesched_jobs (type)
     where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING');
+
+-- Idempotency keys: scheduling a job with the key of an existing job of the same type returns that
+-- job ("on conflict do nothing"); the key is taken until the job is deleted after its retention.
+-- Only jobs with a key have an entry.
+create unique index bikesched_jobs_idempotency_key_idx on bikesched_jobs (type, idempotency_key)
+    where idempotency_key is not null;
 
 -- Deleting finished jobs after the job retention (only ended jobs have finished_at).
 create index bikesched_jobs_finished_at_idx on bikesched_jobs (finished_at)
@@ -211,15 +220,21 @@ create index bikesched_steps_child_job_idx on bikesched_steps (child_job_id)
 -- waiting for an event that was already published receives the latest unexpired one right away, so
 -- events published before anyone waits for them are not lost. With a retention of 0, an event only
 -- reaches the steps waiting when it is published.
+-- An idempotency key dedups publishing: while an event with the same name, key and idempotency key
+-- is unexpired, publishing again returns it (checked under the event's advisory lock, see
+-- EventStore; a partial index can't use now()).
 create table bikesched_events (
     id           uuid        primary key,
     name         text        not null,
     key          text        not null,
     payload      jsonb,
+    idempotency_key text,
     published_at timestamptz not null default now(),
     expires_at   timestamptz not null,
     constraint bikesched_events_name_key_check
         check (char_length(name) between 1 and 200 and char_length(key) between 1 and 500),
+    constraint bikesched_events_idempotency_key_check
+        check (char_length(idempotency_key) between 1 and 500),
     constraint bikesched_events_expires_at_check
         check (expires_at >= published_at)
 );

@@ -143,8 +143,18 @@ technical errors left to [retries](../docs/jobs.md#failures-and-retries), and
 Package [`org.bikesched.examples.poll`](java/src/main/java/org/bikesched/examples/poll): a webhook with
 a polling fallback. `SimulatedPaymentProvider` settles a payment some time after it was created and
 sends a webhook, which the application's endpoint publishes as the event `payment-settled`, keyed
-by the payment id. The job waits for the webhook for two seconds and polls the provider's status
-every second if it doesn't arrive:
+by the payment id, with the webhook's delivery id as [idempotency
+key](../docs/events.md#idempotency-keys), so a delivery the provider repeats is published once:
+
+```java
+bikesched.newEvent(PAYMENT_SETTLED, delivery.payment().paymentId())
+        .payload(delivery.payment())
+        .idempotencyKey(delivery.deliveryId())
+        .publish();   // a repeated delivery returns the event published first
+```
+
+The job waits for the webhook for two seconds and polls the provider's status every second if it
+doesn't arrive:
 
 ```java
 String paymentId = job.step("create-payment", String.class, step -> provider.createPayment(…));
@@ -164,16 +174,18 @@ job.step("mark-paid", () -> { … });
 webhook arrives, and `main` takes one payment of each:
 
 ```java
-example.pay("order-webhook", Duration.ofSeconds(1), Webhook.DELIVERED);   // the webhook arrives in time
-example.pay("order-polled", Duration.ofSeconds(4), Webhook.LOST);         // polled until settled
+example.pay("order-webhook", Duration.ofSeconds(1), Webhook.DELIVERED);              // the webhook arrives in time
+example.pay("order-webhook-twice", Duration.ofSeconds(1), Webhook.DELIVERED_TWICE);  // published once
+example.pay("order-polled", Duration.ofSeconds(4), Webhook.LOST);                    // polled until settled
 ```
 
-The second job's wait times out after two seconds; then every check that finds the payment still
+The last job's wait times out after two seconds; then every check that finds the payment still
 pending suspends the job until the next one, as one step (`poll-payment`) for all checks. See
 [Polling](../docs/steps.md#polling).
 
-`PollExampleTest` checks that the delivered webhook needs no status call, and that for the lost
-one the number of status calls equals the poll step's checks, with a single history entry
+`PollExampleTest` checks that the delivered webhook needs no status call, that a webhook delivered
+twice returns the same event both times and stores one row in `bikesched_events`, and that for
+the lost one the number of status calls equals the poll step's checks, with a single history entry
 (`ready after n checks`) for the poll.
 
 ## Annotation

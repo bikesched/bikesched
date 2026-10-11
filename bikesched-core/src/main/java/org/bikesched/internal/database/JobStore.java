@@ -43,8 +43,19 @@ public final class JobStore {
 
   private static final String INSERT_JOB_SQL =
       """
-            insert into bikesched_jobs (id, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, fixed_rate_at)
-            values (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)""";
+            insert into bikesched_jobs (id, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, fixed_rate_at, idempotency_key)
+            values (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)""";
+
+  // Inserts a job with an idempotency key unless a job of its type has the key (partial unique
+  // index); FIND_KEYED_JOB_SQL then finds that job.
+  private static final String INSERT_KEYED_JOB_SQL =
+      INSERT_JOB_SQL
+          + """
+
+            on conflict (type, idempotency_key) where idempotency_key is not null do nothing""";
+
+  private static final String FIND_KEYED_JOB_SQL =
+      "select id from bikesched_jobs where type = ? and idempotency_key = ?";
 
   private static final String INSERT_CHILD_JOB_SQL =
       """
@@ -405,13 +416,15 @@ public final class JobStore {
           .thenComparing(ClaimedJob::scheduledAt);
 
   /**
-   * Inserts a new {@code SCHEDULED} job.
+   * Inserts a new {@code SCHEDULED} job; with an idempotency key, only unless a job of its type has
+   * the key.
    *
    * @param jobId the job id
    * @param job the job's attributes
+   * @return {@code jobId}, or the id of the existing job with the job's idempotency key
    */
-  public void insertJob(UUID jobId, NewJob job) {
-    history.change(
+  public UUID insertJob(UUID jobId, NewJob job) {
+    return history.change(
         db -> insertJob(db, jobId, job),
         e ->
             new BikeschedException(
@@ -420,14 +433,15 @@ public final class JobStore {
 
   /**
    * Inserts a new scheduled job using the caller's connection, as part of the caller's transaction:
-   * the connection is neither committed nor closed.
+   * the connection is neither committed nor closed. See {@link #insertJob(UUID, NewJob)}.
    *
    * @param connection the caller's connection
    * @param jobId the new job's id
    * @param job the job's attributes
+   * @return {@code jobId}, or the id of the existing job with the job's idempotency key
    */
-  public void insertJob(Connection connection, UUID jobId, NewJob job) {
-    access.onCallerConnection(
+  public UUID insertJob(Connection connection, UUID jobId, NewJob job) {
+    return access.onCallerConnection(
         connection,
         db -> insertJob(db, jobId, job),
         e ->
@@ -435,22 +449,42 @@ public final class JobStore {
                 "Scheduling bikesched job of type '" + job.type() + "' failed", e));
   }
 
-  private Void insertJob(Sql db, UUID jobId, NewJob job) throws SQLException {
-    db.update(INSERT_JOB_SQL, insertParameters(jobId, job));
+  private UUID insertJob(Sql db, UUID jobId, NewJob job) throws SQLException {
+    if (job.idempotencyKey() == null) {
+      db.update(INSERT_JOB_SQL, insertParameters(jobId, job));
+      return inserted(db, jobId, job);
+    }
+    // A conflicting job deleted (retention) before it is found: insert again, once.
+    Optional<UUID> existing = Optional.empty();
+    for (int attempt = 1; attempt <= 2 && existing.isEmpty(); attempt++) {
+      if (db.update(INSERT_KEYED_JOB_SQL, insertParameters(jobId, job)) == 1) {
+        return inserted(db, jobId, job);
+      }
+      // A new statement: sees the conflicting job, also one committed while the insert waited.
+      existing = db.one(FIND_KEYED_JOB_SQL, row -> row.uuid(1), job.type(), job.idempotencyKey());
+    }
+    return existing.orElseThrow(
+        () ->
+            new IllegalStateException(
+                "The job with idempotency key '" + job.idempotencyKey() + "' disappeared twice"));
+  }
+
+  private UUID inserted(Sql db, UUID jobId, NewJob job) throws SQLException {
     db.due(job.type(), job.scheduledAt());
     history.record(db, created(jobId, job));
-    return null;
+    return jobId;
   }
 
   /** The history entry of a new job (or occurrence). */
   private static Change created(UUID jobId, NewJob job) {
-    String due = "due at " + job.scheduledAt();
-    return Change.job(
-        jobId,
-        "SCHEDULED",
-        0,
-        null,
-        job.recurrence() == null ? due : "occurrence of '" + job.recurrence() + "', " + due);
+    String detail = "due at " + job.scheduledAt();
+    if (job.recurrence() != null) {
+      detail = "occurrence of '" + job.recurrence() + "', " + detail;
+    }
+    if (job.idempotencyKey() != null) {
+      detail += ", idempotency key " + job.idempotencyKey();
+    }
+    return Change.job(jobId, "SCHEDULED", 0, null, detail);
   }
 
   private static Object[] insertParameters(UUID jobId, NewJob job) {
@@ -463,7 +497,8 @@ public final class JobStore {
       job.maxAttempts(),
       Sql.millis(job.timeout()),
       job.recurrence(),
-      Sql.timestamp(job.fixedRateAt())
+      Sql.timestamp(job.fixedRateAt()),
+      job.idempotencyKey()
     };
   }
 

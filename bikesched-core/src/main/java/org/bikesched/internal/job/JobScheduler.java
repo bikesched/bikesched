@@ -51,7 +51,12 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
         Objects.requireNonNull(beforeDatabaseAccess, "beforeDatabaseAccess");
   }
 
-  /** Stores a job built by a {@link JobBuilder}; registers its handler first if given and new. */
+  /**
+   * Stores a job built by a {@link JobBuilder}, unless a job of its type has its idempotency key;
+   * registers its handler first if given and new.
+   *
+   * @return the id of the new job, or of the existing job with the idempotency key
+   */
   @Override
   public UUID schedule(
       NewJob job, JobHandler handler, JobFailureHandler failureHandler, Connection connection) {
@@ -60,10 +65,17 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
     requireHandler(type, handler);
     registerFailureHandler(type, failureHandler);
     UUID jobId = UUID.randomUUID();
-    if (connection == null) {
-      database.jobs().insertJob(jobId, job);
-    } else {
-      database.jobs().insertJob(connection, jobId, job);
+    UUID stored =
+        connection == null
+            ? database.jobs().insertJob(jobId, job)
+            : database.jobs().insertJob(connection, jobId, job);
+    if (!stored.equals(jobId)) {
+      LOG.debug(
+          "Job {} of type {} has idempotency key {}, not scheduling another one",
+          stored,
+          type,
+          job.idempotencyKey());
+      return stored;
     }
     LOG.debug(
         "Scheduled job {} of type {} at {} (priority {}, max {} attempt(s), timeout {}){}",

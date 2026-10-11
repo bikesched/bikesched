@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.internal.util.ValidationUtil;
 
 /** The {@link EventBuilder} implementation. */
 public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
@@ -17,13 +18,15 @@ public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
   public interface Publisher {
     /**
      * {@code retention} is the event's retention, {@code null} for the node default; {@code
-     * connection} is the caller's connection, or {@code null} to use bikesched's own.
+     * idempotencyKey} is {@code null} for none; {@code connection} is the caller's connection, or
+     * {@code null} to use bikesched's own.
      */
     UUID publish(
         String eventName,
         String eventKey,
         String payload,
         Duration retention,
+        String idempotencyKey,
         Connection connection);
   }
 
@@ -33,6 +36,7 @@ public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
   private final Publisher publisher;
   private String payload;
   private Duration retention; // null: the node default
+  private String idempotencyKey;
   private Connection connection;
 
   public DefaultEventBuilder(
@@ -60,6 +64,12 @@ public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
   }
 
   @Override
+  public NodeEventBuilder<P> idempotencyKey(String idempotencyKey) {
+    this.idempotencyKey = ValidationUtil.requireKey(idempotencyKey, "idempotency key");
+    return this;
+  }
+
+  @Override
   public NodeEventBuilder<P> connection(Connection connection) {
     this.connection = connection;
     return this;
@@ -67,6 +77,6 @@ public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
 
   @Override
   public UUID publish() {
-    return publisher.publish(eventName, eventKey, payload, retention, connection);
+    return publisher.publish(eventName, eventKey, payload, retention, idempotencyKey, connection);
   }
 }

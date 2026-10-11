@@ -166,27 +166,6 @@ may take another path than the first attempt did. Nothing in the docs or the API
   no node supports any more (stuck `SCHEDULED`, an incident?).
 - Outcome: deploys that change a handler without breaking jobs already in flight.
 
-### Idempotency keys for jobs and events
-
-A caller that retries (a webhook delivered twice, a request retried after a timeout) schedules the
-same job or publishes the same event twice. Callers would have to deduplicate themselves before
-calling bikesched.
-
-- Optional `idempotencyKey(String)` on the job builder (also the transactional one) and the event
-  builder; at most 500 characters like event keys (`char_length` CHECK + `ValidationUtil`).
-- Jobs: column `idempotency_key` with a partial unique index on (`type`, `idempotency_key`)
-  over the states that are not ended (`SCHEDULED`, `RUNNING`, `WAITING`, `COMPENSATING`), like
-  `bikesched_jobs_recurring_idx`. `insert … on conflict do nothing`, then `schedule()` returns the
-  id of the existing job instead of creating one; once the job has ended, the key is free again.
-  Open: unique per job type (proposed) or globally; whether a different payload for the same key
-  should fail instead of being ignored.
-- Events: they have no completion, only an expiry (`expires_at`), and a partial index cannot use
-  `now()`. Check for an unexpired event with the same name and idempotency key inside the advisory
-  lock `publish` already takes on name and key, and skip the publish if one exists.
-- With job history: record the skipped duplicate ("duplicate of idempotency key …") on the existing
-  job.
-- Outcome: retried callers create each job and event once, without their own deduplication table.
-
 ### Reference
 
 Allow jobs and events to store an external reference string (max 200 chars, like job types and
@@ -196,8 +175,9 @@ delivery id), so it can be looked up or shown without decoding the payload.
 - Optional `reference(String)` on the job builder (also the transactional one) and the event
   builder; `char_length` CHECK + `ValidationUtil`, like other 200-character names.
 - Column `reference` on `bikesched_jobs` and `bikesched_events`, nullable, not unique (unlike the
-  idempotency key above, this is a display/lookup aid, not a dedup key) — multiple jobs/events can
-  share one external reference (e.g. several jobs for the same order).
+  [idempotency key](docs/jobs.md#idempotency-keys), this is a display/lookup aid, not a dedup
+  key) — multiple jobs/events can share one external reference (e.g. several jobs for the same
+  order).
 - Needs an index to actually look up by it (e.g. `(type, reference)` on jobs); postponed until
   there is a concrete lookup need, similar to [Admin API](#admin-api).
 - Open: whether it is mutable after creation, and whether it shows up in job history.

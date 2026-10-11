@@ -39,6 +39,30 @@ UUID eventId = bikesched.newEvent("payment-received", order.id())
 - Waiting does not use up an attempt.
 - Code outside steps runs again on every resume, so it must be cheap and deterministic.
 
+### Idempotency keys
+
+A webhook the provider delivers twice publishes the event twice. With an idempotency key, it is
+published once:
+
+```java
+bikesched.newEvent("payment-received", order.id())
+        .payload(payment)
+        .idempotencyKey(webhook.deliveryId())
+        .publish();   // a repeated delivery returns the first event's id
+```
+
+- While an event with the same name, key and idempotency key is kept (its
+  [retention](#retention) has not passed), `publish` returns that event's id: nothing is stored,
+  no waiting step receives anything, and the duplicate's payload is ignored. With a retention of
+  `Duration.ZERO`, the key has no effect.
+- The check runs under the advisory lock `publish` takes on name and key, so concurrent
+  duplicates are published once, also with `.connection(connection)`.
+- Keys have 1 to 500 characters. The [event listener](metrics.md#own-listeners) is not called
+  for a duplicate.
+- Events published by a job (`Job.newEvent`) have no key: their step publishes them once.
+
+Jobs have the same option, see [Idempotency keys](jobs.md#idempotency-keys).
+
 ## Lifecycle
 
 How a job and its wait step move through their states:

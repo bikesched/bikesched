@@ -16,6 +16,8 @@ import org.bikesched.JsonMapper;
  *       org.bikesched.Bikesched#newJob(JobType)}
  *   <li>{@link TransactionalJobBuilder}: a one-off job stored in the caller's transaction, from
  *       {@link JobBuilder#connection(Connection)}
+ *   <li>{@link IdempotentJobBuilder}: a one-off job scheduled once per idempotency key, from {@link
+ *       JobBuilder#idempotencyKey(String)}
  *   <li>{@link StepJobBuilder}: a child job started as a step of its parent, from {@link
  *       Job#newJob(String)} or {@link Job#newJob(JobType)}
  * </ul>
