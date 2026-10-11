@@ -18,3 +18,4 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-10 | [Failure handlers for event waits and polls](wait-failure-handlers.md) | implemented | [ADR 0034](../decisions/0034-wait-timeouts-as-failures.md) |
 | 2026-10-11 | [Idempotency keys for jobs and events](idempotency-keys.md) | implemented | [ADR 0036](../decisions/0036-idempotency-keys.md) |
 | 2026-10-11 | [Postponing jobs](job-postpone.md) | implemented | [ADR 0037](../decisions/0037-job-postpone.md) |
+| 2026-10-11 | [Admin UI](admin-ui.md) | draft | — |

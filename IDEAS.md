@@ -27,36 +27,11 @@ the job history). Combining the read and the start into one statement would roug
 
 ## Operations
 
-### Admin API
+### Admin API and admin UI
 
-bikesched has no way to inspect its data beyond `findJob(id)`/`findJobHistory(id)` (needs the job
-id already) and raw SQL: no listing by type/state, no steps, no node information. A dedicated
-admin API — read access to jobs with their steps, history and node information, plus the existing
-retry/cancel actions — would be the basis for an admin UI, alerts and operational scripts.
-
-- Jobs: `findJobs(type, state, limit)` (newest first) to list without knowing an id; a job's
-  steps alongside its `JobInfo`/`JobHistoryEntry` (currently only readable via `Job` inside a
-  handler).
-- Nodes: list known nodes with their last heartbeat, so a stuck cluster is visible without SQL.
-- Needs an index fitting the `findJobs` query (e.g. `(type, state, updated_at)`), so it costs
-  writes on every state change; postponed until it is needed. Until then: SQL on
-  `bikesched_jobs`.
-- Open: the API's shape (new methods on `Bikesched`, or a separate `AdminApi`/`Bikesched.admin()`
-  facade to keep the main interface focused); pagination beyond `limit` (keyset on
-  `updated_at`/`id`?).
-
-### Admin UI
-
-bikesched has no UI; inspecting jobs needs SQL today, or the Admin API once it exists (see [Admin
-API](#admin-api) above). A super simple admin UI — a single read-only page listing jobs with
-filters by type and state, a job's steps and history, node status, and a button to retry a failed
-one — would make running bikesched usable without a database client.
-
-- Depends on the Admin API above; a new optional module (e.g. `bikesched-admin-ui`) serving the
-  page and a small JSON API, embeddable in any app (servlet, Spring MVC, plain `HttpServer`)
-  rather than a separate service.
-- Open: how much interactivity beyond read-only (retry/cancel buttons calling the existing job
-  API); authentication is left to the embedding application.
+Inspecting jobs needs SQL today beyond `findJob(id)`/`findJobHistory(id)`: no listing by type or
+state, no steps, no node information. Read-only lookups behind `bikesched.admin()` and an optional
+module serving a small admin page are specified in [Admin UI](docs/specs/admin-ui.md).
 
 ### Trace propagation
 
