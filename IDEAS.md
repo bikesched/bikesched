@@ -27,12 +27,6 @@ the job history). Combining the read and the start into one statement would roug
 
 ## Operations
 
-### Admin API and admin UI
-
-Inspecting jobs needs SQL today beyond `findJob(id)`/`findJobHistory(id)`: no listing by type or
-state, no steps, no node information. Read-only lookups behind `bikesched.admin()` and an optional
-module serving a small admin page are specified in [Admin UI](docs/specs/admin-ui.md).
-
 ### Trace propagation
 
 A job runs later, often on another node, so its work shows up in no trace: the request that
@@ -174,7 +168,7 @@ delivery id), so it can be looked up or shown without decoding the payload.
   key) — multiple jobs/events can share one external reference (e.g. several jobs for the same
   order).
 - Needs an index to actually look up by it (e.g. `(type, reference)` on jobs); postponed until
-  there is a concrete lookup need, similar to [Admin API](#admin-api).
+  there is a concrete lookup need.
 - Open: whether it is mutable after creation, and whether it shows up in job history.
 
 ### Stable step id for external callbacks

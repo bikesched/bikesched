@@ -32,6 +32,10 @@ spring-boot = "4.1.1"
 archunit = "1.5.1"
 cron-utils = "9.2.1"
 
+# bikesched-admin: Preact and htm, vendored into the jar at build time
+webjars-preact = "10.29.8"
+webjars-htm = "3.1.1"
+
 # bikesched-jackson (jackson-module-kotlin: bikesched-kotlin tests only)
 jackson = "3.2.3"
 
@@ -68,6 +72,8 @@ spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test", version.ref = "spring-boot" }
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 cron-utils = { module = "com.cronutils:cron-utils", version.ref = "cron-utils" }
+webjars-preact = { module = "org.webjars.npm:preact", version.ref = "webjars-preact" }
+webjars-htm = { module = "org.webjars.npm:htm", version.ref = "webjars-htm" }
 
 jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin", version.ref = "jackson" }

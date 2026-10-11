@@ -119,6 +119,11 @@ create index bikesched_jobs_finished_at_idx on bikesched_jobs (finished_at)
 -- Finding/releasing jobs of a (dead) node; also backs the foreign key.
 create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 
+-- Pages of the admin's job list, newest first, of all types or of one; created_at and type never
+-- change, so updates of a job's state don't touch these indexes.
+create index bikesched_jobs_created_at_idx on bikesched_jobs (created_at, id);
+create index bikesched_jobs_type_created_at_idx on bikesched_jobs (type, created_at, id);
+
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
 -- job can skip steps that already succeeded. The kind tells what a step does:
 -- - STEP: a regular step running user code; result = what it returned.
@@ -221,6 +226,10 @@ create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_k
 create index bikesched_steps_child_job_idx on bikesched_steps (child_job_id)
     where kind = 'CHILD_JOB' and state = 'WAITING';
 
+-- Finding the steps that published or received an event (admin lookups).
+create index bikesched_steps_event_id_idx on bikesched_steps (event_id)
+    where event_id is not null;
+
 -- Published events, kept until expires_at (published_at + the event's retention): a step that starts
 -- waiting for an event that was already published receives the latest unexpired one right away, so
 -- events published before anyone waits for them are not lost. With a retention of 0, an event only
@@ -248,6 +257,9 @@ create index bikesched_events_name_key_idx on bikesched_events (name, key, publi
 
 -- Deleting expired events.
 create index bikesched_events_expires_at_idx on bikesched_events (expires_at);
+
+-- Pages of the admin's event list, newest first.
+create index bikesched_events_published_at_idx on bikesched_events (published_at, id);
 
 -- Job history (only written by nodes with the history enabled): one row per change of a job
 -- (step_name null) or of one of its steps, in the transaction of the change. attempt is the job's

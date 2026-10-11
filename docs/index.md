@@ -52,7 +52,9 @@ and without any coordinator besides PostgreSQL.
 10. [Metrics](metrics.md): `JobListener`, `EventListener` and the Micrometer meters
    (`bikesched-micrometer`)
 11. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
-12. [Database](database.md): tables, indexes and migrations
+12. [Admin UI](admin.md): a page for jobs, steps, events and nodes with retry and cancel
+    (`bikesched-admin`), and the lookups behind it
+13. [Database](database.md): tables, indexes and migrations
 
 The [examples](../bikesched-examples/README.md) show the concepts working together; the
 [patterns](patterns.md) explain which example solves which problem. The

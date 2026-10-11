@@ -39,6 +39,7 @@ does; this file covers how to change it.
 | `bikesched-cron` | `CronRecurrence` and `CronRecurrenceParser` (Java only, package `org.bikesched.cron`): cron expressions parsed with cron-utils; depends on core and `cron-utils` only (both `api`, cron-utils is an automatic module; tests use bikesched-annotations) |
 | `bikesched-micrometer` | `MicrometerJobListener` and `MicrometerEventListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` and `EventListener` SPIs; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |
 | `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`JobTypeHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
+| `bikesched-admin` | the admin UI (Java only, package `org.bikesched.admin.web`): `BikeschedAdmin` serves a page and a JSON API through a framework-neutral `handle(AdminRequest)` and a JDK `com.sun.net.httpserver` adapter, `AdminAccess` decides per request (open by default, built-in Basic authentication); the page is static files in `src/main/resources/org/bikesched/admin/web/ui/` (ES modules with Preact and htm, copied from their WebJars by the `vendorUi` task, no build step, CSP without inline scripts or styles); depends on core only (`api`); see `docs/admin.md` |
 | `bikesched-examples` | runnable examples, described in its own `README.md`, in two submodules: `java` (plain Java examples, one package per scenario, each with a Testcontainers test using the shared `util.Database`; JSON via bikesched-jackson) and `spring` (the Spring Boot example as a regular Boot application with the Spring Boot Gradle plugin, `bootRun`) |
 | `bikesched-website` | the project site at `bikesched.org`, generated with Hugo from `README.md` and `docs/` (Hugo module mounts, no content copy) and the Hextra theme (git submodule), described in its own `docs/specs/website-project-site.md` and [ADR 0035](docs/decisions/0035-website-hosted-on-static-app.md); built with `./gradlew :bikesched-website:hugoBuild`, deployed to static.app by `.github/workflows/website.yml` |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
@@ -50,9 +51,11 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 - `org.bikesched.job`, `org.bikesched.job.listener`, `org.bikesched.event` and
   `org.bikesched.event.listener`: public API interfaces, records, enums, and exceptions; the
   listener SPIs and their reported types live in the `listener` subpackages.
+- `org.bikesched.admin`: read-only lookups behind `Bikesched.admin()` (`Admin`, query and summary
+  records) for the admin UI and custom tooling; summaries never carry payloads or results.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
-  - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `Settings`
+  - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `DefaultAdmin`, `Settings`
   - `internal.json`: `RawJsonMapper` (the default mapper, passes JSON strings through)
   - `internal.node`: `DefaultNode` (the node's name, id and closed state), `NodeHeartbeat`,
     `NodeCleanUp` (releases jobs of dead nodes, removes them)
@@ -150,9 +153,10 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   through `history.change(…)` (a transaction only if the history is enabled) and passes the
   changed rows to `history.record(db, …)` in the same transaction. New state changes do the same.
 - JDBC only inside the stores (`JobStore`, `StepStore`, `EventStore`, `NodeStore`,
-  `HistoryStore`), which receive a `DatabaseAccess` (no reference to `Database`, which only wires
-  them). Statements go through the `Sql` handle: `one`/`list`/`update`/`execute`, `Sql.Row`
-  getters, `Sql.millis/seconds/timestamp/typed/array` for durations, typed nulls and arrays. No
+  `HistoryStore`, and the read-only `AdminStore` across the tables), which receive a
+  `DatabaseAccess` (no reference to `Database`, which only wires them). Statements go through the
+  `Sql` handle: `one`/`list`/`update`/`execute`, `Sql.Row` getters,
+  `Sql.millis/seconds/timestamp/typed/array` for durations, typed nulls and arrays. No
   `PreparedStatement`, `ResultSet` or `catch (SQLException)` in stores.
 - `access.withConnection(db -> …, e -> new BikeschedException("… failed", e))`, `inTransaction`,
   `inReadOnlyTransaction`, `onCallerConnection(connection, …)`: the last argument is a lazy

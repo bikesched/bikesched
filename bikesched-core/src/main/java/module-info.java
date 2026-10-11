@@ -10,6 +10,7 @@
  *   <li>{@link org.bikesched.job.listener}: job execution listener SPI and reported event types
  *   <li>{@link org.bikesched.event}: waiting for and publishing events
  *   <li>{@link org.bikesched.event.listener}: event publication listener SPI and reported types
+ *   <li>{@link org.bikesched.admin}: read-only lookups for operating bikesched (admin UIs)
  * </ul>
  *
  * <p>The {@code org.bikesched.internal} packages hold the implementation and are not exported.
@@ -27,4 +28,5 @@ module org.bikesched {
   exports org.bikesched.job.listener;
   exports org.bikesched.event;
   exports org.bikesched.event.listener;
+  exports org.bikesched.admin;
 }

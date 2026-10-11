@@ -1,6 +1,7 @@
 # Specification: admin UI
 
-Status: **draft**
+Status: **implemented** ([ADR 0038](../decisions/0038-admin-ui.md), user docs:
+[Admin UI](../admin.md))
 
 ## 1. Goal
 
@@ -33,7 +34,7 @@ In scope:
 
 - Core: read-only lookups the page needs (4.1): jobs by type and state, a job's steps, the job
   types with counts per state, events by name and key, the event names, the nodes.
-- A new module `bikesched-admin` (Java only, package `org.bikesched.admin`): a framework-neutral
+- A new module `bikesched-admin` (Java only, package `org.bikesched.admin.web`): a framework-neutral
   request handler, an adapter for the JDK's `com.sun.net.httpserver` (no dependency), a JSON
   API, retry and cancel, and the UI as static files (HTML, CSS, JavaScript modules with Preact
   and htm) served from the jar.
@@ -356,15 +357,7 @@ Layout and content:
 
 ## 7. Open questions
 
-1. **Facade or methods on `Bikesched`?** Proposal: the `admin()` facade (4.1).
-2. **An index for the job list?** `findJobs` sorts by `created_at` over all jobs, which the
-   existing indexes do not cover; the table is bounded by the job retention (7 days by default).
-   Proposal: no index in the first slice, measure with 1 million rows, add `(created_at, id)`
-   only if a page takes longer than about 100 ms.
-3. **Retry and cancel in the first slice, or read-only only?** Proposal: include them, with
-   `readOnly(true)` to switch them off; they reuse `retry(id)` and `cancel(id, message)`.
-4. **Module name:** `bikesched-admin` (UI and JSON API) or `bikesched-admin-ui` as in IDEAS.md.
-   Proposal: `bikesched-admin`, since the JSON API is usable on its own.
+None left; they are decisions 7 to 10 below.
 
 ## 8. Decisions
 
@@ -381,3 +374,48 @@ Layout and content:
    authentication for operators and viewers (4.2).
 6. Styling is one hand-written stylesheet with CSS custom properties for both themes and the
    system font stacks (4.3).
+7. The lookups are a facade, `bikesched.admin()`, not methods on `Bikesched` (4.1).
+8. The job and event lists get indexes in their sort order: `bikesched_jobs (created_at, id)`,
+   `bikesched_jobs (type, created_at, id)` and `bikesched_events (published_at, id)`. Measured
+   with 1 million jobs and events, an unfiltered page took about 550 ms (jobs) and 320 ms (events)
+   without them, and under 1 ms with them and statements built per filter combination. Their
+   columns never change, so state updates don't write to them.
+9. Retry and cancel are part of the first slice, switched off with `readOnly(true)`; they reuse
+   `retry(id)` and `cancel(id, message)`.
+10. The module is `bikesched-admin`, since the JSON API is usable without the page.
+
+## Decided while implementing
+
+- The module's package is `org.bikesched.admin.web` (JPMS module `org.bikesched.admin.web`):
+  `org.bikesched.admin` is the core's exported lookup package, and a package cannot be split
+  across modules. The page's files are in `org/bikesched/admin/web/ui/`.
+- The lookups live in one read-only `AdminStore` across the tables instead of one statement each
+  in `JobStore`, `StepStore` and `NodeStore`; `DefaultAdmin` checks that the node is open and the
+  schema migrated, like `findJob`.
+- `Admin` also has `findJob(id)` (a `JobSummary`, used by the job detail and the parent path),
+  `findEvent(id)` and `findNodes()` uses the node timeout of the serving node.
+- `JobSummary` adds `parentJobType` (shown under a child's type in the list) and `nodeName` (the
+  node running it); `scheduledAt` is `null` while a job waits without a deadline.
+- `StepInfo` adds `waitUntil`, `eventName` and `eventKey`, and names the child fields
+  `childJobState` (the child's current state, or the recorded one after the child was deleted) and
+  `childJobExists`.
+- `EventSummary` adds `latest` (the event a new wait for its name and key would receive);
+  `WaitingStep` adds `eventName`.
+- The waiting jobs of an event name have their own route, `GET /api/waiting?name=&key=&limit=`.
+- `GET /api/jobs/{id}` returns the parent path as `ancestors` (root first, each with the step that
+  started the next level, `exists: false` for a deleted parent, at most 20 levels), so the page
+  needs one request per poll.
+- The list statements are built per filter combination (`type = ?` only with a type, and so on)
+  instead of `? is null or …`, which keeps the planner from reading a page along an index; the
+  job list joins parents and nodes to the rows of the page only.
+- Cursors of `next`/`before` are `time,id` (ISO-8601 instant and UUID).
+- `AdminAccess.check` returns an `AccessGrant` (user and level), so `/api/me` can name the user;
+  `challenge()` gives the `WWW-Authenticate` value, and an access without one answers `403`.
+- `BikeschedAdmin` is immutable: the options return copies.
+- Every `GET` gets an `ETag`, not only the job detail; the static files are revalidated with
+  `Cache-Control: no-cache`.
+- `hooks.module.js` imports the bare specifier `preact`, which a browser resolves only with an
+  import map, an inline script the CSP forbids; the `vendorUi` task rewrites the import to the
+  relative file.
+- After a retry or cancel from the page, the sidebar counts reload but the list keeps its rows, as
+  for the live updates.

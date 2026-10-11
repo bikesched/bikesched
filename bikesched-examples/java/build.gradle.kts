@@ -9,6 +9,8 @@ dependencies {
     implementation(project(":bikesched-jackson"))
     // @JobHandler methods (annotation example).
     implementation(project(":bikesched-annotations"))
+    // The admin UI (admin example).
+    implementation(project(":bikesched-admin"))
     implementation(libs.postgresql)
     implementation(libs.slf4j.api)
     // Waits for job outcomes in the examples' main classes.
@@ -129,5 +131,14 @@ tasks.register<JavaExec>("runCinema") {
     description = "Runs the cinema ticket example against the docker compose Postgres."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "org.bikesched.examples.cinema.CinemaExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
+// ./gradlew :bikesched-examples:java:runAdmin: the admin UI next to demo jobs on port 8081 (ADMIN_PORT).
+tasks.register<JavaExec>("runAdmin") {
+    group = "application"
+    description = "Serves the admin UI with demo jobs against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.admin.AdminExample"
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }

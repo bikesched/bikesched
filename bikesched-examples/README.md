@@ -4,7 +4,7 @@ Runnable examples of [bikesched](../README.md), one package per scenario, in thr
 
 | Module | Examples | Dependencies |
 |---|---|---|
-| [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [rate limit](#rate-limit), [chat](#chat), [approval](#approval), [fan-out](#fan-out), [recurring](#recurring), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets) | `bikesched-jackson`, `bikesched-annotations`, Bucket4j |
+| [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [rate limit](#rate-limit), [chat](#chat), [approval](#approval), [fan-out](#fan-out), [recurring](#recurring), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets), [admin](#admin) | `bikesched-jackson`, `bikesched-annotations`, `bikesched-admin`, Bucket4j |
 | [`kotlin`](kotlin) (`:bikesched-examples:kotlin`) | [Shop](#kotlin-shop) | `bikesched-kotlin`, Ktor, Exposed, kotlinx-serialization |
 | [`spring`](spring) (`:bikesched-examples:spring`) | [Spring Boot](#spring-boot) | `bikesched-spring-boot-starter`, `bikesched-jackson`, Spring Data JPA |
 
@@ -30,6 +30,7 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:java:runRecurring   # a recurring job on two nodes, each run happens once
 ./gradlew :bikesched-examples:java:run            # taxi booking
 ./gradlew :bikesched-examples:java:runCinema      # cinema tickets
+./gradlew :bikesched-examples:java:runAdmin       # the admin UI next to demo jobs: http://localhost:8081/bikesched/
 ./gradlew :bikesched-examples:spring:bootRun      # Spring Boot application wired by the starter
 ./gradlew :bikesched-examples:kotlin:runShop      # Kotlin shop with Ktor, Exposed, and kotlinx-serialization
 ./gradlew :bikesched-examples:java:test :bikesched-examples:spring:test  # the example tests, against Testcontainers
@@ -421,6 +422,24 @@ their results, so seats aren't reserved or cards charged twice.
 
 `CinemaExample` orders tickets for two customers and prints each step; `CinemaTest` checks the
 steps and their output.
+
+## Admin
+
+Package [`org.bikesched.examples.admin`](java/src/main/java/org/bikesched/examples/admin): the
+[admin UI](../docs/admin.md) served by the JDK's `HttpServer` next to a few demo jobs, so the page
+has something to show: invoices (every fourth one fails), orders that start a parcel as a child job
+and then wait for a payment event (half of them are paid), and the parcels.
+
+```java
+HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
+server.createContext("/bikesched", BikeschedAdmin.of(bikesched).showPayloads(true).httpHandler());
+server.start();
+```
+
+The demo data holds no secrets, so the example shows payloads; they are hidden by default. Open
+http://localhost:8081/bikesched/ (`ADMIN_PORT` changes the port), retry a failed invoice or
+cancel a waiting order. `AdminExampleTest` serves the page on a random port and waits until the
+failed invoices show up in the JSON API.
 
 ## Kotlin Shop
 
