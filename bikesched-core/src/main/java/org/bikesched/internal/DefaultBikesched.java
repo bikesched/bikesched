@@ -16,6 +16,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedException;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.Node;
+import org.bikesched.admin.Admin;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventType;
 import org.bikesched.event.NodeEventBuilder;
@@ -92,6 +93,7 @@ public final class DefaultBikesched implements Bikesched {
   private final ScheduledExecutorService heartbeatExecutor;
   private final ScheduledThreadPoolExecutor cleanUpExecutor;
   private final DefaultNode node;
+  private final DefaultAdmin admin;
 
   /** Guards starting to poll against closing, so a node never registers after it was closed. */
   private final Object lifecycle = new Object();
@@ -105,6 +107,7 @@ public final class DefaultBikesched implements Bikesched {
     this.settings = settings;
     this.nodeName = settings.nodeName();
     this.node = new DefaultNode(nodeName);
+    this.admin = new DefaultAdmin(database.admin(), settings.nodeTimeout(), this::ensureReady);
     this.jobScheduler =
         new JobScheduler(
             database,
@@ -356,6 +359,11 @@ public final class DefaultBikesched implements Bikesched {
     Objects.requireNonNull(jobId, "jobId");
     ensureReady();
     return database.history().findHistory(jobId);
+  }
+
+  @Override
+  public Admin admin() {
+    return admin;
   }
 
   @Override

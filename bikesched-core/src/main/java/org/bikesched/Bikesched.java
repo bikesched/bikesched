@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.bikesched.admin.Admin;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventPublisher;
 import org.bikesched.event.EventType;
@@ -313,6 +314,21 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @throws BikeschedException if the database cannot be accessed
    */
   List<JobHistoryEntry> findJobHistory(UUID jobId);
+
+  /**
+   * Read-only lookups for operating bikesched: jobs by type and state, their steps, payloads and
+   * results, job types with counts per state, events, waiting steps and nodes. The admin UI ({@code
+   * bikesched-admin}) is built on them; they also suit custom dashboards and support tools.
+   *
+   * <pre>{@code
+   * bikesched.admin().findJobs(JobQuery.newest(20).withStates(JobState.FAILED));
+   * }</pre>
+   *
+   * <p>Like {@link #findJob(UUID)}, the lookups work on every node, also one that is not polling.
+   *
+   * @return the lookups of this node
+   */
+  Admin admin();
 
   /**
    * Cancels a job, e.g. because the customer withdrew the order. The job is cancelled by the node

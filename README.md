@@ -37,7 +37,8 @@ goal is to keep it small and easy to drop into your app:
   framework, no migration tool, no JSON library, in the spirit of
   [boring technology](https://boringtechnology.club/).
 - **Extension modules when you want them**: Jackson for typed payloads, Kotlin extensions, Spring
-  Boot auto-configuration, cron expressions and Micrometer metrics. Pull in only what you use.
+  Boot auto-configuration, cron expressions, Micrometer metrics and an admin UI. Pull in only what
+  you use.
 - **PostgreSQL is all you need**: jobs, durable steps, events and nodes live in plain tables
   (`bikesched_*`), and bikesched creates and migrates the schema on first use.
 - **Modern Java**: built for Java 26, with every job on its own virtual thread.
@@ -56,6 +57,7 @@ orchestration across services. If that's what you're after, have a look at
 | [`bikesched-cron`](bikesched-cron) | cron expressions as `CronRecurrence` or as strings (`schedule("0 3 * * *")`, `@JobHandler`), via cron-utils, see [Cron expressions](docs/recurring-jobs.md#cron-expressions) |
 | [`bikesched-micrometer`](bikesched-micrometer) | Micrometer meters for claims, attempts and published events, see [Metrics](docs/metrics.md) |
 | [`bikesched-spring-boot-starter`](bikesched-spring-boot-starter) | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/spring.md) |
+| [`bikesched-admin`](bikesched-admin) | a small admin page and JSON API: jobs, steps, events and nodes, with retry and cancel, served by the JDK's HTTP server or any framework, see [Admin UI](docs/admin.md) |
 
 ## Features
 
@@ -82,6 +84,8 @@ orchestration across services. If that's what you're after, have a look at
 - Ended jobs are deleted after a retention (7 days by default); optional job history and
   statement timeout
 - Pluggable JSON mapping and node, job and step ids in the SLF4J logging context
+- An optional **admin UI** to find, retry and cancel jobs, with read-only lookups behind
+  `bikesched.admin()`
 
 ## Quick start
 
