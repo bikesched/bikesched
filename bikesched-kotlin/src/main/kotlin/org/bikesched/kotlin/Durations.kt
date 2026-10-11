@@ -41,6 +41,12 @@ public fun JobFailure.retryAfter(delay: Duration): JobFailure = retryAfter(delay
 /** Moves the deadline of the running attempt, see `Job.updateTimeout(Duration)`. */
 public fun Job.updateTimeout(timeout: Duration): Unit = updateTimeout(timeout.toJavaDuration())
 
+/**
+ * Ends the attempt and runs the job again once [delay] has passed, without using up an attempt, see
+ * `Job.postpone(Duration)`. In a step's handler, the step keeps no result and runs again.
+ */
+public fun Job.postpone(delay: Duration): Unit = postpone(delay.toJavaDuration())
+
 /** Sleeps as a durable step, see `Job.sleep(String, Duration)`. */
 public fun Job.sleep(stepName: String, duration: Duration): Unit =
   sleep(stepName, duration.toJavaDuration())

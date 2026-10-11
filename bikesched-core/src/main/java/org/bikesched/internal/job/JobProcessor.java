@@ -388,16 +388,19 @@ public final class JobProcessor {
           explicit.retryDelay());
     } else if (job.suspension() != null) {
       if (failure != null) {
-        // The handler caught the suspension and threw afterwards: the wait wins.
+        // The handler caught the suspension and threw afterwards: the wait (or postponement) wins.
         LOG.warn(
-            "Job {} of type {} waits in step {}, ignoring the exception thrown by its handler"
+            "Job {} of type {} was suspended {}, ignoring the exception thrown by its handler"
                 + " afterwards",
             job.id(),
             job.type(),
-            job.suspension().stepName(),
+            job.suspension(),
             failure);
       }
-      return recordSuspension(job, job.suspension());
+      return switch (job.suspension()) {
+        case JobSuspended.Wait wait -> recordSuspension(job, wait);
+        case JobSuspended.PostponeSuspension postponed -> recordPostponement(job, postponed);
+      };
     } else if (end == JobAttempt.End.TIMED_OUT) {
       return recordFailure(
           job, new BikeschedException("Job timed out after " + attempt.timeout(), failure));
@@ -433,7 +436,35 @@ public final class JobProcessor {
     }
   }
 
-  private Outcome recordSuspension(DefaultJob job, JobSuspended.Suspension suspension) {
+  private Outcome recordPostponement(DefaultJob job, JobSuspended.PostponeSuspension postponed) {
+    try {
+      var stored =
+          RECORDING.call(
+              "Postponing job " + job.id() + " failed",
+              () ->
+                  database
+                      .steps()
+                      .postponeJob(job.id(), job.lock(), postponed.stepName(), postponed.delay()));
+      if (stored.isEmpty()) {
+        LOG.warn(
+            "Job {} of type {} was postponed but was no longer running in this attempt's claim",
+            job.id(),
+            job.type());
+        return NOT_RUNNING;
+      }
+      String step = postponed.stepName() == null ? "" : " in step " + postponed.stepName();
+      return new Outcome(
+          JobAttemptOutcome.POSTPONED,
+          stored.get().cancelRequested()
+              ? "POSTPONED" + step + ", due again right away (cancellation requested)"
+              : "POSTPONED" + step + " until " + stored.get().scheduledAt());
+    } catch (RuntimeException e) {
+      LOG.warn("Postponing job {} failed", job.id(), e);
+      return NOT_RECORDED;
+    }
+  }
+
+  private Outcome recordSuspension(DefaultJob job, JobSuspended.Wait suspension) {
     try {
       var suspended =
           RECORDING.call(

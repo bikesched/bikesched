@@ -1,6 +1,7 @@
 # Specification: postponing jobs
 
-Status: **draft**.
+Status: **implemented** ([ADR 0037](../decisions/0037-job-postpone.md); user docs:
+[Postponing](../jobs.md#postponing)).
 
 ## 1. Goal
 
@@ -155,8 +156,10 @@ A new package `org.bikesched.examples.ratelimit` in `bikesched-examples/java`, r
 - `SimulatedSmsProvider` accepts at most 2 messages per second and prints each call with a
   timestamp (`[sms]      sent to … (call n)`); a call over its quota is rejected and printed too,
   so the output shows it never happens.
-- The job type `send-sms` sends one message in a step guarded by a Bucket4j bucket of 2 tokens
-  per second. Without a token the step postpones by the probe's wait time:
+- The job type `send-sms` sends one message in a step guarded by a Bucket4j bucket of one token
+  every 600 ms, a little under the provider's limit (the time between taking a token and calling
+  the provider must not push a third call into a second). Without a token the step postpones by
+  the probe's wait time:
 
   ```java
   job.step("send", String.class, step -> {
@@ -176,8 +179,8 @@ A new package `org.bikesched.examples.ratelimit` in `bikesched-examples/java`, r
   latest on Maven Central) in the version catalog, used by the examples module only; both are
   automatic modules (`io.github.bucket4j.core`).
 - `RateLimitExampleTest` (shared `util.Database`): all 10 jobs succeed with `attempts = 1`, the
-  provider never saw more than 2 calls within any second, and at least one step was postponed (a
-  `POSTPONED` history entry).
+  provider saw 10 calls and rejected none (more than 2 within a second), and at least one step was
+  postponed (a `POSTPONED` history entry).
 - A section in the examples README and a line in the root README's examples list.
 
 ## 5. Rejected alternatives
@@ -234,3 +237,8 @@ None.
 3. The job history shows the job as `SCHEDULED` with `postponed until …` (`in step '…'`) and the
    step as `POSTPONED`; no `POSTPONED` job state in the history, which mirrors the job's states
    (4.4).
+4. The rate-limit example's bucket allows one message every 600 ms instead of two per second:
+   with a bucket equal to the provider's limit, the time between taking a token and calling the
+   provider can push a third call into a second (4.7).
+5. A step handler that catches the postponement and returns is still postponed: its result is not
+   stored (`DefaultJob` throws the suspension again after the handler).

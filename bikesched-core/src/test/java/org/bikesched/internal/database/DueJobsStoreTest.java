@@ -94,6 +94,23 @@ class DueJobsStoreTest extends AbstractStoreTest {
   }
 
   @Test
+  void aPostponementIsReportedOnlyWithItsDueTime() {
+    database.jobs().insertJob(UUID.randomUUID(), job("postponed", Instant.now()));
+    UUID node = registerNode("node-due-postpone");
+    var claimed = claimJobs(node, 1).getFirst();
+    due.clear();
+
+    var postponed =
+        database
+            .steps()
+            .postponeJob(claimed.id(), claimed.lock(), null, Duration.ofMinutes(1))
+            .orElseThrow();
+
+    assertThat(due.now).isEmpty();
+    assertThat(due.at).containsExactly(Map.entry("postponed", postponed.scheduledAt()));
+  }
+
+  @Test
   void aSuspensionIsReportedWithItsWakeUpTime() {
     database.jobs().insertJob(UUID.randomUUID(), job("sleeping", Instant.now()));
     UUID node = registerNode("node-due-sleep");

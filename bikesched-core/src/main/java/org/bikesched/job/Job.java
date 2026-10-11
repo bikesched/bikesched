@@ -592,6 +592,40 @@ public interface Job extends EventPublisher {
   void cancel(String message);
 
   /**
+   * Ends the current attempt and runs the job again once the delay has passed, without using up an
+   * attempt or recording a failure, e.g. when a rate limit or a busy provider says "not now". It
+   * does not return: like a {@link #sleep(String, Duration) sleep}, it ends the attempt right away.
+   * The job is {@code SCHEDULED} again (due right away if its cancellation was requested meanwhile,
+   * so the cancellation applies).
+   *
+   * <p>Called in a step's handler, the step keeps no result and gives its attempt back: the next
+   * attempt skips the steps completed before it and runs it again with the same {@link
+   * Step#attempts()}. That keeps the check next to the call it guards, so a later replay of the
+   * completed step does not run the check again:
+   *
+   * <pre>{@code
+   * String chargeId = job.step("charge", String.class, step -> {
+   *     ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);   // e.g. Bucket4j
+   *     if (!probe.isConsumed()) {
+   *         job.postpone(Duration.ofNanos(probe.getNanosToWaitForRefill()));
+   *     }
+   *     return provider.charge(order, step.jobId() + ":" + step.name());
+   * });
+   * }</pre>
+   *
+   * <p>Called outside a step, the steps completed so far keep their results, and the code outside
+   * steps runs again on the next attempt. A job can be postponed any number of times; to give up,
+   * fail it (e.g. {@code job.fail("rate limited for too long").remainingAttempts(0)}). While the
+   * job replays to compensate its steps, this method does nothing and returns.
+   *
+   * @param delay how long from now until the job runs again, positive
+   * @throws IllegalArgumentException if the delay is not positive
+   * @throws IllegalStateException if called in a compensation, a step's failure handler or a poll's
+   *     check (which has {@link Poll#notReady()})
+   */
+  void postpone(Duration delay);
+
+  /**
    * Marks the current attempt as failed, like throwing from the handler but without an exception
    * and with control over the retry. Once the handler returns, the job is retried while attempts
    * remain (by default as soon as possible), otherwise it is marked {@code FAILED}. Like {@link

@@ -42,27 +42,32 @@ class DueJobsWritePathsTest {
 
   /** Statements that make no job due now for other nodes, and why. */
   private static final Map<String, String> SILENT =
-      Map.of(
-          "JobStore.CLAIM_JOBS_SQL",
-          "the job runs",
-          "JobStore.COMPLETE_JOB_SQL",
-          "the job ends",
-          "JobStore.COMPLETE_COMPENSATION_SQL",
-          "the job ends, or its node wakes up for the failure handler (dueAt)",
-          "JobStore.END_FAILING_SQL",
-          "the job ends",
-          "JobStore.RETRY_FAILURE_HANDLER_SQL",
-          "the attempt's own node wakes up for the failure handler's retry (dueAt)",
-          "JobStore.FAIL_JOB_SQL",
-          "the attempt's own node wakes up for the retry or the failure handler (dueAt)",
-          "JobStore.CANCEL_JOB_SQL",
-          "the job ends, or its node wakes up to compensate (dueAt)",
-          "JobStore.FAIL_COMPENSATION_SQL",
-          "the attempt's own node wakes up for the retry (dueAt)",
-          "StepStore.SUSPEND_JOB_SQL",
-          "the attempt's own node wakes up at the due time (dueAt)",
-          "JobStore.RESCHEDULE_OCCURRENCE_SQL",
-          "moves a pending occurrence (dueAt)");
+      Map.ofEntries(
+          Map.entry("JobStore.CLAIM_JOBS_SQL", "the job runs"),
+          Map.entry("JobStore.COMPLETE_JOB_SQL", "the job ends"),
+          Map.entry(
+              "JobStore.COMPLETE_COMPENSATION_SQL",
+              "the job ends, or its node wakes up for the failure handler (dueAt)"),
+          Map.entry("JobStore.END_FAILING_SQL", "the job ends"),
+          Map.entry(
+              "JobStore.RETRY_FAILURE_HANDLER_SQL",
+              "the attempt's own node wakes up for the failure handler's retry (dueAt)"),
+          Map.entry(
+              "JobStore.FAIL_JOB_SQL",
+              "the attempt's own node wakes up for the retry or the failure handler (dueAt)"),
+          Map.entry(
+              "JobStore.CANCEL_JOB_SQL",
+              "the job ends, or its node wakes up to compensate (dueAt)"),
+          Map.entry(
+              "JobStore.FAIL_COMPENSATION_SQL",
+              "the attempt's own node wakes up for the retry (dueAt)"),
+          Map.entry(
+              "StepStore.SUSPEND_JOB_SQL",
+              "the attempt's own node wakes up at the due time (dueAt)"),
+          Map.entry("JobStore.RESCHEDULE_OCCURRENCE_SQL", "moves a pending occurrence (dueAt)"),
+          Map.entry(
+              "StepStore.POSTPONE_JOB_SQL",
+              "the attempt's own node wakes up after the delay (dueAt)"));
 
   @Test
   void everyStatementWritingJobsIsClassified() throws IllegalAccessException {
@@ -96,6 +101,6 @@ class DueJobsWritePathsTest {
           .as("%s is classified but no longer writes jobs (or was renamed)", name)
           .containsKey(name);
     }
-    assertThat(writes).hasSize(21);
+    assertThat(writes).hasSize(22);
   }
 }

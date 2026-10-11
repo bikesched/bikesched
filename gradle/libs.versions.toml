@@ -40,6 +40,8 @@ ktor = "3.6.0"
 exposed = "1.5.1"
 kotlinx-serialization = "1.11.0"
 moneta = "1.4.5"
+# bikesched-examples:java (rate-limit example)
+bucket4j = "8.21.0"
 
 [libraries]
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
@@ -69,6 +71,8 @@ cron-utils = { module = "com.cronutils:cron-utils", version.ref = "cron-utils" }
 
 jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
+bucket4j-core = { module = "com.bucket4j:bucket4j_jdk17-core", version.ref = "bucket4j" }
+bucket4j-postgresql = { module = "com.bucket4j:bucket4j_jdk17-postgresql", version.ref = "bucket4j" }
 
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }

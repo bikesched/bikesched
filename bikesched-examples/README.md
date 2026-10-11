@@ -4,7 +4,7 @@ Runnable examples of [bikesched](../README.md), one package per scenario, in thr
 
 | Module | Examples | Dependencies |
 |---|---|---|
-| [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets) | `bikesched-jackson`, `bikesched-annotations` |
+| [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [rate limit](#rate-limit), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets) | `bikesched-jackson`, `bikesched-annotations`, Bucket4j |
 | [`kotlin`](kotlin) (`:bikesched-examples:kotlin`) | [Shop](#kotlin-shop) | `bikesched-kotlin`, Ktor, Exposed, kotlinx-serialization |
 | [`spring`](spring) (`:bikesched-examples:spring`) | [Spring Boot](#spring-boot) | `bikesched-spring-boot-starter`, `bikesched-jackson`, Spring Data JPA |
 
@@ -23,6 +23,7 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:java:runPublish     # a job publishing an event exactly once, another job waiting for it
 ./gradlew :bikesched-examples:java:runOutcome     # declined cards as step results, an outage retried
 ./gradlew :bikesched-examples:java:runPoll        # a webhook with a polling fallback
+./gradlew :bikesched-examples:java:runRateLimit   # a provider's rate limit on two nodes, with Bucket4j
 ./gradlew :bikesched-examples:java:run            # taxi booking
 ./gradlew :bikesched-examples:java:runCinema      # cinema tickets
 ./gradlew :bikesched-examples:spring:bootRun      # Spring Boot application wired by the starter
@@ -187,6 +188,32 @@ pending suspends the job until the next one, as one step (`poll-payment`) for al
 twice returns the same event both times and stores one row in `bikesched_events`, and that for
 the lost one the number of status calls equals the poll step's checks, with a single history entry
 (`ready after n checks`) for the poll.
+
+## Rate limit
+
+Package [`org.bikesched.examples.ratelimit`](java/src/main/java/org/bikesched/examples/ratelimit):
+a provider's rate limit with [Bucket4j](https://github.com/bucket4j/bucket4j) and
+[`job.postpone`](../docs/jobs.md#postponing). `SimulatedSmsProvider` accepts at most two messages
+within any second and rejects (and prints) every call over that. The job `send-sms` takes a token
+from a bucket before each call; without one, it postpones the job until the bucket has one again:
+
+```java
+job.step("send", String.class, _ -> {
+    ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+    if (!probe.isConsumed()) {
+        job.postpone(Duration.ofNanos(probe.getNanosToWaitForRefill()));   // no attempt used up
+    }
+    return provider.send(sms.to(), sms.text());
+});
+```
+
+The bucket allows one message every 600 ms, a little under the provider's limit, and lives in
+PostgreSQL (`bucket4j_jdk17-postgresql`, table `ratelimit_buckets`, created by the example), so
+the limit holds across nodes: `main` starts two nodes and schedules ten messages at once, and the
+output shows postponed steps but no rejected call.
+
+`RateLimitExampleTest` runs the same on two nodes and checks that every job succeeded in its first
+attempt, the provider saw ten calls and rejected none, and the history has `POSTPONED` steps.
 
 ## Annotation
 

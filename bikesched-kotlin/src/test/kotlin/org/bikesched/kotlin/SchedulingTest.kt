@@ -98,6 +98,28 @@ class SchedulingTest {
   }
 
   @Test
+  fun `postpone runs the job and a step again later without using an attempt`() {
+    val runs = CopyOnWriteArrayList<String>()
+    testNode("postpone").use { bikesched ->
+      val id =
+        bikesched.createJob(type = unique("postpone"), maxAttempts = 1) {
+          runs += "job"
+          if (runs.size == 1) postpone(100.milliseconds)
+          step<String>("charge") {
+            runs += "charge"
+            if (runs.count { it == "charge" } == 1) postpone(100.milliseconds)
+            "c-1"
+          }
+        }
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(id)?.state()).isEqualTo(JobState.SUCCEEDED)
+      }
+      assertThat(runs).containsExactly("job", "job", "charge", "job", "charge")
+    }
+  }
+
+  @Test
   fun `step failure handler gets the stored error and resolves with a fallback`() {
     val seen = CopyOnWriteArrayList<String>()
     testNode("step-on-failure").use { bikesched ->
