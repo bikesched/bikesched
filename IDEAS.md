@@ -27,27 +27,36 @@ the job history). Combining the read and the start into one statement would roug
 
 ## Operations
 
-### Finding jobs
+### Admin API
 
-`findJob(id)` needs the job id; there is no way to ask e.g. which jobs of a type failed without
-SQL. A small query API (`findJobs(type, state, limit)`, newest first) would be the basis for an
-admin UI, alerts and bulk `retry(...)`.
+bikesched has no way to inspect its data beyond `findJob(id)`/`findJobHistory(id)` (needs the job
+id already) and raw SQL: no listing by type/state, no steps, no node information. A dedicated
+admin API — read access to jobs with their steps, history and node information, plus the existing
+retry/cancel actions — would be the basis for an admin UI, alerts and operational scripts.
 
-- Needs an index fitting the query (e.g. `(type, state, updated_at)`), so it costs writes on
-  every state change; postponed until it is needed. Until then: SQL on `bikesched_jobs`.
+- Jobs: `findJobs(type, state, limit)` (newest first) to list without knowing an id; a job's
+  steps alongside its `JobInfo`/`JobHistoryEntry` (currently only readable via `Job` inside a
+  handler).
+- Nodes: list known nodes with their last heartbeat, so a stuck cluster is visible without SQL.
+- Needs an index fitting the `findJobs` query (e.g. `(type, state, updated_at)`), so it costs
+  writes on every state change; postponed until it is needed. Until then: SQL on
+  `bikesched_jobs`.
+- Open: the API's shape (new methods on `Bikesched`, or a separate `AdminApi`/`Bikesched.admin()`
+  facade to keep the main interface focused); pagination beyond `limit` (keyset on
+  `updated_at`/`id`?).
 
-### Super simple admin UI
+### Admin UI
 
-bikesched has no UI; inspecting jobs needs SQL today, or the `findJobs` query API once it exists
-(see [Finding jobs](#finding-jobs) above). A super simple admin UI — a single read-only page
-listing jobs with filters by type and state, a job's history, and a button to retry a failed one
-— would make running bikesched usable without a database client.
+bikesched has no UI; inspecting jobs needs SQL today, or the Admin API once it exists (see [Admin
+API](#admin-api) above). A super simple admin UI — a single read-only page listing jobs with
+filters by type and state, a job's steps and history, node status, and a button to retry a failed
+one — would make running bikesched usable without a database client.
 
-- Depends on the query API above; a new optional module (e.g. `bikesched-admin-ui`) serving the
+- Depends on the Admin API above; a new optional module (e.g. `bikesched-admin-ui`) serving the
   page and a small JSON API, embeddable in any app (servlet, Spring MVC, plain `HttpServer`)
   rather than a separate service.
-- Open: how much interactivity beyond read-only (retry/cancel buttons calling the existing API);
-  authentication is left to the embedding application.
+- Open: how much interactivity beyond read-only (retry/cancel buttons calling the existing job
+  API); authentication is left to the embedding application.
 
 ### Trace propagation
 
@@ -103,6 +112,22 @@ without timing tricks, on two levels:
   above), a node pausing longer than the node timeout, a hanging connection.
 
 ## API
+
+### Nullness annotations with JSpecify
+
+Public API signatures don't say which parameters and return values may be `null`; callers (and
+IDEs/static analysis) have to guess or read Javadoc. [JSpecify](https://jspecify.dev/) is a small,
+dependency-free annotation set (`@Nullable`, `@NullMarked`, …) exactly for this, with growing tool
+support (IntelliJ, Error Prone, NullAway).
+
+- Add `org.jspecify:jspecify` as an `api` dependency of core (and the other modules); `@NullMarked`
+  on every package (`package-info.java`) so unannotated types are non-null by default, with
+  `@Nullable` only where `null` is actually a valid value (e.g. `Optional`-returning methods stay
+  as they are; this is for parameters/fields/returns that are not already `Optional`).
+- Mechanical pass over the API packages (and internal ones, for consistency) once added; no
+  behavior change, so it can land as its own change.
+- Open: whether to also adopt a checker (NullAway or similar) in the build to enforce it, or keep
+  it documentation-only for now.
 
 ### Fixed-delay recurrences
 
@@ -174,7 +199,7 @@ delivery id), so it can be looked up or shown without decoding the payload.
   idempotency key above, this is a display/lookup aid, not a dedup key) — multiple jobs/events can
   share one external reference (e.g. several jobs for the same order).
 - Needs an index to actually look up by it (e.g. `(type, reference)` on jobs); postponed until
-  there is a concrete lookup need, similar to [Finding jobs](#finding-jobs).
+  there is a concrete lookup need, similar to [Admin API](#admin-api).
 - Open: whether it is mutable after creation, and whether it shows up in job history.
 
 ### Stable step id for external callbacks
@@ -193,6 +218,23 @@ callback URL) and have it call back with just that one value.
   receives the external callback.
 - Open: the callback-receiving API shape (new method on `Bikesched`? a step kind addition?) —
   deferred until there's a concrete use case.
+
+## Examples
+
+### Koog agent example
+
+[Koog](https://github.com/JetBrains/koog) is a JVM (Java/Kotlin) framework for building AI agents;
+an agent's tool calls are a natural fit for bikesched jobs — durable, retried and observable
+instead of in-memory. An example combining the two would show an agent whose tool calls schedule
+bikesched jobs (and, for long-running tools, use a poll step to wait for the result) in the
+Kotlin examples.
+
+- A new package in `bikesched-examples/kotlin` (or a new `bikesched-examples/kotlin` submodule
+  next to `java`/`spring`, mirroring the existing examples' Testcontainers-backed test), using
+  bikesched-kotlin; pulls in `ai.koog:koog-agents-jvm` as an example-only dependency (never core).
+- Open: which tool call to model (something with a visible external effect, e.g. a notification
+  or a fake payment, to make the durability payoff obvious) and whether Koog's own tool-calling
+  abstraction needs any adapter, or jobs are just scheduled from a plain Kotlin tool function.
 
 ## Website
 
