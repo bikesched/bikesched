@@ -67,7 +67,7 @@ failure handler the same way.
 |---|---|
 | `bikesched { … }` | `Bikesched.builder()…build()` |
 | `job.payload<T>()` | `payload(T.class)` |
-| `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `sleep(String, Duration)`, `every(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
+| `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `postpone(Duration)`, `sleep(String, Duration)`, `every(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
 | `findJobOrNull(id)`, `node.idOrNull` | `Optional` |
 
 ## Nullability

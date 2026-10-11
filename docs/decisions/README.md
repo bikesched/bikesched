@@ -47,3 +47,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0034](0034-wait-timeouts-as-failures.md) | Timeouts of event waits and polls handled by failure handlers | Accepted |
 | [0035](0035-website-hosted-on-static-app.md) | Website hosted on static.app instead of GitHub Pages | Accepted |
 | [0036](0036-idempotency-keys.md) | Idempotency keys as columns, taken while the job exists | Accepted |
+| [0037](0037-job-postpone.md) | Postponing a job gives its attempt back | Accepted |

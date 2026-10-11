@@ -142,6 +142,7 @@ A handler receives the `Job` being executed:
 | `complete(result)` | set the job's result, stored when it succeeds, see [Job results](child-jobs.md#job-results) |
 | `cancel()`, `cancel(message)` | cancel the job, see [Cancellation](#cancellation) |
 | `fail()`, `fail(message)` | fail the attempt without throwing, see [Failures and retries](#failures-and-retries) |
+| `postpone(Duration)` | run the job again later without using up an attempt, see [Postponing](#postponing) |
 | `isCompensating()` | whether the handler is replayed to compensate the job |
 | `updateTimeout(Duration)` | extend the deadline of the running attempt, see [Timeouts](#timeouts) |
 
@@ -178,6 +179,43 @@ steps return their stored results (compensated steps run again). The job history
 retry. Occurrences of recurring jobs can't be retried (`IllegalArgumentException`); the next
 occurrence runs anyway. Neither can [child jobs](child-jobs.md): their parent may have the outcome
 already, so the parent starts a new child instead.
+
+## Postponing
+
+`job.postpone(delay)` ends the attempt and runs the job again once the delay has passed, without
+using up an attempt and without recording a failure (`last_error` stays as it is). It is meant for
+"not now" answers that are no failure: a rate limit, a provider asking to come back later, a
+concurrency limit of a library like Resilience4j's `Bulkhead`. Like a [sleep](steps.md#sleeping),
+it does not return.
+
+Called in a step's handler, the step keeps no result and gives its attempt back: the next attempt
+skips the steps completed before it and runs it again with the same `step.attempts()`. Put the
+check in the step, next to the call it guards; code outside steps runs again on every replay. With
+[Bucket4j](https://github.com/bucket4j/bucket4j):
+
+```java
+String messageId = job.step("send", String.class, step -> {
+    ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+    if (!probe.isConsumed()) {
+        job.postpone(Duration.ofNanos(probe.getNanosToWaitForRefill()));
+    }
+    return sms.send(to, text);
+});
+```
+
+A bucket in Bucket4j's PostgreSQL (or any other distributed) backend holds the limit across nodes;
+the [rate-limit example](../bikesched-examples/README.md#rate-limit) runs one.
+
+- The job is `SCHEDULED` while postponed, like a retry; a step postponed from inside is
+  `POSTPONED`. The node postponing it runs it again on time; other nodes pick it up with their next
+  poll.
+- A job can be postponed any number of times. To give up, fail it, e.g. with
+  `job.fail("rate limited for too long").remainingAttempts(0)`.
+- A job whose cancellation was requested meanwhile is due right away and cancelled.
+- It is rejected (`IllegalStateException`) in a compensation, a step's failure handler and a poll's
+  check (which has `Poll.notReady()` for "not yet"). While the handler replays to
+  [compensate](steps.md#compensation), it does nothing.
+- [Job listeners](metrics.md) see the attempt with the outcome `POSTPONED`.
 
 ## Failure handlers
 
@@ -282,6 +320,9 @@ A job that waited for an event and was retried once could show:
   step).
 - `attempt` is the job's attempt count after the change: suspending at an event wait gives the
   attempt back, resuming counts a new one.
+- A [postponed](#postponing) job shows `SCHEDULED` with `postponed until …` (or `postponed in
+  step 'charge' until …`); the step it was postponed in shows `POSTPONED` with `until …` before
+  it, and its next run has no `step attempt` detail, since it got its attempt back.
 - `nodeId` is the node that made the change; it is empty for changes made by the application:
   scheduling, cancel requests and publishing events.
 - A [poll](steps.md#polling) records its first wait and its outcome, not every check: its

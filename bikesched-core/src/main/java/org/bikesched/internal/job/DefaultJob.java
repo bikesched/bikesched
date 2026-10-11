@@ -116,6 +116,9 @@ public final class DefaultJob implements Job {
   private volatile Duration defaultEventTimeout;
   private volatile boolean lockLost;
 
+  /** The step whose handler runs right now (not its failure handler), {@code null} if none. */
+  private volatile String runningStep;
+
   /**
    * A job claimed by this node, accessing its steps and events through the database.
    *
@@ -416,6 +419,27 @@ public final class DefaultJob implements Job {
     var failure = new DefaultJobFailure(message);
     this.failure = failure;
     return failure;
+  }
+
+  @Override
+  public void postpone(Duration delay) {
+    Objects.requireNonNull(delay, "delay");
+    if (delay.isNegative() || delay.isZero()) {
+      throw new IllegalArgumentException("delay must be positive: " + delay);
+    }
+    String step = runningStep;
+    if (step == null) {
+      stepGuard.requireNoneRunning("postpone");
+    }
+    if (compensating) {
+      // The replay only collects compensations and runs no new work: nothing to postpone.
+      LOG.debug("Job {} replays for compensation, ignoring postpone({})", id, delay);
+      return;
+    }
+    var postponed = new JobSuspended.PostponeSuspension(step, delay);
+    suspension = postponed;
+    LOG.debug("Job {} postponed by {}{}", id, delay, step == null ? "" : " in step '" + step + "'");
+    throw new JobSuspended(postponed);
   }
 
   /** The failure the handler marked the attempt with, {@code null} if none. */
@@ -1276,7 +1300,22 @@ public final class DefaultJob implements Job {
     T result;
     try {
       var step = new Step(id, name, stepAttempt);
-      result = stepGuard.run("step '" + name + "'", () -> handler.handle(step));
+      result =
+          stepGuard.run(
+              "step '" + name + "'",
+              () -> {
+                runningStep = name;
+                try {
+                  return handler.handle(step);
+                } finally {
+                  runningStep = null;
+                }
+              });
+      if (suspension instanceof JobSuspended.PostponeSuspension postponed
+          && name.equals(postponed.stepName())) {
+        // The handler caught the postponement and returned: the step still keeps no result.
+        throw new JobSuspended(postponed);
+      }
       String json = result == null ? null : toJson.apply(result);
       fenced(() -> database.steps().completeStep(id, lock, name, json, compensable));
     } catch (Exception e) {

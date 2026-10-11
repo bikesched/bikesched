@@ -138,6 +138,8 @@ create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
 -- event_id only references the event (no FK): events are deleted after their retention; the same
 -- for child_job_id (children are deleted after the job retention).
 -- A compensable step (declared with a compensation) is COMPENSATED once its compensation ran.
+-- A step whose handler postponed the job (Job.postpone) is POSTPONED, its attempt given back; the
+-- next attempt starts it again.
 -- Cancelling a job marks its unfinished steps (WAITING, or RUNNING after a crash) CANCELLED.
 -- A RUNNING step is locked by the node running it (locked_by). Every step write also requires the
 -- job to be RUNNING with the lock_token of the attempt making the write, so an attempt whose job
@@ -169,7 +171,7 @@ create table bikesched_steps (
         check (kind in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB', 'POLL')),
     constraint bikesched_steps_state_check
         check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING', 'FAILED', 'TIMED_OUT',
-                         'COMPENSATED', 'CANCELLED')),
+                         'COMPENSATED', 'CANCELLED', 'POSTPONED')),
     -- Event waits and publishes name their event; an event wait references the event once it
     -- received it (not if its failure handler resolved it after a timeout: it keeps last_error), a
     -- publish always; only event waits, child jobs and polls time out.
@@ -201,6 +203,9 @@ create table bikesched_steps (
                and (timeout_at is null or kind = 'POLL')),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by is not null)),
+    -- Only regular steps run handlers that can postpone the job.
+    constraint bikesched_steps_postponed_check
+        check (state <> 'POSTPONED' or kind = 'STEP'),
     constraint bikesched_steps_name_check
         check (char_length(name) between 1 and 200
                and char_length(event_name) between 1 and 200
@@ -265,7 +270,7 @@ create table bikesched_job_history (
                                                'FAILING')
                or step_name is not null and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING',
                                                       'FAILED', 'TIMED_OUT', 'COMPENSATED',
-                                                      'CANCELLED')),
+                                                      'CANCELLED', 'POSTPONED')),
     constraint bikesched_job_history_step_name_check
         check (char_length(step_name) between 1 and 200)
 );

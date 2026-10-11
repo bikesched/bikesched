@@ -67,6 +67,8 @@ orchestration across services. If that's what you're after, have a look at
 - **Failure handlers** for permanently failed jobs (e.g. a dead-letter table) and for steps (with a
   fallback result)
 - **Cancellation** from within a handler or from outside
+- **Postponing**: a handler hit by a rate limit runs again later with `job.postpone(…)`, without
+  using up an attempt
 - **Recurring jobs** with fixed-rate, daily, weekly or custom schedules
 - **Events**: jobs wait for an event without holding a thread and resume when it is published
 - **Sleeping**: jobs pause for days with `job.sleep(…)` without holding a thread
@@ -153,7 +155,8 @@ The [documentation](docs/index.md) covers the concepts in detail:
 ## Examples
 
 Runnable examples with tests — a taxi booking saga with event waits and compensation, a cinema
-ticket order with a `JobTypeHandler`, a webhook with a polling fallback, and a Spring Boot
+ticket order with a `JobTypeHandler`, a webhook with a polling fallback, a provider's rate limit
+with Bucket4j, and a Spring Boot
 application whose node and handlers are
 wired by the starter — live in the [`bikesched-examples`](bikesched-examples/README.md) modules.
 

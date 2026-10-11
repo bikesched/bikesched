@@ -4,6 +4,8 @@ package org.bikesched.internal.database;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -167,6 +169,27 @@ public final class StepStore {
                and s.job_id = j.id and s.name = ?
             returning j.state, s.wait_until, j.attempts, j.type,
                       case when j.scheduled_at < 'infinity' then j.scheduled_at end""";
+
+  // Job.postpone in a step's handler: the step keeps no result and gives its attempt back, so the
+  // next attempt starts it again (START_STEP_SQL) with the same attempt number.
+  private static final String POSTPONE_STEP_SQL =
+      """
+            update bikesched_steps
+               set state = 'POSTPONED', attempts = attempts - 1, locked_by = null, finished_at = now()
+             where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
+          .formatted(JOB_LOCKED);
+
+  // Job.postpone: the job is due again after the delay (right away if its cancellation was
+  // requested meanwhile, like a suspension) and gives its attempt back.
+  private static final String POSTPONE_JOB_SQL =
+      """
+            update bikesched_jobs
+               set state = 'SCHEDULED',
+                   scheduled_at = case when cancel_requested_at is null
+                                       then now() + ? * interval '1 millisecond' else now() end,
+                   attempts = attempts - 1, locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+             where id = ? and lock_token = ? and state = 'RUNNING'
+            returning scheduled_at, attempts, type, cancel_requested_at is not null""";
 
   // A step of a job, for a sleep.
   private static final String FIND_SLEEP_STEP_SQL =
@@ -1248,6 +1271,78 @@ public final class StepStore {
                 + (waiting ? "" : ", due again right away")));
     return Optional.of(new SuspendedJob(waiting, suspension.waitUntil()));
   }
+
+  /**
+   * A job after postponing it.
+   *
+   * @param scheduledAt when it is due again
+   * @param cancelRequested whether its cancellation was requested meanwhile: then it is due now
+   */
+  public record PostponedJob(Instant scheduledAt, boolean cancelRequested) {}
+
+  /**
+   * Ends a running attempt whose handler postponed the job ({@code Job.postpone}): the job is
+   * {@code SCHEDULED} again after the delay with its attempt given back, see {@code
+   * POSTPONE_JOB_SQL}; a step whose handler postponed it becomes {@code POSTPONED}, see {@code
+   * POSTPONE_STEP_SQL}. One transaction, fenced by the job lock.
+   *
+   * @param jobId the job id
+   * @param lock the lock of the job's claim (node and token)
+   * @param stepName the step whose handler postponed the job, {@code null} if none
+   * @param delay how long from now the job is due again
+   * @return the job after postponing; empty if the job is not running on this node (anymore)
+   */
+  public Optional<PostponedJob> postponeJob(
+      UUID jobId, JobLock lock, String stepName, Duration delay) {
+    return access.inTransaction(
+        db -> {
+          List<Change> changes = new ArrayList<>();
+          if (stepName != null) {
+            int postponed =
+                db.update(POSTPONE_STEP_SQL, jobId, stepName, lock.nodeId(), jobId, lock.token());
+            if (postponed == 0) {
+              return Optional.<PostponedJob>empty();
+            }
+          }
+          Optional<Postponement> job =
+              db.one(
+                  POSTPONE_JOB_SQL,
+                  row ->
+                      new Postponement(row.instant(1), row.integer(2), row.string(3), row.bool(4)),
+                  Sql.millis(delay),
+                  jobId,
+                  lock.token());
+          if (job.isEmpty()) {
+            return Optional.<PostponedJob>empty();
+          }
+          Postponement postponement = job.get();
+          // Due again after the delay, or right away: the node wakes itself up.
+          db.dueAt(postponement.type(), postponement.scheduledAt());
+          String until = "until " + postponement.scheduledAt();
+          if (stepName != null) {
+            changes.add(Change.step(jobId, stepName, "POSTPONED", lock.nodeId(), until));
+          }
+          changes.add(
+              Change.job(
+                  jobId,
+                  "SCHEDULED",
+                  postponement.attempts(),
+                  lock.nodeId(),
+                  "postponed"
+                      + (stepName == null ? "" : " in step '" + stepName + "'")
+                      + " "
+                      + until
+                      + (postponement.cancelRequested() ? ", due again right away" : "")));
+          history.record(db, changes);
+          return Optional.of(
+              new PostponedJob(postponement.scheduledAt(), postponement.cancelRequested()));
+        },
+        e -> new BikeschedException("Postponing bikesched job " + jobId + " failed", e));
+  }
+
+  /** A row of {@code POSTPONE_JOB_SQL}. */
+  private record Postponement(
+      Instant scheduledAt, int attempts, String type, boolean cancelRequested) {}
 
   /** A row of {@code SUSPEND_JOB_SQL}. */
   private record Suspension(

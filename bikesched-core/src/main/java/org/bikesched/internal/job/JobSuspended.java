@@ -2,6 +2,7 @@
 package org.bikesched.internal.job;
 
 import java.io.Serial;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.event.EventWait;
@@ -12,7 +13,8 @@ import org.bikesched.job.Job;
  * the handler's attempt while the job waits for an event, sleeps, waits for a child job or for the
  * next check of a poll; bikesched then suspends the job (state {@code WAITING}) and runs the
  * handler again once the event is published, the job wakes up, the child ended or the next check is
- * due.
+ * due. Also thrown by {@link Job#postpone}: the job is then {@code SCHEDULED} again after the
+ * delay.
  *
  * <p>An {@link Error} rather than an exception, so a {@code catch (Exception e)} in the handler
  * does not swallow it by accident. Even if the handler catches it anyway, the job is suspended once
@@ -27,7 +29,12 @@ final class JobSuspended extends Error {
 
   JobSuspended(Suspension suspension) {
     super(
-        "Job suspended in step '" + suspension.stepName() + "' " + suspension, null, false, false);
+        suspension.stepName() == null
+            ? "Job suspended " + suspension
+            : "Job suspended in step '" + suspension.stepName() + "' " + suspension,
+        null,
+        false,
+        false);
     this.suspension = suspension;
   }
 
@@ -35,12 +42,16 @@ final class JobSuspended extends Error {
     return suspension;
   }
 
-  /** A step a job is suspended at: waiting for an event or a child job, sleeping, or polling. */
-  sealed interface Suspension
-      permits EventSuspension, SleepSuspension, JobSuspension, PollSuspension {
+  /** Why an attempt ended early: the job waits at a step, or it was postponed. */
+  sealed interface Suspension permits Wait, PostponeSuspension {
 
-    /** The waiting step. */
+    /** The waiting or postponed step; {@code null} for a job postponed outside a step. */
     String stepName();
+  }
+
+  /** A step a job is suspended at: waiting for an event or a child job, sleeping, or polling. */
+  sealed interface Wait extends Suspension
+      permits EventSuspension, SleepSuspension, JobSuspension, PollSuspension {
 
     /**
      * The deadline of an event wait or a wait for a child job ({@code null} if none), the wake-up
@@ -58,7 +69,7 @@ final class JobSuspended extends Error {
    * @param waitUntil the deadline of the wait, {@code null} if none
    */
   record EventSuspension(String stepName, String eventName, String eventKey, Instant waitUntil)
-      implements Suspension {
+      implements Wait {
 
     /** The event, e.g. {@code event payment-received/42}. */
     String event() {
@@ -77,7 +88,7 @@ final class JobSuspended extends Error {
    * @param stepName the sleeping step
    * @param waitUntil when the job wakes up
    */
-  record SleepSuspension(String stepName, Instant waitUntil) implements Suspension {
+  record SleepSuspension(String stepName, Instant waitUntil) implements Wait {
 
     @Override
     public String toString() {
@@ -92,7 +103,7 @@ final class JobSuspended extends Error {
    * @param childJobId the child
    * @param waitUntil the deadline of the wait, {@code null} if none
    */
-  record JobSuspension(String stepName, UUID childJobId, Instant waitUntil) implements Suspension {
+  record JobSuspension(String stepName, UUID childJobId, Instant waitUntil) implements Wait {
 
     @Override
     public String toString() {
@@ -111,11 +122,25 @@ final class JobSuspended extends Error {
    *     claim nor this suspension is recorded in the job history
    */
   record PollSuspension(String stepName, int check, Instant waitUntil, boolean resumed)
-      implements Suspension {
+      implements Wait {
 
     @Override
     public String toString() {
       return "to poll again at " + waitUntil;
+    }
+  }
+
+  /**
+   * A job postponed by its handler ({@link Job#postpone}).
+   *
+   * @param stepName the step whose handler postponed the job, {@code null} if none ran
+   * @param delay how long from now the job is due again (counted by the database)
+   */
+  record PostponeSuspension(String stepName, Duration delay) implements Suspension {
+
+    @Override
+    public String toString() {
+      return "to postpone it by " + delay;
     }
   }
 }

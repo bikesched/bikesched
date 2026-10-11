@@ -13,6 +13,9 @@ dependencies {
     implementation(libs.slf4j.api)
     // Waits for job outcomes in the examples' main classes.
     implementation(libs.awaitility)
+    // A rate limit shared by all nodes, stored in PostgreSQL (rate-limit example).
+    implementation(libs.bucket4j.core)
+    implementation(libs.bucket4j.postgresql)
     runtimeOnly(libs.logback.classic)
 }
 
@@ -63,6 +66,15 @@ tasks.register<JavaExec>("runPoll") {
     description = "Runs the poll example against the docker compose Postgres."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "org.bikesched.examples.poll.PollExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
+// ./gradlew :bikesched-examples:java:runRateLimit: a provider's rate limit with Bucket4j and postpone.
+tasks.register<JavaExec>("runRateLimit") {
+    group = "application"
+    description = "Runs the rate-limit example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.ratelimit.RateLimitExample"
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
 

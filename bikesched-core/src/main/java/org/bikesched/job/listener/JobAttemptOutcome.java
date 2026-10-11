@@ -13,6 +13,8 @@ public enum JobAttemptOutcome {
   CANCELLED,
   /** The job waits for an event (or was rescheduled because the event arrived meanwhile). */
   WAITING,
+  /** The handler postponed the job ({@code Job.postpone}): it runs again after the delay. */
+  POSTPONED,
   /** The job failed permanently or was cancelled, its completed steps are compensated next. */
   COMPENSATING,
   /** The compensation of the job's steps completed. */
