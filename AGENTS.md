@@ -186,12 +186,22 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 ## Documentation
 
+- Markdown (docs, specs, ADRs, `IDEAS.md`) is wrapped at 100 columns like the code (tables may
+  stay longer) and uses no em-dashes: rewrite with a comma, a colon or two sentences.
 - `IDEAS.md` (repository root) collects possible future improvements; remove an entry once it is
-  implemented or decided against.
+  implemented or decided against (and its section heading if it becomes empty). An entry states
+  the problem, a sketched solution as bullets and an "Outcome:" line; a choice that is still open
+  lists the options under "To decide between:" without pre-deciding one. Once an idea gets a spec,
+  the entry shrinks to one paragraph linking it.
 - `docs/specs/` holds design specs written before an implementation lands, one file per feature
-  (`bikesched-spring-boot-starter.md`, named after the module). A spec states the goal, the module
-  and dependencies, the design with rejected alternatives, a test plan and implementation steps, and
-  its open questions; settle the open questions first, then implement. `docs/specs/index.md` lists
+  (`bikesched-spring-boot-starter.md`, named after the module). A spec has a status line (`draft`,
+  later `implemented` with its ADR and user-docs links) and states the goal with a short usage
+  sample, what exists today if it changes existing behaviour, the scope (in scope / not in scope),
+  the module and dependencies, the design with rejected alternatives, a test plan and
+  implementation steps, its open questions (each with a proposal) and the decisions taken; settle
+  the open questions first, then implement. Specs are concise: they state what is built, not a
+  survey of what is possible. Deviations found while implementing go into a "Decided while
+  implementing" section. `docs/specs/index.md` lists
   every spec with its creation date and status, oldest first: add a row for a new spec and update
   the status when it changes. Keep the spec updated while
   implementing instead of writing it up afterwards, and link it from the README section of the
