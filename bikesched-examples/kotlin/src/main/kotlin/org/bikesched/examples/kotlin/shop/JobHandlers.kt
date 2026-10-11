@@ -6,7 +6,6 @@ import java.time.Duration
 import java.util.UUID
 import org.bikesched.Bikesched
 import org.bikesched.RetryBackoff
-import org.bikesched.internal.database.HistoryStore.Change.step
 import org.bikesched.job.JobType
 import org.bikesched.job.TypedJobHandler
 import org.bikesched.kotlin.step
