@@ -1,0 +1,311 @@
+// SPDX-License-Identifier: Apache-2.0
+package org.bikesched.admin;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import org.bikesched.AbstractBikeschedTest;
+import org.bikesched.Bikesched;
+import org.bikesched.job.JobState;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+/** The read-only lookups of {@link Bikesched#admin()}. */
+class AdminTest extends AbstractBikeschedTest {
+
+  private final String prefix = "admin-" + UUID.randomUUID().toString().substring(0, 8) + "-";
+
+  /** Deletes the jobs and events left behind (scheduled jobs of a node that does not poll). */
+  @AfterEach
+  void deleteRows() throws Exception {
+    execute("delete from bikesched_jobs where type like '" + prefix + "%'");
+    execute("delete from bikesched_events where name like '" + prefix + "%'");
+  }
+
+  @Test
+  void findsJobsByTypeNewestFirstInPagesWithoutGaps() {
+    String type = prefix + "paged";
+    try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
+      bikesched.registerJobHandler(type, _ -> {});
+      bikesched.registerJobHandler(prefix + "other", _ -> {});
+      List<UUID> scheduled = new ArrayList<>();
+      for (int i = 0; i < 5; i++) {
+        scheduled.add(bikesched.newJob(type).schedule(Duration.ofHours(1)));
+      }
+      bikesched.newJob(prefix + "other").schedule(Duration.ofHours(1));
+
+      Admin admin = bikesched.admin();
+      JobQuery query = JobQuery.newest(2).withType(type);
+      List<UUID> found = new ArrayList<>();
+      List<Integer> pageSizes = new ArrayList<>();
+      List<JobSummary> page = admin.findJobs(query);
+      while (!page.isEmpty()) {
+        pageSizes.add(page.size());
+        page.forEach(job -> found.add(job.id()));
+        query = query.after(page.getLast());
+        page = admin.findJobs(query);
+      }
+
+      assertThat(pageSizes).containsExactly(2, 2, 1);
+      assertThat(found).containsExactlyElementsOf(scheduled.reversed());
+      JobSummary newest = admin.findJobs(JobQuery.newest(1).withType(type)).getFirst();
+      assertThat(newest.type()).isEqualTo(type);
+      assertThat(newest.state()).isEqualTo(JobState.SCHEDULED);
+      assertThat(newest.maxAttempts()).isPositive();
+      assertThat(newest.scheduledAt()).isAfter(newest.createdAt());
+      assertThat(newest.parentJobId()).isNull();
+    }
+  }
+
+  @Test
+  void filtersByStatesAndCountsTheTypes() {
+    String type = prefix + "states";
+    try (Bikesched bikesched = testNode(prefix + "node").build()) {
+      bikesched.registerJobHandler(
+          type,
+          job -> {
+            if (job.payload(String.class).equals("\"fail\"")) { // the default mapper: JSON text
+              job.fail("failed on purpose");
+            }
+          });
+      UUID failed = bikesched.newJob(type).payload("\"fail\"").maxAttempts(1).schedule();
+      UUID succeeded = bikesched.newJob(type).payload("\"ok\"").schedule();
+      UUID later = bikesched.newJob(type).payload("\"ok\"").schedule(Duration.ofHours(1));
+      awaitState(failed, "FAILED");
+      awaitState(succeeded, "SUCCEEDED");
+
+      Admin admin = bikesched.admin();
+      assertThat(admin.findJobs(JobQuery.newest(10).withType(type).withStates(JobState.FAILED)))
+          .singleElement()
+          .satisfies(
+              job -> {
+                assertThat(job.id()).isEqualTo(failed);
+                assertThat(job.lastError()).contains("failed on purpose");
+                assertThat(job.finishedAt()).isNotNull();
+              });
+      assertThat(
+              admin.findJobs(
+                  JobQuery.newest(10)
+                      .withType(type)
+                      .withStates(JobState.SUCCEEDED, JobState.SCHEDULED)))
+          .extracting(JobSummary::id)
+          .containsExactlyInAnyOrder(succeeded, later);
+
+      JobTypeSummary summary =
+          admin.findJobTypes().stream()
+              .filter(t -> t.type().equals(type))
+              .findFirst()
+              .orElseThrow();
+      assertThat(summary.count(JobState.FAILED)).isOne();
+      assertThat(summary.count(JobState.SUCCEEDED)).isOne();
+      assertThat(summary.count(JobState.SCHEDULED)).isOne();
+      assertThat(summary.count(JobState.RUNNING)).isZero();
+      assertThat(summary.total()).isEqualTo(3);
+    }
+  }
+
+  @Test
+  void readsAJobWithItsDataAndSteps() {
+    String type = prefix + "steps";
+    String event = prefix + "event";
+    try (Bikesched bikesched = testNode(prefix + "node").build()) {
+      bikesched.registerJobHandler(
+          type,
+          job -> {
+            job.step("first", String.class, _ -> "\"one\"");
+            job.waitForEvent("await", event, "key-1", String.class).receive();
+            job.complete("{\"done\": true}");
+          });
+      UUID jobId =
+          bikesched.newJob(type).payload("{\"order\": 42}").idempotencyKey("order-42").schedule();
+      awaitState(jobId, "WAITING");
+
+      Admin admin = bikesched.admin();
+      JobSummary waiting = admin.findJob(jobId).orElseThrow();
+      assertThat(waiting.state()).isEqualTo(JobState.WAITING);
+      assertThat(waiting.scheduledAt()).as("waiting without a deadline").isNull();
+      assertThat(waiting.idempotencyKey()).isEqualTo("order-42");
+      assertThat(admin.findSteps(jobId))
+          .extracting(StepInfo::name, StepInfo::kind, StepInfo::state)
+          .containsExactly(
+              org.assertj.core.groups.Tuple.tuple("first", "STEP", "SUCCEEDED"),
+              org.assertj.core.groups.Tuple.tuple("await", "EVENT_WAIT", "WAITING"));
+      assertThat(admin.findWaitingSteps(event, null, 10))
+          .singleElement()
+          .satisfies(
+              step -> {
+                assertThat(step.jobId()).isEqualTo(jobId);
+                assertThat(step.jobType()).isEqualTo(type);
+                assertThat(step.stepName()).isEqualTo("await");
+                assertThat(step.eventKey()).isEqualTo("key-1");
+              });
+      assertThat(admin.findWaitingSteps(event, "key-", 10)).hasSize(1);
+      assertThat(admin.findWaitingSteps(event, "other", 10)).isEmpty();
+
+      UUID eventId = bikesched.newEvent(event, "key-1").payload("\"paid\"").publish();
+      awaitState(jobId, "SUCCEEDED");
+
+      assertThat(admin.findJobData(jobId))
+          .contains(new JobData("{\"order\": 42}", "{\"done\": true}"));
+      assertThat(admin.findSteps(jobId))
+          .extracting(StepInfo::name, StepInfo::state)
+          .containsExactly(
+              org.assertj.core.groups.Tuple.tuple("first", "SUCCEEDED"),
+              org.assertj.core.groups.Tuple.tuple("await", "SUCCEEDED"));
+      assertThat(admin.findWaitingSteps(event, null, 10)).isEmpty();
+      assertThat(admin.findEvent(eventId))
+          .hasValueSatisfying(
+              summary -> {
+                assertThat(summary.name()).isEqualTo(event);
+                assertThat(summary.key()).isEqualTo("key-1");
+                assertThat(summary.receivedBy()).isOne();
+                assertThat(summary.latest()).isTrue();
+              });
+      assertThat(admin.findEventSteps(eventId))
+          .singleElement()
+          .satisfies(
+              step -> {
+                assertThat(step.jobId()).isEqualTo(jobId);
+                assertThat(step.stepName()).isEqualTo("await");
+                assertThat(step.isPublisher()).isFalse();
+              });
+      assertThat(admin.findEventPayload(eventId)).contains("\"paid\"");
+      assertThat(admin.findJob(UUID.randomUUID())).isEmpty();
+      assertThat(admin.findSteps(UUID.randomUUID())).isEmpty();
+    }
+  }
+
+  @Test
+  void findsEventsByNameAndKeyPrefixInPages() {
+    String name = prefix + "events";
+    try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
+      UUID first = bikesched.newEvent(name, "order-1").publish();
+      UUID second = bikesched.newEvent(name, "order-1").publish();
+      UUID third = bikesched.newEvent(name, "invoice-1").publish();
+      bikesched.newEvent(prefix + "other", "order-1").publish();
+
+      Admin admin = bikesched.admin();
+      List<EventSummary> page = admin.findEvents(EventQuery.newest(2).withName(name));
+      assertThat(page).extracting(EventSummary::id).containsExactly(third, second);
+      assertThat(admin.findEvents(EventQuery.newest(2).withName(name).after(page.getLast())))
+          .extracting(EventSummary::id)
+          .containsExactly(first);
+      List<EventSummary> orders =
+          admin.findEvents(EventQuery.newest(10).withName(name).withKeyPrefix("order-"));
+      assertThat(orders).extracting(EventSummary::id).containsExactly(second, first);
+      assertThat(orders)
+          .as("the newest event of a name and key is the one a new wait receives")
+          .extracting(EventSummary::latest)
+          .containsExactly(true, false);
+      assertThat(orders.getFirst().receivedBy()).isZero();
+      assertThat(admin.findEventNames())
+          .contains(new EventNameSummary(name, 3), new EventNameSummary(prefix + "other", 1));
+      assertThat(admin.findEventSteps(first)).as("published outside a job").isEmpty();
+    }
+  }
+
+  @Test
+  void findsTheStepThatPublishedAnEvent() {
+    String type = prefix + "publisher";
+    String name = prefix + "published";
+    var eventId = new AtomicReference<UUID>();
+    try (Bikesched bikesched = testNode(prefix + "node").build()) {
+      bikesched.registerJobHandler(type, job -> eventId.set(job.newEvent(name, "k").publish()));
+      UUID jobId = bikesched.newJob(type).schedule();
+      awaitState(jobId, "SUCCEEDED");
+
+      assertThat(bikesched.admin().findEventSteps(eventId.get()))
+          .singleElement()
+          .satisfies(
+              step -> {
+                assertThat(step.jobId()).isEqualTo(jobId);
+                assertThat(step.jobType()).isEqualTo(type);
+                assertThat(step.jobState()).isEqualTo(JobState.SUCCEEDED);
+                assertThat(step.isPublisher()).isTrue();
+              });
+    }
+  }
+
+  @Test
+  void linksChildJobsAndTheirParents() {
+    String parentType = prefix + "parent";
+    String childType = prefix + "child";
+    var childId = new AtomicReference<UUID>();
+    try (Bikesched bikesched = testNode(prefix + "node").build()) {
+      bikesched.registerJobHandler(childType, job -> job.complete("\"child result\""));
+      bikesched.registerJobHandler(
+          parentType,
+          job -> {
+            UUID child = job.newJob(childType).stepName("start-child").schedule();
+            childId.set(child);
+            job.waitForJob(child, String.class);
+          });
+      UUID parentId = bikesched.newJob(parentType).schedule();
+      awaitState(parentId, "SUCCEEDED");
+
+      Admin admin = bikesched.admin();
+      JobSummary child = admin.findJob(childId.get()).orElseThrow();
+      assertThat(child.parentJobId()).isEqualTo(parentId);
+      assertThat(child.parentJobType()).isEqualTo(parentType);
+      assertThat(admin.findSteps(parentId))
+          .filteredOn(step -> step.kind().equals("CHILD_JOB"))
+          .singleElement()
+          .satisfies(
+              step -> {
+                assertThat(step.childJobId()).isEqualTo(childId.get());
+                assertThat(step.childJobType()).isEqualTo(childType);
+                assertThat(step.childJobState()).isEqualTo(JobState.SUCCEEDED);
+                assertThat(step.childJobExists()).isTrue();
+              });
+    }
+  }
+
+  @Test
+  void listsNodesAliveAndDead() throws Exception {
+    UUID deadId = UUID.randomUUID();
+    String deadName = prefix + "dead";
+    execute(
+        "insert into bikesched_nodes (id, name, started_at, last_heartbeat_at) values ('"
+            + deadId
+            + "', '"
+            + deadName
+            + "', now() - interval '2 hours', now() - interval '1 hour')");
+    try (Bikesched bikesched = testNode(prefix + "alive").autoStartPolling(false).build()) {
+      bikesched.start(); // registers the node
+      await()
+          .untilAsserted(
+              () ->
+                  assertThat(bikesched.admin().findNodes())
+                      .anySatisfy(
+                          node -> {
+                            assertThat(node.name()).isEqualTo(prefix + "alive");
+                            assertThat(node.alive()).isTrue();
+                          })
+                      .anySatisfy(
+                          node -> {
+                            assertThat(node.id()).isEqualTo(deadId);
+                            assertThat(node.alive()).isFalse();
+                          }));
+    } finally {
+      execute("delete from bikesched_nodes where id = '" + deadId + "'");
+    }
+  }
+
+  @Test
+  void rejectsLimitsOutOfRange() {
+    assertThatThrownBy(() -> JobQuery.newest(0)).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> JobQuery.newest(JobQuery.MAX_LIMIT + 1))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> EventQuery.newest(0)).isInstanceOf(IllegalArgumentException.class);
+    try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
+      assertThatThrownBy(() -> bikesched.admin().findWaitingSteps("e", null, 0))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+  }
+}

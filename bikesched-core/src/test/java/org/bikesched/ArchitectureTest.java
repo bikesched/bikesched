@@ -41,7 +41,8 @@ class ArchitectureTest {
     "org.bikesched.job",
     "org.bikesched.job.listener",
     "org.bikesched.event",
-    "org.bikesched.event.listener"
+    "org.bikesched.event.listener",
+    "org.bikesched.admin"
   };
 
   private static final String INTERNAL = "org.bikesched.internal..";

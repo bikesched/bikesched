@@ -1,6 +1,6 @@
 ---
 title: "Database"
-weight: 12
+weight: 13
 ---
 
 # Database
@@ -66,7 +66,9 @@ claim order, as a partial index that excludes finished jobs; it includes `type`,
 the node has no handlers for are skipped on index entries), jobs per node, at most one pending
 occurrence per recurring job (partial unique index), idempotency keys of jobs (unique per type,
 partial: only jobs with a key), steps waiting for an event, steps waiting for
-a child job (by `child_job_id`), and event lookup and cleanup. Waiting for, suspending at and publishing events also take transaction-scoped advisory
+a child job (by `child_job_id`), the steps that published or received an event (by `event_id`,
+for the admin lookups), the pages of the admin's job and event lists (`created_at`, also per type,
+and `published_at`), and event lookup and cleanup. Waiting for, suspending at and publishing events also take transaction-scoped advisory
 locks per event name and key; no table is involved. Step writes share-lock the job's row while
 checking that the job is still running with the writing attempt's `lock_token`, so a concurrent
 release waits for them. A job suspending at a wait for a child job locks the child's step row

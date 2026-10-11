@@ -14,9 +14,10 @@ import org.bikesched.job.Job;
 
 /**
  * Entry point to bikesched's database: schema migration and one store per table ({@link #nodes()},
- * {@link #jobs()}, {@link #steps()}, {@link #events()}, {@link #history()}). The stores run their
- * statements through a shared {@link DatabaseAccess}; they do not know this class. Thread-safe;
- * every call borrows its own connection from the data source.
+ * {@link #jobs()}, {@link #steps()}, {@link #events()}, {@link #history()}) plus read-only lookups
+ * across them ({@link #admin()}). The stores run their statements through a shared {@link
+ * DatabaseAccess}; they do not know this class. Thread-safe; every call borrows its own connection
+ * from the data source.
  */
 public final class Database {
 
@@ -33,6 +34,8 @@ public final class Database {
   private final EventStore events;
 
   private final HistoryStore history;
+
+  private final AdminStore admin;
 
   private final DatabaseAccess access;
 
@@ -76,6 +79,7 @@ public final class Database {
     this.jobs = new JobStore(access, history, jsonMapper);
     this.steps = new StepStore(access, history);
     this.events = new EventStore(access, history);
+    this.admin = new AdminStore(access);
   }
 
   /** The {@code bikesched_nodes} table. */
@@ -101,6 +105,11 @@ public final class Database {
   /** The {@code bikesched_job_history} table, written by the other stores if enabled. */
   public HistoryStore history() {
     return history;
+  }
+
+  /** Read-only lookups across the tables for the admin API. */
+  public AdminStore admin() {
+    return admin;
   }
 
   /**
