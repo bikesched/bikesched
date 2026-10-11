@@ -76,6 +76,26 @@ scheduled it and the job's attempts are not connected. A dedicated module (e.g.
   job (after a wait, sleep or poll) continues the same trace.
 - Outcome: one trace from the request through every attempt and step of the jobs it started.
 
+### Optional schema migration
+
+A node migrates the schema on first use (`bikesched.migrate-on-startup=false` in the Spring starter
+only moves it from startup to first use). Teams whose application user may not run DDL, or who
+manage every schema change with Flyway or Liquibase, can't use bikesched that way.
+
+- Core: a builder option, e.g. `migrateSchema(false)`: the node then only validates the schema
+  (every bundled migration recorded in `bikesched_schema_migrations` with a matching checksum) and
+  fails with a message naming the missing versions and where the scripts are, instead of creating
+  or changing tables. `Bikesched.migrate()` keeps migrating explicitly, e.g. from a deploy step.
+- The migration scripts already ship in the jar (`org/bikesched/migrations/`); docs show how to
+  run them from Flyway or Liquibase, and how those record the versions bikesched validates (or a
+  validation that only checks the tables, if the other tool's bookkeeping replaces bikesched's).
+- Spring starter: a property for the flag, e.g. `bikesched.schema.migrate=false`, next to
+  `migrate-on-startup`.
+- Open: what validation means when Flyway applied the scripts (bikesched's own table is then not
+  written); whether to support a configurable schema at the same time.
+- Outcome: bikesched runs with a database user without DDL rights and fits a DBA-controlled
+  migration process.
+
 ### Reporting events published in the caller's transaction
 
 `EventListener` does not report events published with `connection(…)`: plain JDBC gives bikesched
