@@ -45,12 +45,15 @@ and without any coordinator besides PostgreSQL.
    occurrences
 5. [Events](events.md): waiting for and publishing events
 6. [Child jobs](child-jobs.md): starting and waiting for child jobs, job results
-7. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
-8. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
-9. [Metrics](metrics.md): `JobListener`, `EventListener` and the Micrometer meters
+7. [Patterns](patterns.md): outbox, deduplication, rate limits, webhooks, approvals, fan-out,
+   periodic work, sagas
+8. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
+9. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
+10. [Metrics](metrics.md): `JobListener`, `EventListener` and the Micrometer meters
    (`bikesched-micrometer`)
-10. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
-11. [Database](database.md): tables, indexes and migrations
+11. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
+12. [Database](database.md): tables, indexes and migrations
 
-The [examples](../bikesched-examples/README.md) show the concepts working together. The
+The [examples](../bikesched-examples/README.md) show the concepts working together; the
+[patterns](patterns.md) explain which example solves which problem. The
 [decision records](decisions/README.md) explain why bikesched works the way it does.

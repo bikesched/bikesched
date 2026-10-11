@@ -147,6 +147,8 @@ The [documentation](docs/index.md) covers the concepts in detail:
 - [Recurring jobs](docs/recurring-jobs.md)
 - [Events](docs/events.md)
 - [Child jobs](docs/child-jobs.md): starting and waiting for child jobs, job results
+- [Patterns](docs/patterns.md): common problems (outbox, deduplication, rate limits, webhooks,
+  approvals, fan-out, periodic work, sagas) and the examples solving them
 - [Configuration](docs/configuration.md): builder options, nodes, JSON mapping, logging
 - [Kotlin](docs/kotlin.md)
 - [Spring Boot](docs/spring.md): the auto-configured node
@@ -156,7 +158,8 @@ The [documentation](docs/index.md) covers the concepts in detail:
 
 Runnable examples with tests — a taxi booking saga with event waits and compensation, a cinema
 ticket order with a `JobTypeHandler`, a webhook with a polling fallback, a provider's rate limit
-with Bucket4j, and a Spring Boot
+with Bucket4j, chat messages deduplicated by idempotency keys, an approval with a reminder and an
+escalation, a fan-out with child jobs, a recurring job on two nodes, and a Spring Boot
 application whose node and handlers are
 wired by the starter — live in the [`bikesched-examples`](bikesched-examples/README.md) modules.
 

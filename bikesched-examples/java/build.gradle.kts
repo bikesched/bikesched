@@ -78,6 +78,42 @@ tasks.register<JavaExec>("runRateLimit") {
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
 
+// ./gradlew :bikesched-examples:java:runChat: chat messages deduplicated by their message id.
+tasks.register<JavaExec>("runChat") {
+    group = "application"
+    description = "Runs the chat example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.chat.ChatExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
+// ./gradlew :bikesched-examples:java:runApproval: an approval with a reminder and an escalation.
+tasks.register<JavaExec>("runApproval") {
+    group = "application"
+    description = "Runs the approval example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.approval.ApprovalExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
+// ./gradlew :bikesched-examples:java:runFanOut: one child job per photo, the parent waits for all.
+tasks.register<JavaExec>("runFanOut") {
+    group = "application"
+    description = "Runs the fan-out example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.fanout.FanOutExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
+// ./gradlew :bikesched-examples:java:runRecurring: a recurring job on two nodes, each run once.
+tasks.register<JavaExec>("runRecurring") {
+    group = "application"
+    description = "Runs the recurring example against the docker compose Postgres."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.recurring.RecurringExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
 // ./gradlew :bikesched-examples:java:runAnnotation: job handlers declared as annotated methods.
 tasks.register<JavaExec>("runAnnotation") {
     group = "application"

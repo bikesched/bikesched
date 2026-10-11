@@ -4,7 +4,7 @@ Runnable examples of [bikesched](../README.md), one package per scenario, in thr
 
 | Module | Examples | Dependencies |
 |---|---|---|
-| [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [rate limit](#rate-limit), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets) | `bikesched-jackson`, `bikesched-annotations`, Bucket4j |
+| [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [rate limit](#rate-limit), [chat](#chat), [approval](#approval), [fan-out](#fan-out), [recurring](#recurring), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets) | `bikesched-jackson`, `bikesched-annotations`, Bucket4j |
 | [`kotlin`](kotlin) (`:bikesched-examples:kotlin`) | [Shop](#kotlin-shop) | `bikesched-kotlin`, Ktor, Exposed, kotlinx-serialization |
 | [`spring`](spring) (`:bikesched-examples:spring`) | [Spring Boot](#spring-boot) | `bikesched-spring-boot-starter`, `bikesched-jackson`, Spring Data JPA |
 
@@ -24,6 +24,10 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:java:runOutcome     # declined cards as step results, an outage retried
 ./gradlew :bikesched-examples:java:runPoll        # a webhook with a polling fallback
 ./gradlew :bikesched-examples:java:runRateLimit   # a provider's rate limit on two nodes, with Bucket4j
+./gradlew :bikesched-examples:java:runChat        # chat messages delivered twice, answered once
+./gradlew :bikesched-examples:java:runApproval    # an expense approval with a reminder and an escalation
+./gradlew :bikesched-examples:java:runFanOut      # one child job per photo, the parent waits for all
+./gradlew :bikesched-examples:java:runRecurring   # a recurring job on two nodes, each run happens once
 ./gradlew :bikesched-examples:java:run            # taxi booking
 ./gradlew :bikesched-examples:java:runCinema      # cinema tickets
 ./gradlew :bikesched-examples:spring:bootRun      # Spring Boot application wired by the starter
@@ -215,6 +219,116 @@ output shows postponed steps but no rejected call.
 `RateLimitExampleTest` runs the same on two nodes and checks that every job succeeded in its first
 attempt, the provider saw ten calls and rejected none, and the history has `POSTPONED` steps.
 
+## Chat
+
+Package [`org.bikesched.examples.chat`](java/src/main/java/org/bikesched/examples/chat): incoming
+messages deduplicated with an [idempotency key](../docs/jobs.md#idempotency-keys). A chat platform
+delivers each message to the application's webhook at least once; the webhook schedules the job
+`answer-chat-message` with the platform's message id as key, and the job replies in a step:
+
+```java
+UUID jobId = bikesched.newJob(ANSWER_MESSAGE)
+        .payload(message)
+        .idempotencyKey(message.messageId())   // a redelivery returns the first job's id
+        .schedule();
+```
+
+`deliver(message, delivery)` decides per message how the platform delivers it, and `main` sends one
+of each:
+
+```java
+example.deliver(message("alice", "hi"), Delivery.ONCE);
+example.deliver(message("bob", "help"), Delivery.REDELIVERED);       // again after the job answered
+example.deliver(message("carol", "hello?"), Delivery.CONCURRENTLY);  // twice at the same time
+```
+
+Message ids are new on every run: a key stays taken while its job exists (the
+[job retention](../docs/jobs.md#job-retention)).
+
+`ChatExampleTest` runs each delivery and checks that all deliveries returned the same job id, the
+message got one reply, and `bikesched_jobs` holds one job with the key.
+
+## Approval
+
+Package [`org.bikesched.examples.approval`](java/src/main/java/org/bikesched/examples/approval): an
+expense approval with a reminder and an escalation. The job `approve-expense` asks the manager and
+waits for the event `expense-decided`, keyed by the expense id. Each wait has a
+[timeout](../docs/events.md#timeouts) whose failure handler resolves it with `null`, so the job
+continues with the next stage instead of failing:
+
+1. `request-approval`, `await-decision` (2 seconds here, days in practice)
+2. without a decision: `send-reminder`, `await-decision-after-reminder` (2 seconds)
+3. still without one: `escalate` to the finance lead, `await-escalated-decision` (no timeout)
+4. `pay-out` or `notify-rejection`
+
+```java
+Decision decision = job.waitForEvent("await-decision", EXPENSE_DECIDED, id)
+        .timeout(REMIND_AFTER)
+        .onFailure(failing -> failing.resolve(null))   // no decision in time
+        .receive();
+if (decision == null) {
+    job.step("send-reminder", () -> inbox.remind(expense.manager(), expense));
+    decision = job.waitForEvent("await-decision-after-reminder", EXPENSE_DECIDED, id)…
+}
+```
+
+`decide(expense, approver, approved)` is the approval UI: it publishes the event. `main` plays the
+approvers, each after the inbox received the message they react to:
+
+| Expense | Approver | Outcome |
+|---|---|---|
+| taxi | the manager approves right away | paid out |
+| dinner | the manager rejects after the reminder | not paid |
+| laptop | the manager doesn't answer, the finance lead approves after the escalation | paid out |
+
+`ApprovalExampleTest` covers the three cases and checks the messages each approver received.
+
+## Fan-out
+
+Package [`org.bikesched.examples.fanout`](java/src/main/java/org/bikesched/examples/fanout):
+fan-out/fan-in with [child jobs](../docs/child-jobs.md). The job `import-album` starts one child
+job `resize-photo` per uploaded file, then waits for each child and publishes the album:
+
+```java
+List<UUID> children = album.files().stream()
+        .map(file -> job.newJob(RESIZE_PHOTO).payload(new Photo(albumId, file)).stepName("resize " + file).schedule())
+        .toList();
+for (int i = 0; i < children.size(); i++) {
+    switch (job.waitForJob(children.get(i), Thumbnail.class)) {
+        case JobResult.Succeeded<Thumbnail>(_, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
+        case JobResult.Failed<Thumbnail> _ -> skipped.add(album.files().get(i));
+        case JobResult<Thumbnail> other -> throw new IllegalStateException("Unexpected outcome: " + other);
+    }
+}
+```
+
+A child sets the thumbnail as its result (`job.complete`); a file that is not an image fails it
+without retries. The parent receives the failure as an outcome and skips the file. Resizing takes
+a second per photo, and the children run in parallel, so the album of four files is done after
+about a second. The parent's result (`ImportedAlbum`) lists the thumbnails and the skipped files.
+
+`FanOutExampleTest` checks the parent's result, that each file was resized once by its own child
+(`parent_job_id`), and that the children ran in parallel.
+
+## Recurring
+
+Package [`org.bikesched.examples.recurring`](java/src/main/java/org/bikesched/examples/recurring):
+periodic work with a [recurring job](../docs/recurring-jobs.md). `main` starts two nodes, and both
+register the recurring job `clean-up-sessions`, as every node does on startup:
+
+```java
+bikesched.newJob(CLEAN_UP_SESSIONS)
+        .handler(_ -> out.printf("%s [%s] run %d: removed expired sessions%n", timestamp(), node, runs.incrementAndGet()))
+        .schedule(Recurrence.every(Duration.ofSeconds(1)));
+```
+
+Registering is idempotent and bikesched keeps one occurrence pending, so the output shows one run
+per second, on either node, never two at once. After five runs `main` stops; the pending
+occurrence stays, and the next start continues with it.
+
+`RecurringExampleTest` runs it on two nodes and checks that the runs are at least 800 ms apart and
+one occurrence is pending, then deletes it with `removeRecurringJob`.
+
 ## Annotation
 
 Package [`org.bikesched.examples.annotation`](java/src/main/java/org/bikesched/examples/annotation): job
@@ -320,6 +434,11 @@ Ktor REST API (orders, Exposed) around two jobs, in
   retry charges again; once the job's attempts are used up, `onFailure` marks the order `FAILED`
   before the job fails for good — the handler runs even if the node dies right after the last
   attempt.
+
+The order routes store the order and schedule `process-order` in one Exposed transaction
+([`Routes.kt`](kotlin/src/main/kotlin/org/bikesched/examples/kotlin/shop/Routes.kt)), a
+[transactional outbox](../docs/patterns.md#transactional-outbox): the job exists only if the order
+does.
 
 `MockPaymentService` fails the first order's payment twice then succeeds, and every further
 order's payment always fails, so `ShopExample` shows both outcomes: the first order recovers via
