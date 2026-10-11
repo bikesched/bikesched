@@ -61,7 +61,7 @@ similar tools.
 ## Features
 
 - Jobs now, at a given time or after a delay, with priority, retries and timeouts; optionally in
-  your own database transaction
+  your own database transaction, and with an idempotency key for callers that retry
 - Jobs start as soon as they are due: nodes notify each other with PostgreSQL `LISTEN/NOTIFY`,
   polling is only the safety net
 - Durable **steps** whose results survive retries, with optional **compensation** (sagas)

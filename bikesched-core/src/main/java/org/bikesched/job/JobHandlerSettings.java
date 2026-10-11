@@ -5,9 +5,10 @@ import java.util.Objects;
 
 /**
  * The job settings plus the handler, for the builders of jobs scheduled through {@link
- * org.bikesched.Bikesched}: {@link JobBuilder} and {@link TransactionalJobBuilder}. A {@link
- * StepJobBuilder} has no handler: a child job connects to a job type registered on its own, and
- * inline code belongs in a step ({@link Job#newStep(String, Class)}).
+ * org.bikesched.Bikesched}: {@link JobBuilder}, {@link TransactionalJobBuilder} and {@link
+ * IdempotentJobBuilder}. A {@link StepJobBuilder} has no handler: a child job connects to a job
+ * type registered on its own, and inline code belongs in a step ({@link Job#newStep(String,
+ * Class)}).
  *
  * @param <B> the concrete builder type
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class

@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.poll.PollExample.Webhook;
@@ -44,6 +45,36 @@ class PollExampleTest {
   }
 
   @Test
+  void aWebhookDeliveredTwiceIsPublishedOnce() throws SQLException {
+    try (Bikesched bikesched = node()) {
+      var example =
+          new PollExample(bikesched, new PrintStream(output, true, StandardCharsets.UTF_8));
+
+      UUID jobId =
+          example.pay("order-webhook-twice", Duration.ofSeconds(1), Webhook.DELIVERED_TWICE);
+
+      awaitEnd(bikesched, jobId);
+      String paymentId = paymentId(bikesched, jobId);
+      Pattern published = Pattern.compile("webhook (evt_\\w+) published as event ([\\w-]+)");
+      await()
+          .untilAsserted(
+              () -> assertThat(published.matcher(output()).results().count()).isEqualTo(2));
+      assertThat(published.matcher(output()).results().map(match -> match.group(2)).distinct())
+          .as("both deliveries return the same event")
+          .hasSize(1);
+      assertThat(
+              query(
+                  "select count(*) from bikesched_events where name = 'payment-settled'"
+                      + " and key = '"
+                      + paymentId
+                      + "'"))
+          .isEqualTo("1");
+      assertThat(output())
+          .contains("[shop]     order order-webhook-twice paid (" + paymentId + ", webhook)");
+    }
+  }
+
+  @Test
   void aLostWebhookIsMadeUpForByPolling() throws SQLException {
     try (Bikesched bikesched = node()) {
       var example =
@@ -64,6 +95,10 @@ class PollExampleTest {
           .contains("[provider] settled " + paymentId + ", webhook lost")
           .contains("[shop]     order order-polled paid (" + paymentId + ", polled)");
     }
+  }
+
+  private String output() {
+    return output.toString(StandardCharsets.UTF_8);
   }
 
   private static void awaitEnd(Bikesched bikesched, UUID jobId) {

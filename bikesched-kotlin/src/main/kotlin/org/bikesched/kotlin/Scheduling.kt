@@ -9,6 +9,7 @@ import kotlin.time.toJavaDuration
 import org.bikesched.Bikesched
 import org.bikesched.job.FailedJob
 import org.bikesched.job.Job
+import org.bikesched.job.JobBuilder
 import org.bikesched.job.JobFailureHandler
 import org.bikesched.job.JobHandler
 import org.bikesched.job.JobHandlerSettings
@@ -99,10 +100,12 @@ public fun Bikesched.handleJobFailures(type: String, handler: FailedJob.() -> Un
  * @param maxAttempts its maximum number of attempts; defaults to 3
  * @param timeout the maximum duration of an attempt; defaults to the node's default
  * @param connection stores the job in the caller's transaction, see `JobBuilder.connection`
+ * @param idempotencyKey while a job of this type has the key, returns its id instead of scheduling
+ *   another one, see `JobBuilder.idempotencyKey`
  * @param onFailure handles failed jobs of this type, registered unless the type already has a
  *   failure handler, see [handleJobFailures]
  * @param handler executes jobs of this type, registered unless the type already has a handler
- * @return the job id
+ * @return the job id, or the id of the existing job with the idempotency key
  * @throws IllegalArgumentException if both [at] and [delay] are set, or the type has no handler
  */
 public fun Bikesched.createJob(
@@ -113,6 +116,7 @@ public fun Bikesched.createJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   connection: Connection? = null,
+  idempotencyKey: String? = null,
   onFailure: (FailedJob.() -> Unit)? = null,
   handler: (Job.() -> Unit)? = null,
 ): UUID =
@@ -130,6 +134,7 @@ public fun Bikesched.createJob(
     at,
     delay,
     connection,
+    idempotencyKey,
   )
 
 /**
@@ -143,7 +148,7 @@ public fun Bikesched.createJob(
  * The parameters are the same as for the job without payload; the [handler] and [onFailure] get the
  * payload as [T].
  *
- * @return the job id
+ * @return the job id, or the id of the existing job with the idempotency key
  * @throws IllegalArgumentException if both [at] and [delay] are set, or the type has no handler
  */
 public inline fun <reified T : Any> Bikesched.createJob(
@@ -155,6 +160,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   connection: Connection? = null,
+  idempotencyKey: String? = null,
   noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   noinline handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID =
@@ -172,6 +178,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
     at,
     delay,
     connection,
+    idempotencyKey,
   )
 
 /**
@@ -184,7 +191,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
  * The parameters are the same as for the job with a string type; the [handler] and [onFailure] get
  * the payload as [T].
  *
- * @return the job id
+ * @return the job id, or the id of the existing job with the idempotency key
  * @throws IllegalArgumentException if both [at] and [delay] are set, or the type has no handler
  */
 public fun <T : Any> Bikesched.createJob(
@@ -196,6 +203,7 @@ public fun <T : Any> Bikesched.createJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   connection: Connection? = null,
+  idempotencyKey: String? = null,
   onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID {
@@ -208,19 +216,7 @@ public fun <T : Any> Bikesched.createJob(
   onFailure?.let { h ->
     builder = builder.failureHandler(TypedJobFailureHandler<T> { failed, p -> failed.h(p) })
   }
-  if (connection != null) {
-    val transactional = builder.connection(connection)
-    return when {
-      at != null -> transactional.schedule(at)
-      delay != null -> transactional.schedule(delay.toJavaDuration())
-      else -> transactional.schedule()
-    }
-  }
-  return when {
-    at != null -> builder.schedule(at)
-    delay != null -> builder.schedule(delay.toJavaDuration())
-    else -> builder.schedule()
-  }
+  return scheduleOneOff(builder, at, delay, connection, idempotencyKey)
 }
 
 /**
@@ -328,7 +324,9 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
  *   `EventBuilder.retention`; defaults to the node's `eventRetention`; `Duration.ZERO` delivers it
  *   only to the steps waiting now
  * @param connection publishes the event in the caller's transaction, see `EventBuilder.connection`
- * @return the id of the published event
+ * @param idempotencyKey while an event with the same name, key and idempotency key is kept, returns
+ *   its id instead of publishing again, see `NodeEventBuilder.idempotencyKey`
+ * @return the id of the published event, or of the earlier one with the idempotency key
  */
 public fun Bikesched.publishEvent(
   name: String,
@@ -336,11 +334,13 @@ public fun Bikesched.publishEvent(
   payload: Any? = null,
   retention: Duration? = null,
   connection: Connection? = null,
+  idempotencyKey: String? = null,
 ): UUID {
   val event = newEvent(name, key)
   payload?.let(event::payload)
   retention?.let { event.retention(it.toJavaDuration()) }
   connection?.let(event::connection)
+  idempotencyKey?.let(event::idempotencyKey)
   return event.publish()
 }
 
@@ -401,22 +401,47 @@ internal fun scheduleJob(
   at: Instant?,
   delay: Duration?,
   connection: Connection?,
+  idempotencyKey: String?,
 ): UUID {
   require(at == null || delay == null) { "at and delay are mutually exclusive" }
-  val builder = bikesched.newJob(type)
+  return scheduleOneOff(
+    options.applyTo(bikesched.newJob(type)),
+    at,
+    delay,
+    connection,
+    idempotencyKey,
+  )
+}
+
+/** Schedules a one-off job, in the caller's transaction and with an idempotency key if given. */
+private fun <P> scheduleOneOff(
+  builder: JobBuilder<P>,
+  at: Instant?,
+  delay: Duration?,
+  connection: Connection?,
+  idempotencyKey: String?,
+): UUID {
   if (connection != null) {
-    val transactional = options.applyTo(builder.connection(connection))
+    var transactional = builder.connection(connection)
+    idempotencyKey?.let { transactional = transactional.idempotencyKey(it) }
     return when {
       at != null -> transactional.schedule(at)
       delay != null -> transactional.schedule(delay.toJavaDuration())
       else -> transactional.schedule()
     }
   }
-  val regular = options.applyTo(builder)
+  if (idempotencyKey != null) {
+    val idempotent = builder.idempotencyKey(idempotencyKey)
+    return when {
+      at != null -> idempotent.schedule(at)
+      delay != null -> idempotent.schedule(delay.toJavaDuration())
+      else -> idempotent.schedule()
+    }
+  }
   return when {
-    at != null -> regular.schedule(at)
-    delay != null -> regular.schedule(delay.toJavaDuration())
-    else -> regular.schedule()
+    at != null -> builder.schedule(at)
+    delay != null -> builder.schedule(delay.toJavaDuration())
+    else -> builder.schedule()
   }
 }
 

@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.internal.database.NewJob;
+import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobSettings;
@@ -17,7 +18,8 @@ import org.bikesched.job.TypedJobHandler;
 
 /**
  * The shared settings of the job builder implementations ({@link DefaultJobBuilder}, {@link
- * DefaultTransactionalJobBuilder}, {@link DefaultStepJobBuilder}).
+ * DefaultIdempotentJobBuilder}, {@link DefaultTransactionalJobBuilder}, {@link
+ * DefaultStepJobBuilder}).
  *
  * @param <B> the builder interface
  */
@@ -28,7 +30,10 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
 
   /** Stores the jobs built by the job builders; implemented by the owning bikesched node. */
   public interface Scheduler {
-    /** {@code connection} is the caller's connection, or {@code null} to use bikesched's own. */
+    /**
+     * {@code connection} is the caller's connection, or {@code null} to use bikesched's own;
+     * returns the new job's id, or the existing job's with the job's idempotency key.
+     */
     UUID schedule(
         NewJob job, JobHandler handler, JobFailureHandler failureHandler, Connection connection);
 
@@ -59,6 +64,9 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
   int maxAttempts = DEFAULT_MAX_ATTEMPTS;
   Duration timeout;
 
+  /** Set by the builders of one-off jobs scheduled through bikesched, otherwise {@code null}. */
+  String idempotencyKey;
+
   BaseJobBuilder(String type, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
     this.type = Objects.requireNonNull(type, "type");
     this.payloadType = Objects.requireNonNull(payloadType, "payloadType");
@@ -75,6 +83,7 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
     this.priority = settings.priority;
     this.maxAttempts = settings.maxAttempts;
     this.timeout = settings.timeout;
+    this.idempotencyKey = settings.idempotencyKey;
   }
 
   /** This builder as its interface type. */
@@ -109,6 +118,12 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
     return setFailureHandler(JobRegistry.typed(handler, payloadType));
   }
 
+  /** Sets the idempotency key, for the builders of one-off jobs scheduled through bikesched. */
+  B setIdempotencyKey(String idempotencyKey) {
+    this.idempotencyKey = ValidationUtil.requireKey(idempotencyKey, "idempotency key");
+    return self();
+  }
+
   @Override
   public B priority(int priority) {
     this.priority = priority;
@@ -136,7 +151,8 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
 
   /** A one-off job with the current settings, running at or after the given time. */
   NewJob newJob(Instant at) {
-    return new NewJob(type, payload, at, priority, maxAttempts, timeout);
+    return new NewJob(
+        type, payload, at, priority, maxAttempts, timeout, null, null, idempotencyKey);
   }
 
   static Instant after(Duration delay) {

@@ -20,8 +20,9 @@ import org.bikesched.job.Poll;
 /**
  * A webhook with a polling fallback: the job creates a payment, waits a short time for the
  * provider's webhook, and polls the provider for the payment's status if the webhook does not
- * arrive (lost, or late). Runs against the Postgres from {@code compose.yaml} ({@code docker
- * compose up -d}).
+ * arrive (lost, or late). The webhook endpoint publishes each delivery as an event with the
+ * delivery id as idempotency key, so a webhook the provider delivers twice is published once. Runs
+ * against the Postgres from {@code compose.yaml} ({@code docker compose up -d}).
  *
  * <p>Run with {@code ./gradlew :bikesched-examples:java:runPoll}; honors {@code POSTGRES_PORT} like
  * the compose file (default 5432).
@@ -45,6 +46,8 @@ public final class PollExample {
   public enum Webhook {
     /** The webhook is sent once the payment settled. */
     DELIVERED,
+    /** The webhook is sent twice with the same delivery id, as providers retry deliveries. */
+    DELIVERED_TWICE,
     /** The webhook is lost: only polling finds out that the payment settled. */
     LOST
   }
@@ -68,6 +71,14 @@ public final class PollExample {
    */
   public record PaymentSettled(String paymentId, String status) {}
 
+  /**
+   * A webhook delivery: the provider repeats a delivery with the same id.
+   *
+   * @param deliveryId identifies the delivery
+   * @param payment the settled payment
+   */
+  public record WebhookDelivery(String deliveryId, PaymentSettled payment) {}
+
   private static final DateTimeFormatter TIMESTAMP_FORMAT =
       DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 
@@ -85,15 +96,22 @@ public final class PollExample {
 
   PollExample(Bikesched bikesched, PrintStream out) {
     this.bikesched = bikesched;
-    // The application's webhook endpoint publishes the webhook as an event.
+    // The application's webhook endpoint publishes the webhook as an event, once per delivery id:
+    // a repeated delivery returns the event published first.
     var provider =
         new SimulatedPaymentProvider(
             out,
-            settled ->
-                bikesched
-                    .newEvent(PAYMENT_SETTLED, settled.paymentId())
-                    .payload(settled)
-                    .publish());
+            delivery -> {
+              UUID eventId =
+                  bikesched
+                      .newEvent(PAYMENT_SETTLED, delivery.payment().paymentId())
+                      .payload(delivery.payment())
+                      .idempotencyKey(delivery.deliveryId())
+                      .publish();
+              out.printf(
+                  "%s [shop]     webhook %s published as event %s%n",
+                  timestamp(), delivery.deliveryId(), eventId);
+            });
     this.provider = provider;
 
     bikesched.registerJobHandler(
@@ -177,6 +195,8 @@ public final class PollExample {
           List.of(
               // Settles within the webhook timeout: the webhook arrives, no polling.
               example.pay("order-webhook", Duration.ofSeconds(1), Webhook.DELIVERED),
+              // The webhook arrives twice: the event is published once.
+              example.pay("order-webhook-twice", Duration.ofSeconds(1), Webhook.DELIVERED_TWICE),
               // Settles after the webhook timeout, and the webhook is lost: polling finds it.
               example.pay("order-polled", Duration.ofSeconds(4), Webhook.LOST));
 

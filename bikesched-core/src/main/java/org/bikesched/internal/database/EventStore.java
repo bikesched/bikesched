@@ -70,8 +70,15 @@ public final class EventStore {
 
   private static final String INSERT_EVENT_SQL =
       """
-            insert into bikesched_events (id, name, key, payload, expires_at)
-            values (?, ?, ?, ?::jsonb, now() + ? * interval '1 millisecond')""";
+            insert into bikesched_events (id, name, key, payload, idempotency_key, expires_at)
+            values (?, ?, ?, ?::jsonb, ?, now() + ? * interval '1 millisecond')""";
+
+  // An unexpired event published with the same idempotency key (under the event's advisory lock).
+  private static final String FIND_KEYED_EVENT_SQL =
+      """
+            select id from bikesched_events
+             where name = ? and key = ? and idempotency_key = ? and expires_at > now()
+             limit 1""";
 
   // Completes all steps waiting for the event with its payload (copied into each step, so steps do
   // not depend on the event, which is deleted after its retention) and its id (a plain reference)
@@ -290,12 +297,18 @@ public final class EventStore {
    * @param payload the payload as JSON text, may be {@code null}
    * @param retention how long steps starting to wait later still receive it (and it is kept); may
    *     be zero
-   * @return the published event
+   * @param idempotencyKey while an event with the same name, key and idempotency key is unexpired,
+   *     it is returned instead of publishing again; {@code null} for none
+   * @return the published event, or the earlier one with the idempotency key
    */
   public Publication publishEvent(
-      String eventName, String eventKey, String payload, Duration retention) {
+      String eventName,
+      String eventKey,
+      String payload,
+      Duration retention,
+      String idempotencyKey) {
     return access.inTransaction(
-        db -> publish(db, eventName, eventKey, payload, retention),
+        db -> publish(db, eventName, eventKey, payload, retention, idempotencyKey),
         e ->
             new BikeschedException(
                 "Publishing event " + eventName + "/" + eventKey + " failed", e));
@@ -303,15 +316,17 @@ public final class EventStore {
 
   /**
    * Publishes an event as part of the caller's transaction (see {@link #publishEvent(String,
-   * String, String, Duration)}): the connection is neither committed nor closed, and the event's
-   * advisory lock is held until the caller ends the transaction.
+   * String, String, Duration, String)}): the connection is neither committed nor closed, and the
+   * event's advisory lock is held until the caller ends the transaction.
    *
    * @param connection the caller's connection, not in auto-commit mode
    * @param eventName the event name
    * @param eventKey the event key
    * @param payload the payload as JSON text, may be {@code null}
    * @param retention how long steps starting to wait later still receive it; may be zero
-   * @return the published event (visible to others once the caller commits)
+   * @param idempotencyKey see {@link #publishEvent(String, String, String, Duration, String)}
+   * @return the published event (visible to others once the caller commits), or the earlier one
+   *     with the idempotency key
    * @throws IllegalArgumentException if the connection is in auto-commit mode
    */
   public Publication publishEventInTransaction(
@@ -319,7 +334,8 @@ public final class EventStore {
       String eventName,
       String eventKey,
       String payload,
-      Duration retention) {
+      Duration retention,
+      String idempotencyKey) {
     return access.onCallerConnection(
         connection,
         db -> {
@@ -328,7 +344,7 @@ public final class EventStore {
                 "Publishing an event on the caller's connection requires a transaction:"
                     + " the connection must not be in auto-commit mode");
           }
-          return publish(db, eventName, eventKey, payload, retention);
+          return publish(db, eventName, eventKey, payload, retention, idempotencyKey);
         },
         e ->
             new BikeschedException(
@@ -380,7 +396,7 @@ public final class EventStore {
             throw new IllegalStateException(
                 "Compensation replay has no succeeded publishing step '" + stepName + "'");
           }
-          Publication publication = publish(db, eventName, eventKey, payload, retention);
+          Publication publication = publish(db, eventName, eventKey, payload, retention, null);
           db.update(
               INSERT_PUBLISH_STEP_SQL, jobId, stepName, eventName, eventKey, publication.eventId());
           history.record(
@@ -439,12 +455,31 @@ public final class EventStore {
   }
 
   private Publication publish(
-      Sql db, String eventName, String eventKey, String payload, Duration retention)
+      Sql db,
+      String eventName,
+      String eventKey,
+      String payload,
+      Duration retention,
+      String idempotencyKey)
       throws SQLException {
     Objects.requireNonNull(retention, "retention");
     lockEvent(db, eventName, eventKey);
+    if (idempotencyKey != null) {
+      Optional<UUID> earlier =
+          db.one(FIND_KEYED_EVENT_SQL, row -> row.uuid(1), eventName, eventKey, idempotencyKey);
+      if (earlier.isPresent()) {
+        return new Publication(earlier.get(), 0, true);
+      }
+    }
     UUID eventId = UUID.randomUUID();
-    db.update(INSERT_EVENT_SQL, eventId, eventName, eventKey, payload, retention.toMillis());
+    db.update(
+        INSERT_EVENT_SQL,
+        eventId,
+        eventName,
+        eventKey,
+        payload,
+        idempotencyKey,
+        retention.toMillis());
     List<Resumption> resumptions =
         db.list(
             RESUME_WAITING_STEPS_SQL,
@@ -476,7 +511,7 @@ public final class EventStore {
       }
     }
     history.record(db, changes);
-    return new Publication(eventId, resumptions.size());
+    return new Publication(eventId, resumptions.size(), false);
   }
 
   /**
@@ -484,8 +519,10 @@ public final class EventStore {
    *
    * @param eventId the id of the stored event
    * @param received the number of waiting steps that received it
+   * @param duplicate whether an unexpired event had the idempotency key: then nothing was published
+   *     and {@code eventId} is that event's id
    */
-  public record Publication(UUID eventId, int received) {}
+  public record Publication(UUID eventId, int received, boolean duplicate) {}
 
   /**
    * The event of a publishing step.

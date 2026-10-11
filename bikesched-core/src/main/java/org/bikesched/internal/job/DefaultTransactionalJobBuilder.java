@@ -18,7 +18,7 @@ final class DefaultTransactionalJobBuilder<P> extends BaseJobBuilder<Transaction
 
   private final Connection connection;
 
-  DefaultTransactionalJobBuilder(DefaultJobBuilder<P> settings, Connection connection) {
+  DefaultTransactionalJobBuilder(BaseJobBuilder<?, P> settings, Connection connection) {
     super(settings);
     this.connection = connection;
   }
@@ -46,6 +46,11 @@ final class DefaultTransactionalJobBuilder<P> extends BaseJobBuilder<Transaction
   @Override
   public TransactionalJobBuilder<P> failureHandler(TypedJobFailureHandler<? super P> handler) {
     return setFailureHandler(handler);
+  }
+
+  @Override
+  public TransactionalJobBuilder<P> idempotencyKey(String idempotencyKey) {
+    return setIdempotencyKey(idempotencyKey);
   }
 
   @Override

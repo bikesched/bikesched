@@ -45,10 +45,10 @@ defaults:
 |---|---|
 | `handleJobs<T>(type) { payload -> }`, `handleJobs(type) { }` | registers the handler; the `Job` is the receiver |
 | `handleJobFailures<T>(type) { payload -> }`, `handleJobFailures(type) { }` | registers the [failure handler](jobs.md#failure-handlers); the `FailedJob` is the receiver |
-| `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection, onFailure) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id |
-| `createJob(jobType, payload, at, delay, priority, maxAttempts, timeout, connection, onFailure) { … }` | the same for a `JobType<T>`: the payload has the type's payload class, the optional handlers get it as `T` |
+| `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection, idempotencyKey, onFailure) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id; with an [`idempotencyKey`](jobs.md#idempotency-keys), the id of the existing job with the key |
+| `createJob(jobType, payload, at, delay, priority, maxAttempts, timeout, connection, idempotencyKey, onFailure) { … }` | the same for a `JobType<T>`: the payload has the type's payload class, the optional handlers get it as `T` |
 | `createRecurringJob(type, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout, onFailure) { … }` | registers a recurring job and returns the id of its pending occurrence |
-| `Bikesched.publishEvent(name, key, payload, retention, connection)` | publishes an event and returns its id |
+| `Bikesched.publishEvent(name, key, payload, retention, connection, idempotencyKey)` | publishes an event and returns its id; with an [`idempotencyKey`](events.md#idempotency-keys), the id of the earlier event with the key while it is kept |
 | `Job.publishEvent(name, key, payload, retention, stepName)` | publishes once as a durable job step and returns the event's id, the same on every run |
 | `waitForEvent<T>(step, name, key, timeout, onFailure)` (in a handler) | waits for an event and returns its payload; once the `timeout` (or the default event timeout) passes, the job fails, unless `onFailure = { failing -> … }` resolves the wait with a fallback (e.g. `waitForEvent<Payment?>(…, timeout = 3.days, onFailure = { it.resolve(null) })`) |
 | `step<T>(name, compensation, retryBackoff, onFailure) { … }` (in a handler) | runs a durable step; the optional `compensation = { step, result -> … }` undoes it if the job is cancelled or fails permanently; `onFailure = { failing -> … }` handles its failure in the job's last attempt and may `failing.resolve(x)` it with a fallback |

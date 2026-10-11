@@ -89,6 +89,38 @@ idempotency key derived from the order.
 Events can be published the same way, with `.connection(connection)`, see
 [Waiting and publishing](events.md#waiting-and-publishing).
 
+### Idempotency keys
+
+A caller that retries, e.g. a webhook delivered twice or a request retried after a timeout,
+schedules the same job twice. With an idempotency key, the job is scheduled once:
+
+```java
+UUID id = bikesched.newJob("process-payment")
+        .payload(payment)
+        .idempotencyKey(webhook.deliveryId())   // continues with an IdempotentJobBuilder
+        .schedule();                             // a retry with the same key returns the same id
+```
+
+- The key is unique per job type for as long as the job exists: until the [job
+  retention](#job-retention) deletes it after it ended, whatever its end state (`SUCCEEDED`,
+  `FAILED`, `CANCELLED`). Another try after a definitive outcome needs a new key.
+- While a job of the type has the key, `schedule` returns that job's id and stores nothing; the
+  duplicate's payload, due time and other settings are ignored. `findJob(id)` tells its state. A
+  duplicate while the job runs returns its id right away.
+- Keys have 1 to 500 characters. They are scoped to the job type only, so keys taken from clients
+  need the tenant or user in the key if several of them share a type.
+- `.connection(connection)` works before or after `idempotencyKey`. A duplicate in a concurrent
+  transaction waits until the first transaction ends; if it rolls back, the key is free again.
+- Recurring jobs have no key (the builder has no `schedule(Recurrence)`): they have at most one
+  pending occurrence anyway. Child jobs don't need one: their step starts them once.
+- The [job history](#job-history) records the key in the new job's `SCHEDULED` entry; a duplicate
+  records nothing.
+- The key guards scheduling, not the job's own calls: a handler calling a provider derives that
+  provider's idempotency key from the job (job id and step name), see
+  [Idempotency keys](steps.md#idempotency-keys), not from the caller's key.
+
+Events have the same option, see [Idempotency keys](events.md#idempotency-keys).
+
 ## Writing handlers
 
 A handler receives the `Job` being executed:

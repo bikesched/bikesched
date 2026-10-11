@@ -16,9 +16,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Text lengths: names (node names, job types, step and event names, recurrence descriptions) have
- * at most 200 characters, event keys 500. The longest allowed values work end to end (including the
- * unique and lookup indexes), longer ones are rejected before reaching the database, and the schema
- * enforces the same limits. Error and cancel messages are truncated instead.
+ * at most 200 characters, event keys and idempotency keys 500. The longest allowed values work end
+ * to end (including the unique and lookup indexes), longer ones are rejected before reaching the
+ * database, and the schema enforces the same limits. Error and cancel messages are truncated
+ * instead.
  */
 class TextLengthTest extends AbstractBikeschedTest {
 
@@ -82,6 +83,10 @@ class TextLengthTest extends AbstractBikeschedTest {
           .hasMessage("event key must have at most 500 characters, but has 501");
       assertThatThrownBy(() -> bikesched.newEvent("event", " "))
           .hasMessage("event key must not be blank");
+      assertThatThrownBy(() -> bikesched.newJob("job").idempotencyKey("k".repeat(501)))
+          .hasMessage("idempotency key must have at most 500 characters, but has 501");
+      assertThatThrownBy(() -> bikesched.newEvent("event", "key").idempotencyKey("k".repeat(501)))
+          .hasMessage("idempotency key must have at most 500 characters, but has 501");
     }
   }
 
@@ -204,6 +209,20 @@ class TextLengthTest extends AbstractBikeschedTest {
                         + "d".repeat(201)
                         + "')"))
         .hasMessageContaining("bikesched_jobs_recurrence_check");
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "insert into bikesched_jobs (id, type, idempotency_key)"
+                        + " values (gen_random_uuid(), 'x', '"
+                        + "k".repeat(501)
+                        + "')"))
+        .hasMessageContaining("bikesched_jobs_idempotency_key_check");
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "insert into bikesched_events (id, name, key, idempotency_key, expires_at)"
+                        + " values (gen_random_uuid(), 'event', 'key', '', now())"))
+        .hasMessageContaining("bikesched_events_idempotency_key_check");
   }
 
   /** The prefix padded with {@code x} to exactly the given length. */

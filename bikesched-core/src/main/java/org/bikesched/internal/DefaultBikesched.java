@@ -391,15 +391,28 @@ public final class DefaultBikesched implements Bikesched {
       String eventKey,
       String payload,
       Duration eventRetention,
+      String idempotencyKey,
       Connection connection) {
     ensureReady();
     Duration retention = eventRetention != null ? eventRetention : settings.eventRetention();
     EventStore.Publication publication =
         connection == null
-            ? database.events().publishEvent(eventName, eventKey, payload, retention)
+            ? database
+                .events()
+                .publishEvent(eventName, eventKey, payload, retention, idempotencyKey)
             : database
                 .events()
-                .publishEventInTransaction(connection, eventName, eventKey, payload, retention);
+                .publishEventInTransaction(
+                    connection, eventName, eventKey, payload, retention, idempotencyKey);
+    if (publication.duplicate()) {
+      LOG.debug(
+          "Event {}/{} with idempotency key {} already published as {}, not publishing it again",
+          eventName,
+          eventKey,
+          idempotencyKey,
+          publication.eventId());
+      return publication.eventId();
+    }
     LOG.debug(
         "Published event {} {}/{}{}, received by {} waiting step(s)",
         publication.eventId(),

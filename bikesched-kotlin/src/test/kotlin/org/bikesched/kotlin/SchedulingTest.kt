@@ -11,6 +11,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.awaitility.Awaitility.await
 import org.bikesched.job.JobState
+import org.bikesched.job.JobType
 import org.junit.jupiter.api.Test
 
 /**
@@ -49,6 +50,50 @@ class SchedulingTest {
       // The handler is registered under the type now: further jobs need none.
       bikesched.createJob(type = cleanups)
       await().untilAsserted { assertThat(ran).hasSize(3) }
+    }
+  }
+
+  @Test
+  fun `idempotency key schedules a job and publishes an event once`() {
+    val reports = unique("idempotent")
+    val typed = JobType.of(unique("idempotent-typed"), Report::class.java)
+    val inTransaction = unique("idempotent-tx")
+    val event = unique("idempotent-event")
+    testNode("idempotent").use { bikesched ->
+      val first =
+        bikesched.createJob(type = reports, payload = Report("a"), idempotencyKey = "k") {}
+      assertThat(bikesched.createJob(type = reports, payload = Report("b"), idempotencyKey = "k"))
+        .isEqualTo(first)
+
+      val firstTyped = bikesched.createJob(typed, Report("a"), idempotencyKey = "k") {}
+      assertThat(bikesched.createJob(typed, Report("b"), idempotencyKey = "k"))
+        .isEqualTo(firstTyped)
+
+      TestDatabase.dataSource.connection.use { connection ->
+        connection.autoCommit = false
+        val stored =
+          bikesched.createJob(
+            type = inTransaction,
+            connection = connection,
+            idempotencyKey = "k",
+          ) {}
+        assertThat(
+            bikesched.createJob(type = inTransaction, connection = connection, idempotencyKey = "k")
+          )
+          .isEqualTo(stored)
+        connection.commit()
+      }
+
+      val published = bikesched.publishEvent(name = event, key = "o-1", idempotencyKey = "k")
+      assertThat(
+          bikesched.publishEvent(
+            name = event,
+            key = "o-1",
+            payload = Report("x"),
+            idempotencyKey = "k",
+          )
+        )
+        .isEqualTo(published)
     }
   }
 

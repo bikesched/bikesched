@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
+import org.bikesched.job.IdempotentJobBuilder;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
@@ -53,6 +54,11 @@ public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
   public TransactionalJobBuilder<P> connection(Connection connection) {
     return new DefaultTransactionalJobBuilder<>(
         this, Objects.requireNonNull(connection, "connection"));
+  }
+
+  @Override
+  public IdempotentJobBuilder<P> idempotencyKey(String idempotencyKey) {
+    return new DefaultIdempotentJobBuilder<>(this).setIdempotencyKey(idempotencyKey);
   }
 
   @Override

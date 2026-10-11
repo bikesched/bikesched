@@ -21,6 +21,8 @@ import org.bikesched.job.Recurrence;
  *     {@code null} for a one-off job
  * @param fixedRateAt the planned run of an occurrence whose recurrence {@link
  *     Recurrence#isFixedRate() is fixed-rate}; {@code null} otherwise
+ * @param idempotencyKey unique per job type while the job exists: scheduling a job with the key of
+ *     an existing one returns that job; {@code null} for none
  */
 public record NewJob(
     String type,
@@ -30,14 +32,28 @@ public record NewJob(
     int maxAttempts,
     Duration timeout,
     String recurrence,
-    Instant fixedRateAt) {
+    Instant fixedRateAt,
+    String idempotencyKey) {
 
   public NewJob {
     Objects.requireNonNull(type, "type");
     Objects.requireNonNull(scheduledAt, "scheduledAt");
   }
 
-  /** A one-off job. */
+  /** A job without idempotency key: a one-off job or an occurrence. */
+  public NewJob(
+      String type,
+      String payload,
+      Instant scheduledAt,
+      int priority,
+      int maxAttempts,
+      Duration timeout,
+      String recurrence,
+      Instant fixedRateAt) {
+    this(type, payload, scheduledAt, priority, maxAttempts, timeout, recurrence, fixedRateAt, null);
+  }
+
+  /** A one-off job without idempotency key. */
   public NewJob(
       String type,
       String payload,
@@ -45,6 +61,6 @@ public record NewJob(
       int priority,
       int maxAttempts,
       Duration timeout) {
-    this(type, payload, scheduledAt, priority, maxAttempts, timeout, null, null);
+    this(type, payload, scheduledAt, priority, maxAttempts, timeout, null, null, null);
   }
 }

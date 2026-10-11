@@ -1,6 +1,9 @@
 # Specification: idempotency keys for jobs and events
 
-Status: **draft**.
+Status: **implemented** (core, Kotlin, poll example;
+[ADR 0036](../decisions/0036-idempotency-keys.md)). User docs:
+[`jobs.md#idempotency-keys`](../jobs.md#idempotency-keys),
+[`events.md#idempotency-keys`](../events.md#idempotency-keys), `kotlin.md`, `database.md`.
 
 ## 1. Goal
 
@@ -135,8 +138,8 @@ bikesched.publishEvent(name = "payment-received", key = order.id, payload = paym
 - **A runtime check against `schedule(Recurrence)` with a key**: against the builder convention.
 - **Returning a result type (`Scheduled(id, duplicate)`)**: changes every `schedule` signature
   for a rarely needed flag.
-- **A request record per key** (as in [brandur.org/idempotency-keys](https://brandur.org/idempotency-keys):
-  `locked_at`, recovery point, request parameters, stored response): that design makes an API
+- **A request record per key** (as in
+  [brandur.org/idempotency-keys](https://brandur.org/idempotency-keys): `locked_at`, recovery point, request parameters, stored response): that design makes an API
   request resumable. A bikesched job already is: steps are its recovery points, the claim is its
   lock, the poller its completer, and the job row its stored outcome. The key only has to
   deduplicate creating it.
@@ -197,3 +200,18 @@ None.
 7. A key on an event with `retention(Duration.ZERO)` is documented as having no effect, not
    rejected (3.3).
 8. The poll example demonstrates the key with a webhook delivered twice (step 4).
+
+## 9. Decided while implementing
+
+1. `JobStore.insertJob` returns the stored job's id; `JobScheduler` recognizes a duplicate by an id
+   other than the one it generated. `EventStore.Publication` gained a `duplicate` flag, so
+   `DefaultBikesched` skips the debug line and `onEventPublished` for it.
+2. The keyed insert is its own statement (`INSERT_KEYED_JOB_SQL`, `INSERT_JOB_SQL` plus the
+   `on conflict` clause), classified as notifying in `DueJobsWritePathsTest`; `INSERT_JOB_SQL`
+   only gained the column, so occurrences keep their own `on conflict` clause.
+3. The example's webhook endpoint receives a `WebhookDelivery(deliveryId, payment)` and prints the
+   event id each delivery returned; `Webhook.DELIVERED_TWICE` makes the provider repeat a delivery
+   with the same id. `main` takes a third payment with it.
+4. Event tests live in `EventIdempotencyKeyTest` (package `event`) next to `IdempotencyKeyTest`
+   (package `job`); the length limit and the CHECK constraints are tested in `TextLengthTest`.
+5. The README's feature list mentions the key in the scheduling bullet.
