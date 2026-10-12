@@ -26,8 +26,9 @@ server.createContext("/bikesched", BikeschedAdmin.of(bikesched).httpHandler());
 - Every request first goes through the configured `AdminAccess`, then either to the static files
   of the page or to the JSON API under `api/`.
 - The page is plain static files in the jar: ES modules using Preact and htm, copied from their
-  WebJars into `ui/vendor/` by the Gradle task `vendorUi`. It loads nothing from other hosts, routes
-  with the URL hash (every view is a shareable link) and follows light or dark mode.
+  WebJars into `ui/vendor/` by the Gradle task `vendorUi`; the logo is `docs/logo.svg`, copied by
+  `logoUi`. It loads nothing from other hosts, routes with the URL hash (every view is a shareable
+  link) and follows light or dark mode.
 - Lists load on demand; an open job that has not ended refreshes every 3 seconds. Responses carry
   an `ETag`, so an unchanged job costs a `304` without a body.
 

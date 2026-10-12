@@ -479,6 +479,9 @@ None left; they are decisions 7 to 12 below.
 - `hooks.module.js` imports the bare specifier `preact`, which a browser resolves only with an
   import map, an inline script the CSP forbids; the `vendorUi` task rewrites the import to the
   relative file.
+- The page's icon and the header logo are the project's logo, `docs/logo.svg`, copied into the
+  resources by the `logoUi` task, so it has one source. It is drawn for light backgrounds, so dark
+  mode shows it on a light disc.
 - After a retry or cancel from the page, the sidebar counts reload but the list keeps its rows, as
   for the live updates.
 - Each step shows its duration right of its state badge ("412 ms", "1.8 s", "5 min 37 s", at
