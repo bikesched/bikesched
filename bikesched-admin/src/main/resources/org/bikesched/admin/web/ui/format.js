@@ -157,22 +157,24 @@ export function IdSearch({ kind, value, onSearch }) {
   const hint = idSearchHint(input);
   const id = `${kind}-id-search`;
   return html`
-    <form class="filter" role="search" onSubmit=${(event) => {
+    <form class="field" role="search" onSubmit=${(event) => {
       event.preventDefault();
       if (!hint) onSearch(input.trim().toLowerCase());
     }}>
-      <label class="filter-label" for=${id}>${kind === 'job' ? 'Job id' : 'Event id'}</label>
-      <input id=${id} class="input mono id-input" type="search" value=${input}
-        placeholder="Full id or its first 8 characters" aria-describedby=${hint ? `${id}-hint` : undefined}
-        onInput=${(event) => setInput(event.target.value)}
-        onKeyDown=${(event) => {
-          if (event.key === 'Escape') {
-            setInput('');
-            onSearch('');
-          }
-        }} />
-      <button type="submit" class="button" disabled=${!!hint}>Search</button>
-      ${hint && html`<span id=${`${id}-hint`} class="filter-hint" role="status">${hint}</span>`}
+      <label class="field-label" for=${id}>${kind === 'job' ? 'Job id' : 'Event id'}</label>
+      <div class="row">
+        <input id=${id} class="input mono id-input" type="search" value=${input}
+          placeholder="Full id or its first 8 characters" aria-describedby=${hint ? `${id}-hint` : undefined}
+          onInput=${(event) => setInput(event.target.value)}
+          onKeyDown=${(event) => {
+            if (event.key === 'Escape') {
+              setInput('');
+              onSearch('');
+            }
+          }} />
+        <button type="submit" class="button" disabled=${!!hint}>Search</button>
+        ${hint && html`<span id=${`${id}-hint`} class="filter-hint" role="status">${hint}</span>`}
+      </div>
     </form>`;
 }
 
