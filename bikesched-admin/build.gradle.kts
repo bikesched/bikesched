@@ -48,6 +48,16 @@ val vendorUi = tasks.register<Sync>("vendorUi") {
     into(layout.buildDirectory.dir("generated/vendor-resources"))
 }
 
+// The project's logo (docs/logo.svg, see TRADEMARKS.md) as the page's icon and header logo, copied
+// so there is one source for the README, the website and the admin.
+val logoUi = tasks.register<Sync>("logoUi") {
+    from(rootProject.layout.projectDirectory.file("docs/logo.svg")) {
+        into("org/bikesched/admin/web/ui")
+    }
+    into(layout.buildDirectory.dir("generated/logo-resources"))
+}
+
 sourceSets.main {
     resources.srcDir(vendorUi)
+    resources.srcDir(logoUi)
 }
