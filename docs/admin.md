@@ -93,9 +93,10 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   reload button.
 - **Side bar**: the job types with their number of jobs (and failed jobs or the recurrence) and
   the event names with their number of unexpired events. Both are select boxes with a search
-  field, so many types stay usable.
+  field, so many types stay usable. A repeat icon marks recurring job types.
 - **Jobs**: newest first, filtered by type and by one or more states; "Older jobs" loads the next
-  page. A child job names its parent below its type.
+  page. A child job names its parent below its type; a run of a recurring job has the repeat icon
+  and its recurrence there.
 - **Search by id**: the job list and the event list each have an id field. It takes a full id or
   its first 8 characters (the short id the lists show), with or without hyphens, and finds only
   jobs in the job list and only events in the event list. A single match opens its detail; the
@@ -103,7 +104,11 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
 - **Job detail**: all fields, the idempotency key, the last error, retry and cancel, the steps
   with their duration (a child job step links to the child, a child job shows the path to its
   parents), the job history when recorded, and the payload and the result in tabs of their own.
-  A running or waiting step's duration counts up; a retried step shows its last attempt's.
+  A running or waiting step's duration counts up; a retried step shows its last attempt's. A
+  run of a [recurring job](recurring-jobs.md) has a Recurrence tab: the pending run (the next one
+  with a countdown, or the current one while it runs or waits), then the last 10 ended runs with
+  their state and how long they took from their scheduled time to their end. Jobs of the type
+  scheduled without a recurrence are not runs and not listed. The tab refreshes every 3 seconds.
   While the job is open and has not ended, the detail refreshes every 3 seconds and updates the
   job's row in the list; an unchanged job costs a `304` without a body.
 - **Events**: newest first, by name and key prefix. The detail shows who published the event (a
@@ -154,6 +159,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id starts with `id`, as for jobs |
 | GET | `api/events/{id}` | `{"event", "steps", "payloadsShown"}`, plus `payload` with `showPayloads(true)` |
 | GET | `api/event-names` | `{"names": [{"name", "count"}]}` |
+| GET | `api/recurring-runs?type=&limit=` | `{"type", "pending", "previous": [...]}`: the pending run of a recurring job (`null` if none) and its latest ended runs, newest first |
 | GET | `api/waiting?name=&key=&limit=` | `{"steps": [...]}`: event waits still waiting for the name, longest waiting first |
 | GET | `api/nodes` | `{"nodes": [{"id", "name", "startedAt", "lastHeartbeatAt", "alive"}]}` |
 | GET | `api/me` | `{"user", "level", "readOnly", "payloadsShown"}` |
@@ -184,6 +190,7 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findJobData(id)` | the payload and result as JSON text |
 | `findSteps(id)` | the job's steps in the order they started, with event and child job details |
 | `findJobTypes()` | every job type with its number of jobs per state |
+| `findRecurringJobRuns(type, limit)` | a recurring job's pending run and its latest ended runs, newest first |
 | `findEvents(EventQuery)` | unexpired events by name and key prefix, newest first, in pages |
 | `findEventsByIdPrefix(prefix, limit)` | unexpired events whose id starts with at least 8 hex digits |
 | `findEvent(id)`, `findEventPayload(id)` | one event, its payload as JSON text |

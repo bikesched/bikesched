@@ -75,6 +75,17 @@ public interface Admin {
   List<JobTypeSummary> findJobTypes();
 
   /**
+   * Reads the runs of a recurring job: its pending occurrence and the latest ended ones. Jobs of
+   * the type scheduled without a recurrence are not runs and left out.
+   *
+   * @param type the job type of the recurring job
+   * @param limit the maximum number of ended runs, between 1 and {@link JobQuery#MAX_LIMIT}
+   * @return the pending run, if any, and at most {@code limit} ended runs, newest first; both empty
+   *     if the type has no recurring runs
+   */
+  RecurringJobRuns findRecurringJobRuns(String type, int limit);
+
+  /**
    * Finds unexpired events matching the query, newest first (by publication time, then id).
    *
    * @param query the filters, the page size and the position after the previous page

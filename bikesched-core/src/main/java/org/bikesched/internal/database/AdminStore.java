@@ -22,6 +22,7 @@ import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.JobTypeSummary;
 import org.bikesched.admin.NodeInfo;
+import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.job.JobState;
@@ -64,6 +65,23 @@ public final class AdminStore {
 
   private static final String FIND_JOB_SQL =
       JOB_COLUMNS.formatted("bikesched_jobs") + "\n where j.id = ?";
+
+  // The occurrences of a recurring job: the pending one along bikesched_jobs_recurring_idx, the
+  // ended ones as a page along bikesched_jobs_type_created_at_idx.
+  private static final String RECURRING_STATES =
+      "('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING')";
+
+  private static final String FIND_PENDING_RUN_SQL =
+      JOB_COLUMNS.formatted("bikesched_jobs")
+          + "\n where j.type = ? and j.recurrence is not null and j.state in "
+          + RECURRING_STATES;
+
+  private static final String FIND_ENDED_RUNS_SQL =
+      JOB_COLUMNS.formatted(
+              JOB_PAGE.formatted(
+                  "\n              where type = ? and recurrence is not null and state not in "
+                      + RECURRING_STATES))
+          + "\n order by j.created_at desc, j.id desc";
 
   private static final String FIND_JOB_DATA_SQL =
       "select payload::text, result::text from bikesched_jobs where id = ?";
@@ -177,6 +195,18 @@ public final class AdminStore {
     return access.inReadOnlyTransaction(
         db -> db.list(sql, AdminStore::jobSummary, from, to, limit),
         e -> new BikeschedException("Finding bikesched jobs by id failed", e));
+  }
+
+  public RecurringJobRuns findRecurringJobRuns(String type, int limit) {
+    return access.inReadOnlyTransaction(
+        db ->
+            new RecurringJobRuns(
+                type,
+                db.list(FIND_PENDING_RUN_SQL, AdminStore::jobSummary, type).stream()
+                    .findFirst()
+                    .orElse(null),
+                db.list(FIND_ENDED_RUNS_SQL, AdminStore::jobSummary, type, limit)),
+        e -> new BikeschedException("Finding the runs of recurring job " + type + " failed", e));
   }
 
   public Optional<JobSummary> findJob(UUID jobId) {

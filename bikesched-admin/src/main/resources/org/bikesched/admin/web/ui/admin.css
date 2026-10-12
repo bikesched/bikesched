@@ -454,7 +454,7 @@ button { font: inherit; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0 18px 14px; }
 .confirm { font-size: 13px; font-weight: 600; }
 .notice { margin: 0 18px 14px; padding: 8px 12px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-hover); font-size: 13px; }
-.tabs { display: flex; gap: var(--space-1); padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
+.tabs { display: flex; gap: var(--space-1); padding: 0 14px; overflow-x: auto; border-bottom: 1px solid var(--line-soft); }
 .tab {
   min-height: 40px;
   padding: 0 10px;
@@ -464,6 +464,7 @@ button { font: inherit; }
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
 }
 .tab[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); }
@@ -477,6 +478,47 @@ button { font: inherit; }
 .timeline-entry > :last-child:nth-child(3) { grid-column: 2; }
 .timeline-entry.step-entry { padding-left: var(--space-4); }
 .links li { padding: 6px 0; }
+.error-text { color: var(--danger); font-size: 13px; }
+
+/* Recurring jobs: the icon after a type, and the Recurrence tab with the runs of the recurring job. */
+.recurring-icon {
+  flex: none;
+  vertical-align: -2px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tab .recurring-icon { stroke: currentColor; }
+.recurrence { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); }
+/* The rows share the list's columns (subgrid), so ids, badges and times line up. */
+.runs {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-soft);
+}
+.runs.pending { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-muted); }
+.run {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.run > :last-child { text-align: right; }
+.runs.pending .run { border-bottom: 0; }
+.run.current { background: var(--accent-soft); }
+.run-time { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
+.run-this { color: var(--accent-hover); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.run-error { overflow: hidden; color: var(--danger); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
 .json {
   padding: var(--space-3);
   overflow-x: auto;
