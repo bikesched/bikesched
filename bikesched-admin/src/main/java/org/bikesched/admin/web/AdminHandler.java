@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
@@ -202,6 +203,13 @@ final class AdminHandler {
 
   private Json.Obj jobs(Admin admin, Map<String, String> params) {
     int limit = limit(params);
+    String idPrefix = idPrefix(params, "type", "state");
+    if (idPrefix != null) {
+      List<JobSummary> jobs = byIdPrefix(() -> admin.findJobsByIdPrefix(idPrefix, limit));
+      return Json.object()
+          .put("jobs", jobs.stream().map(AdminHandler::job).toList())
+          .put("next", null);
+    }
     JobQuery query = JobQuery.newest(limit).withType(blankToNull(params.get("type")));
     String states = params.get("state");
     if (states != null && !states.isBlank()) {
@@ -308,6 +316,13 @@ final class AdminHandler {
 
   private Json.Obj events(Admin admin, Map<String, String> params) {
     int limit = limit(params);
+    String idPrefix = idPrefix(params, "name", "key");
+    if (idPrefix != null) {
+      List<EventSummary> events = byIdPrefix(() -> admin.findEventsByIdPrefix(idPrefix, limit));
+      return Json.object()
+          .put("events", events.stream().map(AdminHandler::event).toList())
+          .put("next", null);
+    }
     EventQuery query =
         EventQuery.newest(limit)
             .withName(blankToNull(params.get("name")))
@@ -532,6 +547,32 @@ final class AdminHandler {
       }
     }
     return params;
+  }
+
+  // The id search of a list: the "id" parameter, which excludes the list's other filters and
+  // paging.
+  private static String idPrefix(Map<String, String> params, String... filters) {
+    String idPrefix = blankToNull(params.get("id"));
+    if (idPrefix == null) {
+      return null;
+    }
+    for (String filter : filters) {
+      if (blankToNull(params.get(filter)) != null) {
+        throw new BadRequest("Parameter id cannot be combined with " + filter);
+      }
+    }
+    if (blankToNull(params.get("before")) != null) {
+      throw new BadRequest("Parameter id cannot be combined with before");
+    }
+    return idPrefix;
+  }
+
+  private static <T> List<T> byIdPrefix(Supplier<List<T>> lookup) {
+    try {
+      return lookup.get();
+    } catch (IllegalArgumentException e) {
+      throw new BadRequest(e.getMessage());
+    }
   }
 
   private static int limit(Map<String, String> params) {

@@ -96,6 +96,10 @@ them on. Error messages, step names, event keys and idempotency keys are always 
   field, so many types stay usable.
 - **Jobs**: newest first, filtered by type and by one or more states; "Older jobs" loads the next
   page. A child job names its parent below its type.
+- **Search by id**: the job list and the event list each have an id field. It takes a full id or
+  its first 8 characters (the short id the lists show), with or without hyphens, and finds only
+  jobs in the job list and only events in the event list. A single match opens its detail; the
+  other filters are off while the search is active.
 - **Job detail**: all fields, the idempotency key, the last error, retry and cancel, the steps (a
   child job step links to the child, a child job shows the path to its parents), the job history
   when recorded, and the payload and result. While the job is open and has not ended, the detail
@@ -106,7 +110,8 @@ them on. Error messages, step names, event keys and idempotency keys are always 
   a new wait for its name and key would receive. The "Waiting jobs" tab lists the event waits still
   waiting for the name.
 
-Every view is a link (`#/jobs?type=send-invoice&state=FAILED`, `#/jobs/{id}`, `#/events/{id}`), so
+Every view is a link (`#/jobs?type=send-invoice&state=FAILED`, `#/jobs?id=3f2a9c1e`, `#/jobs/{id}`,
+`#/events/{id}`), so
 it can be shared or put into an alert. The page follows the browser's light or dark mode.
 
 ## Other HTTP servers
@@ -141,9 +146,11 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | Method | Path | Returns |
 |---|---|---|
 | GET | `api/jobs?type=&state=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
+| GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id starts with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
 | GET | `api/types` | `{"types": [{"type", "total", "counts", "recurrence"}]}` |
 | GET | `api/events?name=&key=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix |
+| GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id starts with `id`, as for jobs |
 | GET | `api/events/{id}` | `{"event", "steps", "payloadsShown"}`, plus `payload` with `showPayloads(true)` |
 | GET | `api/event-names` | `{"names": [{"name", "count"}]}` |
 | GET | `api/waiting?name=&key=&limit=` | `{"steps": [...]}`: event waits still waiting for the name, longest waiting first |
@@ -171,11 +178,13 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | Method | Returns |
 |---|---|
 | `findJobs(JobQuery)` | jobs by type and states, newest first, in pages (`after(lastJob)`) |
+| `findJobsByIdPrefix(prefix, limit)` | jobs whose id starts with at least 8 hex digits (or a full id), newest first |
 | `findJob(id)` | one job's summary: state, attempts, times, last error, parent, recurrence, idempotency key, node |
 | `findJobData(id)` | the payload and result as JSON text |
 | `findSteps(id)` | the job's steps in the order they started, with event and child job details |
 | `findJobTypes()` | every job type with its number of jobs per state |
 | `findEvents(EventQuery)` | unexpired events by name and key prefix, newest first, in pages |
+| `findEventsByIdPrefix(prefix, limit)` | unexpired events whose id starts with at least 8 hex digits |
 | `findEvent(id)`, `findEventPayload(id)` | one event, its payload as JSON text |
 | `findEventNames()` | every event name with its number of unexpired events |
 | `findEventSteps(id)` | the steps that published or received the event |
