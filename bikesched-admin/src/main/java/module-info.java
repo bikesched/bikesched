@@ -10,4 +10,5 @@ module org.bikesched.admin.web {
   requires org.slf4j;
 
   exports org.bikesched.admin.web;
+  exports org.bikesched.admin.web.access;
 }

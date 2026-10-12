@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-package org.bikesched.admin.web;
+package org.bikesched.admin.web.access;
+
+import org.bikesched.admin.web.AdminRequest;
 
 /**
  * Decides per request what it may do in the admin UI. Called for every request, also for the page
@@ -39,7 +41,7 @@ public interface AdminAccess {
   /**
    * Lets every request retry and cancel jobs: the application protects the path the admin is
    * mounted at itself (e.g. Spring Security or a reverse proxy). The default of {@link
-   * BikeschedAdmin}.
+   * org.bikesched.admin.web.BikeschedAdmin}.
    *
    * @return an access granting {@link AccessLevel#OPERATE} to every request
    */
