@@ -10,6 +10,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.Database;
@@ -29,6 +31,7 @@ class AdminExampleTest {
             .nodeName("admin-" + UUID.randomUUID())
             .pollInterval(Duration.ofMillis(50))
             .jsonMapper(new JacksonJsonMapper())
+            .jobHistory(AdminExample.JOB_HISTORY)
             .build()) {
       var example = new AdminExample(bikesched);
       example.seed();
@@ -42,23 +45,26 @@ class AdminExampleTest {
         assertThat(page.statusCode()).isEqualTo(200);
         assertThat(page.body()).contains("bikesched admin");
 
-        await()
-            .atMost(Duration.ofSeconds(30))
-            .untilAsserted(
-                () ->
-                    assertThat(
-                            client
-                                .send(
-                                    HttpRequest.newBuilder(
-                                            URI.create(
-                                                base + "api/jobs?type=send-invoice&state=FAILED"))
-                                        .build(),
-                                    HttpResponse.BodyHandlers.ofString())
-                                .body())
-                        .contains("SMTP timeout while sending invoice 4"));
+        String failed =
+            await()
+                .atMost(Duration.ofSeconds(30))
+                .until(
+                    () -> get(client, base + "api/jobs?type=send-invoice&state=FAILED"),
+                    body -> body.contains("SMTP timeout while sending invoice 4"));
+
+        // The node records the job history, so a failed invoice's detail has its entries.
+        Matcher id = Pattern.compile("\"id\":\"([0-9a-f-]{36})\"").matcher(failed);
+        assertThat(id.find()).isTrue();
+        assertThat(get(client, base + "api/jobs/" + id.group(1))).contains("\"history\":[{");
       } finally {
         server.stop(0);
       }
     }
+  }
+
+  private static String get(HttpClient client, String uri) throws Exception {
+    return client
+        .send(HttpRequest.newBuilder(URI.create(uri)).build(), HttpResponse.BodyHandlers.ofString())
+        .body();
   }
 }

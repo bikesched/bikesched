@@ -436,10 +436,12 @@ server.createContext("/bikesched", BikeschedAdmin.of(bikesched).showPayloads(tru
 server.start();
 ```
 
-The demo data holds no secrets, so the example shows payloads; they are hidden by default. Open
-http://localhost:8081/bikesched/ (`ADMIN_PORT` changes the port), retry a failed invoice or
+The node records the [job history](../docs/jobs.md#job-history) for seven days
+(`BikeschedUtil.builder(…).jobHistory(…)`), so every job detail has a History tab; it is off by
+default. The demo data holds no secrets, so the example shows payloads; they are hidden by default.
+Open http://localhost:8081/bikesched/ (`ADMIN_PORT` changes the port), retry a failed invoice or
 cancel a waiting order. `AdminExampleTest` serves the page on a random port and waits until the
-failed invoices show up in the JSON API.
+failed invoices show up in the JSON API, with their history.
 
 ## Kotlin Shop
 
