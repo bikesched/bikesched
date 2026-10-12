@@ -376,8 +376,11 @@ class ChildJobTest extends AbstractBikeschedTest {
   @Test
   void aChildEndingWhileTheParentSuspendsMakesTheParentDue() throws Exception {
     var runs = new AtomicInteger();
+    var parentSuspending = new AtomicBoolean();
     try (Bikesched bikesched = testNode("node-child-race").build()) {
-      bikesched.registerJobHandler("child-race-child", job -> {});
+      // The child ends only once the parent read its step as WAITING, so the parent always takes
+      // the suspension path instead of finding the child ended right away.
+      bikesched.registerJobHandler("child-race-child", job -> await().untilTrue(parentSuspending));
       UUID parentId =
           bikesched
               .newJob("child-race-parent")
@@ -389,6 +392,7 @@ class ChildJobTest extends AbstractBikeschedTest {
                       job.waitForJob(child, String.class);
                     } catch (Error suspended) {
                       // The step was WAITING when read; the child ends before the suspension.
+                      parentSuspending.set(true);
                       awaitState(child, "SUCCEEDED");
                       throw suspended;
                     }
