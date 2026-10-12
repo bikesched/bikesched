@@ -5,6 +5,7 @@ import {
   Badge,
   Dot,
   ENDED,
+  RecurringIcon,
   IdSearch,
   IdSearchChip,
   STATES,
@@ -122,7 +123,8 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
                   <tr key=${job.id} class=${job.id === route.id ? 'selected' : ''} onClick=${() => open(job.id)}>
                     <td><a class="mono" href=${href(job.id)}>${shortId(job.id)}</a></td>
                     <td class="mono">
-                      ${job.type}
+                      ${job.type}${job.recurrence && html` <${RecurringIcon} />`}
+                      ${job.recurrence && html`<div class="sub">${job.recurrence}</div>`}
                       ${job.parentJobId &&
                       html`<div class="sub">child of ${job.parentJobType || shortId(job.parentJobId)}</div>`}
                     </td>
@@ -281,6 +283,7 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
 
   const parent = ancestors.length > 0 ? ancestors[ancestors.length - 1] : null;
   const tabs = [['steps', `Steps (${steps.length})`]];
+  if (job.recurrence) tabs.push(['recurrence', html`<${RecurringIcon} label="" /> Recurrence`]);
   if (history.length > 0) tabs.push(['history', `History (${history.length})`]);
   tabs.push(['payload', 'Payload'], ['result', 'Result']);
   const shownTab = tabs.some(([id]) => id === tab) ? tab : 'steps';
@@ -327,6 +330,7 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
       </div>
       <div class="detail-body" role="tabpanel">
         ${shownTab === 'steps' && html`<${Steps} steps=${steps} ended=${ENDED.includes(job.state)} />`}
+        ${shownTab === 'recurrence' && html`<${Recurrence} job=${job} />`}
         ${shownTab === 'history' && html`<${History} history=${history} nodes=${nodes} />`}
         ${shownTab === 'payload' && html`<${Payload} data=${data} />`}
         ${shownTab === 'result' && html`<${Payload} data=${data} name="result" ended=${ENDED.includes(job.state)} />`}
@@ -418,6 +422,75 @@ function Steps({ steps, ended }) {
           </li>`;
       })}
     </ol>`;
+}
+
+const RECURRING_RUNS = 10;
+
+/**
+ * The runs of the job's recurring job: the pending one, then the last ended ones. Refreshes while
+ * shown, since runs keep coming after the open job has ended.
+ */
+function Recurrence({ job }) {
+  const [runs, setRuns] = useState(null);
+  const [error, setError] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let stopped = false;
+    const load = () => {
+      if (document.hidden) return;
+      getBody(`api/recurring-runs${query({ type: job.type, limit: RECURRING_RUNS })}`).then(
+        (body) => !stopped && (setRuns(body), setError(null)),
+        (e) => !stopped && setError(e.message),
+      );
+    };
+    load();
+    const poll = setInterval(load, POLL_MS);
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      stopped = true;
+      clearInterval(poll);
+      clearInterval(tick);
+    };
+  }, [job.type]);
+  if (error) return html`<p class="error-text">${error}</p>`;
+  if (!runs) return html`<p class="muted">Loading…</p>`;
+
+  const { pending, previous } = runs;
+  const run = (other, end) => html`
+    <li class=${`run ${other.id === job.id ? 'current' : ''}`}>
+      ${other.id === job.id
+        ? html`<span class="mono strong">${shortId(other.id)}</span>`
+        : html`<a class="mono" href=${jobHref(other.id)}>${shortId(other.id)}</a>`}
+      <span><${Badge} state=${other.state} /></span>
+      <span class="run-time">
+        <span class="mono muted">${dateTime(other.scheduledAt)}</span>
+        ${other.id === job.id && html`<span class="run-this">this job</span>`}
+        ${other.lastError && html`<span class="run-error" title=${other.lastError}>${firstLine(other.lastError)}</span>`}
+      </span>
+      <span class="mono strong">${end}</span>
+    </li>`;
+  const scheduled = pending?.state === 'SCHEDULED';
+  const nowIso = new Date(now).toISOString();
+  // The next run counts down to its scheduled time.
+  const pendingEnd = (other) => {
+    return Date.parse(other.scheduledAt) > now ? `in ${elapsed(nowIso, other.scheduledAt)}` : 'due';
+  };
+  return html`
+    <div class="recurrence">
+      <section aria-label=${scheduled || !pending ? 'Next run' : 'Current run'}>
+        <h3 class="section-label">${scheduled || !pending ? 'Next run' : 'Current run'}</h3>
+        ${pending
+          ? html`<ol class="runs pending">${run(pending, pendingEnd(pending))}</ol>`
+          : html`<p class="muted">No run is scheduled: the recurring job was removed, or no node registers it.</p>`}
+      </section>
+      <section aria-label="Previous runs">
+        <h3 class="section-label">Previous runs <span class="muted">· last ${RECURRING_RUNS}</span></h3>
+        ${previous.length === 0
+          ? html`<p class="muted">No previous runs yet.</p>`
+          : html`<ol class="runs">${previous.map((other) => run(other, elapsed(other.scheduledAt, other.finishedAt)))}</ol>`}
+      </section>
+      <a href=${toHash({ section: 'jobs', params: { type: job.type } })}>All ${job.type} jobs in the list</a>
+    </div>`;
 }
 
 function ChildJob({ step }) {

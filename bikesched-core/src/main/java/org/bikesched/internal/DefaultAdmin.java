@@ -17,6 +17,7 @@ import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.JobTypeSummary;
 import org.bikesched.admin.NodeInfo;
+import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.internal.database.AdminStore;
@@ -55,6 +56,14 @@ final class DefaultAdmin implements Admin {
     requireLimit(limit);
     ensureReady.run();
     return store.findJobsByIdRange(range[0], range[1], limit);
+  }
+
+  @Override
+  public RecurringJobRuns findRecurringJobRuns(String type, int limit) {
+    Objects.requireNonNull(type, "type");
+    requireLimit(limit);
+    ensureReady.run();
+    return store.findRecurringJobRuns(type, limit);
   }
 
   @Override

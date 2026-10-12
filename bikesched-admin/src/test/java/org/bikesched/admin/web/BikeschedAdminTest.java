@@ -19,6 +19,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
 import org.bikesched.job.JobState;
+import org.bikesched.job.Recurrence;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -166,6 +167,38 @@ class BikeschedAdminTest {
       assertThat(server.get("/api/events?id=not-an-id").statusCode()).isEqualTo(400);
       assertThat(server.get("/api/jobs?id=" + jobId + "&type=" + type).statusCode()).isEqualTo(400);
       assertThat(server.get("/api/events?id=" + eventId + "&key=k").statusCode()).isEqualTo(400);
+    }
+  }
+
+  @Test
+  void showsTheRunsOfARecurringJob() {
+    String type = prefix + "recurring";
+    bikesched.registerJobHandler(type, _ -> {});
+    bikesched.newJob(type).schedule(Recurrence.every(Duration.ofMillis(200)), Duration.ZERO);
+
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      await()
+          .untilAsserted(
+              () ->
+                  assertThat(
+                          AdminServer.json(
+                                  server.get("/api/recurring-runs?type=" + type + "&limit=2"))
+                              .getArray("previous"))
+                      .hasSize(2));
+      JsonObject runs = AdminServer.json(server.get("/api/recurring-runs?type=" + type));
+      assertThat(runs.getString("type")).isEqualTo(type);
+      assertThat(runs.getObject("pending").getString("recurrence")).isEqualTo("every PT0.2S");
+      assertThat(runs.getArray("previous").getObject(0).getString("state")).isEqualTo("SUCCEEDED");
+      JsonObject listed = AdminServer.json(server.get("/api/jobs?type=" + type));
+      assertThat(listed.getArray("jobs").getObject(0).getString("recurrence"))
+          .isEqualTo("every PT0.2S");
+
+      JsonObject none = AdminServer.json(server.get("/api/recurring-runs?type=" + prefix + "none"));
+      assertThat(none.isNull("pending")).isTrue();
+      assertThat(none.getArray("previous")).isEmpty();
+      assertThat(server.get("/api/recurring-runs").statusCode()).isEqualTo(400);
+    } finally {
+      bikesched.removeRecurringJob(type);
     }
   }
 

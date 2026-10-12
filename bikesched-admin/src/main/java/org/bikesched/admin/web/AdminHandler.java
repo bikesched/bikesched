@@ -28,6 +28,7 @@ import org.bikesched.admin.EventSummary;
 import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
+import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.admin.web.access.AccessGrant;
@@ -151,6 +152,7 @@ final class AdminHandler {
                           .map(n -> Json.object().put("name", n.name()).put("count", n.count()))
                           .toList());
           case "/api/waiting" -> waiting(admin, params);
+          case "/api/recurring-runs" -> recurringRuns(admin, params);
           case "/api/nodes" ->
               Json.object()
                   .put("nodes", admin.findNodes().stream().map(AdminHandler::node).toList());
@@ -373,6 +375,18 @@ final class AdminHandler {
     List<WaitingStep> steps =
         admin.findWaitingSteps(name, blankToNull(params.get("key")), limit(params));
     return Json.object().put("steps", steps.stream().map(AdminHandler::waitingStep).toList());
+  }
+
+  private static Json.Obj recurringRuns(Admin admin, Map<String, String> params) {
+    String type = blankToNull(params.get("type"));
+    if (type == null) {
+      throw new BadRequest("Parameter type is required");
+    }
+    RecurringJobRuns runs = admin.findRecurringJobRuns(type, limit(params));
+    return Json.object()
+        .put("type", runs.type())
+        .put("pending", runs.pending() == null ? null : job(runs.pending()))
+        .put("previous", runs.previous().stream().map(AdminHandler::job).toList());
   }
 
   private static Json.Obj job(JobSummary job) {

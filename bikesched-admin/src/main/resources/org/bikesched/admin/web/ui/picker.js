@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // A select box with a search field: typing filters the entries by substring, so hundreds of job
 // types or event names stay usable.
+import { RecurringIcon } from './format.js';
 import { html, useEffect, useRef, useState } from './html.js';
 
 const Chevron = () => html`
@@ -10,7 +11,7 @@ const Chevron = () => html`
   </svg>`;
 
 /**
- * items: [{name, count, sub, subClass}]; selected: a name or null for the "all" entry.
+ * items: [{name, count, sub, subClass, recurring}]; selected: a name or null for the "all" entry.
  */
 export function Picker({ label, allLabel, placeholder, items, selected, onSelect }) {
   const [open, setOpen] = useState(false);
@@ -51,11 +52,11 @@ export function Picker({ label, allLabel, placeholder, items, selected, onSelect
     onSelect(name);
   };
 
-  const option = (name, text, count, sub, subClass) => html`
+  const option = (name, text, count, sub, subClass, recurring) => html`
     <button type="button" role="option" class="picker-option" aria-selected=${selected === name}
       onClick=${() => pick(name)}>
       <span class="picker-option-text">
-        <span class="picker-option-name">${text}</span>
+        <span class="picker-option-name">${text}${recurring && html` <${RecurringIcon} />`}</span>
         ${sub && html`<span class=${`picker-option-sub ${subClass || ''}`}>${sub}</span>`}
       </span>
       <span class="count">${count}</span>
@@ -81,7 +82,7 @@ export function Picker({ label, allLabel, placeholder, items, selected, onSelect
           }} />
         <div class="picker-options" role="listbox" aria-label=${label}>
           ${!needle && option(null, allLabel, total)}
-          ${matches.map((item) => option(item.name, item.name, item.count, item.sub, item.subClass))}
+          ${matches.map((item) => option(item.name, item.name, item.count, item.sub, item.subClass, item.recurring))}
           ${matches.length === 0 && html`<div class="picker-empty">Nothing matches.</div>`}
         </div>
       </div>`}

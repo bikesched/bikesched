@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
 import org.bikesched.job.JobState;
+import org.bikesched.job.Recurrence;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -339,6 +340,40 @@ class AdminTest extends AbstractBikeschedTest {
       assertThatThrownBy(() -> admin.findJobsByIdPrefix(UUID.randomUUID() + "0", 10))
           .isInstanceOf(IllegalArgumentException.class);
       assertThatThrownBy(() -> admin.findJobsByIdPrefix("3f2a9c1e", 0))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+  }
+
+  @Test
+  void findsThePendingAndTheLatestEndedRunsOfARecurringJob() {
+    String type = prefix + "recurring";
+    try (Bikesched bikesched = testNode(prefix + "node").build()) {
+      bikesched.registerJobHandler(type, _ -> {});
+      UUID oneOff = bikesched.newJob(type).schedule(Duration.ofHours(1));
+      bikesched.newJob(type).schedule(Recurrence.every(Duration.ofMillis(200)), Duration.ZERO);
+      Admin admin = bikesched.admin();
+
+      await().until(() -> admin.findRecurringJobRuns(type, 10).previous().size() >= 3);
+      RecurringJobRuns runs = admin.findRecurringJobRuns(type, 2);
+
+      assertThat(runs.type()).isEqualTo(type);
+      assertThat(runs.pending()).isNotNull();
+      assertThat(runs.pending().recurrence()).isEqualTo("every PT0.2S");
+      assertThat(runs.previous()).hasSize(2);
+      assertThat(runs.previous())
+          .allSatisfy(run -> assertThat(run.state()).isEqualTo(JobState.SUCCEEDED))
+          .extracting(JobSummary::id)
+          .doesNotContain(oneOff, runs.pending().id());
+      assertThat(runs.previous().getFirst().createdAt())
+          .isAfterOrEqualTo(runs.previous().getLast().createdAt());
+
+      // A run in progress ends normally, without a successor.
+      bikesched.removeRecurringJob(type);
+      await().until(() -> admin.findRecurringJobRuns(type, 10).pending() == null);
+      assertThat(admin.findRecurringJobRuns(type, 10).previous()).hasSizeGreaterThanOrEqualTo(3);
+      assertThat(admin.findRecurringJobRuns(prefix + "unknown", 10))
+          .isEqualTo(new RecurringJobRuns(prefix + "unknown", null, List.of()));
+      assertThatThrownBy(() -> admin.findRecurringJobRuns(type, 0))
           .isInstanceOf(IllegalArgumentException.class);
     }
   }
