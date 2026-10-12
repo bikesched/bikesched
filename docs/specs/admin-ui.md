@@ -447,7 +447,10 @@ None left; they are decisions 7 to 12 below.
 
 - The module's package is `org.bikesched.admin.web` (JPMS module `org.bikesched.admin.web`):
   `org.bikesched.admin` is the core's exported lookup package, and a package cannot be split
-  across modules. The page's files are in `org/bikesched/admin/web/ui/`.
+  across modules. The page's files are in `org/bikesched/admin/web/ui/`. Access lives in its own
+  exported subpackage `org.bikesched.admin.web.access` (`AdminAccess`, `AccessGrant`,
+  `AccessLevel`, `BasicAuthBuilder` and the two built-in implementations), so authentication is
+  in one place, apart from serving and routing.
 - The lookups live in one read-only `AdminStore` across the tables instead of one statement each
   in `JobStore`, `StepStore` and `NodeStore`; `DefaultAdmin` checks that the node is open and the
   schema migrated, like `findJob`.

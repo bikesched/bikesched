@@ -40,10 +40,10 @@ serves the page next to a few demo jobs.
 
 ## Access
 
-An `AdminAccess` decides per request what it may do: `NONE`, `VIEW` (the page and every `GET`
-route) or `OPERATE` (also retry and cancel). The default, `AdminAccess.open()`, lets every request
-operate: protect the path in the application (Spring Security, a reverse proxy) or pick one of the
-options below.
+An `AdminAccess` (package `org.bikesched.admin.web.access`, with `AccessGrant` and `AccessLevel`)
+decides per request what it may do: `NONE`, `VIEW` (the page and every `GET` route) or `OPERATE`
+(also retry and cancel). The default, `AdminAccess.open()`, lets every request operate: protect the
+path in the application (Spring Security, a reverse proxy) or pick one of the options below.
 
 HTTP Basic authentication with operators and viewers is built in:
 

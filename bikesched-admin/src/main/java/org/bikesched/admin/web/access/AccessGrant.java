@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-package org.bikesched.admin.web;
+package org.bikesched.admin.web.access;
 
 import java.util.Objects;
 

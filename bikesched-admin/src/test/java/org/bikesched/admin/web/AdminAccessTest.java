@@ -8,6 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.UUID;
 import org.bikesched.Bikesched;
+import org.bikesched.admin.web.access.AccessGrant;
+import org.bikesched.admin.web.access.AccessLevel;
+import org.bikesched.admin.web.access.AdminAccess;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -92,7 +95,7 @@ class AdminAccessTest {
 
   @Test
   void failedLoginsAreLoggedWithoutPasswords() {
-    try (Logs logs = Logs.of(BasicAuthAccess.class.getName())) {
+    try (Logs logs = Logs.of("org.bikesched.admin.web.access.BasicAuthAccess")) {
       get("/api/jobs", basic("ops", "guessed-password"));
       get("/api/jobs", basic("ops", OPS_PASSWORD));
       get("/api/jobs", null);

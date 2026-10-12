@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-package org.bikesched.admin.web;
+package org.bikesched.admin.web.access;
 
 /** What a request may do in the admin UI, decided by an {@link AdminAccess}. */
 public enum AccessLevel {
