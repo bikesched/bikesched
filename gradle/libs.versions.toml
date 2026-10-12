@@ -33,7 +33,7 @@ archunit = "1.5.1"
 cron-utils = "9.2.1"
 
 # bikesched-admin: Preact and htm, vendored into the jar at build time
-webjars-preact = "10.29.8"
+webjars-preact = "11.0.0-experimental.1"
 webjars-htm = "3.1.1"
 
 # bikesched-jackson (jackson-module-kotlin: bikesched-kotlin tests only)
