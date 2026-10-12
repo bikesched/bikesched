@@ -80,7 +80,12 @@ class ApprovalExampleTest {
     Expense expense = ApprovalExample.expense("carol", "tom", new BigDecimal("1899.00"));
     UUID jobId = example.submit(expense);
     await().until(() -> inbox.received(ApprovalExample.FINANCE_LEAD, "approval request", expense));
-    assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.WAITING);
+    // The request is sent before the job suspends at its next wait.
+    await()
+        .untilAsserted(
+            () ->
+                assertThat(bikesched.findJob(jobId).orElseThrow().state())
+                    .isEqualTo(JobState.WAITING));
 
     example.decide(expense, ApprovalExample.FINANCE_LEAD, true);
 
