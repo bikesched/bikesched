@@ -21,6 +21,7 @@ import {
   toHash,
 } from './format.js';
 import { html, useEffect, useRef, useState } from './html.js';
+import { Picker } from './picker.js';
 
 const PAGE_SIZE = 50;
 const POLL_MS = 3000;
@@ -70,6 +71,14 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
     }
   }
 
+  const typeItems = types.map((summary) => {
+    const failed = (summary.counts.FAILED || 0) + (summary.counts.COMPENSATION_FAILED || 0);
+    const item = { name: summary.type, count: summary.total, recurring: Boolean(summary.recurrence) };
+    if (failed > 0) return { ...item, sub: `${failed} failed`, subClass: 'sub-failed' };
+    if (summary.recurrence) return { ...item, sub: summary.recurrence };
+    return item;
+  });
+
   const setStates = (states) =>
     navigate({ ...route, params: { ...route.params, state: STATES.filter((s) => states.includes(s)).join(',') } });
   const toggle = (s) => setStates(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s]);
@@ -89,7 +98,18 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
       <h1>${id ? `Job id ${id}` : type || 'All jobs'}</h1>
       <span class="muted">Newest first</span>
     </div>
-    <${IdSearch} kind="job" value=${id} onSearch=${search} />
+    <div class="toolbar">
+      <div class="field picker-field">
+        <div class="field-head">
+          <span class="field-label">Job type</span>
+          <span class="muted">${plural(types.length, 'job type', 'job types')}</span>
+        </div>
+        <${Picker} label="Job type" allLabel="All job types" placeholder="Search job types"
+          items=${typeItems} selected=${type || null}
+          onSelect=${(next) => navigate({ section: 'jobs', params: { type: next, state } })} />
+      </div>
+      <${IdSearch} kind="job" value=${id} onSearch=${search} />
+    </div>
     ${id
       ? html`<${IdSearchChip} kind="job" value=${id} onClear=${() => search('')}
           note="Type and state filters are off while searching by id." />`
@@ -285,7 +305,7 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
   const tabs = [['steps', `Steps (${steps.length})`]];
   if (job.recurrence) tabs.push(['recurrence', html`<${RecurringIcon} label="" /> Recurrence`]);
   if (history.length > 0) tabs.push(['history', `History (${history.length})`]);
-  tabs.push(['payload', 'Payload'], ['result', 'Result']);
+  tabs.push(['data', 'Data']);
   const shownTab = tabs.some(([id]) => id === tab) ? tab : 'steps';
 
   return html`
@@ -332,8 +352,7 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
         ${shownTab === 'steps' && html`<${Steps} steps=${steps} ended=${ENDED.includes(job.state)} />`}
         ${shownTab === 'recurrence' && html`<${Recurrence} job=${job} />`}
         ${shownTab === 'history' && html`<${History} history=${history} nodes=${nodes} />`}
-        ${shownTab === 'payload' && html`<${Payload} data=${data} />`}
-        ${shownTab === 'result' && html`<${Payload} data=${data} name="result" ended=${ENDED.includes(job.state)} />`}
+        ${shownTab === 'data' && html`<${JobData} data=${data} ended=${ENDED.includes(job.state)} />`}
       </div>
     </aside>`;
 }
@@ -531,7 +550,25 @@ function History({ history, nodes }) {
 }
 
 /** A job's payload or result, or an event's payload; a note instead when the server hides them. */
-export function Payload({ data, name = 'payload', ended = true }) {
+/** The Data tab: the job's payload on top, its result below. */
+function JobData({ data, ended }) {
+  if (!data.payloadsShown) {
+    return html`<${Payload} data=${data} />`;
+  }
+  return html`
+    <div class="job-data">
+      <section aria-label="Payload">
+        <h3 class="section-label">Payload</h3>
+        <${Payload} data=${data} />
+      </section>
+      <section aria-label="Result">
+        <h3 class="section-label">Result</h3>
+        <${Payload} data=${data} name="result" ended=${ended} />
+      </section>
+    </div>`;
+}
+
+export function Payload({ data, name = 'payload', owner = 'job', ended = true }) {
   const label = name === 'result' ? 'Result' : 'Payload';
   if (!data.payloadsShown) {
     return html`
@@ -544,6 +581,10 @@ export function Payload({ data, name = 'payload', ended = true }) {
   }
   if (name === 'result' && data.result == null) {
     return html`<p class="muted">${ended ? 'The job has no result.' : 'No result yet: the job has not ended.'}</p>`;
+  }
+  // A missing payload and a JSON null look the same: there is nothing to show.
+  if (name === 'payload' && data.payload == null) {
+    return html`<p class="muted">The ${owner} has no payload.</p>`;
   }
   return html`<pre class="json">${pretty(data[name])}</pre>`;
 }

@@ -16,10 +16,11 @@ import {
 } from './format.js';
 import { html, useEffect, useState } from './html.js';
 import { DetailHead, Payload } from './jobs.js';
+import { Picker } from './picker.js';
 
 const PAGE_SIZE = 50;
 
-export function EventsView({ route, navigate, reloadKey }) {
+export function EventsView({ route, navigate, names, reloadKey }) {
   // An id search (route.params.id) replaces the name and key filters.
   const id = route.params.id || '';
   const name = id ? '' : route.params.name || '';
@@ -36,19 +37,33 @@ export function EventsView({ route, navigate, reloadKey }) {
       <h1>${id ? `Event id ${id}` : name || 'All events'}</h1>
       <span class="muted">Unexpired events, newest first</span>
     </div>
-    <${IdSearch} kind="event" value=${id} onSearch=${search} />
-    ${id
-      ? html`<${IdSearchChip} kind="event" value=${id} onClear=${() => search('')}
-          note="Name and key filters are off while searching by id." />`
-      : html`<form class="filter" onSubmit=${(event) => {
-      event.preventDefault();
-      setParams({ key: keyInput.trim() });
-    }}>
-      <label class="filter-label" for="event-key">Key starts with</label>
-      <input id="event-key" class="input mono" type="search" value=${keyInput}
-        placeholder="e.g. order-42" onInput=${(event) => setKeyInput(event.target.value)} />
-      <button type="submit" class="button">Filter</button>
-    </form>`}
+    <div class="toolbar">
+      <div class="field picker-field">
+        <div class="field-head">
+          <span class="field-label">Event name</span>
+          <span class="muted">${plural(names.length, 'event name', 'event names')}</span>
+        </div>
+        <${Picker} label="Event name" allLabel="All event names" placeholder="Search event names"
+          items=${names.map((entry) => ({ name: entry.name, count: entry.count }))} selected=${name || null}
+          onSelect=${(next) => navigate({ section: 'events', params: { name: next } })} />
+      </div>
+      <${IdSearch} kind="event" value=${id} onSearch=${search} />
+      ${!id &&
+      html`<form class="field" onSubmit=${(event) => {
+        event.preventDefault();
+        setParams({ key: keyInput.trim() });
+      }}>
+        <label class="field-label" for="event-key">Key starts with</label>
+        <div class="row">
+          <input id="event-key" class="input mono" type="search" value=${keyInput}
+            placeholder="e.g. order-42" onInput=${(event) => setKeyInput(event.target.value)} />
+          <button type="submit" class="button">Filter</button>
+        </div>
+      </form>`}
+    </div>
+    ${id &&
+    html`<${IdSearchChip} kind="event" value=${id} onClear=${() => search('')}
+      note="Name and key filters are off while searching by id." />`}
     ${name &&
     html`<div class="tabs view-tabs" role="tablist" aria-label="Event views">
       <button type="button" role="tab" class="tab" aria-selected=${tab === 'published'}
@@ -197,7 +212,7 @@ function EventDetail({ eventId, onClose }) {
             ? html`<ul class="links">${receivers.map(jobLink)}</ul>`
             : html`<p class="muted small">No job has received this event yet. A step that starts waiting for it
                 before it expires receives it right away.</p>`}`}
-        ${tab === 'payload' && html`<${Payload} data=${data} />`}
+        ${tab === 'payload' && html`<${Payload} data=${data} owner="event" />`}
       </div>
     </aside>`;
 }
