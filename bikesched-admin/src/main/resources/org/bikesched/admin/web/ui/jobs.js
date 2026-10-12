@@ -509,18 +509,22 @@ function ChildJob({ step }) {
 function History({ history, nodes }) {
   const nodeName = (id) => nodes.find((node) => node.id === id)?.name || shortId(id) || '-';
   return html`
-    <ol class="timeline">
+    <ol class="steps history">
       ${history.map(
         (entry) => html`
-          <li class=${entry.stepName ? 'timeline-entry step-entry' : 'timeline-entry'}>
-            <span class="mono muted small">${preciseTime(entry.at)}</span>
-            <span class="row">
-              ${entry.stepName && html`<span class="mono">${entry.stepName}</span>`}
-              <${Badge} state=${entry.state} />
-              <span class="muted small">attempt ${entry.attempt}</span>
-              <span class="muted small mono">${nodeName(entry.nodeId)}</span>
-            </span>
-            ${entry.detail && html`<span class="small break">${entry.detail}</span>`}
+          <li class=${entry.stepName ? 'step history-entry step-entry' : 'step history-entry'}>
+            <div class="step-head">
+              <div class="row">
+                <span class="tag">${entry.stepName ? 'STEP' : 'JOB'}</span>
+                ${entry.stepName && html`<span class="mono strong">${entry.stepName}</span>`}
+                <${Badge} state=${entry.state} />
+              </div>
+              <span class="mono muted small">${preciseTime(entry.at)}</span>
+            </div>
+            <div class="muted small">
+              attempt ${entry.attempt}${entry.nodeId && html` · <span class="mono">${nodeName(entry.nodeId)}</span>`}
+            </div>
+            ${entry.detail && html`<div class="small break">${entry.detail}</div>`}
           </li>`,
       )}
     </ol>`;

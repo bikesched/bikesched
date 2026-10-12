@@ -470,13 +470,12 @@ button { font: inherit; }
 .tab[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); }
 .detail-body { padding: var(--space-2) 18px 18px; }
 
-.steps, .timeline, .links { margin: 0; padding: 0; list-style: none; }
+.steps, .links { margin: 0; padding: 0; list-style: none; }
 .step { display: flex; flex-direction: column; gap: var(--space-1); padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
 .step:last-child { border-bottom: 0; }
 .child { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); }
-.timeline-entry { display: grid; grid-template-columns: minmax(150px, auto) 1fr; gap: 2px var(--space-3); padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
-.timeline-entry > :last-child:nth-child(3) { grid-column: 2; }
-.timeline-entry.step-entry { padding-left: var(--space-4); }
+/* The job history in the layout of the steps; a step's entries are indented under the job's. */
+.history-entry.step-entry { padding-left: var(--space-4); }
 .links li { padding: 6px 0; }
 .error-text { color: var(--danger); font-size: 13px; }
 
@@ -537,6 +536,4 @@ button { font: inherit; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
   .content { padding: var(--space-4) var(--space-4) 32px; }
   .meta { grid-template-columns: minmax(0, 1fr); }
-  .timeline-entry { grid-template-columns: minmax(0, 1fr); }
-  .timeline-entry > :last-child:nth-child(3) { grid-column: 1; }
 }
