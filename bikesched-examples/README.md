@@ -428,7 +428,8 @@ steps and their output.
 Package [`org.bikesched.examples.admin`](java/src/main/java/org/bikesched/examples/admin): the
 [admin UI](../docs/admin.md) served by the JDK's `HttpServer` next to a few demo jobs, so the page
 has something to show: invoices (every fourth one fails), orders that start a parcel as a child job
-and then wait for a payment event (half of them are paid), and the parcels.
+and then wait for a payment event (half of them are paid), the parcels, and `sync-inventory`, a
+[recurring job](../docs/recurring-jobs.md) running every 10 seconds with two steps and no waits.
 
 ```java
 HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
@@ -441,7 +442,8 @@ The node records the [job history](../docs/jobs.md#job-history) for seven days
 default. The demo data holds no secrets, so the example shows payloads; they are hidden by default.
 Open http://localhost:8081/bikesched/ (`ADMIN_PORT` changes the port), retry a failed invoice or
 cancel a waiting order. `AdminExampleTest` serves the page on a random port and waits until the
-failed invoices show up in the JSON API, with their history.
+failed invoices show up in the JSON API, with their history, and the inventory sync has run
+both steps.
 
 ## Kotlin Shop
 
