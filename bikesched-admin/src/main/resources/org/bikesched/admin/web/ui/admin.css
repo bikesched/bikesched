@@ -13,6 +13,7 @@
   --line-soft: #ecebe6;
   --control-line: #cfcec7;
   --accent: #1f5f8b;
+  --logo-bg: transparent;
   --accent-hover: #123f5e;
   --accent-soft: #e8f1f8;
   --accent-text: #ffffff;
@@ -55,6 +56,7 @@
     --line-soft: #2a2e32;
     --control-line: #464b51;
     --accent: #7fb4dc;
+    --logo-bg: #e7e8e6;
     --accent-hover: #a6cbe8;
     --accent-soft: #1f3344;
     --accent-text: #0f1a24;
@@ -156,7 +158,9 @@ button { font: inherit; }
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-.brand { display: flex; align-items: baseline; gap: 10px; color: var(--text); text-decoration: none; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+/* The logo is drawn for light backgrounds (dark outlines), so dark mode puts it on a light disc. */
+.brand-logo { width: 32px; height: 32px; border-radius: 999px; background: var(--logo-bg); }
 .brand-name { font-family: var(--mono); font-weight: 600; font-size: 18px; letter-spacing: -0.02em; }
 .topbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .node {

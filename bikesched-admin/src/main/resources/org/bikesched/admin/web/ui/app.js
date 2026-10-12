@@ -26,7 +26,7 @@ function Header({ me, nodes, onReload }) {
   const role = me?.level === 'OPERATE' ? 'operator' : 'viewer';
   return html`
     <header class="topbar">
-      <a class="brand" href="#/jobs"><span class="brand-name">bikesched</span><span class="muted">admin</span></a>
+      <a class="brand" href="#/jobs"><img class="brand-logo" src="logo.svg" alt="" width="32" height="32" /><span class="brand-name">bikesched</span><span class="muted">admin</span></a>
       <div class="topbar-right">
         <span class="muted small">Nodes</span>
         ${nodes.map(
