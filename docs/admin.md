@@ -84,8 +84,8 @@ admin's own files, no inline scripts or styles) and `X-Content-Type-Options: nos
 
 Payloads and results may hold personal or secret data, so they are hidden by default. The filter
 is on the server: without `showPayloads(true)` the admin never reads them from the database, and
-no response of the JSON API contains them. The page keeps its Payload tab and explains how to turn
-them on. Error messages, step names, event keys and idempotency keys are always shown.
+no response of the JSON API contains them. The page keeps its Payload and Result tabs and explains
+how to turn them on. Error messages, step names, event keys and idempotency keys are always shown.
 
 ## The page
 
@@ -100,11 +100,12 @@ them on. Error messages, step names, event keys and idempotency keys are always 
   its first 8 characters (the short id the lists show), with or without hyphens, and finds only
   jobs in the job list and only events in the event list. A single match opens its detail; the
   other filters are off while the search is active.
-- **Job detail**: all fields, the idempotency key, the last error, retry and cancel, the steps (a
-  child job step links to the child, a child job shows the path to its parents), the job history
-  when recorded, and the payload and result. While the job is open and has not ended, the detail
-  refreshes every 3 seconds and updates the job's row in the list; an unchanged job costs a `304`
-  without a body.
+- **Job detail**: all fields, the idempotency key, the last error, retry and cancel, the steps
+  with their duration (a child job step links to the child, a child job shows the path to its
+  parents), the job history when recorded, and the payload and the result in tabs of their own.
+  A running or waiting step's duration counts up; a retried step shows its last attempt's.
+  While the job is open and has not ended, the detail refreshes every 3 seconds and updates the
+  job's row in the list; an unchanged job costs a `304` without a body.
 - **Events**: newest first, by name and key prefix. The detail shows who published the event (a
   job's step or outside a job), the jobs that received it and its payload; "latest" marks the event
   a new wait for its name and key would receive. The "Waiting jobs" tab lists the event waits still

@@ -197,7 +197,7 @@ function EventDetail({ eventId, onClose }) {
             ? html`<ul class="links">${receivers.map(jobLink)}</ul>`
             : html`<p class="muted small">No job has received this event yet. A step that starts waiting for it
                 before it expires receives it right away.</p>`}`}
-        ${tab === 'payload' && html`<${Payload} data=${data} names=${['payload']} />`}
+        ${tab === 'payload' && html`<${Payload} data=${data} />`}
       </div>
     </aside>`;
 }
