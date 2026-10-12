@@ -3,6 +3,7 @@ package org.bikesched.examples.util;
 
 import java.time.Duration;
 import org.bikesched.Bikesched;
+import org.bikesched.BikeschedBuilder;
 import org.bikesched.jackson.JacksonJsonMapper;
 
 /** A configured {@link Bikesched} node shared by the examples' main classes. */
@@ -18,11 +19,20 @@ public final class BikeschedUtil {
    * @return the node
    */
   public static Bikesched bikesched(String nodeName) {
+    return builder(nodeName).build();
+  }
+
+  /**
+   * Returns the builder behind {@link #bikesched(String)}, for examples that set more options.
+   *
+   * @param nodeName the name of the node; unique per running example
+   * @return the configured builder
+   */
+  public static BikeschedBuilder builder(String nodeName) {
     return Bikesched.builder()
         .dataSource(DatabaseUtil.composeDatabase())
         .nodeName(nodeName)
         .pollInterval(Duration.ofSeconds(1))
-        .jsonMapper(new JacksonJsonMapper())
-        .build();
+        .jsonMapper(new JacksonJsonMapper());
   }
 }
