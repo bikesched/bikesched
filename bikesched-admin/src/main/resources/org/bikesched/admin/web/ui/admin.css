@@ -445,6 +445,8 @@ button { font: inherit; }
   word-break: break-word;
 }
 .step .error-box { margin: 6px 0 0; }
+.step-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-3); }
+.step-duration { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 0 18px 14px; }
 .confirm { font-size: 13px; font-weight: 600; }
 .notice { margin: 0 18px 14px; padding: 8px 12px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-hover); font-size: 13px; }
