@@ -496,6 +496,9 @@ None left; they are decisions 7 to 12 below.
   shows). The page sends the id in lower case, so the route and the heading show it that way.
   The range lookup was checked with `explain analyze` on 1 million jobs: an index scan on the
   primary key, under 0.1 ms.
+- The History tab lists its entries like the steps: a `JOB` or `STEP` tag, the step's name and the
+  state badge, the time on the right, attempt and node below, and a step's entries indented under
+  the job's.
 - Recurring jobs (asked for after the first version, design page "Recurring jobs"): a repeat
   icon after the type in the job list and the type picker, the recurrence below it, and a
   Recurrence tab on runs of a recurring job. The tab reads `Admin.findRecurringJobRuns(type,
