@@ -69,7 +69,7 @@ response contains them.
 | `java/…/access/AdminAccess`, `AccessGrant`, `AccessLevel` | the access SPI and its result (package `org.bikesched.admin.web.access`) |
 | `java/…/access/OpenAccess`, `BasicAuthAccess`, `BasicAuthBuilder` | the two built-in accesses |
 | `java/…/Json` | a minimal JSON writer, so no JSON library is needed |
-| `resources/…/ui/index.html`, `app.js` | the shell, header, side bar and hash routing |
+| `resources/…/ui/index.html`, `app.js` | the shell, header with the Jobs and Events tabs, and hash routing |
 | `resources/…/ui/jobs.js`, `events.js` | the job and event lists and details |
 | `resources/…/ui/api.js`, `format.js`, `picker.js`, `html.js` | fetch helpers, formatting, the searchable select, Preact and htm setup |
 | `resources/…/ui/admin.css` | all styles, light and dark |

@@ -482,7 +482,7 @@ None left; they are decisions 7 to 12 below.
 - The page's icon and the header logo are the project's logo, `docs/logo.svg`, copied into the
   resources by the `logoUi` task, so it has one source. It is drawn for light backgrounds, so dark
   mode shows it on a light disc.
-- After a retry or cancel from the page, the sidebar counts reload but the list keeps its rows, as
+- After a retry or cancel from the page, the counts reload but the list keeps its rows, as
   for the live updates.
 - Each step shows its duration right of its state badge ("412 ms", "1.8 s", "5 min 37 s", at
   most two units), design board "Step durations", option A. A running or waiting step of an
@@ -490,8 +490,10 @@ None left; they are decisions 7 to 12 below.
   retried step shows its last attempt's duration, marked "last of 3 attempts". Rejected: a bar
   per step on the job's time line (option B), where short steps shrink to a sliver next to a
   long wait.
-- The job's result has its own Result tab next to Payload. A job without a result says so ("No
-  result yet" while it has not ended).
+- A job's payload and result share one Data tab, the payload above the result (asked for after
+  the first version; first they had a tab each). A job without a result says so ("No result yet"
+  while it has not ended); a missing or `null` payload likewise ("The job has no payload"), also
+  on the event's Payload tab.
 - Search by id (4.5): the field submits with Enter or a "Search" button (disabled while the hint
   shows). The page sends the id in lower case, so the route and the heading show it that way.
   The range lookup was checked with `explain analyze` on 1 million jobs: an index scan on the
@@ -510,3 +512,8 @@ None left; they are decisions 7 to 12 below.
   recurrence heading and the "fixed rate" note (the detail's fields already show the recurrence,
   and the API does not say whether it is fixed rate); "took" is from the scheduled time to the
   end, as jobs have no start time.
+- Top navigation (asked for after the first version, design page "Top navigation"): the side bar
+  is gone. Jobs and Events are tabs in the header with their totals; the type or name picker sits
+  above its list next to the id search (and, for events, the key filter). A tab returns to its
+  list with the filters it was left with, the open tab clears them. On narrow screens the header
+  takes two rows and shows a node count instead of the node badges.

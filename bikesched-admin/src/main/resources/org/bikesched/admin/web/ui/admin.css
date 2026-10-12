@@ -147,22 +147,49 @@ button { font: inherit; }
   font-size: 13px;
 }
 
-/* Header */
+/* Header: brand, the Jobs and Events tabs, the nodes and Reload; two rows on narrow screens. */
 .topbar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "brand tabs nodes reload";
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3) var(--space-5);
-  padding: 14px var(--space-5);
+  column-gap: var(--space-5);
+  min-height: 60px;
+  padding: 0 var(--space-5);
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+.brand { grid-area: brand; display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
 /* The logo is drawn for light backgrounds (dark outlines), so dark mode puts it on a light disc. */
 .brand-logo { width: 32px; height: 32px; border-radius: 999px; background: var(--logo-bg); }
 .brand-name { font-family: var(--mono); font-weight: 600; font-size: 18px; letter-spacing: -0.02em; }
-.topbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.sections { grid-area: tabs; align-self: stretch; display: flex; gap: 20px; }
+.section-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-1);
+  border-bottom: 2px solid transparent;
+  color: var(--text-soft);
+  font-weight: 500;
+  text-decoration: none;
+}
+.section-tab:hover { color: var(--text); }
+.section-tab[aria-current="page"] { border-bottom-color: var(--text); color: var(--text); font-weight: 600; }
+.section-tab .count { font-weight: 400; }
+.topbar-nodes {
+  grid-area: nodes;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+}
+.reload { grid-area: reload; }
+.nodes-summary { display: none; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.nodes-summary.dead .node-dot { background: var(--failed-dot); }
 .node {
   display: inline-flex;
   align-items: center;
@@ -182,39 +209,8 @@ button { font: inherit; }
 .content .banner { margin: 0 0 var(--space-4); }
 .banner-error { background: var(--danger-soft); color: var(--danger-text); }
 
-/* Layout: the side bar stacks above the content on narrow screens. */
 #app { display: flex; flex-direction: column; min-height: 100vh; }
-.layout { flex: 1; display: flex; flex-wrap: wrap; align-items: stretch; }
-.sidebar {
-  flex: 1 1 240px;
-  max-width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  padding: 20px var(--space-4);
-  border-right: 1px solid var(--line);
-  background: var(--surface-muted);
-}
-.content { flex: 999 1 640px; min-width: 0; padding: var(--space-5) 28px 40px; }
-
-.nav-section { display: flex; flex-direction: column; gap: var(--space-2); }
-.nav-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.nav-head[aria-current="page"] { background: var(--accent-soft); color: var(--accent-hover); }
-.nav-section > .muted { padding: 0 2px; }
+.content { flex: 1; min-width: 0; padding: var(--space-5) 28px 40px; }
 
 /* Picker: a select box with a search field */
 .picker { position: relative; }
@@ -290,8 +286,12 @@ button { font: inherit; }
   cursor: pointer;
 }
 .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
-.filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); }
-.filter-label { font-size: 13px; color: var(--text-muted); }
+/* The filters above a list: the type or name picker, the id search and the event key. */
+.toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3) var(--space-5); margin-bottom: var(--space-4); }
+.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; max-width: 100%; }
+.field-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font-size: 12px; }
+.field-label { font-size: 12px; font-weight: 600; color: var(--text-soft); }
+.picker-field { width: 18rem; }
 .filter-hint { font-size: 12px; color: var(--danger); }
 .id-input { width: 22rem; max-width: 100%; }
 .view-tabs { margin-bottom: var(--space-4); padding: 0; }
@@ -490,7 +490,7 @@ button { font: inherit; }
   stroke-linejoin: round;
 }
 .tab .recurring-icon { stroke: currentColor; }
-.recurrence { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); }
+.recurrence, .job-data { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); }
 /* The rows share the list's columns (subgrid), so ids, badges and times line up. */
 .runs {
   display: grid;
@@ -532,8 +532,16 @@ button { font: inherit; }
 .disabled-note code { display: inline-block; padding: 2px 6px; border-radius: 4px; background: var(--surface-muted); font-size: 12px; }
 
 @media (max-width: 720px) {
-  .topbar { padding: var(--space-3) var(--space-4); }
-  .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "brand reload" "tabs nodes";
+    column-gap: var(--space-3);
+    padding: var(--space-2) var(--space-4) 0;
+  }
+  .topbar-nodes .nodes-label, .topbar-nodes .node { display: none; }
+  .nodes-summary { display: inline-flex; }
+  .field { width: 100%; }
+  .field .input { flex: 1 1 10rem; width: auto; min-width: 0; }
   .content { padding: var(--space-4) var(--space-4) 32px; }
   .meta { grid-template-columns: minmax(0, 1fr); }
 }

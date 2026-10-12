@@ -84,16 +84,18 @@ admin's own files, no inline scripts or styles) and `X-Content-Type-Options: nos
 
 Payloads and results may hold personal or secret data, so they are hidden by default. The filter
 is on the server: without `showPayloads(true)` the admin never reads them from the database, and
-no response of the JSON API contains them. The page keeps its Payload and Result tabs and explains
+no response of the JSON API contains them. The page keeps its Data and Payload tabs and explains
 how to turn them on. Error messages, step names, event keys and idempotency keys are always shown.
 
 ## The page
 
-- **Header**: the registered nodes, alive (heartbeat within the node timeout) or dead, and a
-  reload button.
-- **Side bar**: the job types with their number of jobs (and failed jobs or the recurrence) and
-  the event names with their number of unexpired events. Both are select boxes with a search
-  field, so many types stay usable. A repeat icon marks recurring job types.
+- **Header**: the Jobs and Events tabs with their number of jobs and unexpired events, the
+  registered nodes, alive (heartbeat within the node timeout) or dead, and a reload button. Each
+  tab returns to its list with the filters it was left with; the open tab clears them.
+- **Type and name**: above the job list a select box with the job types and their number of jobs
+  (and failed jobs or the recurrence), above the event list one with the event names and their
+  number of unexpired events. Both have a search field, so many types stay usable. A repeat icon
+  marks recurring job types.
 - **Jobs**: newest first, filtered by type and by one or more states; "Older jobs" loads the next
   page. A child job names its parent below its type; a run of a recurring job has the repeat icon
   and its recurrence there.
@@ -103,7 +105,7 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   other filters are off while the search is active.
 - **Job detail**: all fields, the idempotency key, the last error, retry and cancel, the steps
   with their duration (a child job step links to the child, a child job shows the path to its
-  parents), the job history when recorded, and the payload and the result in tabs of their own.
+  parents), the job history when recorded, and a Data tab with the payload above the result.
   A running or waiting step's duration counts up; a retried step shows its last attempt's. A
   run of a [recurring job](recurring-jobs.md) has a Recurrence tab: the pending run (the next one
   with a countdown, or the current one while it runs or waits), then the last 10 ended runs with
