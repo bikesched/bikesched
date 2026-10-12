@@ -496,3 +496,14 @@ None left; they are decisions 7 to 12 below.
   shows). The page sends the id in lower case, so the route and the heading show it that way.
   The range lookup was checked with `explain analyze` on 1 million jobs: an index scan on the
   primary key, under 0.1 ms.
+- Recurring jobs (asked for after the first version, design page "Recurring jobs"): a repeat
+  icon after the type in the job list and the type picker, the recurrence below it, and a
+  Recurrence tab on runs of a recurring job. The tab reads `Admin.findRecurringJobRuns(type,
+  limit)` through `GET api/recurring-runs`: the pending occurrence along
+  `bikesched_jobs_recurring_idx` and the latest ended ones (`limit` 10) as a page along
+  `bikesched_jobs_type_created_at_idx`; jobs of the type without a recurrence are left out.
+  Deviations from the design: there is one pending occurrence per recurring job, so a running
+  run is shown as the current run and its successor only appears once it ends; the tab drops the
+  recurrence heading and the "fixed rate" note (the detail's fields already show the recurrence,
+  and the API does not say whether it is fixed rate); "took" is from the scheduled time to the
+  end, as jobs have no start time.

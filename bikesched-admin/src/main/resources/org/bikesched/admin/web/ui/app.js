@@ -96,9 +96,10 @@ function App() {
   const jobs = route.section === 'jobs';
   const typeItems = types.map((type) => {
     const failed = (type.counts.FAILED || 0) + (type.counts.COMPENSATION_FAILED || 0);
-    if (failed > 0) return { name: type.type, count: type.total, sub: `${failed} failed`, subClass: 'sub-failed' };
-    if (type.recurrence) return { name: type.type, count: type.total, sub: `recurring ${type.recurrence}` };
-    return { name: type.type, count: type.total };
+    const item = { name: type.type, count: type.total, recurring: Boolean(type.recurrence) };
+    if (failed > 0) return { ...item, sub: `${failed} failed`, subClass: 'sub-failed' };
+    if (type.recurrence) return { ...item, sub: type.recurrence };
+    return item;
   });
   const nameItems = names.map((name) => ({ name: name.name, count: name.count }));
 

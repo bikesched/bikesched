@@ -95,6 +95,14 @@ export const firstLine = (text) => (text ? text.split('\n')[0] : '');
 /** JSON text of a payload or result; the API embeds them as JSON values. */
 export const pretty = (value) => JSON.stringify(value === undefined ? null : value, null, 2);
 
+/** Marks a recurring job (in the list, the type picker and the detail's tab). */
+export function RecurringIcon({ label = 'recurring' }) {
+  const path = html`<path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3" />`;
+  return label
+    ? html`<svg class="recurring-icon" width="14" height="14" viewBox="0 0 24 24" role="img" aria-label=${label}><title>${label}</title>${path}</svg>`
+    : html`<svg class="recurring-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+}
+
 export function Badge({ state }) {
   return html`<span class=${`badge state-${state}`}>${state}</span>`;
 }
