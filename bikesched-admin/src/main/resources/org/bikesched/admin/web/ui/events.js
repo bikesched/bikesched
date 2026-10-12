@@ -2,27 +2,45 @@
 // Published events by name and key, one event with its publisher and receivers, and the jobs
 // still waiting for an event name.
 import { getBody, query } from './api.js';
-import { Badge, dateTime, duration, jobHref, plural, shortId, toHash } from './format.js';
+import {
+  Badge,
+  IdSearch,
+  IdSearchChip,
+  dateTime,
+  duration,
+  isFullId,
+  jobHref,
+  plural,
+  shortId,
+  toHash,
+} from './format.js';
 import { html, useEffect, useState } from './html.js';
 import { DetailHead, Payload } from './jobs.js';
 
 const PAGE_SIZE = 50;
 
 export function EventsView({ route, navigate, reloadKey }) {
-  const name = route.params.name || '';
-  const key = route.params.key || '';
+  // An id search (route.params.id) replaces the name and key filters.
+  const id = route.params.id || '';
+  const name = id ? '' : route.params.name || '';
+  const key = id ? '' : route.params.key || '';
   const tab = name && route.params.tab === 'waiting' ? 'waiting' : 'published';
   const [keyInput, setKeyInput] = useState(key);
   useEffect(() => setKeyInput(key), [key]);
 
   const setParams = (params) => navigate({ ...route, params: { ...route.params, ...params } });
+  const search = (text) => navigate({ section: 'events', id: null, params: text ? { id: text } : {} });
 
   return html`
     <div class="view-head">
-      <h1>${name || 'All events'}</h1>
+      <h1>${id ? `Event id ${id}` : name || 'All events'}</h1>
       <span class="muted">Unexpired events, newest first</span>
     </div>
-    <form class="filter" onSubmit=${(event) => {
+    <${IdSearch} kind="event" value=${id} onSearch=${search} />
+    ${id
+      ? html`<${IdSearchChip} kind="event" value=${id} onClear=${() => search('')}
+          note="Name and key filters are off while searching by id." />`
+      : html`<form class="filter" onSubmit=${(event) => {
       event.preventDefault();
       setParams({ key: keyInput.trim() });
     }}>
@@ -30,7 +48,7 @@ export function EventsView({ route, navigate, reloadKey }) {
       <input id="event-key" class="input mono" type="search" value=${keyInput}
         placeholder="e.g. order-42" onInput=${(event) => setKeyInput(event.target.value)} />
       <button type="submit" class="button">Filter</button>
-    </form>
+    </form>`}
     ${name &&
     html`<div class="tabs view-tabs" role="tablist" aria-label="Event views">
       <button type="button" role="tab" class="tab" aria-selected=${tab === 'published'}
@@ -42,10 +60,11 @@ export function EventsView({ route, navigate, reloadKey }) {
     </div>`}
     ${tab === 'waiting'
       ? html`<${WaitingJobs} name=${name} keyPrefix=${key} reloadKey=${reloadKey} />`
-      : html`<${EventList} route=${route} navigate=${navigate} name=${name} keyPrefix=${key} reloadKey=${reloadKey} />`}`;
+      : html`<${EventList} route=${route} navigate=${navigate} idPrefix=${id} name=${name} keyPrefix=${key}
+          reloadKey=${reloadKey} />`}`;
 }
 
-function EventList({ route, navigate, name, keyPrefix, reloadKey }) {
+function EventList({ route, navigate, idPrefix, name, keyPrefix, reloadKey }) {
   const [events, setEvents] = useState([]);
   const [next, setNext] = useState(null);
   const [error, setError] = useState(null);
@@ -54,10 +73,16 @@ function EventList({ route, navigate, name, keyPrefix, reloadKey }) {
   const load = async (before) => {
     setLoading(true);
     try {
-      const body = await getBody(`api/events${query({ name, key: keyPrefix, before, limit: PAGE_SIZE })}`);
+      const params = idPrefix
+        ? { id: idPrefix, limit: PAGE_SIZE }
+        : { name, key: keyPrefix, before, limit: PAGE_SIZE };
+      const body = await getBody(`api/events${query(params)}`);
       setEvents((previous) => (before ? [...previous, ...body.events] : body.events));
       setNext(body.next);
       setError(null);
+      if (idPrefix && body.events.length === 1 && !route.id) {
+        navigate({ ...route, id: body.events[0].id });
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -69,9 +94,14 @@ function EventList({ route, navigate, name, keyPrefix, reloadKey }) {
     setEvents([]);
     setNext(null);
     load();
-  }, [name, keyPrefix, reloadKey]);
+  }, [idPrefix, name, keyPrefix, reloadKey]);
 
   const href = (id) => toHash({ ...route, id });
+  const empty = !idPrefix
+    ? 'No unexpired events match these filters.'
+    : isFullId(idPrefix)
+      ? `No unexpired event has the id ${idPrefix}.`
+      : `No event id starts with ${idPrefix}.`;
   return html`
     ${error && html`<div class="banner banner-error" role="alert">${error}</div>`}
     <div class="split">
@@ -96,7 +126,7 @@ function EventList({ route, navigate, name, keyPrefix, reloadKey }) {
               )}
             </tbody>
           </table>
-          ${!loading && events.length === 0 && html`<div class="empty">No unexpired events match these filters.</div>`}
+          ${!loading && events.length === 0 && html`<div class="empty">${empty}</div>`}
         </div>
         <div class="panel-foot">
           <span>${loading ? 'Loading…' : plural(events.length, 'event', 'events') + ' shown'}</span>

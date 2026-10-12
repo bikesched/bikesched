@@ -298,6 +298,52 @@ class AdminTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void findsJobsAndEventsByTheFirstDigitsOfTheirId() {
+    String type = prefix + "by-id";
+    try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
+      bikesched.registerJobHandler(type, _ -> {});
+      UUID jobId = bikesched.newJob(type).schedule(Duration.ofHours(1));
+      UUID eventId = bikesched.newEvent(prefix + "by-id", "k").publish();
+      String jobShort = jobId.toString().substring(0, 8);
+
+      Admin admin = bikesched.admin();
+      assertThat(admin.findJobsByIdPrefix(jobShort, 10))
+          .extracting(JobSummary::id)
+          .containsExactly(jobId);
+      assertThat(admin.findJobsByIdPrefix(" " + jobId.toString().toUpperCase() + " ", 10))
+          .as("a full id, upper case and padded")
+          .extracting(JobSummary::id)
+          .containsExactly(jobId);
+      assertThat(admin.findJobsByIdPrefix(jobId.toString().replace("-", ""), 10))
+          .as("a full id without hyphens")
+          .extracting(JobSummary::id)
+          .containsExactly(jobId);
+      assertThat(admin.findEventsByIdPrefix(eventId.toString().substring(0, 13), 10))
+          .as("a prefix with a hyphen")
+          .extracting(EventSummary::id)
+          .containsExactly(eventId);
+      assertThat(admin.findJobsByIdPrefix(eventId.toString(), 10)).as("only jobs").isEmpty();
+      assertThat(admin.findEventsByIdPrefix(UUID.randomUUID().toString(), 10)).isEmpty();
+    }
+  }
+
+  @Test
+  void rejectsIdPrefixesThatAreTooShortOrNotHex() {
+    try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
+      Admin admin = bikesched.admin();
+      assertThatThrownBy(() -> admin.findJobsByIdPrefix("3f2a9c1", 10))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("between 8 and 32 hex digits");
+      assertThatThrownBy(() -> admin.findEventsByIdPrefix("3f2a9c1g", 10))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> admin.findJobsByIdPrefix(UUID.randomUUID() + "0", 10))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> admin.findJobsByIdPrefix("3f2a9c1e", 0))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+  }
+
+  @Test
   void rejectsLimitsOutOfRange() {
     assertThatThrownBy(() -> JobQuery.newest(0)).isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> JobQuery.newest(JobQuery.MAX_LIMIT + 1))

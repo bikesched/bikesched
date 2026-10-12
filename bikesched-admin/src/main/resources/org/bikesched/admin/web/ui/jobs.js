@@ -5,9 +5,12 @@ import {
   Badge,
   Dot,
   ENDED,
+  IdSearch,
+  IdSearchChip,
   STATES,
   dateTime,
   firstLine,
+  isFullId,
   jobHref,
   plural,
   preciseTime,
@@ -22,8 +25,10 @@ const POLL_MS = 3000;
 const RETRY_MS = 10000;
 
 export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChanged }) {
-  const type = route.params.type || '';
-  const state = route.params.state || '';
+  // An id search (route.params.id) replaces the type and state filters.
+  const id = route.params.id || '';
+  const type = id ? '' : route.params.type || '';
+  const state = id ? '' : route.params.state || '';
   const selected = state ? state.split(',') : [];
   const [jobs, setJobs] = useState([]);
   const [next, setNext] = useState(null);
@@ -33,10 +38,14 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
   const load = async (before) => {
     setLoading(true);
     try {
-      const body = await getBody(`api/jobs${query({ type, state, before, limit: PAGE_SIZE })}`);
+      const params = id ? { id, limit: PAGE_SIZE } : { type, state, before, limit: PAGE_SIZE };
+      const body = await getBody(`api/jobs${query(params)}`);
       setJobs((previous) => (before ? [...previous, ...body.jobs] : body.jobs));
       setNext(body.next);
       setError(null);
+      if (id && body.jobs.length === 1 && !route.id) {
+        navigate({ ...route, id: body.jobs[0].id });
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -48,7 +57,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
     setJobs([]);
     setNext(null);
     load();
-  }, [type, state, reloadKey]);
+  }, [id, type, state, reloadKey]);
 
   const counts = {};
   for (const summary of types) {
@@ -62,17 +71,27 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
   const setStates = (states) =>
     navigate({ ...route, params: { ...route.params, state: STATES.filter((s) => states.includes(s)).join(',') } });
   const toggle = (s) => setStates(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s]);
-  const open = (id) => navigate({ ...route, id });
-  const href = (id) => toHash({ ...route, id });
+  const open = (jobId) => navigate({ ...route, id: jobId });
+  const href = (jobId) => toHash({ ...route, id: jobId });
+  const search = (text) => navigate({ section: 'jobs', id: null, params: text ? { id: text } : {} });
+  const empty = !id
+    ? 'No jobs match these filters.'
+    : isFullId(id)
+      ? `No job has the id ${id} (anymore).`
+      : `No job id starts with ${id}.`;
   // The open job's live updates replace only its own row; the rest of the list stays as loaded.
   const updateRow = (job) => setJobs((list) => list.map((row) => (row.id === job.id ? job : row)));
 
   return html`
     <div class="view-head">
-      <h1>${type || 'All jobs'}</h1>
+      <h1>${id ? `Job id ${id}` : type || 'All jobs'}</h1>
       <span class="muted">Newest first</span>
     </div>
-    <div class="chips" role="group" aria-label="Filter by state">
+    <${IdSearch} kind="job" value=${id} onSearch=${search} />
+    ${id
+      ? html`<${IdSearchChip} kind="job" value=${id} onClear=${() => search('')}
+          note="Type and state filters are off while searching by id." />`
+      : html`<div class="chips" role="group" aria-label="Filter by state">
       <button type="button" class="chip" aria-pressed=${selected.length === 0} onClick=${() => setStates([])}>
         All states
       </button>
@@ -84,7 +103,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
             <span class="count">${counts[s] || 0}</span>
           </button>`,
       )}
-    </div>
+    </div>`}
     ${error && html`<div class="banner banner-error" role="alert">${error}</div>`}
     <div class="split">
       <section class="panel list" aria-label="Jobs">
@@ -115,7 +134,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
               )}
             </tbody>
           </table>
-          ${!loading && jobs.length === 0 && html`<div class="empty">No jobs match these filters.</div>`}
+          ${!loading && jobs.length === 0 && html`<div class="empty">${empty}</div>`}
         </div>
         <div class="panel-foot">
           <span>${loading ? 'Loading…' : plural(jobs.length, 'job', 'jobs') + ' shown'}</span>

@@ -320,6 +320,58 @@ Layout and content:
   out; the JDK `HttpServer` adapter needs nothing, and the neutral `handle` makes a servlet or
   Spring adapter a few lines each.
 
+### 4.5 Search by id
+
+An id from a log line, an alert or a support ticket should open its job or event without
+scrolling the list or editing the URL. The job list and the event list each get a search field
+in their head, above the state chips (jobs) or the key filter (events). Design: page "Jobs" of
+the [design](https://claude.ai/artifact/U2nQTQy9jYSbRfqgnQVFCP), with a chip for an active
+search:
+
+```text
+All jobs                                                        Newest first
+Job id  [ Full id or its first 8 characters ]
+(All states 128) (Scheduled 4) (Running 2) (Failed 7) ...
+```
+
+- Input: a full id, or the first 8 or more hex digits of one (the short id the lists show).
+  Whitespace, hyphens and case are ignored, so a pasted id matches with or without hyphens.
+  Anything else shows a hint next to the field and sends no request.
+- A full id or a prefix lists the matching jobs or events, newest first, at most one page, as
+  `#/jobs?id=3f2a9c1e` and `#/events?id=3f2a9c1e`. A single match also opens its detail next to
+  the list. The type, name, state and key filters are off while an id search is active, since an
+  id is more specific than any of them. A chip "id 3f2a9c1e ×" above the table clears it.
+- No match: the list says "No job id starts with 3f2a9c1e." or, for a full id, "No job has the id
+  … (anymore)." The job search finds only jobs and the event search only events.
+- Enter submits; `Escape` clears the field.
+
+Core lookups, separate from `JobQuery` and `EventQuery` because an id prefix excludes their
+other filters:
+
+```java
+/** Jobs whose id starts with the hex digits (at least 8), newest first. */
+List<JobSummary> findJobsByIdPrefix(String prefix, int limit);
+
+/** Unexpired events whose id starts with the hex digits (at least 8), newest first. */
+List<EventSummary> findEventsByIdPrefix(String prefix, int limit);
+```
+
+- A prefix becomes a range on the primary key: `id between ? and ?`, with the prefix padded
+  with `0` and with `f` to 32 hex digits. PostgreSQL compares `uuid` values byte by byte, which
+  is the order of their hex digits, so the primary key index serves it and no new index is
+  needed.
+- This depends on random ids: jobs and events use `UUID.randomUUID()`. With 8 hex digits
+  (32 bits), a prefix matches about one job in 4 billion, so a page is almost always one row.
+  Time-ordered ids (UUIDv7) would put every job of the same minute behind the same 8 digits;
+  a switch to them needs a longer minimum or a search on the random part.
+- JSON API: `GET api/jobs?id=` and `GET api/events?id=` take a prefix or a full id and return the
+  usual list shape with `next` always `null`; `id` together with another filter answers `400`.
+
+Tests: `AdminTest` finds a job and an event by its first 8 digits, by the full id with and
+without hyphens, and nothing for an unknown prefix; a prefix under 8 digits or with other
+characters is rejected. `BikeschedAdminTest` covers the `id` parameter, its `400`s and the
+combined filter.
+
 ## 5. Testing
 
 - Core: `AdminTest` (extends `AbstractBikeschedTest`): `findJobs` by type, by states, keyset
@@ -357,7 +409,7 @@ Layout and content:
 
 ## 7. Open questions
 
-None left; they are decisions 7 to 10 below.
+None left; they are decisions 7 to 12 below.
 
 ## 8. Decisions
 
@@ -383,6 +435,12 @@ None left; they are decisions 7 to 10 below.
 9. Retry and cancel are part of the first slice, switched off with `readOnly(true)`; they reuse
    `retry(id)` and `cancel(id, message)`.
 10. The module is `bikesched-admin`, since the JSON API is usable without the page.
+11. Search by id is one field per list: the job list finds jobs, the event list finds events
+    (4.5). A header search across both, or a link from a job miss to an event with that id, is
+    left out.
+12. An id prefix matches only the job's or event's own id, not related rows (the step that
+    published an event, a child's parent): the detail links those, and the search stays one
+    primary key range.
 
 ## Decided while implementing
 
@@ -419,3 +477,7 @@ None left; they are decisions 7 to 10 below.
   relative file.
 - After a retry or cancel from the page, the sidebar counts reload but the list keeps its rows, as
   for the live updates.
+- Search by id (4.5): the field submits with Enter or a "Search" button (disabled while the hint
+  shows). The page sends the id in lower case, so the route and the heading show it that way.
+  The range lookup was checked with `explain analyze` on 1 million jobs: an index scan on the
+  primary key, under 0.1 ms.
