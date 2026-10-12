@@ -56,8 +56,27 @@ class AdminExampleTest {
         Matcher id = Pattern.compile("\"id\":\"([0-9a-f-]{36})\"").matcher(failed);
         assertThat(id.find()).isTrue();
         assertThat(get(client, base + "api/jobs/" + id.group(1))).contains("\"history\":[{");
+
+        // The inventory sync's first run is now and completes both steps.
+        String synced =
+            await()
+                .atMost(Duration.ofSeconds(30))
+                .until(
+                    () ->
+                        get(
+                            client,
+                            base
+                                + "api/jobs?type="
+                                + AdminExample.SYNC_INVENTORY
+                                + "&state=SUCCEEDED"),
+                    body -> body.contains("\"state\":\"SUCCEEDED\""));
+        Matcher syncId = Pattern.compile("\"id\":\"([0-9a-f-]{36})\"").matcher(synced);
+        assertThat(syncId.find()).isTrue();
+        assertThat(get(client, base + "api/jobs/" + syncId.group(1)))
+            .contains("\"name\":\"count-stock\"", "\"name\":\"update-shop\"");
       } finally {
         server.stop(0);
+        bikesched.removeRecurringJob(AdminExample.SYNC_INVENTORY);
       }
     }
   }

@@ -13,11 +13,13 @@ import org.bikesched.event.EventType;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobResult;
 import org.bikesched.job.JobType;
+import org.bikesched.job.Recurrence;
 
 /**
  * The admin UI next to a few demo jobs: invoices (some fail), orders with a child job and a wait
- * for the payment event, and parcels. Serves the page with the JDK's {@link HttpServer}; the node
- * records the job history, so every job detail shows it.
+ * for the payment event, parcels, and an inventory sync recurring every 10 seconds. Serves the page
+ * with the JDK's {@link HttpServer}; the node records the job history, so every job detail shows
+ * it.
  *
  * <p>Run with {@code ./gradlew :bikesched-examples:java:runAdmin} against the Postgres from {@code
  * compose.yaml}, then open http://localhost:8081/bikesched/ ({@code ADMIN_PORT} changes the port).
@@ -40,6 +42,12 @@ public final class AdminExample {
 
   public static final EventType<Payment> PAYMENT_RECEIVED =
       EventType.of("payment-received", Payment.class);
+
+  /** The recurring job's type: two steps, no waits. */
+  public static final String SYNC_INVENTORY = "sync-inventory";
+
+  /** How often the inventory sync runs. */
+  public static final Recurrence EVERY_10_SECONDS = Recurrence.every(Duration.ofSeconds(10));
 
   /** How long the job history is kept, so the job detail has a History tab. */
   public static final Duration JOB_HISTORY = Duration.ofDays(7);
@@ -78,10 +86,20 @@ public final class AdminExample {
           job.sleep("pick-up", Duration.ofSeconds(2));
           job.complete("tracking-" + parcel.order());
         });
+    bikesched.registerJobHandler(
+        SYNC_INVENTORY,
+        job -> {
+          int items = job.step("count-stock", Integer.class, _ -> 120);
+          job.step("update-shop", String.class, _ -> items + " items in stock");
+        });
   }
 
-  /** Schedules the demo jobs and pays half of the orders. */
+  /**
+   * Schedules the demo jobs, pays half of the orders and registers the inventory sync, whose first
+   * run is now.
+   */
   void seed() {
+    bikesched.newJob(SYNC_INVENTORY).schedule(EVERY_10_SECONDS, Duration.ZERO);
     for (int number = 1; number <= 8; number++) {
       bikesched.newJob(SEND_INVOICE).payload(new Invoice(number, "customer-" + number)).schedule();
     }
