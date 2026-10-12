@@ -51,7 +51,8 @@ public final class AdminStore {
               left join bikesched_nodes n on n.id = j.locked_by""";
 
   // One page of jobs, newest first, read along bikesched_jobs_created_at_idx (or
-  // bikesched_jobs_type_created_at_idx with a type); parents and nodes are joined to the page only.
+  // bikesched_jobs_type_created_at_idx with a type, or the primary key for an id range); parents
+  // and nodes are joined to the page only.
   private static final String JOB_PAGE =
       """
             (select id, type, state, attempts, max_attempts, priority, scheduled_at, created_at,
@@ -169,6 +170,15 @@ public final class AdminStore {
         e -> new BikeschedException("Finding bikesched jobs failed", e));
   }
 
+  public List<JobSummary> findJobsByIdRange(UUID from, UUID to, int limit) {
+    String sql =
+        JOB_COLUMNS.formatted(JOB_PAGE.formatted("\n              where id between ? and ?"))
+            + "\n order by j.created_at desc, j.id desc";
+    return access.inReadOnlyTransaction(
+        db -> db.list(sql, AdminStore::jobSummary, from, to, limit),
+        e -> new BikeschedException("Finding bikesched jobs by id failed", e));
+  }
+
   public Optional<JobSummary> findJob(UUID jobId) {
     Objects.requireNonNull(jobId, "jobId");
     return access.inReadOnlyTransaction(
@@ -263,6 +273,13 @@ public final class AdminStore {
     return access.inReadOnlyTransaction(
         db -> db.list(sql, AdminStore::eventSummary, parameters.toArray()),
         e -> new BikeschedException("Finding bikesched events failed", e));
+  }
+
+  public List<EventSummary> findEventsByIdRange(UUID from, UUID to, int limit) {
+    String sql = EVENT_COLUMNS + EVENT_PAGE.formatted("\n               and e.id between ? and ?");
+    return access.inReadOnlyTransaction(
+        db -> db.list(sql, AdminStore::eventSummary, from, to, limit),
+        e -> new BikeschedException("Finding bikesched events by id failed", e));
   }
 
   public Optional<EventSummary> findEvent(UUID eventId) {

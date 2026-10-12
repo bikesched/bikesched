@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { html } from './html.js';
+import { html, useEffect, useState } from './html.js';
 
 export const STATES = [
   'SCHEDULED',
@@ -107,3 +107,54 @@ export function toHash({ section, id, params = {} }) {
 }
 
 export const jobHref = (id) => toHash({ section: 'jobs', id });
+
+// Search by id: a full id or at least its first 8 hex digits; whitespace, hyphens and case are
+// ignored, as on the server.
+const idDigits = (text) => text.trim().replace(/-/g, '').toLowerCase();
+
+export function idSearchHint(text) {
+  const digits = idDigits(text);
+  if (!digits) return '';
+  if (!/^[0-9a-f]+$/.test(digits)) return 'An id has only the digits 0-9, a-f and hyphens';
+  if (digits.length < 8) return 'Type at least 8 characters of the id';
+  if (digits.length > 32) return 'An id has 32 hex digits';
+  return '';
+}
+
+export const isFullId = (text) => idDigits(text).length === 32;
+
+export function IdSearch({ kind, value, onSearch }) {
+  const [input, setInput] = useState(value);
+  useEffect(() => setInput(value), [value]);
+  const hint = idSearchHint(input);
+  const id = `${kind}-id-search`;
+  return html`
+    <form class="filter" role="search" onSubmit=${(event) => {
+      event.preventDefault();
+      if (!hint) onSearch(input.trim().toLowerCase());
+    }}>
+      <label class="filter-label" for=${id}>${kind === 'job' ? 'Job id' : 'Event id'}</label>
+      <input id=${id} class="input mono id-input" type="search" value=${input}
+        placeholder="Full id or its first 8 characters" aria-describedby=${hint ? `${id}-hint` : undefined}
+        onInput=${(event) => setInput(event.target.value)}
+        onKeyDown=${(event) => {
+          if (event.key === 'Escape') {
+            setInput('');
+            onSearch('');
+          }
+        }} />
+      <button type="submit" class="button" disabled=${!!hint}>Search</button>
+      ${hint && html`<span id=${`${id}-hint`} class="filter-hint" role="status">${hint}</span>`}
+    </form>`;
+}
+
+/** The chip of an active id search, which clears it, with a note that the other filters are off. */
+export function IdSearchChip({ kind, value, note, onClear }) {
+  return html`
+    <div class="chips">
+      <button type="button" class="chip" aria-pressed="true" aria-label=${`Clear the ${kind} id search`} onClick=${onClear}>
+        <span class="mono">id ${value}</span><span aria-hidden="true">×</span>
+      </button>
+      <span class="muted">${note}</span>
+    </div>`;
+}

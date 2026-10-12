@@ -3,6 +3,7 @@ package org.bikesched.internal;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,6 +27,9 @@ import org.bikesched.internal.database.AdminStore;
  */
 final class DefaultAdmin implements Admin {
 
+  // The digits of the short id the admin UI shows.
+  private static final int MIN_ID_PREFIX = 8;
+
   private final AdminStore store;
 
   private final Duration nodeTimeout;
@@ -43,6 +47,14 @@ final class DefaultAdmin implements Admin {
     Objects.requireNonNull(query, "query");
     ensureReady.run();
     return store.findJobs(query);
+  }
+
+  @Override
+  public List<JobSummary> findJobsByIdPrefix(String idPrefix, int limit) {
+    UUID[] range = idRange(idPrefix);
+    requireLimit(limit);
+    ensureReady.run();
+    return store.findJobsByIdRange(range[0], range[1], limit);
   }
 
   @Override
@@ -80,6 +92,14 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
+  public List<EventSummary> findEventsByIdPrefix(String idPrefix, int limit) {
+    UUID[] range = idRange(idPrefix);
+    requireLimit(limit);
+    ensureReady.run();
+    return store.findEventsByIdRange(range[0], range[1], limit);
+  }
+
+  @Override
   public Optional<EventSummary> findEvent(UUID eventId) {
     Objects.requireNonNull(eventId, "eventId");
     ensureReady.run();
@@ -109,10 +129,7 @@ final class DefaultAdmin implements Admin {
   @Override
   public List<WaitingStep> findWaitingSteps(String eventName, String keyPrefix, int limit) {
     Objects.requireNonNull(eventName, "eventName");
-    if (limit < 1 || limit > JobQuery.MAX_LIMIT) {
-      throw new IllegalArgumentException(
-          "limit must be between 1 and " + JobQuery.MAX_LIMIT + ": " + limit);
-    }
+    requireLimit(limit);
     ensureReady.run();
     return store.findWaitingSteps(eventName, keyPrefix, limit);
   }
@@ -121,5 +138,35 @@ final class DefaultAdmin implements Admin {
   public List<NodeInfo> findNodes() {
     ensureReady.run();
     return store.findNodes(nodeTimeout);
+  }
+
+  /**
+   * The ids starting with the hex digits of the prefix: the prefix padded with {@code 0} and with
+   * {@code f}. PostgreSQL orders {@code uuid} values by their bytes, the order of their hex digits,
+   * so the range is read along the primary key.
+   */
+  private static UUID[] idRange(String idPrefix) {
+    Objects.requireNonNull(idPrefix, "idPrefix");
+    String hex = idPrefix.strip().replace("-", "").toLowerCase(Locale.ROOT);
+    if (hex.length() < MIN_ID_PREFIX || hex.length() > 32 || !hex.matches("[0-9a-f]+")) {
+      throw new IllegalArgumentException(
+          "an id prefix must have between " + MIN_ID_PREFIX + " and 32 hex digits: " + idPrefix);
+    }
+    return new UUID[] {
+      uuid(hex + "0".repeat(32 - hex.length())), uuid(hex + "f".repeat(32 - hex.length()))
+    };
+  }
+
+  private static UUID uuid(String hex) {
+    return new UUID(
+        Long.parseUnsignedLong(hex.substring(0, 16), 16),
+        Long.parseUnsignedLong(hex.substring(16), 16));
+  }
+
+  private static void requireLimit(int limit) {
+    if (limit < 1 || limit > JobQuery.MAX_LIMIT) {
+      throw new IllegalArgumentException(
+          "limit must be between 1 and " + JobQuery.MAX_LIMIT + ": " + limit);
+    }
   }
 }

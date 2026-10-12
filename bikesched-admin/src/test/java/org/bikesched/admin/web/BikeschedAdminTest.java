@@ -143,6 +143,32 @@ class BikeschedAdminTest {
   }
 
   @Test
+  void findsJobsAndEventsByTheFirstDigitsOfTheirId() {
+    String type = prefix + "by-id";
+    bikesched.registerJobHandler(type, _ -> {});
+    UUID jobId = bikesched.newJob(type).schedule(Duration.ofHours(1));
+    UUID eventId = bikesched.newEvent(prefix + "by-id", "k").publish();
+
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      JsonObject jobs =
+          AdminServer.json(server.get("/api/jobs?id=" + jobId.toString().substring(0, 8)));
+      assertThat(ids(jobs.getArray("jobs"))).containsExactly(jobId.toString());
+      assertThat(jobs.isNull("next")).isTrue();
+      JsonObject events = AdminServer.json(server.get("/api/events?id=" + eventId));
+      assertThat(events.getArray("events").getObject(0).getString("id"))
+          .isEqualTo(eventId.toString());
+      assertThat(AdminServer.json(server.get("/api/jobs?id=" + eventId)).getArray("jobs"))
+          .as("the job search finds only jobs")
+          .isEmpty();
+
+      assertThat(server.get("/api/jobs?id=3f2a").statusCode()).isEqualTo(400);
+      assertThat(server.get("/api/events?id=not-an-id").statusCode()).isEqualTo(400);
+      assertThat(server.get("/api/jobs?id=" + jobId + "&type=" + type).statusCode()).isEqualTo(400);
+      assertThat(server.get("/api/events?id=" + eventId + "&key=k").statusCode()).isEqualTo(400);
+    }
+  }
+
+  @Test
   void showsAJobWithStepsHistoryAndChildren() {
     String parentType = prefix + "parent";
     String childType = prefix + "child";
