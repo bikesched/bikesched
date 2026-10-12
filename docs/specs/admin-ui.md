@@ -182,8 +182,9 @@ Routes, relative to where the handler is mounted:
   - The other responses never contain them, whatever the setting: `JobSummary`, `StepInfo`,
     `EventSummary` and the history entries have no payload or result fields (step results are
     not exposed at all).
-  - The page keeps the Payload tab and shows "Payload display disabled" there, with the
-    `showPayloads(true)` call that turns it on, so a user learns why it is empty.
+  - The page keeps the Payload and Result tabs and shows "Payload display disabled" or "Result
+    display disabled" there, with the `showPayloads(true)` call that turns it on, so a user
+    learns why they are empty.
   - Error messages and step names are shown either way.
 - Access: an `AdminAccess` SPI decides per request, `AccessLevel check(AdminRequest)` with
   `NONE`, `VIEW` (GET routes) and `OPERATE` (also retry and cancel). The default
@@ -266,10 +267,10 @@ Layout and content:
   on, "All states" clears them. A reload button in the header.
 - Job table: id (short), type, state as a coloured badge, attempts `n/max`, scheduled, updated,
   last error (truncated); "Older" loads the next page.
-- Clicking a row opens the job detail below the table: all fields, payload and result (only
-  with `showPayloads(true)`)
-  pretty-printed, the steps table, retry and cancel buttons when they apply and the module is not
-  read-only, the idempotency key when the job has one.
+- Clicking a row opens the job detail below the table: all fields, the payload and the result
+  in tabs of their own (only with `showPayloads(true)`), pretty-printed, the steps table, retry
+  and cancel buttons when they apply and the module is not read-only, the idempotency key when
+  the job has one.
 - Live job detail: while a job's detail is open and the browser tab is visible, the page polls
   `GET /api/jobs/{id}` every 3 seconds and re-renders only that job's row in the table and its
   detail (state, attempts, times, last error, steps, history, child states); the rest of the
@@ -477,6 +478,14 @@ None left; they are decisions 7 to 12 below.
   relative file.
 - After a retry or cancel from the page, the sidebar counts reload but the list keeps its rows, as
   for the live updates.
+- Each step shows its duration right of its state badge ("412 ms", "1.8 s", "5 min 37 s", at
+  most two units), design board "Step durations", option A. A running or waiting step of an
+  active job counts up every 3 seconds ("so far"). A step's start is reset on each attempt, so a
+  retried step shows its last attempt's duration, marked "last of 3 attempts". Rejected: a bar
+  per step on the job's time line (option B), where short steps shrink to a sliver next to a
+  long wait.
+- The job's result has its own Result tab next to Payload. A job without a result says so ("No
+  result yet" while it has not ended).
 - Search by id (4.5): the field submits with Enter or a "Search" button (disabled while the hint
   shows). The page sends the id in lower case, so the route and the heading show it that way.
   The range lookup was checked with `explain analyze` on 1 million jobs: an index scan on the

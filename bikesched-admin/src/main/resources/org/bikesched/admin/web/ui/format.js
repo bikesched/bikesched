@@ -66,6 +66,26 @@ export function duration(fromIso, toIso) {
   return parts.slice(0, 2).join(' ');
 }
 
+/**
+ * How long something took, for steps: "412 ms", "1.8 s", "5 min 37 s", "2 h 14 min"; at most two
+ * adjacent units.
+ */
+export function elapsed(fromIso, toIso) {
+  const millis = Math.max(0, Date.parse(toIso) - Date.parse(fromIso));
+  if (millis < 1000) return `${millis} ms`;
+  if (millis < 10000) return `${(Math.floor(millis / 100) / 10).toFixed(1)} s`;
+  const units = [['d', 86400], ['h', 3600], ['min', 60], ['s', 1]];
+  let seconds = Math.floor(millis / 1000);
+  const first = units.findIndex(([, size]) => seconds >= size);
+  const parts = [];
+  for (const [name, size] of units.slice(first, first + 2)) {
+    const count = Math.floor(seconds / size);
+    seconds -= count * size;
+    if (count || parts.length === 0) parts.push(`${count} ${name}`);
+  }
+  return parts.join(' ');
+}
+
 export const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
 export const shortId = (id) => (id ? id.slice(0, 8) : '');

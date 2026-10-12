@@ -9,6 +9,7 @@ import {
   IdSearchChip,
   STATES,
   dateTime,
+  elapsed,
   firstLine,
   isFullId,
   jobHref,
@@ -281,7 +282,7 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
   const parent = ancestors.length > 0 ? ancestors[ancestors.length - 1] : null;
   const tabs = [['steps', `Steps (${steps.length})`]];
   if (history.length > 0) tabs.push(['history', `History (${history.length})`]);
-  tabs.push(['payload', 'Payload']);
+  tabs.push(['payload', 'Payload'], ['result', 'Result']);
   const shownTab = tabs.some(([id]) => id === tab) ? tab : 'steps';
 
   return html`
@@ -325,9 +326,10 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
         )}
       </div>
       <div class="detail-body" role="tabpanel">
-        ${shownTab === 'steps' && html`<${Steps} steps=${steps} />`}
+        ${shownTab === 'steps' && html`<${Steps} steps=${steps} ended=${ENDED.includes(job.state)} />`}
         ${shownTab === 'history' && html`<${History} history=${history} nodes=${nodes} />`}
         ${shownTab === 'payload' && html`<${Payload} data=${data} />`}
+        ${shownTab === 'result' && html`<${Payload} data=${data} name="result" ended=${ENDED.includes(job.state)} />`}
       </div>
     </aside>`;
 }
@@ -372,20 +374,38 @@ function AncestorPath({ ancestors, job }) {
     </nav>`;
 }
 
-function Steps({ steps }) {
+// Steps that have not ended while their job has not: their duration counts up.
+const OPEN_STEP_STATES = ['RUNNING', 'WAITING'];
+
+function Steps({ steps, ended }) {
+  const counting = !ended && steps.some((step) => !step.finishedAt && OPEN_STEP_STATES.includes(step.state));
+  const [now, setNow] = useState(() => new Date().toISOString());
+  useEffect(() => {
+    if (!counting) return undefined;
+    const timer = setInterval(() => setNow(new Date().toISOString()), POLL_MS);
+    return () => clearInterval(timer);
+  }, [counting]);
   if (steps.length === 0) {
     return html`<p class="muted">No steps yet: the handler has not recorded any.</p>`;
   }
   return html`
     <ol class="steps">
-      ${steps.map(
-        (step) => html`
+      ${steps.map((step) => {
+        const open = !ended && !step.finishedAt && OPEN_STEP_STATES.includes(step.state);
+        const took = step.finishedAt ? elapsed(step.startedAt, step.finishedAt) : open ? elapsed(step.startedAt, now) : null;
+        // A step's start is reset on each attempt, so the duration is the last attempt's.
+        const note = [open && 'so far', step.attempts > 1 && `last of ${step.attempts} attempts`].filter(Boolean).join(', ');
+        return html`
           <li class="step">
-            <div class="row">
-              <span class="mono strong">${step.name}</span>
-              <span class="tag">${step.kind}</span>
-              <${Badge} state=${step.state} />
-              ${step.attempts > 1 && html`<span class="muted small">${step.attempts} attempts</span>`}
+            <div class="step-head">
+              <div class="row">
+                <span class="mono strong">${step.name}</span>
+                <span class="tag">${step.kind}</span>
+                <${Badge} state=${step.state} />
+                ${!took && step.attempts > 1 && html`<span class="muted small">${step.attempts} attempts</span>`}
+              </div>
+              ${took &&
+              html`<span class="step-duration"><span class="mono strong">${took}</span>${note && html` <span class="muted small">${note}</span>`}</span>`}
             </div>
             <div class="step-times muted small mono">
               ${dateTime(step.startedAt)}${step.finishedAt && ` → ${dateTime(step.finishedAt)}`}
@@ -395,8 +415,8 @@ function Steps({ steps }) {
             html`<div class="small">Event <span class="mono">${step.eventName}</span> / <span class="mono">${step.eventKey}</span></div>`}
             ${step.kind === 'CHILD_JOB' && step.childJobId && html`<${ChildJob} step=${step} />`}
             ${step.lastError && html`<pre class="error-box small">${step.lastError}</pre>`}
-          </li>`,
-      )}
+          </li>`;
+      })}
     </ol>`;
 }
 
@@ -433,19 +453,20 @@ function History({ history, nodes }) {
     </ol>`;
 }
 
-export function Payload({ data, names = ['payload', 'result'] }) {
+/** A job's payload or result, or an event's payload; a note instead when the server hides them. */
+export function Payload({ data, name = 'payload', ended = true }) {
+  const label = name === 'result' ? 'Result' : 'Payload';
   if (!data.payloadsShown) {
     return html`
       <div class="disabled-note">
-        <strong>Payload display disabled</strong>
+        <strong>${label} display disabled</strong>
         <p>Payloads and results may hold personal or secret data, so the server does not read them.
           Enable them where the admin is created:</p>
         <code>BikeschedAdmin.of(bikesched).showPayloads(true)</code>
       </div>`;
   }
-  return html`${names.map(
-    (name) => html`
-      <h3 class="section-label">${name[0].toUpperCase() + name.slice(1)}</h3>
-      <pre class="json">${pretty(data[name])}</pre>`,
-  )}`;
+  if (name === 'result' && data.result == null) {
+    return html`<p class="muted">${ended ? 'The job has no result.' : 'No result yet: the job has not ended.'}</p>`;
+  }
+  return html`<pre class="json">${pretty(data[name])}</pre>`;
 }
