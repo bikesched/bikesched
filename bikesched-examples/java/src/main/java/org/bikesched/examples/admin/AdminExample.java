@@ -16,7 +16,8 @@ import org.bikesched.job.JobType;
 
 /**
  * The admin UI next to a few demo jobs: invoices (some fail), orders with a child job and a wait
- * for the payment event, and parcels. Serves the page with the JDK's {@link HttpServer}.
+ * for the payment event, and parcels. Serves the page with the JDK's {@link HttpServer}; the node
+ * records the job history, so every job detail shows it.
  *
  * <p>Run with {@code ./gradlew :bikesched-examples:java:runAdmin} against the Postgres from {@code
  * compose.yaml}, then open http://localhost:8081/bikesched/ ({@code ADMIN_PORT} changes the port).
@@ -39,6 +40,9 @@ public final class AdminExample {
 
   public static final EventType<Payment> PAYMENT_RECEIVED =
       EventType.of("payment-received", Payment.class);
+
+  /** How long the job history is kept, so the job detail has a History tab. */
+  public static final Duration JOB_HISTORY = Duration.ofDays(7);
 
   private final Bikesched bikesched;
 
@@ -107,7 +111,8 @@ public final class AdminExample {
 
   static void main() throws InterruptedException {
     int port = Integer.parseInt(System.getenv().getOrDefault("ADMIN_PORT", "8081"));
-    try (Bikesched bikesched = BikeschedUtil.bikesched("admin-example")) {
+    try (Bikesched bikesched =
+        BikeschedUtil.builder("admin-example").jobHistory(JOB_HISTORY).build()) {
       var example = new AdminExample(bikesched);
       example.seed();
       HttpServer server = example.serve(port);
