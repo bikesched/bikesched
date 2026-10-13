@@ -3,6 +3,7 @@
   "extends": [
     "config:recommended"
   ],
+  "minimumReleaseAge": "3 days",
   "packageRules": [
     {
       "description": "Stable releases only: no alpha, beta, RC, milestone, preview, experimental or snapshot versions",
