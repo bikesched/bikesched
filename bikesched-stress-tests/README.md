@@ -40,13 +40,14 @@ the paused node's JVM end up in `build/stress-logs/`.
 `LoadTest` runs jobs on one and on three nodes with the default settings and
 `maxConcurrentJobs(20)`, checking that no step runs twice while the nodes compete for the jobs:
 
-- backlog: 5,000 jobs with two steps scheduled before the nodes start; reports how long the nodes take to run
-  them all (jobs per second);
+- backlog: 5,000 jobs with two steps scheduled before the nodes start; reports how long the nodes
+  take to run them all (jobs per second);
 - mixed: 1,000 jobs that run a step, start a child job whose first attempt exceeds its timeout of
   300 ms (retried), wait for an event published by another instance, sleep for 500 ms, wait for
   the child and run a last step; reports how long they take;
-- steady load: 200 jobs with two steps per second for 20 seconds, scheduled by an instance that does not poll;
-  reports the time from scheduling to the job's start (50th, 95th and 99th percentile, maximum).
+- steady load: 200 jobs with two steps per second for 20 seconds, scheduled by an instance that
+  does not poll; reports the time from scheduling to the job's start (50th, 95th and 99th
+  percentile, maximum).
 
 The numbers depend on the machine and are reported, not asserted: on the console and appended to
 `build/reports/stress/load.txt`. Scale the runs with Gradle properties:
