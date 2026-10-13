@@ -3,6 +3,7 @@ package org.bikesched.event;
 
 import java.util.Objects;
 import org.bikesched.internal.util.ValidationUtil;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An event name together with the class of its payload, shared by the code that publishes events of
@@ -22,7 +23,7 @@ import org.bikesched.internal.util.ValidationUtil;
  * @param payloadType the class payloads are mapped to and from by the {@code JsonMapper}
  * @param <T> the payload type
  */
-public record EventType<T>(String name, Class<T> payloadType) {
+public record EventType<T extends @Nullable Object>(String name, Class<T> payloadType) {
 
   /** Validates the type. */
   public EventType {
@@ -38,7 +39,7 @@ public record EventType<T>(String name, Class<T> payloadType) {
    * @param <T> the payload type
    * @return the event type
    */
-  public static <T> EventType<T> of(String name, Class<T> payloadType) {
+  public static <T extends @Nullable Object> EventType<T> of(String name, Class<T> payloadType) {
     return new EventType<>(name, payloadType);
   }
 }

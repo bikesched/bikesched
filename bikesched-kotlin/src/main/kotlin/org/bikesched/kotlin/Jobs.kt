@@ -114,7 +114,8 @@ internal fun <T> runStep(
     builder.onFailure { failing -> onFailure(failing) }
   }
   if (compensation != null) {
-    builder.compensateWith { step, result -> compensation(step, result) }
+    @Suppress("UNCHECKED_CAST")
+    builder.compensateWith { step, result -> compensation(step, result as T) }
   }
   return builder.run { handler(it) }
 }
@@ -127,7 +128,7 @@ internal class UnitFailingStep(private val delegate: FailingStep<Void>) : Failin
 
   override fun error(): String = delegate.error()
 
-  override fun resolve(result: Unit) {
+  override fun resolve(result: Unit?) {
     delegate.resolve(null)
   }
 }

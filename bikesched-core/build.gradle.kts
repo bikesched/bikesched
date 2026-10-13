@@ -5,6 +5,8 @@ plugins {
 description = "PostgreSQL-backed job scheduler: jobs, durable steps, recurring jobs and events"
 
 dependencies {
+    // Nullness annotations of the public API (@NullMarked, @Nullable); no runtime code.
+    api(libs.jspecify)
     implementation(libs.postgresql)
     // Logging facade only; applications pick the binding (tests use logback-classic, see the testing bundle).
     implementation(libs.slf4j.api)

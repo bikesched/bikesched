@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Handles failed jobs of a {@link JobType}, receiving the payload mapped to the type's payload
  * class; like a {@link JobFailureHandler} otherwise.
@@ -9,7 +11,7 @@ package org.bikesched.job;
  * @see org.bikesched.Bikesched#registerJobFailureHandler(JobType, TypedJobFailureHandler)
  */
 @FunctionalInterface
-public interface TypedJobFailureHandler<T> {
+public interface TypedJobFailureHandler<T extends @Nullable Object> {
 
   /**
    * Handles the failed job.
@@ -18,5 +20,5 @@ public interface TypedJobFailureHandler<T> {
    * @param payload the job's payload mapped by the {@code JsonMapper}, {@code null} if it has none
    * @throws Exception if the handling failed; it runs again
    */
-  void handle(FailedJob job, T payload) throws Exception;
+  void handle(FailedJob job, @Nullable T payload) throws Exception;
 }

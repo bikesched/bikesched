@@ -2,6 +2,7 @@
 package org.bikesched.job;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The outcome of a child job a parent waited for with {@link Job#waitForJob(UUID, Class)}: one
@@ -25,7 +26,7 @@ import java.util.UUID;
  *
  * @param <T> the type of the child's result
  */
-public sealed interface JobResult<T> {
+public sealed interface JobResult<T extends @Nullable Object> {
 
   /**
    * Returns the id of the child job.
@@ -41,7 +42,8 @@ public sealed interface JobResult<T> {
    * @param result the result it set with {@link Job#complete(Object)}, {@code null} if none
    * @param <T> the type of the result
    */
-  record Succeeded<T>(UUID jobId, T result) implements JobResult<T> {}
+  record Succeeded<T extends @Nullable Object>(UUID jobId, @Nullable T result)
+      implements JobResult<T> {}
 
   /**
    * The child failed permanently (after its last attempt, and its compensations if any).
@@ -50,7 +52,7 @@ public sealed interface JobResult<T> {
    * @param error the error of its last attempt
    * @param <T> the type of the result
    */
-  record Failed<T>(UUID jobId, String error) implements JobResult<T> {}
+  record Failed<T extends @Nullable Object>(UUID jobId, String error) implements JobResult<T> {}
 
   /**
    * The child was cancelled, by its handler or via {@code Bikesched.cancel}.
@@ -59,7 +61,8 @@ public sealed interface JobResult<T> {
    * @param message the cancel message, {@code null} if none
    * @param <T> the type of the result
    */
-  record Cancelled<T>(UUID jobId, String message) implements JobResult<T> {}
+  record Cancelled<T extends @Nullable Object>(UUID jobId, @Nullable String message)
+      implements JobResult<T> {}
 
   /**
    * Compensating the child's steps failed permanently.
@@ -68,7 +71,8 @@ public sealed interface JobResult<T> {
    * @param error the error of its last compensation attempt
    * @param <T> the type of the result
    */
-  record CompensationFailed<T>(UUID jobId, String error) implements JobResult<T> {}
+  record CompensationFailed<T extends @Nullable Object>(UUID jobId, String error)
+      implements JobResult<T> {}
 
   /**
    * The parent's wait timed out before the child ended (see {@link Job#waitForJob(UUID, Class,
@@ -77,7 +81,7 @@ public sealed interface JobResult<T> {
    * @param jobId the child's id
    * @param <T> the type of the result
    */
-  record TimedOut<T>(UUID jobId) implements JobResult<T> {}
+  record TimedOut<T extends @Nullable Object>(UUID jobId) implements JobResult<T> {}
 
   /**
    * Returns whether the child succeeded.
@@ -95,7 +99,7 @@ public sealed interface JobResult<T> {
    * @param fallback the value to return unless the child succeeded, may be {@code null}
    * @return the result ({@code null} if the child set none), or the fallback
    */
-  default T orElse(T fallback) {
+  default @Nullable T orElse(@Nullable T fallback) {
     if (this instanceof Succeeded<T>(var _, T result)) {
       return result;
     }
@@ -108,7 +112,7 @@ public sealed interface JobResult<T> {
    * @return the result, {@code null} if the child set none
    * @throws JobFailedException with this outcome if the child did not succeed or the wait timed out
    */
-  default T orElseThrow() {
+  default @Nullable T orElseThrow() {
     if (this instanceof Succeeded<T>(var _, T result)) {
       return result;
     }

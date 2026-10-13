@@ -4,6 +4,7 @@ package org.bikesched.admin;
 import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A job as listed by {@link Admin#findJobs(JobQuery)}, without its payload and result (see {@link
@@ -34,13 +35,13 @@ public record JobSummary(
     int attempts,
     int maxAttempts,
     int priority,
-    Instant scheduledAt,
+    @Nullable Instant scheduledAt,
     Instant createdAt,
     Instant updatedAt,
-    Instant finishedAt,
-    String lastError,
-    UUID parentJobId,
-    String parentJobType,
-    String recurrence,
-    String idempotencyKey,
-    String nodeName) {}
+    @Nullable Instant finishedAt,
+    @Nullable String lastError,
+    @Nullable UUID parentJobId,
+    @Nullable String parentJobType,
+    @Nullable String recurrence,
+    @Nullable String idempotencyKey,
+    @Nullable String nodeName) {}

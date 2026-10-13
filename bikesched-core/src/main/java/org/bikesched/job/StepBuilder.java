@@ -2,6 +2,7 @@
 package org.bikesched.job;
 
 import org.bikesched.RetryBackoff;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a step of a job, created by {@link Job#newStep(String, Class)}: optionally with a
@@ -16,7 +17,7 @@ import org.bikesched.RetryBackoff;
  *
  * @param <T> the type of the step result
  */
-public interface StepBuilder<T> {
+public interface StepBuilder<T extends @Nullable Object> {
 
   /**
    * Sets the compensation undoing the step (optional). If the job is cancelled, or fails
@@ -64,5 +65,5 @@ public interface StepBuilder<T> {
    * @throws Exception if the step failed
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  T run(StepHandler<T> handler) throws Exception;
+  @Nullable T run(StepHandler<T> handler) throws Exception;
 }

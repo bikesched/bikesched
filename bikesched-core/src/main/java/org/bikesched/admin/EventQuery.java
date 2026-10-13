@@ -4,6 +4,7 @@ package org.bikesched.admin;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Filters and paging of {@link Admin#findEvents(EventQuery)}, keyset based like {@link JobQuery}.
@@ -16,7 +17,11 @@ import java.util.UUID;
  * @param limit the maximum number of events, between 1 and {@link JobQuery#MAX_LIMIT}
  */
 public record EventQuery(
-    String name, String keyPrefix, Instant publishedBefore, UUID beforeId, int limit) {
+    @Nullable String name,
+    @Nullable String keyPrefix,
+    @Nullable Instant publishedBefore,
+    @Nullable UUID beforeId,
+    int limit) {
 
   /**
    * Validates the query.
@@ -50,7 +55,7 @@ public record EventQuery(
    * @param name the event name; {@code null} for every name
    * @return a new query
    */
-  public EventQuery withName(String name) {
+  public EventQuery withName(@Nullable String name) {
     return new EventQuery(name, keyPrefix, publishedBefore, beforeId, limit);
   }
 
@@ -60,7 +65,7 @@ public record EventQuery(
    * @param keyPrefix the prefix; {@code null} or empty for every key
    * @return a new query
    */
-  public EventQuery withKeyPrefix(String keyPrefix) {
+  public EventQuery withKeyPrefix(@Nullable String keyPrefix) {
     return new EventQuery(name, keyPrefix, publishedBefore, beforeId, limit);
   }
 

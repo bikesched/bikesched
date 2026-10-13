@@ -2,6 +2,7 @@
 package org.bikesched.admin;
 
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The runs (occurrences) of a recurring job, see {@link Admin#findRecurringJobRuns(String, int)}.
@@ -11,7 +12,8 @@ import java.util.List;
  *     waiting; {@code null} if there is none, e.g. after the recurring job was removed
  * @param previous the ended occurrences, newest first
  */
-public record RecurringJobRuns(String type, JobSummary pending, List<JobSummary> previous) {
+public record RecurringJobRuns(
+    String type, @Nullable JobSummary pending, List<JobSummary> previous) {
 
   /** Copies the previous runs. */
   public RecurringJobRuns {

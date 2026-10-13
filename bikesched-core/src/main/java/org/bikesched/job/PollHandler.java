@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Checks once whether the result of a poll is ready, see {@link Job#newPoll(String, Class,
  * java.time.Duration)}.
@@ -8,7 +10,7 @@ package org.bikesched.job;
  * @param <T> the type of the ready value
  */
 @FunctionalInterface
-public interface PollHandler<T> {
+public interface PollHandler<T extends @Nullable Object> {
 
   /**
    * Checks whether the result is ready, e.g. by asking an external service.

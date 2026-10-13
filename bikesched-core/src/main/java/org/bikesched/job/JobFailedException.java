@@ -4,6 +4,7 @@ package org.bikesched.job;
 import java.io.Serial;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Thrown by {@link JobResult#orElseThrow()} when a child job did not succeed, or the wait for it
@@ -17,7 +18,7 @@ public final class JobFailedException extends BikeschedException {
   private final UUID jobId;
 
   /** The outcome; not serialized (records of a sealed interface, not {@code Serializable}). */
-  private final transient JobResult<?> result;
+  private final transient @Nullable JobResult<?> result;
 
   /**
    * Creates the exception.
@@ -44,7 +45,7 @@ public final class JobFailedException extends BikeschedException {
    *
    * @return the outcome; {@code null} after deserialization
    */
-  public JobResult<?> result() {
+  public @Nullable JobResult<?> result() {
     return result;
   }
 

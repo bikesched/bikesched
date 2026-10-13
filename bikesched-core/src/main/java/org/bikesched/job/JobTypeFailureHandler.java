@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A {@link TypedJobFailureHandler} that carries its job type, for class-based failure handlers
  * registered without a separate type argument. One class can implement it next to {@link
@@ -20,7 +22,8 @@ package org.bikesched.job;
  * @param <T> the payload type
  * @see org.bikesched.Bikesched#registerJobFailureHandler(JobTypeFailureHandler)
  */
-public interface JobTypeFailureHandler<T> extends TypedJobFailureHandler<T> {
+public interface JobTypeFailureHandler<T extends @Nullable Object>
+    extends TypedJobFailureHandler<T> {
 
   /**
    * Returns the job type whose failed jobs this handler handles.

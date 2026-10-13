@@ -51,3 +51,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0038](0038-admin-ui.md) | Admin UI as static files on a framework-neutral handler | Accepted, JSON handling superseded by [0040](0040-admin-nanojson-and-shaded-artifact.md) |
 | [0039](0039-optional-schema-migration.md) | Optional automatic schema migration with history validation | Accepted |
 | [0040](0040-admin-nanojson-and-shaded-artifact.md) | Nanojson for admin JSON with an optional shaded artifact | Accepted |
+| [0041](0041-jspecify-nullness-annotations.md) | Nullness of the public API with JSpecify annotations | Accepted |

@@ -72,6 +72,11 @@ failure handler the same way.
 
 ## Nullability
 
+The Java API is annotated with [JSpecify](https://jspecify.dev/), so Kotlin sees its nullability
+instead of platform types: `job.payload()` is `String?`, and a Java callback interface implemented
+in Kotlin gets values that may be `null` as nullable types, e.g. the payload of a
+`TypedJobHandler<Order>` lambda is `Order?`.
+
 Reified helpers check nullability: `payload<Order>()` throws for a job without payload,
 `payload<Order?>()` returns `null`. Likewise, a `handleJobs<Order>` handler is not called for a
 job without payload (the attempt fails with an `IllegalStateException`), a `handleJobs<Order?>`

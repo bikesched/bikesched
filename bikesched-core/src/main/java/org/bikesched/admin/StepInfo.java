@@ -4,6 +4,7 @@ package org.bikesched.admin;
 import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A step of a job, see {@link Admin#findSteps(UUID)}.
@@ -31,13 +32,13 @@ public record StepInfo(
     String kind,
     String state,
     int attempts,
-    String lastError,
+    @Nullable String lastError,
     Instant startedAt,
-    Instant finishedAt,
-    Instant waitUntil,
-    String eventName,
-    String eventKey,
-    UUID childJobId,
-    String childJobType,
-    JobState childJobState,
+    @Nullable Instant finishedAt,
+    @Nullable Instant waitUntil,
+    @Nullable String eventName,
+    @Nullable String eventKey,
+    @Nullable UUID childJobId,
+    @Nullable String childJobType,
+    @Nullable JobState childJobState,
     boolean childJobExists) {}

@@ -4,13 +4,14 @@ package org.bikesched.event;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An event builder published by a bikesched node.
  *
  * @param <P> the payload type
  */
-public interface NodeEventBuilder<P> extends EventBuilder<P> {
+public interface NodeEventBuilder<P extends @Nullable Object> extends EventBuilder<P> {
   /**
    * Sets the connection used to publish the event in the caller's transaction. bikesched does not
    * manage this connection.
@@ -18,7 +19,7 @@ public interface NodeEventBuilder<P> extends EventBuilder<P> {
    * @param connection caller-owned connection; {@code null} uses bikesched's own transaction
    * @return this builder
    */
-  NodeEventBuilder<P> connection(Connection connection);
+  NodeEventBuilder<P> connection(@Nullable Connection connection);
 
   /**
    * Sets an idempotency key (optional), so that a caller that retries, e.g. a webhook delivered
@@ -43,7 +44,7 @@ public interface NodeEventBuilder<P> extends EventBuilder<P> {
   NodeEventBuilder<P> idempotencyKey(String idempotencyKey);
 
   @Override
-  NodeEventBuilder<P> payload(P payload);
+  NodeEventBuilder<P> payload(@Nullable P payload);
 
   @Override
   NodeEventBuilder<P> retention(Duration retention);

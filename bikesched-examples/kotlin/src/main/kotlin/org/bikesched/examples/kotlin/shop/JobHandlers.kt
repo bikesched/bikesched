@@ -33,6 +33,7 @@ val PROCESS_PAYMENT = JobType("process-payment", ProcessPaymentPayload::class.ja
 /** Handles new orders: offers payment options. */
 private val processOrderHandler = TypedJobHandler<ProcessOrderPayload> { job, payload ->
   val log = LoggerFactory.getLogger("ProcessOrderHandler")
+  checkNotNull(payload) { "Job ${job.id()} has no payload" }
   log.info("Processing order {}", payload.orderId)
 
   val orderId = UUID.fromString(payload.orderId)
@@ -55,6 +56,7 @@ private val processOrderHandler = TypedJobHandler<ProcessOrderPayload> { job, pa
 /** Handles payment processing. */
 private val processPaymentHandler = TypedJobHandler<ProcessPaymentPayload> { job, payload ->
   val log = LoggerFactory.getLogger("ProcessPaymentHandler")
+  checkNotNull(payload) { "Job ${job.id()} has no payload" }
   log.info("Processing payment for order {} with option {}", payload.orderId, payload.paymentOptionId)
 
   val orderId = UUID.fromString(payload.orderId)

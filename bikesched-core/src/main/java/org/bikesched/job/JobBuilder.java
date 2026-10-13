@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds and schedules a job of one type, obtained via {@link
@@ -37,7 +38,8 @@ import org.bikesched.BikeschedException;
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
  */
-public interface JobBuilder<P> extends JobHandlerSettings<JobBuilder<P>, P> {
+public interface JobBuilder<P extends @Nullable Object>
+    extends JobHandlerSettings<JobBuilder<P>, P> {
 
   /**
    * Continues with storing the job using the given connection, as part of the caller's transaction

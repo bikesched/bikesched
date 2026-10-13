@@ -13,6 +13,7 @@ import org.bikesched.event.EventPublisher;
 import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A job being executed, as seen by its {@link JobHandler}.
@@ -57,7 +58,8 @@ public interface Job extends EventPublisher {
    * @return a durable event builder
    */
   @Override
-  <T> StepEventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
+  <T extends @Nullable Object> StepEventBuilder<T> newEvent(
+      EventType<T> eventType, String eventKey);
 
   /**
    * Returns the job id.
@@ -93,7 +95,7 @@ public interface Job extends EventPublisher {
    * @return the payload as JSON text, may be {@code null}
    * @see #payload(Class)
    */
-  String payload();
+  @Nullable String payload();
 
   /**
    * Returns the job payload converted by the configured {@link JsonMapper}:
@@ -109,7 +111,7 @@ public interface Job extends EventPublisher {
    *     from the default mapper (no {@code jsonMapper} configured) for types other than {@link
    *     String}
    */
-  <T> T payload(Class<T> type);
+  <T extends @Nullable Object> @Nullable T payload(Class<T> type);
 
   /**
    * Executes a durable step of this job, like a durable function: if the step already completed in
@@ -149,7 +151,8 @@ public interface Job extends EventPublisher {
    * @throws IllegalArgumentException if the name is blank
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception;
+  <T extends @Nullable Object> @Nullable T step(
+      String name, Class<T> resultType, StepHandler<T> handler) throws Exception;
 
   /**
    * Executes a durable step of this job with no result, like {@link #step(String, Class,
@@ -218,7 +221,7 @@ public interface Job extends EventPublisher {
    * @throws IllegalArgumentException if the name is blank
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  <T> StepBuilder<T> newStep(String name, Class<T> resultType);
+  <T extends @Nullable Object> StepBuilder<T> newStep(String name, Class<T> resultType);
 
   /**
    * Returns whether the handler runs to compensate the job (see {@link #newStep(String, Class)}):
@@ -282,7 +285,7 @@ public interface Job extends EventPublisher {
    * @throws IllegalArgumentException if the step or event name is blank
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  <T> EventWait<T> waitForEvent(
+  <T extends @Nullable Object> EventWait<T> waitForEvent(
       String stepName, String eventName, String eventKey, Class<T> payloadType);
 
   /**
@@ -309,7 +312,8 @@ public interface Job extends EventPublisher {
    * @throws IllegalArgumentException if the step name is blank
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  <T> EventWait<T> waitForEvent(String stepName, EventType<T> eventType, String eventKey);
+  <T extends @Nullable Object> EventWait<T> waitForEvent(
+      String stepName, EventType<T> eventType, String eventKey);
 
   /**
    * Waits for an event of an {@link EventType} and returns its payload, mapped to the type's
@@ -339,7 +343,8 @@ public interface Job extends EventPublisher {
    * @throws BikeschedException if the step cannot be read or stored
    * @throws IllegalArgumentException if the step name is blank
    */
-  <T> T awaitEvent(String stepName, EventType<T> eventType, String eventKey);
+  <T extends @Nullable Object> @Nullable T awaitEvent(
+      String stepName, EventType<T> eventType, String eventKey);
 
   /**
    * Sleeps for the given duration, as a durable step. On the first run the step stores its wake-up
@@ -426,7 +431,8 @@ public interface Job extends EventPublisher {
    * @throws IllegalArgumentException if the name is blank or the interval is not positive
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  <T> PollBuilder<T> newPoll(String name, Class<T> resultType, Duration interval);
+  <T extends @Nullable Object> PollBuilder<T> newPoll(
+      String name, Class<T> resultType, Duration interval);
 
   /**
    * Builds a poll whose interval grows, like {@link #newPoll(String, Class, Duration)}:
@@ -452,7 +458,8 @@ public interface Job extends EventPublisher {
    * @throws IllegalArgumentException if the name is blank
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
-  <T> PollBuilder<T> newPoll(String name, Class<T> resultType, RetryBackoff interval);
+  <T extends @Nullable Object> PollBuilder<T> newPoll(
+      String name, Class<T> resultType, RetryBackoff interval);
 
   /**
    * Starts building a child job, started exactly once as a durable step of this job: the first run
@@ -495,7 +502,7 @@ public interface Job extends EventPublisher {
    * @throws IllegalStateException if this job is an occurrence of a recurring job, or if called
    *     while a step handler or compensation of the job runs
    */
-  <T> StepJobBuilder<T> newJob(JobType<T> type);
+  <T extends @Nullable Object> StepJobBuilder<T> newJob(JobType<T> type);
 
   /**
    * Waits for a child job started with {@link #newJob(String)} to end and returns its outcome, with
@@ -529,7 +536,7 @@ public interface Job extends EventPublisher {
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    * @throws BikeschedException if the step cannot be read or stored
    */
-  <T> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType);
+  <T extends @Nullable Object> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType);
 
   /**
    * Waits for a child job like {@link #waitForJob(UUID, Class)}, at most for {@code timeout}
@@ -548,7 +555,8 @@ public interface Job extends EventPublisher {
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    * @throws BikeschedException if the step cannot be read or stored
    */
-  <T> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType, Duration timeout);
+  <T extends @Nullable Object> JobResult<T> waitForJob(
+      UUID childJobId, Class<T> resultType, Duration timeout);
 
   /**
    * Sets the job's result, mapped to JSON by the configured {@link JsonMapper} right away. Once the
@@ -569,7 +577,7 @@ public interface Job extends EventPublisher {
    * @param result the result, may be {@code null}
    * @throws RuntimeException any exception of the mapper
    */
-  void complete(Object result);
+  void complete(@Nullable Object result);
 
   /**
    * Marks this job as cancelled. Once the handler returns, bikesched sets the job to {@code
@@ -589,7 +597,7 @@ public interface Job extends EventPublisher {
    * @param message why the job was cancelled, may be {@code null}
    * @see #cancel()
    */
-  void cancel(String message);
+  void cancel(@Nullable String message);
 
   /**
    * Ends the current attempt and runs the job again once the delay has passed, without using up an
@@ -656,7 +664,7 @@ public interface Job extends EventPublisher {
    * @param message why the attempt failed, may be {@code null}
    * @return the failure, to configure the retry
    */
-  JobFailure fail(String message);
+  JobFailure fail(@Nullable String message);
 
   /**
    * Sets a new timeout for the running attempt, counted from now, replacing the current deadline
