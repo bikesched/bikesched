@@ -26,8 +26,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param nodeName unique name of the node in the cluster; see {@link NodeNames}
  * @param dataSource name of the {@code DataSource} bean to use if the context has several
- * @param migrateOnStartup whether the schema is migrated and validated at startup instead of on
- *     first use; defaults to {@code true}
+ * @param migrateSchema whether first database use migrates the schema or only validates migration
+ *     history; defaults to {@code true}
  * @param autoStart whether the node starts automatically with the application
  * @param metrics whether a {@code MicrometerJobListener} and a {@code MicrometerEventListener} are
  *     registered when {@code bikesched-micrometer} and a {@code MeterRegistry} are present;
@@ -57,7 +57,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record BikeschedProperties(
     String nodeName,
     String dataSource,
-    Boolean migrateOnStartup,
+    Boolean migrateSchema,
     AutoStart autoStart,
     Metrics metrics,
     Integer maxConcurrentJobs,
@@ -115,6 +115,9 @@ public record BikeschedProperties(
 
   /** Applies the set options to the builder; unset ones keep the builder's default. */
   void applyTo(BikeschedBuilder builder) {
+    if (migrateSchema != null) {
+      builder.migrateSchema(migrateSchema);
+    }
     if (nodeName != null) {
       builder.nodeName(nodeName);
     }
@@ -175,11 +178,6 @@ public record BikeschedProperties(
     if (hardTimeoutGrace != null) {
       builder.hardTimeoutGrace(hardTimeoutGrace);
     }
-  }
-
-  /** Whether the schema is migrated and validated at startup; defaults to {@code true}. */
-  boolean migrateOnStartupEnabled() {
-    return migrateOnStartup == null || migrateOnStartup;
   }
 
   /** Whether the node starts with the application; defaults to {@code true}. */

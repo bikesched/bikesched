@@ -378,23 +378,26 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * <p>A node taking over the name of a dead node takes over its id and releases the jobs that node
    * left running.
    *
-   * <p>Migrates the schema first, unless that already happened (e.g. when a job was scheduled).
+   * <p>Migrates the schema first, or validates its migration history with {@link
+   * BikeschedBuilder#migrateSchema(boolean) migrateSchema(false)}, unless initialization already
+   * succeeded (e.g. when a job was scheduled).
    *
    * @return the node, with its {@link Node#id() id}
    * @throws IllegalStateException if this instance is closed
-   * @throws BikeschedException if the migration fails, e.g. because the database is not available,
-   *     or a live node with the same name is registered
+   * @throws BikeschedException if migration or validation fails, e.g. the database is not
+   *     available, or a live node with the same name is registered
    */
   Node start();
 
   /**
-   * Migrates the schema — creating the tables if they are missing and upgrading them if they are
-   * out of date — without registering a node, sending heartbeats or polling for jobs; only needed
-   * explicitly to fail fast at startup, since the first database access migrates anyway.
+   * Migrates the schema, creating missing tables and applying pending migrations, without
+   * registering a node, sending heartbeats or polling for jobs. Always runs the migrator, even
+   * after successful initialization or with {@link BikeschedBuilder#migrateSchema(boolean)} off.
+   * Use a migration-capable data source and {@code autoStartPolling(false)} for a deploy step.
    *
    * @throws IllegalStateException if this instance is closed
    * @throws BikeschedException if the migration fails, e.g. because the database is not available
-   *     or its schema is newer than this library
+   *     or an applied migration checksum does not match this library
    */
   void migrate();
 

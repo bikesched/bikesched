@@ -14,8 +14,54 @@ The schema is created by bikesched's own minimal migrator on first use (no Flywa
 Concurrent nodes are serialized with a PostgreSQL advisory lock; applied migrations are tracked with
 checksums in `bikesched_schema_migrations`. The migration scripts ship in the jar under
 `org/bikesched/migrations/`. `Bikesched.migrate()` runs the migration without registering the node
-or polling, so an application can validate the schema at startup instead of on first use — the
-Spring starter does this by default ([Spring Boot](spring.md)).
+or polling, so an application can migrate at startup instead of on first use. The Spring starter
+uses the same first-use initialization boundary ([Spring Boot](spring.md#schema-migration)).
+
+### Disable automatic migration
+
+Use the core builder flag when migrations belong in a separate deploy step:
+
+```java
+// Deployment: a data source with DDL rights, using the same bikesched library version.
+try (var deploy = Bikesched.builder()
+    .dataSource(migrationDataSource)
+    .autoStartPolling(false)
+    .build()) {
+    deploy.migrate();
+}
+
+// Application: no DDL rights required.
+var scheduler = Bikesched.builder()
+    .dataSource(applicationDataSource)
+    .migrateSchema(false)
+    .build();
+```
+
+`migrateSchema` defaults to `true`. With `false`, first database use reads
+`bikesched_schema_migrations` and requires every bundled version with its matching checksum.
+It performs no DDL or history writes and does not acquire the migration advisory lock. Unknown
+versions warn and are ignored, just as during migration, to allow rolling deployments. Validation
+checks migration history, not the physical tables, columns or indexes: manually changed schema
+objects are not detected.
+
+With default polling, validation happens during `build()`, before node registration. With
+`autoStartPolling(false)`, building stays database-free; validation waits for the first operation
+that needs the database, including reads. A failure is retried on the next database operation.
+Finish deployment before starting application access; validation does not wait for a concurrent
+migration. Success is cached per instance, not checked before every query.
+
+The application needs schema `USAGE`, `SELECT` on the migration history, and normal table/sequence
+permissions for scheduler operations. A missing history table or bundled version fails with
+instructions to run `Bikesched.migrate()` using a migration-capable data source. A checksum mismatch
+names the version and script: restore matching scripts/library and schema, rather than changing
+recorded checksums to bypass validation. SQL failures preserve their cause; check connectivity,
+search path and permissions too. Merely executing the bundled SQL without recording bikesched's
+migration history is not sufficient; the supported deploy path above maintains that history.
+
+Explicit `Bikesched.migrate()` always runs the migrator, including when `migrateSchema(false)` is
+set or validation already succeeded. It still needs DDL rights and never starts polling. In Spring,
+set `bikesched.migrate-schema=false` for validation-only behavior. Flyway/Liquibase adapters and
+configurable schemas are outside this feature.
 
 > [!NOTE]
 > While bikesched is unreleased, schema changes are made to the first migration in place. A local

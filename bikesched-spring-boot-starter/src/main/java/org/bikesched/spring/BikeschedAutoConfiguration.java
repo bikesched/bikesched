@@ -183,9 +183,8 @@ public class BikeschedAutoConfiguration {
   }
 
   /**
-   * Starts and stops the node with the context. Not conditional on {@code
-   * bikesched.auto-start.enabled} on purpose: the schema is migrated and validated even when this
-   * instance only schedules jobs.
+   * Starts and stops the node with the context. With {@code bikesched.auto-start.enabled=false},
+   * database initialization is deferred until the application first uses the database.
    *
    * @param bikesched the node
    * @param properties the properties

@@ -227,7 +227,6 @@ the duplicate-type message), but the starter does not pass it: `JobHandlerBeans`
 
 ```java
 @Override public void start() {
-  if (properties.migrateOnStartupEnabled()) bikesched.migrate();
   if (!properties.autoStartEnabled()) { LOG.info("… not registered, call start() …"); return; }
   bikesched.start();
   running = true;
@@ -243,14 +242,10 @@ the duplicate-type message), but the starter does not pass it: `JobHandlerBeans`
   after every other lifecycle bean (web server, Flyway/Liquibase on a lifecycle, executors) is up.
   Polling is skipped when `bikesched.auto-start.enabled=false`; the application then calls
   `start()` itself (e.g. from its own `ApplicationRunner` after seeding).
-- **Migration is fail-fast and independent of polling**: `bikesched.migrate()` runs at startup when
-  `bikesched.migrate-on-startup=true` (the default) *even when this instance never polls*, so a
-  scheduling-only application also learns about a missing table, a `V001` checksum mismatch or an
-  unreachable database at boot instead of at 3 a.m. — the draft's open question §13.2.1 resolved to
-  "keep `true` for both". Deployments that must start before their database is reachable set
-  `bikesched.migrate-on-startup=false` and keep the lazy behaviour (migration on first use).
-  This is why the lifecycle bean is `@ConditionalOnBean(Bikesched)` only, not
-  `@ConditionalOnProperty(auto-start.enabled)`.
+- **Migration follows core initialization**: `bikesched.migrate-schema` defaults to `true`.
+  First database use migrates, or validates migration history when `false`. Polling triggers that
+  at startup; without polling it is deferred. The starter makes no explicit migration call.
+  Applications may call `Bikesched.migrate()` themselves regardless of the flag.
 - **Stop**: `Bikesched.close()` is called by Spring's destruction phase (destroy-method detection),
   *before* the `DataSource` it depends on; `stop()` only flags the holder so late beans are skipped
   (§5.1). Waiting for running jobs is `close()`'s behaviour, bounded by the job timeouts.
@@ -287,7 +282,7 @@ maps kebab-case to the components.
 | `bikesched.job-history-clean-up-interval` | `jobHistoryCleanUpInterval(Duration)` | 1 hour |
 | `bikesched.job-retention` | `jobRetention(Duration)` | 7 days |
 | `bikesched.job-clean-up-interval` | `jobCleanUpInterval(Duration)` | 1 hour |
-| `bikesched.migrate-on-startup` | — (§6) | `true` |
+| `bikesched.migrate-schema` | `migrateSchema(boolean)` | `true` |
 | `bikesched.metrics.enabled` | — (§7.4) | `true` with a `MeterRegistry` bean |
 | `bikesched.statement-timeout` | `statementTimeout(Duration)` | data source |
 | `bikesched.hard-timeout-grace` | `hardTimeoutGrace(Duration)` | off |
@@ -451,9 +446,9 @@ happens.
    the bean; invalid signature → naming the method; a `@Lazy` bean created after startup registers
    and its job runs.
 3. **Lifecycle** — `LifecycleTest`: context close → the node's `bikesched_nodes` row is gone
-   (destroyed before the `DataSource`); `auto-start.enabled=false` → the schema *is* migrated but no
-   node row is registered (§6's fail-fast-without-polling); `migrate-on-startup=false` against a
-   fresh database → no tables at startup, the first scheduled job migrates lazily.
+   (destroyed before the `DataSource`). `SchemaMigrationPropertiesTest` verifies property binding,
+   lazy migration without polling, startup migration/validation with polling, validation failure
+   without DDL, and the explicit user migration path.
 4. **Listeners and metrics** — `ListenersAndMetricsTest`: two `JobListener` beans both receive calls;
    with `bikesched-micrometer` and a registry, the automatic listener records with the `node` tag;
    `bikesched.metrics.enabled=false` leaves the registry empty; a user-defined
@@ -546,7 +541,7 @@ caught publishing/consumption mistakes.
 | Public builder options | `pollInterval`, `heartbeatInterval` and `nodeTimeout` become public; poll default 1s → 5s (§7.1) |
 | Module layout | one module, artifact `bikesched-spring-boot-starter`, package + JPMS module `org.bikesched.spring`; a later `-autoconfigure` split stays transparent (§3) |
 | Handler discovery | Option A: `BeanPostProcessor` collecting candidates + `JobHandlerBeans` holder registering before polling (§5) |
-| Schema migration | fail-fast: `Bikesched.migrate()` in core, `bikesched.migrate-on-startup=true` by default (§6) |
+| Schema migration | `bikesched.migrate-schema=true` by default; core initializes on first database use (§6, ADR 0039) |
 | Micrometer | supported from v1: automatic `MicrometerJobListener` from a `MeterRegistry` bean, tagged with the node name, `bikesched.metrics.enabled` to turn it off (§7.4) |
 | `RetryBackoff` properties | nested properties (`fixed`, `exponential.initial`/`exponential.max`) as sketched in §7.1 |
 | Transaction semantics | document `REQUIRED == REQUIRES_NEW` for handlers *and* warn once per handler method that uses the default propagation (§8) |
@@ -556,7 +551,7 @@ caught publishing/consumption mistakes.
 
 | Question | Decision |
 |---|---|
-| `migrate-on-startup` with `auto-start.enabled=false` (draft §13.2.1) | fail-fast stays unconditional: migration runs at startup even for scheduling-only instances; `migrate-on-startup=false` opts out (§6) |
+| Migration without polling | First database use initializes the schema, not context startup; one flag controls migration versus validation (ADR 0039) |
 | `autoStartPolling(false)` semantics | the node registers with no database until `start()` — previously it registered at `build()` (§6) |
 | Default node name | `<spring.application.name>-<host name>`, not the application name alone: replicas must not collide (§7.1.1) |
 | Properties representation | one immutable `@ConfigurationProperties` record with boxed fields, `applyTo(builder)` applying only set values; no mutable class, no separate `RetryBackoffProperties` (§7.1) |

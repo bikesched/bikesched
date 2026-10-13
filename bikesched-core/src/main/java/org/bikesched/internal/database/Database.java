@@ -127,11 +127,12 @@ public final class Database {
     return jsonMapper;
   }
 
-  /**
-   * Brings the schema up to date (see {@link SchemaMigrator}).
-   *
-   * @return the migration versions applied by this call
-   */
+  /** Validates migration history without DDL (see {@link SchemaMigrator}). */
+  public void validateSchema() {
+    new SchemaMigrator(dataSource).validate();
+  }
+
+  /** Applies pending migrations and returns their versions. */
   public List<Integer> migrate() {
     return new SchemaMigrator(dataSource).migrate();
   }

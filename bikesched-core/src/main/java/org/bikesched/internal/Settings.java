@@ -30,6 +30,7 @@ import org.bikesched.job.listener.JobListener;
  * @param maxConcurrentJobs maximum number of jobs executed at the same time on this node
  * @param autoStartPolling whether job polling starts when the node is built; otherwise it starts
  *     with {@link Bikesched#start()}
+ * @param migrateSchema whether first database use migrates rather than only validating history
  * @param defaultJobTimeout maximum duration of a job attempt for jobs without a timeout of their
  *     own; {@code null} for none
  * @param retryBackoff delay of the retry after a failed attempt
@@ -62,6 +63,7 @@ public record Settings(
     Duration notifyInterval,
     int maxConcurrentJobs,
     boolean autoStartPolling,
+    boolean migrateSchema,
     Duration defaultJobTimeout,
     RetryBackoff retryBackoff,
     int failureHandlerAttempts,

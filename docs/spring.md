@@ -116,7 +116,7 @@ memory. The same applies to `newEvent(name, key).connection(…).publish()`.
 ## Lifecycle
 
 The node is built with polling disabled, and a `SmartLifecycle` (last phase) starts it once the rest
-of the context is up: it migrates the schema (`migrate-on-startup`, below) and registers the node,
+of the context is up: it initializes the database (see below) and registers the node,
 sends heartbeats and polls. On shutdown, Spring closes the node before destroying the `DataSource`
 it uses: unfinished jobs are released and running handlers awaited (bounded by their timeouts), so
 another node takes over.
@@ -124,13 +124,35 @@ another node takes over.
 - `bikesched.auto-start.enabled=false` builds a node that schedules only: it registers with no
   database, executes nothing and sends no heartbeats. Call `start()` yourself later if such
   an instance should also work.
-- `bikesched.migrate-on-startup=true` (the default) migrates and validates the schema at startup,
-  **even when this instance never polls** — a missing table, a checksum mismatch or an unreachable
-  database then fails the context instead of the first job at 3 a.m. Set it to `false` for
-  deployments that must start before their database is reachable; the schema is then migrated
-  lazily on first use.
 - Node names must be unique among live nodes; a second context with the same name fails to start
   (the intended guard). Several nodes in one JVM therefore need distinct `bikesched.node-name`s.
+
+### Schema migration
+
+`bikesched.migrate-schema` maps directly to the core `migrateSchema` flag and defaults to `true`.
+The starter does not call `Bikesched.migrate()` explicitly. Initialization happens on first database
+use: starting polling triggers it during startup, while a scheduling-only instance defers it.
+
+| `migrate-schema` | `auto-start.enabled` | Behavior |
+|---|---|---|
+| `true` (default) | `true` (default) | Migrate at startup, then register the node and poll. |
+| `true` | `false` | No startup database access; migrate on first database use. |
+| `false` | `true` | Validate migration history at startup, then register the node and poll. |
+| `false` | `false` | No startup database access; validate history on first database use. |
+
+To run without DDL privileges, migrate separately with a migration-capable data source, then set:
+
+```yaml
+bikesched:
+  migrate-schema: false
+```
+
+Validation reads migration history without DDL or history writes. Missing history/versions or a
+checksum mismatch fails startup when polling is enabled, otherwise the first database operation.
+It is not physical schema drift detection; see [database migrations](database.md#migrations) for
+permissions and deployment ordering. `auto-start.enabled` only controls polling, not DDL permission.
+An application calling `Bikesched.migrate()` explicitly still requests migration regardless of the
+flag; that call requires migration privileges and does not start polling.
 
 ## Properties
 
@@ -161,7 +183,7 @@ keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and f
 | `bikesched.job-clean-up-interval` | 1 hour | |
 | `bikesched.statement-timeout` | data source | |
 | `bikesched.hard-timeout-grace` | off | |
-| `bikesched.migrate-on-startup` | `true` | see Lifecycle |
+| `bikesched.migrate-schema` | `true` | migrate on first database use; `false` validates history only, see [Schema migration](#schema-migration) |
 | `bikesched.metrics.enabled` | `true` | only relevant with Micrometer (below) |
 
 A `BikeschedCustomizer` bean (a `void customize(BikeschedBuilder)` functional interface, applied in

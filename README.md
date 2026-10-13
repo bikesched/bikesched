@@ -50,7 +50,7 @@ orchestration across services. If that's what you're after, have a look at
 
 | Module | Contents |
 |---|---|
-| [`bikesched-core`](bikesched-core) | the scheduler; depends on the PostgreSQL driver and the SLF4J API only |
+| [`bikesched-core`](bikesched-core) | the scheduler; depends on the PostgreSQL driver and the SLF4J API only; [optional schema migration spec](docs/specs/optional-schema-migration.md) |
 | [`bikesched-jackson`](bikesched-jackson) | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
 | [`bikesched-kotlin`](bikesched-kotlin) | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
 | [`bikesched-annotations`](bikesched-annotations) | job handlers declared as `@JobHandler` methods, see [Annotations](docs/annotations.md) |
