@@ -110,6 +110,57 @@ class DatabaseRestartTest {
   }
 
   @Test
+  void childJobsEventWaitsSleepsAndTimeoutsSurviveARestart() throws Exception {
+    var mixed = new MixedJobs();
+    int jobs = 200;
+    try (Bikesched a = mixedNode("mixed-a", mixed);
+        Bikesched b = mixedNode("mixed-b", mixed)) {
+      List<UUID> parents = new ArrayList<>();
+      for (int i = 0; i < jobs; i++) {
+        parents.add(mixed.schedule(a));
+      }
+      // Half of the events before the restart, so jobs are waiting, sleeping and running children
+      // when the database goes down; the other half after it.
+      for (UUID parent : parents.subList(0, jobs / 2)) {
+        mixed.publishEvent(a, parent);
+      }
+      await("a third of the children succeeded")
+          .atMost(Duration.ofMinutes(1))
+          .until(() -> database.queryLong(mixed.countChildren("SUCCEEDED")) >= jobs / 3);
+
+      database.restart();
+
+      for (UUID parent : parents.subList(jobs / 2, jobs)) {
+        await("event published")
+            .atMost(Duration.ofSeconds(30))
+            .ignoreExceptions() // until the pool has reconnected
+            .until(
+                () -> {
+                  mixed.publishEvent(a, parent);
+                  return true;
+                });
+      }
+      await("every parent job succeeded")
+          .atMost(Duration.ofMinutes(2))
+          .pollInterval(Duration.ofMillis(500))
+          .ignoreExceptions()
+          .until(() -> database.queryLong(mixed.countParents("SUCCEEDED")) == jobs);
+      assertThat(database.queryLong(mixed.countChildren("SUCCEEDED"))).isEqualTo(jobs);
+      Executions executions = mixed.executions();
+      assertThat(executions.jobsWith("one")).isEqualTo(jobs);
+      assertThat(executions.jobsWith("two")).isEqualTo(jobs);
+      assertThat(executions.jobsWith("child-attempt-2"))
+          .as("children retried after their timeout")
+          .isEqualTo(jobs);
+      // As above: only steps running at the restart run again.
+      assertThat(executions.repeated())
+          .as("steps repeated after the restart")
+          .isLessThanOrEqualTo(2 * 10);
+      assertNodesStillWork(a, b);
+    }
+  }
+
+  @Test
   void nodesRecoverFromAnOutageLongerThanTheNodeTimeout() throws Exception {
     var executions = new Executions();
     String type = "outage-" + UUID.randomUUID();
@@ -161,6 +212,18 @@ class DatabaseRestartTest {
                 });
           }
         });
+    node.start();
+    return node;
+  }
+
+  /** A node running the {@link MixedJobs}, with up to 10 concurrent jobs. */
+  private static Bikesched mixedNode(String name, MixedJobs mixed) {
+    Bikesched node =
+        StressNodes.node(database.pool(name, 12), name)
+            .maxConcurrentJobs(10)
+            .autoStartPolling(false)
+            .build();
+    mixed.register(node);
     node.start();
     return node;
   }

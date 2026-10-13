@@ -22,6 +22,11 @@ final class Executions {
     return count == null ? 0 : count.get();
   }
 
+  /** The number of jobs whose step (or attempt, as recorded) ran at least once. */
+  long jobsWith(String step) {
+    return counts.keySet().stream().filter(key -> key.endsWith("/" + step)).count();
+  }
+
   /** The number of step bodies that ran more than once. */
   long repeated() {
     return counts.values().stream().filter(count -> count.get() > 1).count();

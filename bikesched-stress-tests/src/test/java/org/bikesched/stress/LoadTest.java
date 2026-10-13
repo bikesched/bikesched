@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Consumer;
 import org.bikesched.Bikesched;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -31,7 +32,8 @@ import org.junit.jupiter.params.provider.ValueSource;
  *
  * <p>Scaled with Gradle properties: {@code stress.jobs} (backlog size, default 5000), {@code
  * stress.rate} (jobs per second under steady load, default 200), {@code stress.seconds} (duration
- * of the steady load, default 20) and {@code stress.concurrency} ({@code maxConcurrentJobs} per
+ * of the steady load, default 20), {@code stress.mixedJobs} (jobs with child jobs, event waits,
+ * sleeps and timeouts, default 1000) and {@code stress.concurrency} ({@code maxConcurrentJobs} per
  * node, default 20).
  */
 class LoadTest {
@@ -39,6 +41,7 @@ class LoadTest {
   private static final int JOBS = Integer.getInteger("stress.jobs", 5_000);
   private static final int RATE = Integer.getInteger("stress.rate", 200);
   private static final int SECONDS = Integer.getInteger("stress.seconds", 20);
+  private static final int MIXED_JOBS = Integer.getInteger("stress.mixedJobs", 1_000);
   private static final int CONCURRENCY = Integer.getInteger("stress.concurrency", 20);
   private static final Path REPORT = Path.of("build", "reports", "stress", "load.txt");
 
@@ -133,15 +136,63 @@ class LoadTest {
     }
   }
 
-  /** An instance that only schedules: it does not poll, but tells the nodes about new jobs. */
-  private static Bikesched client(String type) {
+  @ParameterizedTest(name = "{0} node(s)")
+  @ValueSource(ints = {1, 3})
+  void runsJobsWithChildJobsEventWaitsSleepsAndTimeouts(int nodeCount) throws Exception {
+    var mixed = new MixedJobs();
+    List<Bikesched> nodes = startNodes(nodeCount, mixed::register);
+    try (Bikesched client = client(mixed.types().toArray(String[]::new))) {
+      long start = System.nanoTime();
+      List<UUID> parents = new ArrayList<>();
+      for (int i = 0; i < MIXED_JOBS; i++) {
+        parents.add(mixed.schedule(client));
+      }
+      for (UUID parent : parents) {
+        mixed.publishEvent(client, parent);
+      }
+      await("every parent job succeeded")
+          .atMost(Duration.ofMinutes(10))
+          .pollInterval(Duration.ofMillis(100))
+          .until(() -> database.queryLong(mixed.countParents("SUCCEEDED")) == MIXED_JOBS);
+      Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
+
+      report(
+          "mixed: %d jobs (step, child job whose first attempt times out, event wait, sleep of"
+              + " %s, wait for the child, step) on %d node(s): %s, %.0f jobs/s",
+          MIXED_JOBS,
+          MixedJobs.SLEEP,
+          nodeCount,
+          elapsed,
+          MIXED_JOBS * 1_000.0 / elapsed.toMillis());
+      Executions executions = mixed.executions();
+      assertThat(executions.jobsWith("one")).isEqualTo(MIXED_JOBS);
+      assertThat(executions.jobsWith("two")).isEqualTo(MIXED_JOBS);
+      assertThat(executions.jobsWith("child-attempt-1")).isEqualTo(MIXED_JOBS);
+      assertThat(executions.jobsWith("child-attempt-2"))
+          .as("children retried after their timeout")
+          .isEqualTo(MIXED_JOBS);
+      assertThat(executions.jobsWith("child-attempt-3")).isZero();
+      assertThat(executions.repeated()).as("steps run more than once").isZero();
+      assertThat(database.queryLong(mixed.countChildren("SUCCEEDED"))).isEqualTo(MIXED_JOBS);
+    } finally {
+      nodes.forEach(Bikesched::close);
+    }
+  }
+
+  /**
+   * An instance that only schedules: it does not poll, but tells the nodes about new jobs. It has
+   * no-op handlers for the types, which scheduling requires.
+   */
+  private static Bikesched client(String... types) {
     Bikesched client =
         Bikesched.builder()
             .dataSource(database.pool("client-" + UUID.randomUUID(), 5))
             .nodeName("client-" + UUID.randomUUID())
             .autoStartPolling(false)
             .build();
-    client.registerJobHandler(type, _ -> {}); // never runs: not polling
+    for (String type : types) {
+      client.registerJobHandler(type, _ -> {}); // never runs: not polling
+    }
     return client;
   }
 
@@ -151,6 +202,22 @@ class LoadTest {
    */
   private static List<Bikesched> startNodes(
       int count, String type, Executions executions, Map<UUID, Long> started) {
+    return startNodes(
+        count,
+        node ->
+            node.registerJobHandler(
+                type,
+                job -> {
+                  if (started != null) {
+                    started.putIfAbsent(job.id(), System.nanoTime());
+                  }
+                  job.step("one", () -> executions.record(job.id(), "one"));
+                  job.step("two", () -> executions.record(job.id(), "two"));
+                }));
+  }
+
+  /** Nodes with the default settings, apart from the concurrency, with the given handlers. */
+  private static List<Bikesched> startNodes(int count, Consumer<Bikesched> handlers) {
     List<Bikesched> nodes = new ArrayList<>();
     for (int i = 0; i < count; i++) {
       String name = "load-" + i + "-" + UUID.randomUUID();
@@ -162,15 +229,7 @@ class LoadTest {
               .maxConcurrentJobs(CONCURRENCY)
               .autoStartPolling(false)
               .build();
-      node.registerJobHandler(
-          type,
-          job -> {
-            if (started != null) {
-              started.putIfAbsent(job.id(), System.nanoTime());
-            }
-            job.step("one", () -> executions.record(job.id(), "one"));
-            job.step("two", () -> executions.record(job.id(), "two"));
-          });
+      handlers.accept(node);
       nodes.add(node);
     }
     nodes.forEach(Bikesched::start);

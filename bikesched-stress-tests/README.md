@@ -23,6 +23,7 @@ every job ends, that completed steps are not repeated, and that every node works
 | Test | Failure | Expected |
 |---|---|---|
 | `DatabaseRestartTest` | the database restarts while two nodes run 300 jobs with three steps each | every job succeeds; only steps running at the restart run again |
+| | the database restarts while 200 jobs run a step, start a child job (whose first attempt exceeds its timeout), wait for an event, sleep and wait for the child | every parent and child succeeds, events published before and after the restart are received; only steps running at the restart run again |
 | | the database is down when a handler returns, longer than the node retries recording the outcome | the node releases the job once the database is back, the next attempt succeeds without repeating the completed step |
 | | the database is down for twice the node timeout, so each node finds the other's heartbeat expired | every job succeeds, both nodes keep working |
 | `NodePauseTest` | a node in its own JVM pauses in a step for half the node timeout | nothing changes, the job succeeds on that node |
@@ -36,12 +37,15 @@ the paused node's JVM end up in `build/stress-logs/`.
 
 ## Load tests
 
-`LoadTest` runs jobs with two steps on one and on three nodes with the default settings and
+`LoadTest` runs jobs on one and on three nodes with the default settings and
 `maxConcurrentJobs(20)`, checking that no step runs twice while the nodes compete for the jobs:
 
-- backlog: 5,000 jobs scheduled before the nodes start; reports how long the nodes take to run
+- backlog: 5,000 jobs with two steps scheduled before the nodes start; reports how long the nodes take to run
   them all (jobs per second);
-- steady load: 200 jobs per second for 20 seconds, scheduled by an instance that does not poll;
+- mixed: 1,000 jobs that run a step, start a child job whose first attempt exceeds its timeout of
+  300 ms (retried), wait for an event published by another instance, sleep for 500 ms, wait for
+  the child and run a last step; reports how long they take;
+- steady load: 200 jobs with two steps per second for 20 seconds, scheduled by an instance that does not poll;
   reports the time from scheduling to the job's start (50th, 95th and 99th percentile, maximum).
 
 The numbers depend on the machine and are reported, not asserted: on the console and appended to
@@ -49,7 +53,8 @@ The numbers depend on the machine and are reported, not asserted: on the console
 
 ```shell
 ./gradlew :bikesched-stress-tests:stressTest --tests '*LoadTest' \
-    -Pstress.jobs=20000 -Pstress.rate=500 -Pstress.seconds=60 -Pstress.concurrency=50
+    -Pstress.jobs=20000 -Pstress.rate=500 -Pstress.seconds=60 -Pstress.mixedJobs=5000 \
+    -Pstress.concurrency=50
 ```
 
 All nodes and the database share one machine here, so three nodes do not run three times as many
