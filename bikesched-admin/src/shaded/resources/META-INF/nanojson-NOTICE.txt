@@ -1,0 +1,8 @@
+This artifact includes nanojson (https://github.com/mmastrac/nanojson).
+Copyright 2011 The nanojson Authors
+
+nanojson is included under the Apache License, Version 2.0.
+See META-INF/LICENSE for the license text.
+
+Its com.grack.nanojson package has been relocated to
+org.bikesched.admin.web.internal.nanojson. The nanojson implementation is otherwise unchanged.

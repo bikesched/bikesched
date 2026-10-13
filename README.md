@@ -190,7 +190,8 @@ All dependency and tool versions are managed in `gradle/libs.versions.toml`.
 
 Every successful build of `main` publishes the current snapshot (`org.bikesched:bikesched-core`,
 `bikesched-jackson`, `bikesched-kotlin`, `bikesched-annotations`, `bikesched-cron`,
-`bikesched-micrometer`, `bikesched-spring-boot-starter`, version `0.1.0-SNAPSHOT`) to GitHub
+`bikesched-micrometer`, `bikesched-spring-boot-starter`, `bikesched-admin`,
+`bikesched-admin-shaded`, version `0.1.0-SNAPSHOT`) to GitHub
 Packages. Reading from GitHub Packages requires a GitHub token with the `read:packages` scope, even for public
 packages:
 

@@ -4,7 +4,8 @@ Date: 2026-10-11
 
 ## Status
 
-Accepted
+Accepted. JSON writer and dependency choices superseded by
+[ADR 0040](0040-admin-nanojson-and-shaded-artifact.md).
 
 ## Context
 
