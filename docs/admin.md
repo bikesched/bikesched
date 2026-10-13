@@ -1,6 +1,6 @@
 ---
 title: "Admin UI"
-weight: 12
+weight: 13
 ---
 
 # Admin UI

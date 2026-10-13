@@ -114,25 +114,26 @@ starts the interval when the previous occurrence ended.
   fixed rate nor a fixed delay, and the flag would do nothing for wall-clock schedules.
 - Outcome: interval jobs that never overlap their own next run and keep a gap after long runs.
 
-### Changing handlers of running jobs
+### Handler versions
 
-Jobs live across deploys: a job sleeping for days, waiting for an event or retried after a failure
-resumes with the new handler code and replays it from the top. Steps are addressed by name, so
-reordering them is safe, but other changes are not: a renamed step runs its side effect again, a
-step whose result type changed fails to read its stored result, and changed code outside steps
-may take another path than the first attempt did. Nothing in the docs or the API helps with this.
+Jobs live across deploys and replay with the handler code deployed by then.
+[Changing handlers](docs/changing-handlers.md) lists the safe and unsafe changes and works around
+the unsafe ones with a version property in the payload, a new job type or two deploys. Nothing in
+the API tells old jobs from new ones, and nothing stops an old node from running a job created for
+new code during a rolling deploy.
 
-- Docs first: a page on evolving handlers (safe and unsafe changes, keeping result types
-  compatible, adding a step before completed ones, removing steps, draining old jobs).
 - Handler versions: `registerJobHandler(type, version, handler)` stores the version on each new
   job (`handler_version` column), `job.handlerVersion()` lets the handler branch for old jobs, and
   a node claims only versions it supports (like the type filter during rolling deploys, so an old
   node does not run a job created for new code).
 - Alternatively per change: `job.isPatched("change-id")`, recorded as a step on first evaluation,
   so jobs that ran past that point before the change keep the old path.
-- Open: per-handler versions vs. per-change markers (or both); what happens to jobs whose version
-  no node supports any more (stuck `SCHEDULED`, an incident?).
-- Outcome: deploys that change a handler without breaking jobs already in flight.
+- To decide between: per-handler versions, per-change markers, or both.
+- Open: what happens to jobs whose version no node supports any more (stuck `SCHEDULED`, an
+  incident?).
+- Outcome: deploys that change a handler without breaking jobs already in flight, without
+  encoding versions in payloads or type names; postponed until a real case needs more than the
+  workarounds.
 
 ### Reference
 

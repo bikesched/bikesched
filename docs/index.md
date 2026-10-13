@@ -47,15 +47,17 @@ and without any coordinator besides PostgreSQL.
 6. [Child jobs](child-jobs.md): starting and waiting for child jobs, job results
 7. [Patterns](patterns.md): outbox, deduplication, rate limits, webhooks, approvals, fan-out,
    periodic work, sagas
-8. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
-9. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
-10. [Metrics](metrics.md): `JobListener`, `EventListener` and the Micrometer meters
-   (`bikesched-micrometer`)
-11. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
-12. [Admin UI](admin.md): a page for jobs, steps, events and nodes with retry and cancel
+8. [Changing handlers](changing-handlers.md): what happens to jobs in flight when a deploy
+   changes their handler, safe and unsafe changes
+9. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
+10. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
+11. [Metrics](metrics.md): `JobListener`, `EventListener` and the Micrometer meters
+    (`bikesched-micrometer`)
+12. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
+13. [Admin UI](admin.md): a page for jobs, steps, events and nodes with retry and cancel
     (`bikesched-admin`), and the lookups behind it
-13. [Database](database.md): tables, indexes and migrations
-14. [Testing](testing.md): test nodes and job wait helpers (`bikesched-test`)
+14. [Database](database.md): tables, indexes and migrations
+15. [Testing](testing.md): test nodes and job wait helpers (`bikesched-test`)
 
 The [examples](../bikesched-examples/README.md) show the concepts working together; the
 [patterns](patterns.md) explain which example solves which problem. The
