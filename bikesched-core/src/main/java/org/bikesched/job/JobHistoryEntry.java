@@ -3,6 +3,7 @@ package org.bikesched.job;
 
 import java.time.Instant;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A recorded change of a job or of one of its steps, see {@link
@@ -22,7 +23,12 @@ import java.util.UUID;
  *     may be {@code null}
  */
 public record JobHistoryEntry(
-    Instant createdAt, String stepName, String state, int attempt, UUID nodeId, String detail) {
+    Instant createdAt,
+    @Nullable String stepName,
+    String state,
+    int attempt,
+    @Nullable UUID nodeId,
+    @Nullable String detail) {
 
   /**
    * Returns whether this entry records a change of a step rather than of the job itself.

@@ -2,13 +2,14 @@
 package org.bikesched.job;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A step that failed in the last attempt of its job, handed to its {@link StepFailureHandler}.
  *
  * @param <T> the type of the step result
  */
-public interface FailingStep<T> {
+public interface FailingStep<T extends @Nullable Object> {
 
   /**
    * Returns the id of the step's job.
@@ -40,5 +41,5 @@ public interface FailingStep<T> {
    *
    * @param result the step result, may be {@code null}
    */
-  void resolve(T result);
+  void resolve(@Nullable T result);
 }

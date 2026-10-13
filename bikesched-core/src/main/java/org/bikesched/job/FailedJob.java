@@ -2,6 +2,7 @@
 package org.bikesched.job;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /** A job that failed permanently, handed to its {@link JobFailureHandler}. */
 public interface FailedJob {
@@ -25,7 +26,7 @@ public interface FailedJob {
    *
    * @return the payload as JSON text, {@code null} if the job has none
    */
-  String payload();
+  @Nullable String payload();
 
   /**
    * Returns the payload mapped by the configured {@code JsonMapper}, see {@link
@@ -35,7 +36,7 @@ public interface FailedJob {
    * @param <T> the payload type
    * @return the payload, {@code null} if the job has none
    */
-  <T> T payload(Class<T> type);
+  <T extends @Nullable Object> @Nullable T payload(Class<T> type);
 
   /**
    * Returns the state the job ends in once the handler returned.
@@ -50,5 +51,5 @@ public interface FailedJob {
    *
    * @return the stored error, {@code null} if none was stored
    */
-  String error();
+  @Nullable String error();
 }

@@ -2,13 +2,14 @@
 package org.bikesched.event;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An event builder published durably as a step of a job.
  *
  * @param <P> the payload type
  */
-public interface StepEventBuilder<P> extends EventBuilder<P> {
+public interface StepEventBuilder<P extends @Nullable Object> extends EventBuilder<P> {
   /**
    * Sets the durable step name; defaults to {@code publish <eventName>}.
    *
@@ -18,7 +19,7 @@ public interface StepEventBuilder<P> extends EventBuilder<P> {
   StepEventBuilder<P> stepName(String stepName);
 
   @Override
-  StepEventBuilder<P> payload(P payload);
+  StepEventBuilder<P> payload(@Nullable P payload);
 
   @Override
   StepEventBuilder<P> retention(java.time.Duration retention);

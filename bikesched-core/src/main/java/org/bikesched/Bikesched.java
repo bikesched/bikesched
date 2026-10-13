@@ -23,6 +23,7 @@ import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Entry point of bikesched: a database-backed job scheduler shared by all connected nodes.
@@ -121,7 +122,8 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @throws IllegalArgumentException if the type already has a handler, or this node already uses
    *     the type's name with another payload class
    */
-  <T> Bikesched registerJobHandler(JobType<T> type, TypedJobHandler<? super T> handler);
+  <T extends @Nullable Object> Bikesched registerJobHandler(
+      JobType<T> type, TypedJobHandler<? super T> handler);
 
   /**
    * Registers a handler that carries its job type, see {@link JobTypeHandler}; like {@link
@@ -137,7 +139,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @throws IllegalArgumentException if the type already has a handler, or this node already uses
    *     the type's name with another payload class
    */
-  default <T> Bikesched registerJobHandler(JobTypeHandler<T> handler) {
+  default <T extends @Nullable Object> Bikesched registerJobHandler(JobTypeHandler<T> handler) {
     Objects.requireNonNull(handler, "handler");
     return registerJobHandler(Objects.requireNonNull(handler.type(), "handler.type()"), handler);
   }
@@ -174,7 +176,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @throws IllegalArgumentException if the type already has a failure handler, or this node
    *     already uses the type's name with another payload class
    */
-  <T> Bikesched registerJobFailureHandler(
+  <T extends @Nullable Object> Bikesched registerJobFailureHandler(
       JobType<T> type, TypedJobFailureHandler<? super T> handler);
 
   /**
@@ -188,7 +190,8 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @throws IllegalArgumentException if the type already has a failure handler, or this node
    *     already uses the type's name with another payload class
    */
-  default <T> Bikesched registerJobFailureHandler(JobTypeFailureHandler<T> handler) {
+  default <T extends @Nullable Object> Bikesched registerJobFailureHandler(
+      JobTypeFailureHandler<T> handler) {
     Objects.requireNonNull(handler, "handler");
     return registerJobFailureHandler(
         Objects.requireNonNull(handler.type(), "handler.type()"), handler);
@@ -226,7 +229,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @throws IllegalArgumentException if this node already uses the type's name with another payload
    *     class
    */
-  <T> JobBuilder<T> newJob(JobType<T> type);
+  <T extends @Nullable Object> JobBuilder<T> newJob(JobType<T> type);
 
   /**
    * Stops a recurring job (see {@link JobBuilder#schedule(Recurrence)}): unregisters it on this
@@ -281,7 +284,8 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @param <T> the payload type
    * @return a builder for the event
    */
-  <T> NodeEventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
+  <T extends @Nullable Object> NodeEventBuilder<T> newEvent(
+      EventType<T> eventType, String eventKey);
 
   /**
    * Looks up a job by its id, in a read-only transaction.
@@ -353,7 +357,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @return {@code false} if the job does not exist, has ended or is being compensated
    * @throws BikeschedException if the database cannot be accessed
    */
-  boolean cancel(UUID jobId, String message);
+  boolean cancel(UUID jobId, @Nullable String message);
 
   /**
    * Retries a job that failed permanently ({@code FAILED}), e.g. after fixing the cause: it is

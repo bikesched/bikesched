@@ -3,6 +3,7 @@ package org.bikesched.job;
 
 import java.time.Duration;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The outcome of one check of a poll, returned by a {@link PollHandler}: the result is {@link
@@ -21,7 +22,7 @@ import java.util.Objects;
  *
  * @param <T> the type of the ready value
  */
-public sealed interface Poll<T> {
+public sealed interface Poll<T extends @Nullable Object> {
 
   /**
    * Returns a ready outcome: the poll completes with the value, which is stored and returned on
@@ -31,7 +32,7 @@ public sealed interface Poll<T> {
    * @param <T> the type of the value
    * @return the outcome
    */
-  static <T> Poll<T> ready(T value) {
+  static <T extends @Nullable Object> Poll<T> ready(@Nullable T value) {
     return new Ready<>(value);
   }
 
@@ -41,7 +42,7 @@ public sealed interface Poll<T> {
    * @param <T> the type of the ready value
    * @return the outcome
    */
-  static <T> Poll<T> notReady() {
+  static <T extends @Nullable Object> Poll<T> notReady() {
     return new NotReady<>(null);
   }
 
@@ -54,7 +55,7 @@ public sealed interface Poll<T> {
    * @return the outcome
    * @throws IllegalArgumentException if {@code retryAfter} is negative
    */
-  static <T> Poll<T> notReady(Duration retryAfter) {
+  static <T extends @Nullable Object> Poll<T> notReady(Duration retryAfter) {
     return new NotReady<>(Objects.requireNonNull(retryAfter, "retryAfter"));
   }
 
@@ -64,7 +65,7 @@ public sealed interface Poll<T> {
    * @param value the value, may be {@code null}
    * @param <T> the type of the value
    */
-  record Ready<T>(T value) implements Poll<T> {}
+  record Ready<T extends @Nullable Object>(@Nullable T value) implements Poll<T> {}
 
   /**
    * The result is not ready yet.
@@ -72,7 +73,7 @@ public sealed interface Poll<T> {
    * @param retryAfter the time until the next check; {@code null} for the poll's interval
    * @param <T> the type of the ready value
    */
-  record NotReady<T>(Duration retryAfter) implements Poll<T> {
+  record NotReady<T extends @Nullable Object>(@Nullable Duration retryAfter) implements Poll<T> {
 
     /**
      * Validates the delay.

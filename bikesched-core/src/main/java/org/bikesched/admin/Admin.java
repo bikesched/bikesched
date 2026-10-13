@@ -4,6 +4,7 @@ package org.bikesched.admin;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Read-only lookups for operating bikesched, see {@link org.bikesched.Bikesched#admin()}. Every
@@ -147,7 +148,7 @@ public interface Admin {
    * @param limit the maximum number of steps, between 1 and {@link JobQuery#MAX_LIMIT}
    * @return the waiting steps with their jobs
    */
-  List<WaitingStep> findWaitingSteps(String eventName, String keyPrefix, int limit);
+  List<WaitingStep> findWaitingSteps(String eventName, @Nullable String keyPrefix, int limit);
 
   /**
    * Lists the registered nodes.

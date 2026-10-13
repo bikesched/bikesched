@@ -32,7 +32,7 @@ does; this file covers how to change it.
 
 | Module | Contents |
 |---|---|
-| `bikesched-core` | the library; runtime dependencies: PostgreSQL JDBC driver and `slf4j-api` only |
+| `bikesched-core` | the library; runtime dependencies: PostgreSQL JDBC driver and `slf4j-api` only, plus the annotations-only `jspecify` (`api`) |
 | `bikesched-jackson` | `JacksonJsonMapper` (Java only, package `org.bikesched.jackson`); depends on core and `jackson-databind` (both `api`) |
 | `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core and the Kotlin stdlib only (tests use bikesched-jackson) |
 | `bikesched-annotations` | `@JobHandler` and `JobHandlers` (Java only, package `org.bikesched.annotation`): job handlers declared as annotated methods, invoked via `MethodHandle`; depends on core only (`api`; tests use bikesched-jackson) |
@@ -120,6 +120,11 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `job.fail()`), except suspending at an event wait (internal `Error`, see `JobSuspended`).
 - New mechanisms are opt-in: jobs not using them behave exactly as before (no extra state, replay
   or round-trip).
+- Nullness: the exported core packages are `@NullMarked` (JSpecify, ADR 0041). Mark values that
+  may be `null` with `@Nullable` (type-use position: `@Nullable String`, `java.time.@Nullable
+  Duration`); type parameters of user values are `<T extends @Nullable Object>`, with
+  `@Nullable T` where `null` occurs for any `T` (no payload, a `null` step result). Lookups keep
+  returning `Optional`.
 - Breaking API changes are fine while unreleased; rename across code, tests, examples, README and
   `docs/` in one go.
 

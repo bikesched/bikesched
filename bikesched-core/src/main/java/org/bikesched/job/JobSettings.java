@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.time.Duration;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.JsonMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The settings shared by all job builders: payload, priority, attempts and timeout. Each setter
@@ -29,7 +30,7 @@ import org.bikesched.JsonMapper;
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
  */
-public interface JobSettings<B extends JobSettings<B, P>, P> {
+public interface JobSettings<B extends JobSettings<B, P>, P extends @Nullable Object> {
 
   /**
    * Sets the job payload (optional, default none), converted to JSON right away by the configured
@@ -43,7 +44,7 @@ public interface JobSettings<B extends JobSettings<B, P>, P> {
    *     String}
    * @see Job#payload(Class)
    */
-  B payload(P payload);
+  B payload(@Nullable P payload);
 
   /**
    * Sets the priority (optional, default 0). Due jobs with a higher priority are claimed first.

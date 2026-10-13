@@ -7,6 +7,7 @@ import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
 import org.bikesched.job.FailingStep;
 import org.bikesched.job.StepFailureHandler;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A wait for an event as a durable step of a job, obtained via {@link
@@ -30,7 +31,7 @@ import org.bikesched.job.StepFailureHandler;
  *
  * @param <T> the payload type
  */
-public interface EventWait<T> {
+public interface EventWait<T extends @Nullable Object> {
 
   /**
    * Limits the wait (optional): once the given time, counted from when the step first started
@@ -76,5 +77,5 @@ public interface EventWait<T> {
    *     called while a step handler or compensation of the job runs
    * @throws BikeschedException if the step cannot be read or stored
    */
-  T receive();
+  @Nullable T receive();
 }

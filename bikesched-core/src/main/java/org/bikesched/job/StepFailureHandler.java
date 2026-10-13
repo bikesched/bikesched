@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Handles a step that failed in the last attempt of its job, see {@link
  * StepBuilder#onFailure(StepFailureHandler)}.
@@ -8,7 +10,7 @@ package org.bikesched.job;
  * @param <T> the type of the step result
  */
 @FunctionalInterface
-public interface StepFailureHandler<T> {
+public interface StepFailureHandler<T extends @Nullable Object> {
 
   /**
    * Handles the failure, e.g. marks an order as failed, or {@linkplain FailingStep#resolve(Object)

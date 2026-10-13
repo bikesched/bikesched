@@ -3,6 +3,7 @@ package org.bikesched.admin;
 
 import java.util.Map;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The jobs of one type, see {@link Admin#findJobTypes()}.
@@ -12,7 +13,8 @@ import org.bikesched.job.JobState;
  * @param recurrence the recurrence of a recurring job type (from its pending occurrence); {@code
  *     null} for other types
  */
-public record JobTypeSummary(String type, Map<JobState, Integer> counts, String recurrence) {
+public record JobTypeSummary(
+    String type, Map<JobState, Integer> counts, @Nullable String recurrence) {
 
   /** Copies the counts. */
   public JobTypeSummary {

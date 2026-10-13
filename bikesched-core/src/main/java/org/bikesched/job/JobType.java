@@ -3,6 +3,7 @@ package org.bikesched.job;
 
 import java.util.Objects;
 import org.bikesched.internal.util.ValidationUtil;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A job type together with the class of its payload, shared by the code that schedules jobs of the
@@ -23,7 +24,7 @@ import org.bikesched.internal.util.ValidationUtil;
  * @param payloadType the class payloads are mapped to and from by the {@code JsonMapper}
  * @param <T> the payload type
  */
-public record JobType<T>(String name, Class<T> payloadType) {
+public record JobType<T extends @Nullable Object>(String name, Class<T> payloadType) {
 
   /** Validates the type. */
   public JobType {
@@ -39,7 +40,7 @@ public record JobType<T>(String name, Class<T> payloadType) {
    * @param <T> the payload type
    * @return the job type
    */
-  public static <T> JobType<T> of(String name, Class<T> payloadType) {
+  public static <T extends @Nullable Object> JobType<T> of(String name, Class<T> payloadType) {
     return new JobType<>(name, payloadType);
   }
 }

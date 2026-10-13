@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a job stored in the caller's transaction, obtained via {@link
@@ -19,7 +20,7 @@ import org.bikesched.BikeschedException;
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
  */
-public interface TransactionalJobBuilder<P>
+public interface TransactionalJobBuilder<P extends @Nullable Object>
     extends JobHandlerSettings<TransactionalJobBuilder<P>, P> {
 
   /**

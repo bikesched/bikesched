@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a one-off job with an idempotency key, obtained via {@link
@@ -33,7 +34,8 @@ import org.bikesched.BikeschedException;
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
  */
-public interface IdempotentJobBuilder<P> extends JobHandlerSettings<IdempotentJobBuilder<P>, P> {
+public interface IdempotentJobBuilder<P extends @Nullable Object>
+    extends JobHandlerSettings<IdempotentJobBuilder<P>, P> {
 
   /**
    * Continues with storing the job in the caller's transaction, see {@link

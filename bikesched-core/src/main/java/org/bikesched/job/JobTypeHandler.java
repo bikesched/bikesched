@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A {@link TypedJobHandler} that carries its {@link JobType}, so it can be registered on its own,
  * e.g. all handler beans of a dependency injection container in a loop:
@@ -25,7 +27,7 @@ package org.bikesched.job;
  * @param <T> the payload type
  * @see org.bikesched.Bikesched#registerJobHandler(JobTypeHandler)
  */
-public interface JobTypeHandler<T> extends TypedJobHandler<T> {
+public interface JobTypeHandler<T extends @Nullable Object> extends TypedJobHandler<T> {
 
   /**
    * Returns the job type this handler executes.

@@ -212,9 +212,15 @@ public fun <T : Any> Bikesched.createJob(
   priority?.let { builder = builder.priority(it) }
   maxAttempts?.let { builder = builder.maxAttempts(it) }
   timeout?.let { builder = builder.timeout(it.toJavaDuration()) }
-  handler?.let { h -> builder = builder.handler(TypedJobHandler<T> { job, p -> job.h(p) }) }
+  handler?.let { h ->
+    builder =
+      builder.handler(TypedJobHandler<T> { job, p -> job.h(requirePayload(job.id(), type, p)) })
+  }
   onFailure?.let { h ->
-    builder = builder.failureHandler(TypedJobFailureHandler<T> { failed, p -> failed.h(p) })
+    builder =
+      builder.failureHandler(
+        TypedJobFailureHandler<T> { failed, p -> failed.h(requirePayload(failed.id(), type, p)) }
+      )
   }
   return scheduleOneOff(builder, at, delay, connection, idempotencyKey)
 }
@@ -480,6 +486,10 @@ internal fun <T> typedJobFailureHandler(
   }
   @Suppress("UNCHECKED_CAST") failed.handler(payload as T)
 }
+
+/** Returns the [payload] of a job of the non-null payload type of [type]. */
+private fun <T : Any> requirePayload(jobId: UUID, type: JobType<T>, payload: T?): T =
+  payload ?: throw IllegalStateException("Job $jobId of type ${type.name()} has no payload")
 
 /** Maps the payload to [payloadType] and runs the typed [handler] with the job as receiver. */
 @PublishedApi
