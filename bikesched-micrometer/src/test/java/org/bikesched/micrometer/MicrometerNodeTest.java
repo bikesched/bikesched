@@ -8,7 +8,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -36,29 +36,24 @@ class MicrometerNodeTest {
     var registry = new SimpleMeterRegistry();
     String type = "metrics-" + UUID.randomUUID();
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(DATA_SOURCE)
-            .nodeName("micrometer-" + UUID.randomUUID())
-            .pollInterval(Duration.ofMillis(50))
+        BikeschedTest.testNode(DATA_SOURCE, "micrometer")
             .jobListener(new MicrometerJobListener(registry))
             .build()) {
       bikesched.registerJobHandler(type, _ -> {});
       UUID jobId = bikesched.newJob(type).schedule();
 
+      BikeschedTest.awaitJob(bikesched, jobId).timeout(Duration.ofSeconds(15)).untilSucceeded();
       await()
           .atMost(Duration.ofSeconds(15))
           .untilAsserted(
-              () -> {
-                assertThat(bikesched.findJob(jobId).orElseThrow().state())
-                    .isEqualTo(JobState.SUCCEEDED);
-                assertThat(
-                        registry
-                            .get("bikesched.job.attempts")
-                            .tags("job.type", type, "outcome", "succeeded")
-                            .timer()
-                            .count())
-                    .isOne();
-              });
+              () ->
+                  assertThat(
+                          registry
+                              .get("bikesched.job.attempts")
+                              .tags("job.type", type, "outcome", "succeeded")
+                              .timer()
+                              .count())
+                      .isOne());
       assertThat(registry.get("bikesched.job.claim.delay").tags("job.type", type).timer().count())
           .isOne();
       assertThat(registry.get("bikesched.jobs.active").gauge().value()).isZero();
@@ -70,9 +65,7 @@ class MicrometerNodeTest {
     var registry = new SimpleMeterRegistry();
     String eventName = "metrics-event-" + UUID.randomUUID();
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(DATA_SOURCE)
-            .nodeName("micrometer-" + UUID.randomUUID())
+        BikeschedTest.testNode(DATA_SOURCE, "micrometer")
             .autoStartPolling(false)
             .eventListener(new MicrometerEventListener(registry))
             .build()) {

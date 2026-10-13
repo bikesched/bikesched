@@ -2,7 +2,6 @@
 package org.bikesched.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.util.List;
 import java.util.UUID;
@@ -14,7 +13,7 @@ import org.bikesched.JsonMapper;
 import org.bikesched.annotation.JobHandler;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.Job;
-import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -42,7 +41,7 @@ class JsonMappingTest extends AbstractSpringTest {
             context -> {
               Bikesched node = context.getBean(Bikesched.class);
               UUID jobId = node.newJob("json-record").payload(new JsonJobs.Item("v", 7)).schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(JsonJobs.handled).containsExactly("v:7");
             });
   }
@@ -60,7 +59,7 @@ class JsonMappingTest extends AbstractSpringTest {
               Bikesched node = context.getBean(Bikesched.class);
               assertThat(context.getBean(JsonMapper.class)).isSameAs(user);
               UUID jobId = node.newJob("json-record").payload(new JsonJobs.Item("v", 7)).schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(user.fromJsonCalls.get()).as("the user mapper was used").isPositive();
             });
   }

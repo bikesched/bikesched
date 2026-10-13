@@ -18,6 +18,7 @@ import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.RecurrenceParser;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -87,9 +88,7 @@ class JobHandlersTest {
               bikesched.newJob("ping").schedule(),
               bikesched.newJob("flaky").schedule());
       for (UUID id : ids) {
-        await()
-            .atMost(Duration.ofSeconds(15))
-            .until(() -> bikesched.findJob(id).orElseThrow().state(), JobState.SUCCEEDED::equals);
+        BikeschedTest.awaitJob(bikesched, id).timeout(Duration.ofSeconds(15)).untilSucceeded();
       }
     }
     assertThat(jobs.calls)
@@ -136,9 +135,9 @@ class JobHandlersTest {
                   .schedule(),
               bikesched.newJob("annotated-ping-failing").maxAttempts(1).schedule());
       for (UUID id : ids) {
-        await()
-            .atMost(Duration.ofSeconds(15))
-            .until(() -> bikesched.findJob(id).orElseThrow().state(), JobState.FAILED::equals);
+        BikeschedTest.awaitJob(bikesched, id)
+            .timeout(Duration.ofSeconds(15))
+            .untilState(JobState.FAILED);
       }
       assertThatThrownBy(() -> JobHandlers.register(bikesched, new PaymentJobs()))
           .isInstanceOf(IllegalArgumentException.class);
@@ -245,9 +244,7 @@ class JobHandlersTest {
               .newJob(JobType.of("proxied-mail", Mail.class))
               .payload(new Mail("c@x"))
               .schedule();
-      await()
-          .atMost(Duration.ofSeconds(15))
-          .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState.SUCCEEDED::equals);
+      BikeschedTest.awaitJob(bikesched, jobId).timeout(Duration.ofSeconds(15)).untilSucceeded();
     }
     assertThat(throughProxy).as("the proxy, not the target, was called").containsExactly("send");
     assertThat(jobs.calls).containsExactly("send c@x");
@@ -302,10 +299,6 @@ class JobHandlersTest {
   }
 
   private static BikeschedBuilder nodeBuilder() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("annotations-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
-        .jsonMapper(new JacksonJsonMapper());
+    return BikeschedTest.testNode(DATA_SOURCE, "annotations").jsonMapper(new JacksonJsonMapper());
   }
 }

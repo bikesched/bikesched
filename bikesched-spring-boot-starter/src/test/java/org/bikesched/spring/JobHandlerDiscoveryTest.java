@@ -21,6 +21,7 @@ import org.bikesched.job.JobTypeFailureHandler;
 import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.RecurrenceParser;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -58,7 +59,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
                   node.newJob("discover-mail")
                       .payload(new MailJobs.Mail("alice@example.com"))
                       .schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(MailJobs.handled).containsExactly("alice@example.com");
             });
   }
@@ -79,7 +80,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
                   node.newJob("sig-payload").payload(new Signatures.Item("p")).schedule();
               UUID none = node.newJob("sig-none").schedule();
               for (UUID id : List.of(both, job, payload, none)) {
-                await().until(() -> node.findJob(id).orElseThrow().state(), JobState::isEnded);
+                BikeschedTest.awaitJob(node, id).untilEnded();
               }
               assertThat(Signatures.handled)
                   .containsExactlyInAnyOrder("both:b", "payload:p", "none", "job:" + job);
@@ -100,7 +101,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
                   node.newJob("type-handler-report")
                       .payload(new ReportHandler.Report("weekly"))
                       .schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(ReportHandler.handled).containsExactly("weekly");
             });
   }
@@ -128,8 +129,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
                       .maxAttempts(1)
                       .schedule();
               for (UUID id : List.of(charge, invoice)) {
-                await()
-                    .until(() -> node.findJob(id).orElseThrow().state(), JobState.FAILED::equals);
+                BikeschedTest.awaitJob(node, id).untilState(JobState.FAILED);
               }
               assertThat(PaymentJobs.handled).containsExactly("o1");
               assertThat(InvoiceHandler.handled).containsExactly("i1");
@@ -159,7 +159,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
                   node.newJob("tx-proxy")
                       .payload(new TransactionalOrderHandler.Order("o1"))
                       .schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(TransactionalOrderHandler.transactionActive)
                   .as("the handler runs through the proxy, with an active transaction")
                   .isTrue();
@@ -207,7 +207,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
               Bikesched node = context.getBean(Bikesched.class);
               context.getBean(LazyJobs.class); // created after startup: the handler registers now
               UUID jobId = node.newJob("lazy-handler").payload(new LazyJobs.Item("x")).schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(LazyJobs.handled).containsExactly("x");
             });
   }

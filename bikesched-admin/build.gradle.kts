@@ -21,6 +21,7 @@ dependencies {
     webjars(libs.webjars.preact)
     webjars(libs.webjars.htm)
 
+    testImplementation(project(":bikesched-test"))
     testImplementation(libs.postgresql)
 }
 

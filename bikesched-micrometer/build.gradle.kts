@@ -8,5 +8,6 @@ dependencies {
     api(project(":bikesched-core"))
     api(libs.micrometer.core)
 
+    testImplementation(project(":bikesched-test"))
     testImplementation(libs.postgresql)
 }
