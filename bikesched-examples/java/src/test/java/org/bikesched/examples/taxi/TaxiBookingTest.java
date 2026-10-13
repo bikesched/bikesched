@@ -2,16 +2,16 @@
 package org.bikesched.examples.taxi;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.math.BigDecimal;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -51,7 +51,7 @@ class TaxiBookingTest {
         .isEqualTo(
             new SimulatedPushNotifications.Notification(
                 "customer-1", "Anna is on the way and arrives in about 7 minutes."));
-    awaitState(jobId, "SUCCEEDED");
+    awaitState(jobId, JobState.SUCCEEDED);
     assertThat(payments.reservations())
         .containsExactly(
             new PaymentReservation("reservation-" + ride.rideId(), new BigDecimal("34.50"), "EUR"));
@@ -68,7 +68,7 @@ class TaxiBookingTest {
 
     booking.priceDecided(ride.rideId(), false);
 
-    awaitState(jobId, "CANCELLED");
+    awaitState(jobId, JobState.CANCELLED);
     assertThat(broker.cancelledRides()).containsExactly(ride.rideId());
     assertThat(broker.approvedRides()).isEmpty();
     assertThat(payments.reservations()).isEmpty();
@@ -82,7 +82,7 @@ class TaxiBookingTest {
 
     assertThat(notifications.next(ANSWER_TIMEOUT).message())
         .isEqualTo("Sorry, no taxi is available right now.");
-    awaitState(jobId, "CANCELLED");
+    awaitState(jobId, JobState.CANCELLED);
     assertThat(broker.cancelledRides()).containsExactly(ride.rideId());
     assertThat(payments.reservations()).isEmpty();
   }
@@ -92,11 +92,11 @@ class TaxiBookingTest {
     TaxiBooking booking = start(Duration.ofMinutes(1));
     UUID jobId = booking.requestRide(ride);
     broker.nextRequest(ANSWER_TIMEOUT);
-    awaitState(jobId, "WAITING");
+    awaitState(jobId, JobState.WAITING);
 
     assertThat(booking.cancelRide(jobId)).isTrue();
 
-    awaitState(jobId, "CANCELLED");
+    awaitState(jobId, JobState.CANCELLED);
     assertThat(broker.cancelledRides()).containsExactly(ride.rideId());
     assertThat(booking.cancelRide(jobId)).as("already cancelled").isFalse();
   }
@@ -112,7 +112,7 @@ class TaxiBookingTest {
 
     booking.priceDecided(ride.rideId(), true);
 
-    awaitState(jobId, "FAILED");
+    awaitState(jobId, JobState.FAILED);
     assertThat(payments.releasedReservations()).containsExactly("reservation-" + ride.rideId());
     assertThat(broker.cancelledRides()).containsExactly(ride.rideId());
     assertThat(broker.approvedRides()).isEmpty();
@@ -120,10 +120,7 @@ class TaxiBookingTest {
 
   private TaxiBooking start(Duration driverTimeout) {
     bikesched =
-        Bikesched.builder()
-            .dataSource(DATA_SOURCE)
-            .nodeName("taxi-" + UUID.randomUUID())
-            .pollInterval(Duration.ofMillis(50))
+        BikeschedTest.testNode(DATA_SOURCE, "taxi")
             .jsonMapper(new JacksonJsonMapper())
             .autoStartPolling(false)
             .build();
@@ -134,19 +131,7 @@ class TaxiBookingTest {
     return booking;
   }
 
-  private static void awaitState(UUID jobId, String state) {
-    await()
-        .atMost(ANSWER_TIMEOUT)
-        .untilAsserted(() -> assertThat(jobState(jobId)).isEqualTo(state));
-  }
-
-  private static String jobState(UUID jobId) throws SQLException {
-    try (var connection = DATA_SOURCE.getConnection();
-        var query = connection.prepareStatement("select state from bikesched_jobs where id = ?")) {
-      query.setObject(1, jobId);
-      try (var rs = query.executeQuery()) {
-        return rs.next() ? rs.getString(1) : null;
-      }
-    }
+  private void awaitState(UUID jobId, JobState state) {
+    BikeschedTest.awaitJob(bikesched, jobId).timeout(ANSWER_TIMEOUT).untilState(state);
   }
 }

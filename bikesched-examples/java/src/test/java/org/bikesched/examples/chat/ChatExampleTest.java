@@ -2,13 +2,11 @@
 package org.bikesched.examples.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
-import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -17,7 +15,7 @@ import org.bikesched.examples.chat.ChatExample.ChatMessage;
 import org.bikesched.examples.chat.ChatExample.Delivery;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
-import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -40,10 +38,7 @@ class ChatExampleTest {
 
       assertThat(jobIds.stream().distinct()).as("every delivery returns the same job").hasSize(1);
       UUID jobId = jobIds.getFirst();
-      await()
-          .atMost(Duration.ofSeconds(30))
-          .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-      assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
+      BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
       assertThat(example.platform().replies(message.messageId())).isEqualTo(1);
       assertThat(jobsWithKey(message.messageId())).isEqualTo(1);
     }
@@ -64,11 +59,6 @@ class ChatExampleTest {
   }
 
   private static Bikesched node() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("chat-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
-        .jsonMapper(new JacksonJsonMapper())
-        .build();
+    return BikeschedTest.testNode(DATA_SOURCE, "chat").jsonMapper(new JacksonJsonMapper()).build();
   }
 }

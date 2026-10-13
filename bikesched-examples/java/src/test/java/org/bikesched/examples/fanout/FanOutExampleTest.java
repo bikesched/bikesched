@@ -2,7 +2,6 @@
 package org.bikesched.examples.fanout;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -17,7 +16,7 @@ import org.bikesched.examples.fanout.FanOutExample.ImportedAlbum;
 import org.bikesched.examples.fanout.FanOutExample.Thumbnail;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
-import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
 /** Runs the fan-out example's jobs against a real PostgreSQL. */
@@ -37,13 +36,9 @@ class FanOutExampleTest {
 
       UUID jobId = example.importAlbum("album-" + UUID.randomUUID(), files);
 
-      await()
-          .atMost(Duration.ofSeconds(30))
-          .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+      var job = BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
       Duration took = Duration.ofNanos(System.nanoTime() - start);
-      assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
-      ImportedAlbum result =
-          bikesched.findJob(jobId).orElseThrow().result(ImportedAlbum.class).orElseThrow();
+      ImportedAlbum result = job.result(ImportedAlbum.class).orElseThrow();
       assertThat(result.thumbnails())
           .extracting(Thumbnail::file)
           .containsExactly("beach.jpg", "sunset.jpg", "harbour.jpg");
@@ -68,10 +63,7 @@ class FanOutExampleTest {
   }
 
   private static Bikesched node() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("fanout-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
+    return BikeschedTest.testNode(DATA_SOURCE, "fanout")
         .jsonMapper(new JacksonJsonMapper())
         .build();
   }

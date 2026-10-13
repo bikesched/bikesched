@@ -55,6 +55,7 @@ and without any coordinator besides PostgreSQL.
 12. [Admin UI](admin.md): a page for jobs, steps, events and nodes with retry and cancel
     (`bikesched-admin`), and the lookups behind it
 13. [Database](database.md): tables, indexes and migrations
+14. [Testing](testing.md): test nodes and job wait helpers (`bikesched-test`)
 
 The [examples](../bikesched-examples/README.md) show the concepts working together; the
 [patterns](patterns.md) explain which example solves which problem. The

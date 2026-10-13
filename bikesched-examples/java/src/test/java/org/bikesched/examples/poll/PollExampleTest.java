@@ -17,7 +17,7 @@ import org.bikesched.examples.poll.PollExample.Webhook;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.JobHistoryEntry;
-import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
 /** Runs the poll example's job against a real PostgreSQL. */
@@ -35,8 +35,8 @@ class PollExampleTest {
 
       UUID jobId = example.pay("order-webhook", Duration.ofSeconds(1), Webhook.DELIVERED);
 
-      awaitEnd(bikesched, jobId);
-      String paymentId = paymentId(bikesched, jobId);
+      BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
+      String paymentId = paymentId(jobId);
       assertThat(example.provider().statusCalls(paymentId)).isZero();
       assertThat(pollChecks(jobId)).as("no poll step").isZero();
       assertThat(output.toString(StandardCharsets.UTF_8))
@@ -53,8 +53,8 @@ class PollExampleTest {
       UUID jobId =
           example.pay("order-webhook-twice", Duration.ofSeconds(1), Webhook.DELIVERED_TWICE);
 
-      awaitEnd(bikesched, jobId);
-      String paymentId = paymentId(bikesched, jobId);
+      BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
+      String paymentId = paymentId(jobId);
       Pattern published = Pattern.compile("webhook (evt_\\w+) published as event ([\\w-]+)");
       await()
           .untilAsserted(
@@ -82,8 +82,8 @@ class PollExampleTest {
 
       UUID jobId = example.pay("order-polled", Duration.ofSeconds(4), Webhook.LOST);
 
-      awaitEnd(bikesched, jobId);
-      String paymentId = paymentId(bikesched, jobId);
+      BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
+      String paymentId = paymentId(jobId);
       int statusCalls = example.provider().statusCalls(paymentId);
       assertThat(statusCalls).as("pending at least once, then settled").isGreaterThanOrEqualTo(2);
       assertThat(pollChecks(jobId)).as("one check per status call").isEqualTo(statusCalls);
@@ -101,15 +101,8 @@ class PollExampleTest {
     return output.toString(StandardCharsets.UTF_8);
   }
 
-  private static void awaitEnd(Bikesched bikesched, UUID jobId) {
-    await()
-        .atMost(Duration.ofSeconds(30))
-        .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-    assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
-  }
-
   /** The payment id, as stored by the job's first step. */
-  private static String paymentId(Bikesched bikesched, UUID jobId) throws SQLException {
+  private static String paymentId(UUID jobId) throws SQLException {
     return query(
         "select result #>> '{}' from bikesched_steps where job_id = '"
             + jobId
@@ -136,10 +129,7 @@ class PollExampleTest {
   }
 
   private static Bikesched node() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("poll-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
+    return BikeschedTest.testNode(DATA_SOURCE, "poll")
         .jobHistory(Duration.ofHours(1))
         .jsonMapper(new JacksonJsonMapper())
         .build();

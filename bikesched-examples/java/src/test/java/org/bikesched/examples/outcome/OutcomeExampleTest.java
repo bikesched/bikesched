@@ -2,15 +2,14 @@
 package org.bikesched.examples.outcome;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
-import java.time.Duration;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
 /** Runs the outcome example's job against a real PostgreSQL. */
@@ -58,19 +57,13 @@ class OutcomeExampleTest {
 
       UUID jobId = example.chargeOrder(orderId, cardNumber);
 
-      await()
-          .atMost(Duration.ofSeconds(30))
-          .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-      assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(expectedState);
+      BikeschedTest.awaitJob(bikesched, jobId).untilState(expectedState);
       assertThat(provider.calls(orderId)).isEqualTo(expectedCalls);
     }
   }
 
   private static Bikesched node() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("outcome-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
+    return BikeschedTest.testNode(DATA_SOURCE, "outcome")
         .jsonMapper(new JacksonJsonMapper())
         .build();
   }

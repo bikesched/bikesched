@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.examples.event;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-
 import java.time.Duration;
-import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
 /** Runs the event example's job against a real PostgreSQL. */
@@ -23,10 +20,7 @@ class EventExampleTest {
     try (Bikesched bikesched = node()) {
       var jobId = new EventExample(bikesched).scheduleJob(null);
 
-      await()
-          .atMost(Duration.ofSeconds(30))
-          .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-      assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
+      BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
     }
   }
 
@@ -35,22 +29,14 @@ class EventExampleTest {
     try (Bikesched bikesched = node()) {
       var jobId = new EventExample(bikesched).scheduleJob(Duration.ofSeconds(3));
 
-      await()
-          .atMost(Duration.ofSeconds(3))
-          .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState.WAITING::equals);
-      await()
-          .atMost(Duration.ofSeconds(30))
-          .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-      assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
+      BikeschedTest.awaitJob(bikesched, jobId)
+          .timeout(Duration.ofSeconds(3))
+          .untilState(JobState.WAITING);
+      BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
     }
   }
 
   private static Bikesched node() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("event-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
-        .jsonMapper(new JacksonJsonMapper())
-        .build();
+    return BikeschedTest.testNode(DATA_SOURCE, "event").jsonMapper(new JacksonJsonMapper()).build();
   }
 }

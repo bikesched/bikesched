@@ -2,7 +2,6 @@
 package org.bikesched.examples.ratelimit;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -17,7 +16,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.examples.ratelimit.RateLimitExample.Sms;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
-import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
 /** Runs the rate-limit example's job on two nodes against a real PostgreSQL. */
@@ -42,10 +41,7 @@ class RateLimitExampleTest {
               .toList();
 
       for (UUID jobId : jobIds) {
-        await()
-            .atMost(Duration.ofSeconds(60))
-            .until(() -> first.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-        assertThat(first.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
+        BikeschedTest.awaitJob(first, jobId).timeout(Duration.ofSeconds(60)).untilSucceeded();
       }
       assertThat(example.provider().rejected()).as("no call over the provider's limit").isZero();
       assertThat(example.provider().calls()).as("one call per message").isEqualTo(10);
@@ -74,10 +70,7 @@ class RateLimitExampleTest {
   }
 
   private static Bikesched node() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("ratelimit-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
+    return BikeschedTest.testNode(DATA_SOURCE, "ratelimit")
         .jobHistory(Duration.ofHours(1))
         .jsonMapper(new JacksonJsonMapper())
         .build();
