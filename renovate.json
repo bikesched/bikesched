@@ -2,5 +2,12 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "Stable releases only: no alpha, beta, RC, milestone, preview, experimental or snapshot versions",
+      "matchPackageNames": ["*"],
+      "allowedVersions": "!/(^|[.-])(alpha|beta|rc|cr|m|milestone|preview|experimental|snapshot|eap|ea|dev)[.-]?\\d*([.-]|$)/i"
+    }
   ]
 }
