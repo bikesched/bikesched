@@ -23,18 +23,15 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedException;
 import org.bikesched.admin.Admin;
 import org.bikesched.admin.EventQuery;
-import org.bikesched.admin.EventStep;
 import org.bikesched.admin.EventSummary;
 import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
-import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.admin.web.access.AccessGrant;
 import org.bikesched.admin.web.access.AccessLevel;
 import org.bikesched.admin.web.access.AdminAccess;
-import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -154,8 +151,7 @@ final class AdminHandler {
           case "/api/waiting" -> waiting(admin, params);
           case "/api/recurring-runs" -> recurringRuns(admin, params);
           case "/api/nodes" ->
-              Json.object()
-                  .put("nodes", admin.findNodes().stream().map(AdminHandler::node).toList());
+              Json.object().put("nodes", admin.findNodes().stream().map(AdminJson::node).toList());
           default -> null;
         };
     if (body == null) {
@@ -212,7 +208,7 @@ final class AdminHandler {
     if (idPrefix != null) {
       List<JobSummary> jobs = byIdPrefix(() -> admin.findJobsByIdPrefix(idPrefix, limit));
       return Json.object()
-          .put("jobs", jobs.stream().map(AdminHandler::job).toList())
+          .put("jobs", jobs.stream().map(AdminJson::job).toList())
           .put("next", null);
     }
     JobQuery query = JobQuery.newest(limit).withType(blankToNull(params.get("type")));
@@ -238,9 +234,7 @@ final class AdminHandler {
       JobSummary last = jobs.getLast();
       next = new Cursor(last.createdAt(), last.id()).toString();
     }
-    return Json.object()
-        .put("jobs", jobs.stream().map(AdminHandler::job).toList())
-        .put("next", next);
+    return Json.object().put("jobs", jobs.stream().map(AdminJson::job).toList()).put("next", next);
   }
 
   private static List<Json.Obj> types(Admin admin) {
@@ -266,12 +260,12 @@ final class AdminHandler {
     JobSummary summary = found.get();
     Json.Obj body =
         Json.object()
-            .put("job", job(summary))
+            .put("job", AdminJson.job(summary))
             .put("ancestors", ancestors(admin, summary))
-            .put("steps", admin.findSteps(jobId).stream().map(AdminHandler::step).toList())
+            .put("steps", admin.findSteps(jobId).stream().map(AdminJson::step).toList())
             .put(
                 "history",
-                bikesched.findJobHistory(jobId).stream().map(AdminHandler::history).toList())
+                bikesched.findJobHistory(jobId).stream().map(AdminJson::history).toList())
             .put("payloadsShown", showPayloads);
     if (showPayloads) {
       // Only read with showPayloads(true): without it, payloads never leave the database.
@@ -325,7 +319,7 @@ final class AdminHandler {
     if (idPrefix != null) {
       List<EventSummary> events = byIdPrefix(() -> admin.findEventsByIdPrefix(idPrefix, limit));
       return Json.object()
-          .put("events", events.stream().map(AdminHandler::event).toList())
+          .put("events", events.stream().map(AdminJson::event).toList())
           .put("next", null);
     }
     EventQuery query =
@@ -343,7 +337,7 @@ final class AdminHandler {
       next = new Cursor(last.publishedAt(), last.id()).toString();
     }
     return Json.object()
-        .put("events", events.stream().map(AdminHandler::event).toList())
+        .put("events", events.stream().map(AdminJson::event).toList())
         .put("next", next);
   }
 
@@ -354,10 +348,8 @@ final class AdminHandler {
     }
     Json.Obj body =
         Json.object()
-            .put("event", event(found.get()))
-            .put(
-                "steps",
-                admin.findEventSteps(eventId).stream().map(AdminHandler::eventStep).toList())
+            .put("event", AdminJson.event(found.get()))
+            .put("steps", admin.findEventSteps(eventId).stream().map(AdminJson::eventStep).toList())
             .put("payloadsShown", showPayloads);
     if (showPayloads) {
       admin
@@ -374,7 +366,7 @@ final class AdminHandler {
     }
     List<WaitingStep> steps =
         admin.findWaitingSteps(name, blankToNull(params.get("key")), limit(params));
-    return Json.object().put("steps", steps.stream().map(AdminHandler::waitingStep).toList());
+    return Json.object().put("steps", steps.stream().map(AdminJson::waitingStep).toList());
   }
 
   private static Json.Obj recurringRuns(Admin admin, Map<String, String> params) {
@@ -385,98 +377,8 @@ final class AdminHandler {
     RecurringJobRuns runs = admin.findRecurringJobRuns(type, limit(params));
     return Json.object()
         .put("type", runs.type())
-        .put("pending", runs.pending() == null ? null : job(runs.pending()))
-        .put("previous", runs.previous().stream().map(AdminHandler::job).toList());
-  }
-
-  private static Json.Obj job(JobSummary job) {
-    return Json.object()
-        .put("id", job.id())
-        .put("type", job.type())
-        .put("state", job.state())
-        .put("attempts", job.attempts())
-        .put("maxAttempts", job.maxAttempts())
-        .put("priority", job.priority())
-        .put("scheduledAt", job.scheduledAt())
-        .put("createdAt", job.createdAt())
-        .put("updatedAt", job.updatedAt())
-        .put("finishedAt", job.finishedAt())
-        .put("lastError", job.lastError())
-        .put("parentJobId", job.parentJobId())
-        .put("parentJobType", job.parentJobType())
-        .put("recurrence", job.recurrence())
-        .put("idempotencyKey", job.idempotencyKey())
-        .put("nodeName", job.nodeName());
-  }
-
-  private static Json.Obj step(StepInfo step) {
-    return Json.object()
-        .put("name", step.name())
-        .put("kind", step.kind())
-        .put("state", step.state())
-        .put("attempts", step.attempts())
-        .put("lastError", step.lastError())
-        .put("startedAt", step.startedAt())
-        .put("finishedAt", step.finishedAt())
-        .put("waitUntil", step.waitUntil())
-        .put("eventName", step.eventName())
-        .put("eventKey", step.eventKey())
-        .put("childJobId", step.childJobId())
-        .put("childJobType", step.childJobType())
-        .put("childJobState", step.childJobState())
-        .put("childJobExists", step.childJobExists());
-  }
-
-  private static Json.Obj history(JobHistoryEntry entry) {
-    return Json.object()
-        .put("at", entry.createdAt())
-        .put("stepName", entry.stepName())
-        .put("state", entry.state())
-        .put("attempt", entry.attempt())
-        .put("nodeId", entry.nodeId())
-        .put("detail", entry.detail());
-  }
-
-  private static Json.Obj event(EventSummary event) {
-    return Json.object()
-        .put("id", event.id())
-        .put("name", event.name())
-        .put("key", event.key())
-        .put("idempotencyKey", event.idempotencyKey())
-        .put("publishedAt", event.publishedAt())
-        .put("expiresAt", event.expiresAt())
-        .put("receivedBy", event.receivedBy())
-        .put("latest", event.latest());
-  }
-
-  private static Json.Obj eventStep(EventStep step) {
-    return Json.object()
-        .put("jobId", step.jobId())
-        .put("jobType", step.jobType())
-        .put("jobState", step.jobState())
-        .put("stepName", step.stepName())
-        .put("kind", step.kind())
-        .put("publisher", step.isPublisher());
-  }
-
-  private static Json.Obj waitingStep(WaitingStep step) {
-    return Json.object()
-        .put("jobId", step.jobId())
-        .put("jobType", step.jobType())
-        .put("stepName", step.stepName())
-        .put("eventName", step.eventName())
-        .put("eventKey", step.eventKey())
-        .put("since", step.since())
-        .put("timeoutAt", step.timeoutAt());
-  }
-
-  private static Json.Obj node(NodeInfo node) {
-    return Json.object()
-        .put("id", node.id())
-        .put("name", node.name())
-        .put("startedAt", node.startedAt())
-        .put("lastHeartbeatAt", node.lastHeartbeatAt())
-        .put("alive", node.alive());
+        .put("pending", runs.pending() == null ? null : AdminJson.job(runs.pending()))
+        .put("previous", runs.previous().stream().map(AdminJson::job).toList());
   }
 
   private AdminResponse staticFile(AdminRequest request, String name) {

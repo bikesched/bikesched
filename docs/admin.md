@@ -19,14 +19,38 @@ server.createContext("/bikesched", BikeschedAdmin.of(bikesched).httpHandler());
 server.start();   // http://localhost:8081/bikesched/
 ```
 
-The handler uses the JDK's built-in `com.sun.net.httpserver` (module `jdk.httpserver`), so the
-module depends on `bikesched-core` only. The page is static HTML, CSS and JavaScript served from
+The handler uses the JDK's built-in `com.sun.net.httpserver` (module `jdk.httpserver`). The module
+depends on `bikesched-core`, SLF4J and [nanojson](https://github.com/mmastrac/nanojson) for its JSON
+responses. The page is static HTML, CSS and JavaScript served from
 the jar ([Preact](https://preactjs.com) and [htm](https://github.com/developit/htm) are bundled),
 reading a JSON API under `api/`; it loads nothing from other hosts.
 
 The node serving the page does not need to poll: a node built with `autoStartPolling(false)` shows
 the jobs of every node on the database. The runnable [admin example](../bikesched-examples/README.md#admin)
 serves the page next to a few demo jobs.
+
+## Dependencies and shaded jar
+
+Choose one of the two artifacts, not both:
+
+```kotlin
+dependencies {
+    implementation("org.bikesched:bikesched-admin:0.1.0-SNAPSHOT")
+    // Or, with nanojson bundled and relocated to avoid application version conflicts:
+    // implementation("org.bikesched:bikesched-admin-shaded:0.1.0-SNAPSHOT")
+}
+```
+
+The regular jar uses nanojson as a normal runtime dependency. The shaded jar bundles only nanojson,
+relocated to `org.bikesched.admin.web.internal.nanojson`; core and SLF4J remain external
+dependencies. Its publication does not pull in the original nanojson artifact. Both expose the
+same admin API and include the same UI files. Shading does not affect the application's payload
+mapper or add a JSON dependency to core.
+
+The regular jar is a JPMS module. The shaded jar is an automatic module with the same name,
+`org.bikesched.admin.web`, and must not be used alongside the regular jar. Build both with
+`./gradlew :bikesched-admin:build`; `shadedTest` also runs the admin tests against the shaded jar
+alongside an unrelocated nanojson dependency.
 
 ## Options
 
