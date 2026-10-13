@@ -103,7 +103,7 @@ public final class DefaultBikesched implements Bikesched {
 
   private DefaultBikesched(Database database, Settings settings) {
     this.database = database;
-    this.initializer = new DatabaseInitializer(database);
+    this.initializer = new DatabaseInitializer(database, settings.migrateSchema());
     this.settings = settings;
     this.nodeName = settings.nodeName();
     this.node = new DefaultNode(nodeName);
@@ -312,12 +312,13 @@ public final class DefaultBikesched implements Bikesched {
 
   @Override
   public void migrate() {
-    ensureReady();
+    node.requireOpen();
+    initializer.migrate();
   }
 
   /**
-   * Prepares an access to the database: checks that this node is open and migrates the schema on
-   * first use.
+   * Prepares an access to the database: checks that this node is open and migrates or validates the
+   * schema on first use.
    *
    * @throws IllegalStateException if this node is closed
    */

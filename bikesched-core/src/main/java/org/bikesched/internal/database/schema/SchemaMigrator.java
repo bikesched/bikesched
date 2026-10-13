@@ -93,6 +93,29 @@ public final class SchemaMigrator {
     }
   }
 
+  /** Validates recorded migrations without creating or changing any database objects. */
+  public void validate() {
+    try (Connection connection = dataSource.getConnection()) {
+      Map<Integer, String> applied = appliedChecksums(connection);
+      List<Migration> pending = pendingMigrations(applied);
+      if (!pending.isEmpty()) {
+        throw new SchemaMigrationException(
+            "Missing migration versions: "
+                + pending.stream().map(Migration::version).toList()
+                + "; automatic schema migration is disabled. Run Bikesched.migrate() with a "
+                + "migration-capable data source before application use "
+                + "(scripts: org/bikesched/migrations/).");
+      }
+      LOG.info("bikesched schema migration history validated");
+    } catch (SQLException e) {
+      throw new SchemaMigrationException(
+          "Cannot read bikesched_schema_migrations; automatic schema migration is disabled. "
+              + "Run Bikesched.migrate() with a migration-capable data source before application use "
+              + "(scripts: org/bikesched/migrations/), and grant SELECT on the history table.",
+          e);
+    }
+  }
+
   private List<Integer> migrateLocked(Connection connection) throws SQLException {
     execute(
         connection,
@@ -107,26 +130,7 @@ public final class SchemaMigrator {
             .formatted(HISTORY_TABLE));
 
     Map<Integer, String> applied = appliedChecksums(connection);
-    warnAboutUnknownVersions(applied);
-
-    List<Migration> pending = new ArrayList<>();
-    for (Migration migration : migrations) {
-      String appliedChecksum = applied.get(migration.version());
-      if (appliedChecksum == null) {
-        pending.add(migration);
-      } else if (!appliedChecksum.equals(migration.checksum())) {
-        LOG.error(
-            "Checksum mismatch for applied bikesched migration V{} ({}): applied migrations must not change",
-            migration.version(),
-            migration.resource());
-        throw new SchemaMigrationException(
-            "Checksum mismatch for applied migration V"
-                + migration.version()
-                + " ("
-                + migration.resource()
-                + "): applied migrations must not change");
-      }
-    }
+    List<Migration> pending = pendingMigrations(applied);
 
     int currentVersion = applied.keySet().stream().mapToInt(Integer::intValue).max().orElse(0);
     if (pending.isEmpty()) {
@@ -145,6 +149,32 @@ public final class SchemaMigrator {
     }
     LOG.info("bikesched schema migrated to version V{}", newlyApplied.getLast());
     return newlyApplied;
+  }
+
+  private List<Migration> pendingMigrations(Map<Integer, String> applied) {
+    warnAboutUnknownVersions(applied);
+
+    List<Migration> pending = new ArrayList<>();
+    for (Migration migration : migrations) {
+      String appliedChecksum = applied.get(migration.version());
+      if (appliedChecksum == null) {
+        pending.add(migration);
+      } else if (!appliedChecksum.equals(migration.checksum())) {
+        LOG.error(
+            "Checksum mismatch for applied bikesched migration V{} ({}): applied migrations must not change",
+            migration.version(),
+            migration.resource());
+        throw new SchemaMigrationException(
+            "Checksum mismatch for applied migration V"
+                + migration.version()
+                + " ("
+                + migration.resource()
+                + "): applied migrations must not change. Restore the original migration scripts "
+                + "and use the matching library/schema version; do not rewrite recorded checksums.");
+      }
+    }
+
+    return pending;
   }
 
   private void warnAboutUnknownVersions(Map<Integer, String> applied) {

@@ -32,7 +32,7 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0019](0019-annotations-module.md) | Job handler annotations in their own module | Accepted |
 | [0020](0020-job-listener-and-micrometer.md) | Job listener SPI with Micrometer in its own module | Accepted |
 | [0021](0021-apache-license-and-trademark-policy.md) | Apache License 2.0 with a trademark policy | Accepted |
-| [0022](0022-spring-integration-in-its-own-module.md) | Spring integration in its own module | Accepted |
+| [0022](0022-spring-integration-in-its-own-module.md) | Spring integration in its own module | Accepted; startup migration superseded by [0039](0039-optional-schema-migration.md) |
 | [0023](0023-steps-cannot-be-nested.md) | Steps cannot be nested | Accepted, timeout handlers superseded by [0034](0034-wait-timeouts-as-failures.md) |
 | [0024](0024-cron-expressions-via-cron-utils.md) | Cron expressions via cron-utils in their own module | Accepted |
 | [0025](0025-recurrence-parsers-in-core.md) | Recurrence parsers in core | Accepted |
@@ -49,3 +49,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0036](0036-idempotency-keys.md) | Idempotency keys as columns, taken while the job exists | Accepted |
 | [0037](0037-job-postpone.md) | Postponing a job gives its attempt back | Accepted |
 | [0038](0038-admin-ui.md) | Admin UI as static files on a framework-neutral handler | Accepted |
+| [0039](0039-optional-schema-migration.md) | Optional automatic schema migration with history validation | Accepted |

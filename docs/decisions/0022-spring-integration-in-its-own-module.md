@@ -9,7 +9,8 @@ Date: 2026-10-06
 
 ## Status
 
-Accepted
+Accepted. Startup-migration behavior superseded by
+[ADR 0039](0039-optional-schema-migration.md); the module decision remains accepted.
 
 ## Context
 

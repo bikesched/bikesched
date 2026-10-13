@@ -48,6 +48,7 @@ public final class BikeschedBuilder {
   private boolean listenForDueJobs = true;
   private Duration notifyInterval = DEFAULT_NOTIFY_INTERVAL;
   private boolean autoStartPolling = true;
+  private boolean migrateSchema = true;
   private JsonMapper jsonMapper; // null: the default, accepting only JSON strings
   private Duration defaultJobTimeout;
   private Duration defaultEventTimeout;
@@ -67,6 +68,20 @@ public final class BikeschedBuilder {
   private List<RecurrenceParser> recurrenceParsers = List.of(RecurrenceParser.isoDuration());
 
   BikeschedBuilder() {}
+
+  /**
+   * Whether first database use applies pending schema migrations (default {@code true}). With
+   * {@code false}, it only validates recorded migration versions and checksums, without DDL.
+   * Missing or mismatched history fails with a {@link BikeschedException}. This is not a check for
+   * physical schema drift. {@link Bikesched#migrate()} still migrates explicitly.
+   *
+   * @param migrateSchema whether to migrate automatically
+   * @return this builder
+   */
+  public BikeschedBuilder migrateSchema(boolean migrateSchema) {
+    this.migrateSchema = migrateSchema;
+    return this;
+  }
 
   /**
    * Sets the PostgreSQL data source bikesched stores its tables in (required).
@@ -116,8 +131,9 @@ public final class BikeschedBuilder {
    * Until then its {@link Node#id() id} is empty.
    *
    * <p>With {@code false}, {@link #build()} also does not access the database: the schema is
-   * migrated on first use, i.e. when polling starts or a job is scheduled or an event published, so
-   * the instance can be built while the database is not available yet.
+   * migrated (or validated with {@link #migrateSchema(boolean)} off) on first use, i.e. when
+   * polling starts or a job is scheduled or an event published, so the instance can be built while
+   * the database is not available yet.
    *
    * @param autoStartPolling whether to start polling on {@link #build()}
    * @return this builder
@@ -476,14 +492,14 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Creates the {@link Bikesched} instance: applies pending schema migrations and, unless disabled
+   * Creates the {@link Bikesched} instance: migrates or validates the schema and, unless disabled
    * via {@link #autoStartPolling(boolean)}, {@linkplain Bikesched#start() starts polling}, which
    * registers the node and starts its heartbeat. With polling disabled, this method does not access
-   * the database: the migration runs on first use instead.
+   * the database: migration or validation runs on first use instead.
    *
    * @return the new instance
    * @throws IllegalStateException if no data source was set
-   * @throws BikeschedException if polling is enabled and the migration or the node registration
+   * @throws BikeschedException if polling is enabled and migration, validation or node registration
    *     fails, e.g. because a live node with the same name is already registered
    */
   public Bikesched build() {
@@ -509,6 +525,7 @@ public final class BikeschedBuilder {
             notifyInterval,
             maxConcurrentJobs,
             autoStartPolling,
+            migrateSchema,
             defaultJobTimeout,
             retryBackoff,
             failureHandlerAttempts,
