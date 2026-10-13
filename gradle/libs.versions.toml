@@ -9,6 +9,7 @@ spotless = "8.10.4"
 kotlin = "2.4.21"
 dokka = "2.2.0"
 hugo-plugin = "0.13.0"
+shadow = "9.6.1"
 
 # Code formatting
 google-java-format = "1.36.1"
@@ -97,6 +98,7 @@ moneta = { module = "org.javamoney:moneta", version.ref = "moneta" }
 testing = ["junit-jupiter", "assertj-core", "logback-classic", "testcontainers-junit-jupiter", "testcontainers-postgresql", "nanojson", "hikaricp", "awaitility"]
 
 [plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 foojay-resolver = { id = "org.gradle.toolchains.foojay-resolver-convention", version.ref = "foojay-resolver" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

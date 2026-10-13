@@ -8,6 +8,7 @@ module org.bikesched.admin.web {
   requires transitive org.bikesched;
   requires transitive jdk.httpserver;
   requires org.slf4j;
+  requires com.grack.nanojson;
 
   exports org.bikesched.admin.web;
   exports org.bikesched.admin.web.access;

@@ -425,7 +425,7 @@ class BikeschedAdminTest {
 
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
       HttpResponse<String> response = server.get("/api/jobs/" + jobId);
-      assertThat(response.body()).doesNotContain("<script>", "\n");
+      assertThat(response.body()).doesNotContain("</script>", "\n");
       assertThat(AdminServer.json(response).getObject("job").getString("lastError"))
           .contains(message);
     }

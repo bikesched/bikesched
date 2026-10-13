@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.admin.web;
 
+import com.grack.nanojson.JsonParser;
+import com.grack.nanojson.JsonParserException;
+import com.grack.nanojson.JsonWriter;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -8,14 +12,14 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * A minimal JSON writer for the API's responses: maps (keeping their order), lists, strings,
- * numbers, booleans, {@code null}, {@link Instant}s and {@link UUID}s as strings, enums by name and
- * {@link Raw} JSON text (payloads) as is. Strings escape {@code <}, {@code >} and {@code &} too, so
- * no response can be read as markup.
+ * Adapts API values for nanojson: ordered objects, lists, strings, integers, booleans, {@code
+ * null}, {@link Instant}s, {@link UUID}s and {@link Duration}s as strings, enums by name and
+ * embedded {@link Raw} JSON values. nanojson handles all JSON serialization and escaping;
+ * unsupported value types are rejected.
  */
 final class Json {
 
-  /** JSON text written unchanged, e.g. a payload read from the database. */
+  /** JSON text interpreted as a value, e.g. a payload read from the database. */
   record Raw(String json) {}
 
   private Json() {}
@@ -42,67 +46,43 @@ final class Json {
   }
 
   static String write(Object value) {
-    var out = new StringBuilder(256);
-    write(out, value);
-    return out.toString();
+    return JsonWriter.string(normalize(value));
   }
 
-  private static void write(StringBuilder out, Object value) {
-    switch (value) {
-      case null -> out.append("null");
-      case Obj obj -> write(out, obj.fields);
+  private static Object normalize(Object value) {
+    return switch (value) {
+      case null -> null;
+      case Obj obj -> normalize(obj.fields);
       case Map<?, ?> map -> {
-        out.append('{');
-        boolean first = true;
-        for (var entry : map.entrySet()) {
-          if (!first) {
-            out.append(',');
-          }
-          first = false;
-          string(out, String.valueOf(entry.getKey()));
-          out.append(':');
-          write(out, entry.getValue());
-        }
-        out.append('}');
+        Map<String, Object> fields = new LinkedHashMap<>();
+        map.forEach((key, item) -> fields.put(String.valueOf(key), normalize(item)));
+        yield fields;
       }
-      case List<?> list -> {
-        out.append('[');
-        for (int i = 0; i < list.size(); i++) {
-          if (i > 0) {
-            out.append(',');
-          }
-          write(out, list.get(i));
-        }
-        out.append(']');
-      }
-      case Raw raw -> out.append(raw.json() == null ? "null" : raw.json());
-      case Boolean bool -> out.append(bool);
-      case Integer number -> out.append(number);
-      case Long number -> out.append(number);
-      case Enum<?> constant -> string(out, constant.name());
-      default -> string(out, value.toString()); // String, Instant, UUID
-    }
+      case List<?> list -> list.stream().map(Json::normalize).toList();
+      case Raw raw -> parse(raw.json());
+      case String string -> string;
+      case Boolean bool -> bool;
+      case Integer number -> number;
+      case Long number -> number;
+      case Enum<?> constant -> constant.name();
+      case Instant instant -> instant.toString();
+      case UUID uuid -> uuid.toString();
+      case Duration duration -> duration.toString();
+      default ->
+          throw new IllegalArgumentException(
+              "Unsupported JSON value type: " + value.getClass().getName());
+    };
   }
 
-  private static void string(StringBuilder out, String value) {
-    out.append('"');
-    for (int i = 0; i < value.length(); i++) {
-      char c = value.charAt(i);
-      switch (c) {
-        case '"' -> out.append("\\\"");
-        case '\\' -> out.append("\\\\");
-        case '\n' -> out.append("\\n");
-        case '\r' -> out.append("\\r");
-        case '\t' -> out.append("\\t");
-        default -> {
-          if (c < 0x20 || c == '<' || c == '>' || c == '&' || c == ' ' || c == ' ') {
-            out.append(String.format("\\u%04x", (int) c));
-          } else {
-            out.append(c);
-          }
-        }
-      }
+  private static Object parse(String json) {
+    if (json == null) {
+      return null;
     }
-    out.append('"');
+    try {
+      // Preserve decimal precision and exponent ranges instead of converting through double.
+      return JsonParser.any().withLazyNumbers().from(json);
+    } catch (JsonParserException e) {
+      throw new IllegalStateException("Invalid JSON in stored admin data", e);
+    }
   }
 }
