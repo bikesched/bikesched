@@ -2,7 +2,6 @@
 package org.bikesched.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -14,12 +13,12 @@ import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.event.listener.EventPublication;
-import org.bikesched.job.JobState;
 import org.bikesched.job.listener.JobAttemptResult;
 import org.bikesched.job.listener.JobClaim;
 import org.bikesched.job.listener.JobListener;
 import org.bikesched.micrometer.MicrometerEventListener;
 import org.bikesched.micrometer.MicrometerJobListener;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -54,7 +53,7 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
               Bikesched node = context.getBean(Bikesched.class);
               node.registerJobHandler(type, _ -> {});
               UUID jobId = node.newJob(type).schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(first.claimed.get()).isOne();
               assertThat(first.ended.get()).isOne();
               assertThat(second.claimed.get()).isOne();
@@ -94,7 +93,7 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
               Bikesched node = context.getBean(Bikesched.class);
               node.registerJobHandler(type, _ -> {});
               UUID jobId = node.newJob(type).schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(registry.find("bikesched.job.attempts").tags("node", nodeName).timer())
                   .isNotNull();
               assertThat(
@@ -130,7 +129,7 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
               Bikesched node = context.getBean(Bikesched.class);
               node.registerJobHandler(type, _ -> {});
               UUID jobId = node.newJob(type).schedule();
-              await().until(() -> node.findJob(jobId).orElseThrow().state(), JobState::isEnded);
+              BikeschedTest.awaitJob(node, jobId).untilEnded();
               node.newEvent(unique("metrics-off-event"), "k").publish();
               assertThat(registry.getMeters()).isEmpty();
             });

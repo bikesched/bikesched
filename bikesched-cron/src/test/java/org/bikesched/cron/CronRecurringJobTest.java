@@ -8,12 +8,12 @@ import com.cronutils.model.CronType;
 import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.bikesched.Bikesched;
 import org.bikesched.annotation.JobHandler;
 import org.bikesched.annotation.JobHandlers;
 import org.bikesched.job.RecurrenceParser;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -90,11 +90,6 @@ class CronRecurringJobTest {
   }
 
   private static Bikesched node(RecurrenceParser... parsers) {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("cron-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
-        .recurrenceParsers(parsers)
-        .build();
+    return BikeschedTest.testNode(DATA_SOURCE, "cron").recurrenceParsers(parsers).build();
   }
 }

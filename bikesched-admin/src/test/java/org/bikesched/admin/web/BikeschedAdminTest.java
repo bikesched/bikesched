@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
 import org.bikesched.job.JobState;
 import org.bikesched.job.Recurrence;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -442,10 +443,7 @@ class BikeschedAdminTest {
   }
 
   private void awaitState(UUID jobId, JobState state) {
-    await()
-        .atMost(Duration.ofSeconds(15))
-        .untilAsserted(
-            () -> assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(state));
+    BikeschedTest.awaitJob(bikesched, jobId).timeout(Duration.ofSeconds(15)).untilState(state);
   }
 
   private static List<String> ids(JsonArray items) {

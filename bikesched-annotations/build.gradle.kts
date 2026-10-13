@@ -8,5 +8,6 @@ dependencies {
     api(project(":bikesched-core"))
 
     testImplementation(project(":bikesched-jackson"))
+    testImplementation(project(":bikesched-test"))
     testImplementation(libs.postgresql)
 }

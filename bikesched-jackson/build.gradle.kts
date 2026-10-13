@@ -9,5 +9,6 @@ dependencies {
     // Part of the API: JacksonJsonMapper accepts a configured ObjectMapper.
     api(libs.jackson.databind)
 
+    testImplementation(project(":bikesched-test"))
     testImplementation(libs.postgresql)
 }

@@ -24,6 +24,7 @@ dependencies {
 
     testImplementation(project(":bikesched-jackson"))
     testImplementation(project(":bikesched-micrometer"))
+    testImplementation(project(":bikesched-test"))
     testImplementation(libs.spring.boot.starter.jdbc)
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.micrometer.core)

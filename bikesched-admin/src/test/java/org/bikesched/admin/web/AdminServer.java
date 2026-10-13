@@ -12,9 +12,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.UUID;
 import org.bikesched.Bikesched;
+import org.bikesched.test.BikeschedTest;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -60,11 +59,7 @@ final class AdminServer implements AutoCloseable {
 
   /** A node on the test database polling every 50 ms. */
   static Bikesched node(String prefix) {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName(prefix + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
-        .build();
+    return BikeschedTest.testNode(DATA_SOURCE, prefix.replaceAll("-$", "")).build();
   }
 
   /** A path below the mount point, e.g. {@code /api/jobs}. */

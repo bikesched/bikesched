@@ -10,5 +10,6 @@ dependencies {
     api(libs.cron.utils)
 
     testImplementation(project(":bikesched-annotations"))
+    testImplementation(project(":bikesched-test"))
     testImplementation(libs.postgresql)
 }
