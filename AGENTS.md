@@ -227,7 +227,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   (steps, compensation), `recurring-jobs.md`, `events.md`, `configuration.md` (builder option
   table, nodes, JSON mapping, logging), `kotlin.md` (extension tables), `database.md` (tables,
   indexes, migrations), `patterns.md` (one section per problem: a short sketch, why it works, and
-  a link to the runnable example solving it; new examples solving a common problem get a pattern).
+  a link to the runnable example solving it; new examples solving a common problem get a pattern),
+  `changing-handlers.md` (what a job keeps across deploys, safe and unsafe handler changes; update
+  it when replay or what a step stores changes).
 - Keep `docs/` in sync in the same change: samples, the builder option table (defaults checked
   against the code), the Kotlin tables and the database tables. Samples are not compiled, so check
   them against the API; check relative links and anchors after moving sections.

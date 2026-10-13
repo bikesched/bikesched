@@ -157,6 +157,8 @@ The [documentation](docs/index.md) covers the concepts in detail:
 - [Child jobs](docs/child-jobs.md): starting and waiting for child jobs, job results
 - [Patterns](docs/patterns.md): common problems (outbox, deduplication, rate limits, webhooks,
   approvals, fan-out, periodic work, sagas) and the examples solving them
+- [Changing handlers](docs/changing-handlers.md): safe and unsafe handler changes for jobs in
+  flight
 - [Configuration](docs/configuration.md): builder options, nodes, JSON mapping, logging
 - [Kotlin](docs/kotlin.md)
 - [Spring Boot](docs/spring.md): the auto-configured node
