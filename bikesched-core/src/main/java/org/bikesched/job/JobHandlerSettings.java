@@ -2,6 +2,7 @@
 package org.bikesched.job;
 
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The job settings plus the handler, for the builders of jobs scheduled through {@link
@@ -14,7 +15,7 @@ import java.util.Objects;
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
  */
-public interface JobHandlerSettings<B extends JobHandlerSettings<B, P>, P>
+public interface JobHandlerSettings<B extends JobHandlerSettings<B, P>, P extends @Nullable Object>
     extends JobSettings<B, P> {
 
   /**

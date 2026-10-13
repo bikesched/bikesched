@@ -33,8 +33,9 @@ bikesched is inspired by some great job schedulers, like
 execution engines like [Inngest](https://www.inngest.com) and [Restate](https://restate.dev). The
 goal is to keep it small and easy to drop into your app:
 
-- **Just two runtime dependencies** in the core: the PostgreSQL JDBC driver and the SLF4J API. No
-  framework, no migration tool, no JSON library, in the spirit of
+- **Just two runtime dependencies** in the core: the PostgreSQL JDBC driver and the SLF4J API
+  (plus the annotations-only JSpecify jar). No framework, no migration tool, no JSON library, in
+  the spirit of
   [boring technology](https://boringtechnology.club/).
 - **Extension modules when you want them**: Jackson for typed payloads, Kotlin extensions, Spring
   Boot auto-configuration, cron expressions, Micrometer metrics and an admin UI. Pull in only what
@@ -80,6 +81,8 @@ orchestration across services. If that's what you're after, have a look at
 - **Child jobs**: jobs start other jobs exactly once and wait for their outcome and result without
   holding a thread
 - Optional typed `JobType`/`EventType` constants, next to plain string names
+- A null-marked API ([JSpecify](https://jspecify.dev/)): IDEs, NullAway and Kotlin see which
+  values may be `null`
 - Crash recovery: jobs of dead nodes are released and retried by others; a node that lost a job
   can no longer change its steps
 - Ended jobs are deleted after a retention (7 days by default); optional job history and

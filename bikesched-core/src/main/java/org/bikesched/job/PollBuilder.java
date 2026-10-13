@@ -3,6 +3,7 @@ package org.bikesched.job;
 
 import java.time.Duration;
 import org.bikesched.BikeschedException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a poll, see {@link Job#newPoll(String, Class, Duration)}: an optional timeout and failure
@@ -10,7 +11,7 @@ import org.bikesched.BikeschedException;
  *
  * @param <T> the type of the ready value
  */
-public interface PollBuilder<T> {
+public interface PollBuilder<T extends @Nullable Object> {
 
   /**
    * Stops polling after the given time, counted from the first check: once a check after the
@@ -59,5 +60,5 @@ public interface PollBuilder<T> {
    * @throws BikeschedException if the step cannot be read or stored
    * @throws Exception what the poll handler threw, unless a failure handler resolved the poll
    */
-  T run(PollHandler<T> handler) throws Exception;
+  @Nullable T run(PollHandler<T> handler) throws Exception;
 }

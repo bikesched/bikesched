@@ -20,6 +20,7 @@
 @SuppressWarnings("requires-automatic")
 module org.bikesched {
   requires transitive java.sql;
+  requires transitive org.jspecify;
   requires org.slf4j;
   requires org.postgresql.jdbc;
 

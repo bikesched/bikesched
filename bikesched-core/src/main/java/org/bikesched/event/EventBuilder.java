@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds and publishes an event, obtained via {@link org.bikesched.Bikesched#newEvent(String,
@@ -25,7 +26,7 @@ import org.bikesched.JsonMapper;
  * @param <P> the payload type: {@code Object} for an event name given as a string, the payload
  *     class of an {@link EventType}
  */
-public interface EventBuilder<P> {
+public interface EventBuilder<P extends @Nullable Object> {
 
   /**
    * Sets the event payload (optional, default none), converted to JSON right away by the configured
@@ -37,7 +38,7 @@ public interface EventBuilder<P> {
    *     from the default mapper (no {@code jsonMapper} configured) for types other than {@link
    *     String}
    */
-  EventBuilder<P> payload(P payload);
+  EventBuilder<P> payload(@Nullable P payload);
 
   /**
    * Sets how long the event is kept for steps that start waiting for it later (optional, default

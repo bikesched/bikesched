@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.event;
 
+import org.jspecify.annotations.Nullable;
+
 /** Shared event publication API for a bikesched node and a running job. */
 public interface EventPublisher {
   /**
@@ -20,5 +22,5 @@ public interface EventPublisher {
    * @param <T> payload type
    * @return the event builder
    */
-  <T> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
+  <T extends @Nullable Object> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
 }

@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Filters and paging of {@link Admin#findJobs(JobQuery)}. Pages are keyset based: the next page
@@ -26,7 +27,11 @@ import org.bikesched.job.JobState;
  * @param limit the maximum number of jobs, between 1 and {@link #MAX_LIMIT}
  */
 public record JobQuery(
-    String type, Set<JobState> states, Instant createdBefore, UUID beforeId, int limit) {
+    @Nullable String type,
+    Set<JobState> states,
+    @Nullable Instant createdBefore,
+    @Nullable UUID beforeId,
+    int limit) {
 
   /** The largest page size. */
   public static final int MAX_LIMIT = 500;
@@ -61,7 +66,7 @@ public record JobQuery(
    * @param type the job type; {@code null} for every type
    * @return a new query
    */
-  public JobQuery withType(String type) {
+  public JobQuery withType(@Nullable String type) {
     return new JobQuery(type, states, createdBefore, beforeId, limit);
   }
 

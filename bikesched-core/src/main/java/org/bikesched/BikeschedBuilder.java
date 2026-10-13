@@ -19,6 +19,7 @@ import org.bikesched.job.JobFailure;
 import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.StepHandler;
 import org.bikesched.job.listener.JobListener;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builder for {@link Bikesched} instances, obtained via {@link Bikesched#builder()}. Not
@@ -39,8 +40,8 @@ public final class BikeschedBuilder {
   static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
   static final int DEFAULT_FAILURE_HANDLER_ATTEMPTS = 3;
 
-  private DataSource dataSource;
-  private String nodeName;
+  private @Nullable DataSource dataSource;
+  private @Nullable String nodeName;
   private int maxConcurrentJobs = DEFAULT_MAX_CONCURRENT_JOBS;
   private Duration heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL;
   private Duration nodeTimeout = DEFAULT_NODE_TIMEOUT;
@@ -49,20 +50,20 @@ public final class BikeschedBuilder {
   private Duration notifyInterval = DEFAULT_NOTIFY_INTERVAL;
   private boolean autoStartPolling = true;
   private boolean migrateSchema = true;
-  private JsonMapper jsonMapper; // null: the default, accepting only JSON strings
-  private Duration defaultJobTimeout;
-  private Duration defaultEventTimeout;
+  private @Nullable JsonMapper jsonMapper; // null: the default, accepting only JSON strings
+  private @Nullable Duration defaultJobTimeout;
+  private @Nullable Duration defaultEventTimeout;
   private RetryBackoff retryBackoff = RetryBackoff.none();
   private int failureHandlerAttempts = DEFAULT_FAILURE_HANDLER_ATTEMPTS;
   private Duration eventRetention = DEFAULT_EVENT_RETENTION;
   private Duration nodeCleanUpInterval = DEFAULT_NODE_CLEAN_UP_INTERVAL;
   private Duration eventCleanUpInterval = DEFAULT_EVENT_CLEAN_UP_INTERVAL;
-  private Duration jobHistoryRetention; // null: no job history
+  private @Nullable Duration jobHistoryRetention; // null: no job history
   private Duration jobHistoryCleanUpInterval = DEFAULT_JOB_HISTORY_CLEAN_UP_INTERVAL;
   private Duration jobRetention = DEFAULT_JOB_RETENTION;
   private Duration jobCleanUpInterval = DEFAULT_JOB_CLEAN_UP_INTERVAL;
-  private Duration statementTimeout; // null: left to the data source
-  private Duration hardTimeoutGrace; // null: no hard timeout
+  private @Nullable Duration statementTimeout; // null: left to the data source
+  private @Nullable Duration hardTimeoutGrace; // null: no hard timeout
   private JobListener jobListener = new JobListener() {};
   private EventListener eventListener = new EventListener() {};
   private List<RecurrenceParser> recurrenceParsers = List.of(RecurrenceParser.isoDuration());

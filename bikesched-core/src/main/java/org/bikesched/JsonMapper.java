@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Maps job payloads and step results between Java objects and the JSON text bikesched stores in
  * {@code jsonb} columns. Configured via {@link BikeschedBuilder#jsonMapper(JsonMapper)}; without
@@ -43,5 +45,5 @@ public interface JsonMapper {
    * @param <T> the type to convert to
    * @return the value
    */
-  <T> T fromJson(String json, Class<T> type);
+  <T extends @Nullable Object> @Nullable T fromJson(String json, Class<T> type);
 }

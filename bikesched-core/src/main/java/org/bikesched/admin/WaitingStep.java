@@ -3,6 +3,7 @@ package org.bikesched.admin;
 
 import java.time.Instant;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An event wait still waiting, see {@link Admin#findWaitingSteps(String, String, int)}.
@@ -22,4 +23,4 @@ public record WaitingStep(
     String eventName,
     String eventKey,
     Instant since,
-    Instant timeoutAt) {}
+    @Nullable Instant timeoutAt) {}

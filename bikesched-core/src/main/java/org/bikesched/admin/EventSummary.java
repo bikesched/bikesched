@@ -3,6 +3,7 @@ package org.bikesched.admin;
 
 import java.time.Instant;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A published event without its payload (see {@link Admin#findEventPayload(UUID)}).
@@ -21,7 +22,7 @@ public record EventSummary(
     UUID id,
     String name,
     String key,
-    String idempotencyKey,
+    @Nullable String idempotencyKey,
     Instant publishedAt,
     Instant expiresAt,
     int receivedBy,

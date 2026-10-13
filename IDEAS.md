@@ -80,21 +80,22 @@ over a real database, see [the spec](docs/specs/bikesched-test.md) and
 
 ## API
 
-### Nullness annotations with JSpecify
+### Nullness annotations beyond the core API
 
-Public API signatures don't say which parameters and return values may be `null`; callers (and
-IDEs/static analysis) have to guess or read Javadoc. [JSpecify](https://jspecify.dev/) is a small,
-dependency-free annotation set (`@Nullable`, `@NullMarked`, …) exactly for this, with growing tool
-support (IntelliJ, Error Prone, NullAway).
+The exported packages of `bikesched-core` are `@NullMarked` with JSpecify
+([ADR 0041](docs/decisions/0041-jspecify-nullness-annotations.md)); the internal packages, the other
+Java modules (`bikesched-jackson`, `bikesched-annotations`, `bikesched-cron`,
+`bikesched-micrometer`, `bikesched-spring-boot-starter`, `bikesched-admin`, `bikesched-test`) and
+the build are not covered yet.
 
-- Add `org.jspecify:jspecify` as an `api` dependency of core (and the other modules); `@NullMarked`
-  on every package (`package-info.java`) so unannotated types are non-null by default, with
-  `@Nullable` only where `null` is actually a valid value (e.g. `Optional`-returning methods stay
-  as they are; this is for parameters/fields/returns that are not already `Optional`).
-- Mechanical pass over the API packages (and internal ones, for consistency) once added; no
-  behavior change, so it can land as its own change.
-- Open: whether to also adopt a checker (NullAway or similar) in the build to enforce it, or keep
-  it documentation-only for now.
+- Mark the internal packages and the other modules' packages with `@NullMarked`, adding
+  `@Nullable` to fields, parameters and returns that may be `null`.
+- Enforce the annotations in the build, so a missing `@Nullable` fails the compile instead of
+  waiting for review. NullAway in JSpecify mode passes on the annotated API packages today.
+- To decide between:
+  - NullAway (Error Prone plugin) on every Java module.
+  - Keep it documentation-only and check with NullAway now and then.
+- Outcome: nullness checked across the code base, not only declared on the API.
 
 ### Fixed-delay recurrences
 

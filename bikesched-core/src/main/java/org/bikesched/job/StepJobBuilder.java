@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a child job started exactly once as a durable step of its parent, obtained via {@link
@@ -25,7 +26,8 @@ import org.bikesched.BikeschedException;
  * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
  *     of a {@link JobType}
  */
-public interface StepJobBuilder<P> extends JobSettings<StepJobBuilder<P>, P> {
+public interface StepJobBuilder<P extends @Nullable Object>
+    extends JobSettings<StepJobBuilder<P>, P> {
 
   /**
    * Sets the name of the step starting the child (optional, default {@code start <type>}). Set it

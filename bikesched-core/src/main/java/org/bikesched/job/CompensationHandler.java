@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Undoes a completed step when its job is cancelled or fails permanently, see {@link
  * StepBuilder#compensateWith(CompensationHandler)}.
@@ -8,7 +10,7 @@ package org.bikesched.job;
  * @param <T> the type of the step result
  */
 @FunctionalInterface
-public interface CompensationHandler<T> {
+public interface CompensationHandler<T extends @Nullable Object> {
 
   /**
    * Undoes the step, e.g. releases a reserved payment. Runs at least once per completed step, so it
@@ -19,5 +21,5 @@ public interface CompensationHandler<T> {
    * @throws Exception if the compensation failed; it runs again in the job's next compensation
    *     attempt
    */
-  void handle(Step step, T result) throws Exception;
+  void handle(Step step, @Nullable T result) throws Exception;
 }
