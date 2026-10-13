@@ -11,11 +11,11 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
 /** Runs the recurring example's job on two nodes against a real PostgreSQL. */
@@ -83,10 +83,7 @@ class RecurringExampleTest {
   }
 
   private static Bikesched node() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("recurring-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
+    return BikeschedTest.testNode(DATA_SOURCE, "recurring")
         .jsonMapper(new JacksonJsonMapper())
         .build();
   }

@@ -8,7 +8,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.approval.ApprovalExample.Expense;
@@ -16,6 +15,7 @@ import org.bikesched.examples.approval.SimulatedInbox.Message;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,10 +31,7 @@ class ApprovalExampleTest {
   @BeforeEach
   void startNode() {
     bikesched =
-        Bikesched.builder()
-            .dataSource(Database.dataSource())
-            .nodeName("approval-" + UUID.randomUUID())
-            .pollInterval(Duration.ofMillis(50))
+        BikeschedTest.testNode(Database.dataSource(), "approval")
             .jsonMapper(new JacksonJsonMapper())
             .build();
     example = new ApprovalExample(bikesched, new PrintStream(output, true, StandardCharsets.UTF_8));
@@ -54,7 +51,7 @@ class ApprovalExampleTest {
 
     example.decide(expense, "maria", true);
 
-    awaitSuccess(jobId);
+    BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
     assertThat(inbox.messages(expense))
         .containsExactly(message("maria", "approval request", expense));
     assertThat(output()).contains(expense.expenseId() + " paid out 42.00, approved by maria");
@@ -68,7 +65,7 @@ class ApprovalExampleTest {
 
     example.decide(expense, "maria", false);
 
-    awaitSuccess(jobId);
+    BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
     assertThat(inbox.messages(expense))
         .containsExactly(
             message("maria", "approval request", expense), message("maria", "reminder", expense));
@@ -81,15 +78,11 @@ class ApprovalExampleTest {
     UUID jobId = example.submit(expense);
     await().until(() -> inbox.received(ApprovalExample.FINANCE_LEAD, "approval request", expense));
     // The request is sent before the job suspends at its next wait.
-    await()
-        .untilAsserted(
-            () ->
-                assertThat(bikesched.findJob(jobId).orElseThrow().state())
-                    .isEqualTo(JobState.WAITING));
+    BikeschedTest.awaitJob(bikesched, jobId).untilState(JobState.WAITING);
 
     example.decide(expense, ApprovalExample.FINANCE_LEAD, true);
 
-    awaitSuccess(jobId);
+    BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
     assertThat(inbox.messages(expense))
         .containsExactly(
             message("tom", "approval request", expense),
@@ -97,11 +90,6 @@ class ApprovalExampleTest {
             message(ApprovalExample.FINANCE_LEAD, "approval request", expense));
     assertThat(output())
         .contains(expense.expenseId() + " paid out 1899.00, approved by finance-lead");
-  }
-
-  private void awaitSuccess(UUID jobId) {
-    await().until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-    assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
   }
 
   private static Message message(String to, String kind, Expense expense) {

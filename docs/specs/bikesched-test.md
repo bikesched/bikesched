@@ -197,3 +197,12 @@ classes (no behaviour change, same assertions through a shared helper).
    production artifact, and break the "new mechanisms are opt-in" rule. The module keeps the core API
    untouched, consistent with `bikesched-jackson`/`bikesched-annotations` never adding a method to
    `Bikesched` either.
+
+## 10. Decided while implementing
+
+- **No `module-info.java`.** Awaitility (used internally by `JobAwait`, §4.2) has neither a module
+  descriptor nor an `Automatic-Module-Name` manifest entry (confirmed: only an OSGi `Bundle-*`
+  manifest), so Gradle's module path inference never places it on the module path, and `requires
+  awaitility;` fails with "module not found" regardless of the derived name the JPMS runtime would
+  otherwise accept. `bikesched-test` stays off the module path entirely, like
+  `bikesched-examples`; the package Javadoc (`package-info.java`) documents why.

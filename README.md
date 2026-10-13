@@ -59,6 +59,7 @@ similar tools.
 | [`bikesched-micrometer`](bikesched-micrometer) | Micrometer meters for claims, attempts and published events, see [Metrics](docs/metrics.md) |
 | [`bikesched-spring-boot-starter`](bikesched-spring-boot-starter) | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/spring.md) |
 | [`bikesched-admin`](bikesched-admin) | a small admin page and JSON API: jobs, steps, events and nodes, with retry and cancel, served by the JDK's HTTP server or any framework, see [Admin UI](docs/admin.md) |
+| [`bikesched-test`](bikesched-test) | testing support: a test node factory and `JobAwait` wait helpers (Awaitility internally), see [Testing](docs/testing.md) |
 
 ## Features
 
@@ -192,7 +193,7 @@ All dependency and tool versions are managed in `gradle/libs.versions.toml`.
 Every successful build of `main` publishes the current snapshot (`org.bikesched:bikesched-core`,
 `bikesched-jackson`, `bikesched-kotlin`, `bikesched-annotations`, `bikesched-cron`,
 `bikesched-micrometer`, `bikesched-spring-boot-starter`, `bikesched-admin`,
-`bikesched-admin-shaded`, version `0.1.0-SNAPSHOT`) to GitHub
+`bikesched-admin-shaded`, `bikesched-test`, version `0.1.0-SNAPSHOT`) to GitHub
 Packages. Reading from GitHub Packages requires a GitHub token with the `read:packages` scope, even for public
 packages:
 

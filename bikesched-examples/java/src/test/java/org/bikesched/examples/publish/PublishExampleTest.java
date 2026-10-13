@@ -2,18 +2,16 @@
 package org.bikesched.examples.publish;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.time.Duration;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
-import org.bikesched.job.JobState;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
 /** Runs the publish example's jobs against a real PostgreSQL. */
@@ -30,10 +28,7 @@ class PublishExampleTest {
       var jobs = example.placeOrder(orderId, "alice@example.com");
 
       for (UUID jobId : new UUID[] {jobs.shipJobId(), jobs.notifyJobId()}) {
-        await()
-            .atMost(Duration.ofSeconds(30))
-            .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-        assertThat(bikesched.findJob(jobId).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
+        BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
       }
       // The handler ran at least twice (before and after the sleep); every run got the same id.
       var eventIds = example.publishedEventIds();
@@ -57,10 +52,7 @@ class PublishExampleTest {
   }
 
   private static Bikesched node() {
-    return Bikesched.builder()
-        .dataSource(DATA_SOURCE)
-        .nodeName("publish-" + UUID.randomUUID())
-        .pollInterval(Duration.ofMillis(50))
+    return BikeschedTest.testNode(DATA_SOURCE, "publish")
         .jsonMapper(new JacksonJsonMapper())
         .build();
   }

@@ -19,6 +19,8 @@ dependencies {
     implementation(libs.bucket4j.core)
     implementation(libs.bucket4j.postgresql)
     runtimeOnly(libs.logback.classic)
+
+    testImplementation(project(":bikesched-test"))
 }
 
 // ./gradlew :bikesched-examples:java:run against the Postgres from compose.yaml (honors POSTGRES_PORT).

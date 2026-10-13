@@ -9,13 +9,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.Database;
 import org.bikesched.jackson.JacksonJsonMapper;
+import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
 /** Serves the admin next to the demo jobs: the page and the job list answer. */
@@ -26,10 +26,7 @@ class AdminExampleTest {
   @Test
   void servesThePageAndTheDemoJobs() throws Exception {
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(DATA_SOURCE)
-            .nodeName("admin-" + UUID.randomUUID())
-            .pollInterval(Duration.ofMillis(50))
+        BikeschedTest.testNode(DATA_SOURCE, "admin")
             .jsonMapper(new JacksonJsonMapper())
             .jobHistory(AdminExample.JOB_HISTORY)
             .build()) {
