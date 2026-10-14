@@ -4,6 +4,7 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.util.Objects;
 import org.bikesched.RetryBackoff;
+import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.PollBuilder;
 import org.bikesched.job.PollHandler;
 import org.bikesched.job.StepFailureHandler;
@@ -27,7 +28,7 @@ final class DefaultPollBuilder<T> implements PollBuilder<T> {
 
   @Override
   public PollBuilder<T> timeout(Duration timeout) {
-    this.timeout = requirePositive(timeout);
+    this.timeout = ValidationUtil.requirePositive(timeout, "timeout");
     return this;
   }
 
@@ -35,14 +36,6 @@ final class DefaultPollBuilder<T> implements PollBuilder<T> {
   public PollBuilder<T> onFailure(StepFailureHandler<T> handler) {
     this.failureHandler = Objects.requireNonNull(handler, "handler");
     return this;
-  }
-
-  private static Duration requirePositive(Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout");
-    if (timeout.isNegative() || timeout.isZero()) {
-      throw new IllegalArgumentException("timeout must be positive: " + timeout);
-    }
-    return timeout;
   }
 
   @Override

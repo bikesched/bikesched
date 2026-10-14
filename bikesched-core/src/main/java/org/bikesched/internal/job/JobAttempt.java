@@ -8,11 +8,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import org.bikesched.BikeschedLogContext;
 import org.bikesched.job.Job;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 
 /**
  * The running attempt of a job and its timeout timer, shared between the job's thread, the timeout
@@ -42,9 +40,19 @@ final class JobAttempt {
   private final Consumer<JobAttempt> onAbandoned;
   private Duration timeout;
   private ScheduledFuture<?> timer;
-  private boolean finished;
-  private boolean timedOut;
-  private boolean abandoned;
+  private State state = State.RUNNING;
+
+  /** Where the attempt is; changes only under the attempt's lock. */
+  private enum State {
+    /** The handler runs within its timeout (if any). */
+    RUNNING,
+    /** The timeout interrupted the handler, which has not returned yet. */
+    TIMED_OUT,
+    /** The handler returned or threw, see {@link #finish()}. */
+    FINISHED,
+    /** The hard timeout abandoned the attempt before the handler returned. */
+    ABANDONED
+  }
 
   /**
    * @param job the job
@@ -77,12 +85,13 @@ final class JobAttempt {
    * @throws IllegalStateException if the attempt already finished or timed out
    */
   synchronized void startTimeout(Duration timeout) {
-    if (finished) {
-      throw new IllegalStateException("Job " + job.id() + " is no longer running");
-    }
-    if (timedOut) {
-      throw new IllegalStateException(
-          "Job " + job.id() + " already timed out after " + this.timeout);
+    switch (state) {
+      case RUNNING -> {}
+      case TIMED_OUT ->
+          throw new IllegalStateException(
+              "Job " + job.id() + " already timed out after " + this.timeout);
+      case FINISHED, ABANDONED ->
+          throw new IllegalStateException("Job " + job.id() + " is no longer running");
     }
     if (timer != null) {
       timer.cancel(false);
@@ -108,19 +117,17 @@ final class JobAttempt {
   private void timeOut() {
     Duration exceeded;
     synchronized (this) {
-      if (finished || timedOut) {
+      if (state != State.RUNNING) {
         return;
       }
-      timedOut = true;
+      state = State.TIMED_OUT;
       exceeded = timeout;
       thread.interrupt();
       if (hardTimeoutGrace != null) {
         timer = schedule(this::hardTimeOut, hardTimeoutGrace);
       }
     }
-    try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId);
-        var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
-        var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
+    try (var _ = JobLogContext.open(nodeId, job)) {
       LOG.warn(
           "Job {} of type {} exceeded its timeout of {} (attempt {} of {}), interrupting it",
           job.id(),
@@ -134,11 +141,10 @@ final class JobAttempt {
   /** Called by the hard timeout's timer: abandons the attempt, unless its handler returned. */
   private void hardTimeOut() {
     synchronized (this) {
-      if (finished) {
+      if (state != State.TIMED_OUT) {
         return;
       }
-      finished = true;
-      abandoned = true;
+      state = State.ABANDONED;
     }
     onAbandoned.accept(this);
   }
@@ -149,14 +155,21 @@ final class JobAttempt {
    * @return how the attempt ended; {@link End#ABANDONED} if the hard timeout ended it first
    */
   synchronized End finish() {
-    if (abandoned) {
-      return End.ABANDONED;
+    End end =
+        switch (state) {
+          case RUNNING -> End.RETURNED;
+          case TIMED_OUT -> End.TIMED_OUT;
+          case ABANDONED -> End.ABANDONED;
+          case FINISHED ->
+              throw new IllegalStateException("Attempt of job " + job.id() + " already finished");
+        };
+    if (end != End.ABANDONED) {
+      state = State.FINISHED;
+      if (timer != null) {
+        timer.cancel(false);
+      }
     }
-    finished = true;
-    if (timer != null) {
-      timer.cancel(false);
-    }
-    return timedOut ? End.TIMED_OUT : End.RETURNED;
+    return end;
   }
 
   private ScheduledFuture<?> schedule(Runnable task, Duration delay) {

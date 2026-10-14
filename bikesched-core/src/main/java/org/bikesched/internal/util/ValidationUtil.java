@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.util;
 
+import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -53,6 +54,23 @@ public final class ValidationUtil {
    */
   public static String requireKey(String key, String what) {
     return require(key, what, MAX_KEY_LENGTH);
+  }
+
+  /**
+   * Checks a duration that must be positive: a timeout, delay, interval or sleep.
+   *
+   * @param duration the duration to check
+   * @param what what the duration is, for the messages, e.g. {@code "timeout"}
+   * @return the duration
+   * @throws NullPointerException if the duration is null
+   * @throws IllegalArgumentException if the duration is zero or negative
+   */
+  public static Duration requirePositive(Duration duration, String what) {
+    Objects.requireNonNull(duration, what);
+    if (duration.isNegative() || duration.isZero()) {
+      throw new IllegalArgumentException(what + " must be positive: " + duration);
+    }
+    return duration;
   }
 
   /**

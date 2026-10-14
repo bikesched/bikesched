@@ -66,10 +66,7 @@ public interface Recurrence {
    * @return the recurrence
    */
   static Recurrence every(Duration interval) {
-    Objects.requireNonNull(interval, "interval");
-    if (interval.isNegative() || interval.isZero()) {
-      throw new IllegalArgumentException("interval must be positive: " + interval);
-    }
+    ValidationUtil.requirePositive(interval, "interval");
     Recurrence recurrence = of("every " + interval, previous -> previous.plus(interval));
     return new Recurrence() {
       @Override

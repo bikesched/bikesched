@@ -10,6 +10,7 @@ import org.bikesched.BikeschedException;
 import org.bikesched.internal.database.DatabaseAccess.SqlExceptionHandler;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobHistoryEntry;
+import org.bikesched.job.JobState;
 
 /**
  * The {@code bikesched_job_history} table: one row per change of a job or of one of its steps.
@@ -70,6 +71,11 @@ public final class HistoryStore {
     /** A change of the job itself. */
     public static Change job(UUID jobId, String state, int attempt, UUID nodeId, String detail) {
       return new Change(jobId, null, state, attempt, nodeId, detail);
+    }
+
+    /** A change of the job itself. */
+    public static Change job(UUID jobId, JobState state, int attempt, UUID nodeId, String detail) {
+      return job(jobId, state.name(), attempt, nodeId, detail);
     }
 
     /** A change of a step, made by the node running the job (or the given node). */

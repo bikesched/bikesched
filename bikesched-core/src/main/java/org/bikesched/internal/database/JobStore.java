@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
+import org.bikesched.internal.database.ClaimEnd.FollowUp;
 import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobState;
@@ -553,7 +554,11 @@ public final class JobStore {
                       .map(
                           job ->
                               Change.job(
-                                  job.id(), "RUNNING", job.attempts(), nodeId, claimDetail(job)))
+                                  job.id(),
+                                  JobState.RUNNING,
+                                  job.attempts(),
+                                  nodeId,
+                                  claimDetail(job)))
                       .toList());
               return claimed;
             },
@@ -581,13 +586,11 @@ public final class JobStore {
   }
 
   private static String claimDetail(ClaimedJob job) {
-    if (job.failingState() != null) {
-      return "failure handler run " + job.failureAttempts();
-    }
-    if (job.compensatedState() != null) {
-      return "compensation attempt " + job.compensationAttempts();
-    }
-    return job.cancelRequested() ? "cancellation requested" : null;
+    return switch (job.phase()) {
+      case JobPhase.HandleFailure(_, int run) -> "failure handler run " + run;
+      case JobPhase.Compensate(_, int attempt) -> "compensation attempt " + attempt;
+      case JobPhase.Run _ -> job.cancelRequested() ? "cancellation requested" : null;
+    };
   }
 
   /**
@@ -598,56 +601,52 @@ public final class JobStore {
    * @return {@code false} if the job is not running on this node (anymore)
    */
   public boolean completeJob(UUID jobId, JobLock lock) {
-    return completeJob(jobId, lock, null, null, null).isPresent();
+    return completeJob(ClaimEnd.of(jobId, lock), null).isPresent();
   }
 
-  private boolean completeJob(Sql db, UUID jobId, JobLock lock, String result, UUID parentJobId)
-      throws SQLException {
+  private boolean completeJob(Sql db, ClaimEnd end, String result) throws SQLException {
     Optional<Integer> attempts =
-        db.one(COMPLETE_JOB_SQL, row -> row.integer(1), result, jobId, lock.token());
+        db.one(COMPLETE_JOB_SQL, row -> row.integer(1), result, end.jobId(), end.lock().token());
     if (attempts.isPresent()) {
       history.record(
           db,
           Change.job(
-              jobId,
-              "SUCCEEDED",
+              end.jobId(),
+              JobState.SUCCEEDED,
               attempts.get(),
-              lock.nodeId(),
+              end.lock().nodeId(),
               result == null ? null : "succeeded with result"));
-      childEnded(db, jobId, "SUCCEEDED", parentJobId);
     }
     return attempts.isPresent();
   }
 
   /**
    * Marks a job claimed by the node as {@code SUCCEEDED} with its result and, in the same
-   * transaction, inserts the next occurrence of its recurring job resp. completes its parent's step
-   * if it is a child job.
+   * transaction, runs its {@link FollowUp}.
    *
-   * @param jobId the job id
-   * @param lock the lock of the claim (node and token)
+   * @param end the ending claim
    * @param result the job's result as JSON text, {@code null} if none
-   * @param next the next occurrence, {@code null} if none
-   * @param parentJobId the parent of a child job, {@code null} if none
-   * @return empty if the job is not running on this node (anymore); otherwise whether the next
-   *     occurrence was inserted (not if one is pending already)
+   * @return the job's new state; empty if the job is not running on this node (anymore)
    */
-  public Optional<Boolean> completeJob(
-      UUID jobId, JobLock lock, String result, NewJob next, UUID parentJobId) {
-    if (next == null && parentJobId == null) {
+  public Optional<EndedJob> completeJob(ClaimEnd end, String result) {
+    if (end.followUp() instanceof FollowUp.None) {
       // One statement: no transaction unless the history is enabled.
       return history.change(
-          db -> completeJob(db, jobId, lock, result, null) ? Optional.of(false) : Optional.empty(),
-          e -> new BikeschedException("Completing bikesched job " + jobId + " failed", e));
+          db ->
+              completeJob(db, end, result)
+                  ? Optional.of(new EndedJob(JobState.SUCCEEDED, false))
+                  : Optional.<EndedJob>empty(),
+          e -> new BikeschedException("Completing bikesched job " + end.jobId() + " failed", e));
     }
     return access.inTransaction(
         db -> {
-          if (!completeJob(db, jobId, lock, result, parentJobId)) {
-            return Optional.<Boolean>empty();
+          if (!completeJob(db, end, result)) {
+            return Optional.<EndedJob>empty();
           }
-          return Optional.of(next != null && insertOccurrence(db, next));
+          return Optional.of(
+              new EndedJob(JobState.SUCCEEDED, followUp(db, end, JobState.SUCCEEDED)));
         },
-        e -> new BikeschedException("Completing bikesched job " + jobId + " failed", e));
+        e -> new BikeschedException("Completing bikesched job " + end.jobId() + " failed", e));
   }
 
   /**
@@ -674,21 +673,17 @@ public final class JobStore {
           Optional<ChildJobStep> step =
               db.one(
                   FIND_CHILD_JOB_STEP_SQL,
-                  row -> new ChildJobStep(row.string(1), row.string(2), row.uuid(3), row.string(4)),
+                  row ->
+                      new ChildJobStep(
+                          row.enumValue(1, StepKind.class),
+                          row.enumValue(2, StepState.class),
+                          row.uuid(3),
+                          row.string(4)),
                   parentJobId,
                   stepName);
           if (step.isPresent()) {
             ChildJobStep found = step.get();
-            if (!found.kind().equals("CHILD_JOB")) {
-              throw new IllegalStateException(
-                  "Step '"
-                      + stepName
-                      + "' of job "
-                      + parentJobId
-                      + " is "
-                      + StepStore.describeKind(found.kind())
-                      + ", not a child job; step names must be unique within a job");
-            }
+            StepKind.CHILD_JOB.require(stepName, parentJobId, found.kind());
             if (!found.childType().equals(child.type())) {
               throw new IllegalStateException(
                   "Step '"
@@ -703,7 +698,7 @@ public final class JobStore {
                       + child.type()
                       + "; step names must be unique within a job");
             }
-            if (!found.state().equals("COMPENSATED")) {
+            if (found.state() != StepState.COMPENSATED) {
               return new ChildJob(found.childJobId(), false);
             }
           }
@@ -773,21 +768,37 @@ public final class JobStore {
   public record ChildJob(UUID id, boolean started) {}
 
   /** A row of {@code FIND_CHILD_JOB_STEP_SQL}; {@code childType} is null for other kinds. */
-  private record ChildJobStep(String kind, String state, UUID childJobId, String childType) {}
+  private record ChildJobStep(StepKind kind, StepState state, UUID childJobId, String childType) {}
 
   /**
-   * After a job ended in a terminal state in the caller's transaction: if it is a child job,
-   * completes its parent's step waiting for it with its outcome and resumes the parent if it waits,
-   * see {@code COMPLETE_CHILD_JOB_STEP_SQL}.
+   * After a job's state changed in the caller's transaction: once it ended, runs the claim's {@link
+   * FollowUp}.
+   *
+   * @param state the job's new state; nothing happens unless it is terminal
+   * @return whether the next occurrence of a recurring job was inserted
+   */
+  private boolean followUp(Sql db, ClaimEnd end, JobState state) throws SQLException {
+    if (!state.isEnded()) {
+      return false;
+    }
+    return switch (end.followUp()) {
+      case FollowUp.NotifyParent _ -> {
+        childEnded(db, end.jobId());
+        yield false;
+      }
+      case FollowUp.ScheduleNext(var next) -> insertOccurrence(db, next);
+      case FollowUp.None _ -> false;
+    };
+  }
+
+  /**
+   * After a child job ended in a terminal state in the caller's transaction: completes its parent's
+   * step waiting for it with its outcome and resumes the parent if it waits, see {@code
+   * COMPLETE_CHILD_JOB_STEP_SQL}.
    *
    * @param jobId the job that ended
-   * @param state its new state; nothing happens unless it is terminal
-   * @param parentJobId its parent, {@code null} if it is not a child (nothing happens)
    */
-  private void childEnded(Sql db, UUID jobId, String state, UUID parentJobId) throws SQLException {
-    if (parentJobId == null || !JobState.valueOf(state).isEnded()) {
-      return;
-    }
+  private void childEnded(Sql db, UUID jobId) throws SQLException {
     Optional<CompletedChildStep> completed =
         db.one(
             COMPLETE_CHILD_JOB_STEP_SQL,
@@ -808,7 +819,7 @@ public final class JobStore {
     Optional<ChangedJob> resumed =
         db.one(
             RESUME_PARENT_SQL,
-            row -> new ChangedJob("SCHEDULED", row.integer(1), row.string(2), null),
+            row -> new ChangedJob(JobState.SCHEDULED, row.integer(1), row.string(2), null),
             parent);
     if (resumed.isPresent()) {
       db.dueNow(resumed.get().type());
@@ -831,27 +842,24 @@ public final class JobStore {
    * @return {@code false} if the job is not running on this node (anymore)
    */
   public boolean cancelJob(UUID jobId, JobLock lock, String message) {
-    return cancelJob(jobId, lock, message, true, null, null).isPresent();
+    return cancelJob(ClaimEnd.of(jobId, lock), message, true).isPresent();
   }
 
   /**
    * Cancels a job claimed by the node: marks it {@code CANCELLED}, or {@code COMPENSATING} if it
    * has completed steps to compensate, and its unfinished steps {@code CANCELLED}. If the job ends
-   * {@code CANCELLED}, the next occurrence of its recurring job is inserted in the same transaction
-   * (cancelling cancels this occurrence only).
+   * {@code CANCELLED}, its {@link FollowUp} runs in the same transaction (cancelling an occurrence
+   * cancels this occurrence only).
    *
-   * @param jobId the job id
-   * @param lock the lock of the claim (node and token)
+   * @param end the ending claim
    * @param message why the job was cancelled, may be {@code null}
    * @param attemptRan whether the handler ran in the claimed attempt; if not (cancelled on request
    *     right after claiming it), the attempt is not counted
-   * @param next the next occurrence, {@code null} if none
-   * @param parentJobId the parent of a child job, whose step receives the outcome if the job ends
-   *     {@code CANCELLED}; {@code null} if none
    * @return the job's new state; empty if the job is not running on this node (anymore)
    */
-  public Optional<EndedJob> cancelJob(
-      UUID jobId, JobLock lock, String message, boolean attemptRan, NewJob next, UUID parentJobId) {
+  public Optional<EndedJob> cancelJob(ClaimEnd end, String message, boolean attemptRan) {
+    UUID jobId = end.jobId();
+    JobLock lock = end.lock();
     return access.inTransaction(
         db -> {
           List<String> cancelledSteps =
@@ -873,16 +881,13 @@ public final class JobStore {
           if (cancelled.isEmpty()) {
             return Optional.<EndedJob>empty();
           }
-          String state = cancelled.get().state();
-          if (cancelled.get().state().equals("COMPENSATING")) {
+          JobState state = cancelled.get().state();
+          if (state == JobState.COMPENSATING) {
             db.dueAt(cancelled.get().type(), cancelled.get().scheduledAt());
           }
           history.record(
               db, Change.job(jobId, state, cancelled.get().attempts(), lock.nodeId(), message));
-          childEnded(db, jobId, state, parentJobId);
-          boolean scheduled =
-              next != null && state.equals("CANCELLED") && insertOccurrence(db, next);
-          return Optional.of(new EndedJob(state, scheduled));
+          return Optional.of(new EndedJob(state, followUp(db, end, state)));
         },
         e -> new BikeschedException("Cancelling bikesched job " + jobId + " failed", e));
   }
@@ -893,17 +898,7 @@ public final class JobStore {
    * @param state its new state, e.g. {@code CANCELLED} or {@code COMPENSATING}
    * @param nextOccurrenceScheduled whether the next occurrence of its recurring job was inserted
    */
-  public record EndedJob(String state, boolean nextOccurrenceScheduled) {
-
-    public boolean compensating() {
-      return state.equals("COMPENSATING");
-    }
-
-    /** Whether the job's failure handler runs next. */
-    public boolean failing() {
-      return state.equals("FAILING");
-    }
-  }
+  public record EndedJob(JobState state, boolean nextOccurrenceScheduled) {}
 
   /**
    * Requests the cancellation of a job: the node claiming it next cancels it instead of running its
@@ -924,7 +919,7 @@ public final class JobStore {
                   ValidationUtil.truncateMessage(message),
                   jobId);
           if (job.isPresent()) {
-            if (!job.get().state().equals("RUNNING")) {
+            if (job.get().state() != JobState.RUNNING) {
               db.dueNow(job.get().type()); // to be cancelled by the next claim
             }
             history.record(
@@ -989,52 +984,44 @@ public final class JobStore {
   private record NotRetryable(String type, UUID parentJobId) {}
 
   /** The state, attempt count, type and due time of a job after a change. */
-  private record ChangedJob(String state, int attempts, String type, Instant scheduledAt) {
+  private record ChangedJob(JobState state, int attempts, String type, Instant scheduledAt) {
 
     static ChangedJob from(Sql.Row row) throws SQLException {
-      return new ChangedJob(row.string(1), row.integer(2), row.string(3), row.instant(4));
+      return new ChangedJob(
+          row.enumValue(1, JobState.class), row.integer(2), row.string(3), row.instant(4));
     }
   }
 
   /**
    * Ends a compensating job claimed by the node, once all its compensations ran, in the state it
    * was compensated for ({@code CANCELLED} or {@code FAILED}; {@code FAILING} first for a failed
-   * job with a failure handler); inserts the next occurrence of its recurring job in the same
-   * transaction once it ended.
+   * job with a failure handler); runs its {@link FollowUp} in the same transaction once it ended.
    *
-   * @param jobId the job id
-   * @param lock the lock of the claim (node and token)
-   * @param failureHandler whether the job type has a failure handler on this node
-   * @param next the next occurrence, {@code null} if none
-   * @param parentJobId the parent of a child job, whose step receives the outcome; {@code null} if
-   *     none
+   * @param end the ending claim
    * @return the job's new state; empty if the job is not compensating on this node (anymore)
    */
-  public Optional<EndedJob> completeCompensation(
-      UUID jobId, JobLock lock, boolean failureHandler, NewJob next, UUID parentJobId) {
+  public Optional<EndedJob> completeCompensation(ClaimEnd end) {
+    UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
           Optional<ChangedJob> ended =
               db.one(
-                  COMPLETE_COMPENSATION_SQL, ChangedJob::from, failureHandler, jobId, lock.token());
+                  COMPLETE_COMPENSATION_SQL,
+                  ChangedJob::from,
+                  end.failureHandler(),
+                  jobId,
+                  end.lock().token());
           if (ended.isEmpty()) {
             return Optional.<EndedJob>empty();
           }
-          if (ended.get().state().equals("FAILING")) {
+          JobState state = ended.get().state();
+          if (state == JobState.FAILING) {
             db.dueAt(ended.get().type(), ended.get().scheduledAt());
           }
           history.record(
               db,
-              Change.job(
-                  jobId,
-                  ended.get().state(),
-                  ended.get().attempts(),
-                  lock.nodeId(),
-                  "compensated"));
-          childEnded(db, jobId, ended.get().state(), parentJobId);
-          boolean scheduled =
-              next != null && !ended.get().state().equals("FAILING") && insertOccurrence(db, next);
-          return Optional.of(new EndedJob(ended.get().state(), scheduled));
+              Change.job(jobId, state, ended.get().attempts(), end.lock().nodeId(), "compensated"));
+          return Optional.of(new EndedJob(state, followUp(db, end, state)));
         },
         e ->
             new BikeschedException(
@@ -1043,28 +1030,17 @@ public final class JobStore {
 
   /**
    * Records a failed compensation attempt of a job claimed by the node: compensating again while
-   * compensation attempts remain, otherwise {@code COMPENSATION_FAILED} (then inserting the next
-   * occurrence of its recurring job in the same transaction).
+   * compensation attempts remain, otherwise {@code COMPENSATION_FAILED} (then running its {@link
+   * FollowUp} in the same transaction).
    *
-   * @param jobId the job id
-   * @param lock the lock of the claim (node and token)
+   * @param end the ending claim; with a failure handler, the job is {@code FAILING} instead of
+   *     {@code COMPENSATION_FAILED}
    * @param error description of the failure, stored as {@code last_error} once final
    * @param retryAfter delay of the next compensation attempt, {@code null} for as soon as possible
-   * @param failureHandler whether the job type has a failure handler on this node: the job is
-   *     {@code FAILING} instead of {@code COMPENSATION_FAILED} then
-   * @param next the next occurrence, {@code null} if none
-   * @param parentJobId the parent of a child job, whose step receives the outcome if the job ends
-   *     {@code COMPENSATION_FAILED}; {@code null} if none
    * @return the job after recording the failure; empty if it is not compensating on this node
    */
-  public Optional<FailedJob> failCompensation(
-      UUID jobId,
-      JobLock lock,
-      String error,
-      Duration retryAfter,
-      boolean failureHandler,
-      NewJob next,
-      UUID parentJobId) {
+  public Optional<FailedJob> failCompensation(ClaimEnd end, String error, Duration retryAfter) {
+    UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
           Optional<FailedJob> failed =
@@ -1073,25 +1049,23 @@ public final class JobStore {
                   FailedJob::from,
                   ValidationUtil.truncateMessage(error),
                   Sql.millis(retryAfter),
-                  failureHandler,
+                  end.failureHandler(),
                   jobId,
-                  lock.token());
-          if (failed.isPresent()) {
-            failed.get().reportDue(db);
-            history.record(
-                db,
-                Change.job(
-                    jobId,
-                    failed.get().state(),
-                    failed.get().attempts(),
-                    lock.nodeId(),
-                    "compensation failed: " + error));
-            childEnded(db, jobId, failed.get().state(), parentJobId);
+                  end.lock().token());
+          if (failed.isEmpty()) {
+            return failed;
           }
-          if (next != null && failed.isPresent() && failed.get().ended()) {
-            return Optional.of(failed.get().withNextOccurrence(insertOccurrence(db, next)));
-          }
-          return failed;
+          FailedJob job = failed.get();
+          job.reportDue(db);
+          history.record(
+              db,
+              Change.job(
+                  jobId,
+                  job.state(),
+                  job.attempts(),
+                  end.lock().nodeId(),
+                  "compensation failed: " + error));
+          return Optional.of(job.withNextOccurrence(followUp(db, end, job.state())));
         },
         e ->
             new BikeschedException(
@@ -1233,29 +1207,24 @@ public final class JobStore {
    */
   public Optional<FailedJob> failJob(
       UUID jobId, JobLock lock, String error, Integer maxAttempts, Duration retryAfter) {
-    return failJob(jobId, lock, error, maxAttempts, retryAfter, false, null, null);
+    return failJob(ClaimEnd.of(jobId, lock), error, maxAttempts, retryAfter);
   }
 
   /**
-   * Records a failed attempt like {@link #failJob(UUID, UUID, String, Integer, Duration)}; if the
-   * job fails permanently, the next occurrence of its recurring job is inserted in the same
-   * transaction.
+   * Records a failed attempt like {@link #failJob(UUID, JobLock, String, Integer, Duration)}; if
+   * the job fails permanently, its {@link FollowUp} runs in the same transaction.
    *
-   * @param failureHandler whether the job type has a failure handler on this node: the job is
-   *     {@code FAILING} instead of {@code FAILED} then
-   * @param next the next occurrence, {@code null} if none
-   * @param parentJobId the parent of a child job, whose step receives the outcome if the job ends
-   *     {@code FAILED}; {@code null} if none
+   * @param end the ending claim; with a failure handler, the job is {@code FAILING} instead of
+   *     {@code FAILED}
+   * @param error description of the failure, stored as {@code last_error}
+   * @param maxAttempts the job's new maximum number of attempts, {@code null} to keep it
+   * @param retryAfter delay of the next attempt from now, {@code null} to retry as soon as possible
+   * @return the job after recording the failure; empty if the job is not running on this node
+   *     (anymore)
    */
   public Optional<FailedJob> failJob(
-      UUID jobId,
-      JobLock lock,
-      String error,
-      Integer maxAttempts,
-      Duration retryAfter,
-      boolean failureHandler,
-      NewJob next,
-      UUID parentJobId) {
+      ClaimEnd end, String error, Integer maxAttempts, Duration retryAfter) {
+    UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
           Optional<FailedJob> failed =
@@ -1265,61 +1234,52 @@ public final class JobStore {
                   ValidationUtil.truncateMessage(error),
                   Sql.typed(maxAttempts, Types.INTEGER),
                   Sql.millis(retryAfter),
-                  failureHandler,
+                  end.failureHandler(),
                   jobId,
                   jobId,
-                  lock.token());
-          if (failed.isPresent()) {
-            FailedJob job = failed.get();
-            job.reportDue(db);
-            history.record(
-                db,
-                Change.job(
-                    jobId,
-                    job.state(),
-                    job.attempts(),
-                    lock.nodeId(),
-                    job.retried() ? error + " (retry at " + job.scheduledAt() + ")" : error));
-            childEnded(db, jobId, job.state(), parentJobId);
+                  end.lock().token());
+          if (failed.isEmpty()) {
+            return failed;
           }
-          if (next != null && failed.isPresent() && failed.get().ended()) {
-            boolean scheduled = insertOccurrence(db, next);
-            return Optional.of(failed.get().withNextOccurrence(scheduled));
-          }
-          return failed;
+          FailedJob job = failed.get();
+          job.reportDue(db);
+          history.record(
+              db,
+              Change.job(
+                  jobId,
+                  job.state(),
+                  job.attempts(),
+                  end.lock().nodeId(),
+                  job.state() == JobState.SCHEDULED
+                      ? error + " (retry at " + job.scheduledAt() + ")"
+                      : error));
+          return Optional.of(job.withNextOccurrence(followUp(db, end, job.state())));
         },
         e -> new BikeschedException("Recording failure of bikesched job " + jobId + " failed", e));
   }
 
   /**
    * Ends a {@code FAILING} job claimed by the node in the state it was failing for ({@code FAILED}
-   * or {@code COMPENSATION_FAILED}), once its failure handler ran; inserts the next occurrence of
-   * its recurring job in the same transaction.
+   * or {@code COMPENSATION_FAILED}), once its failure handler ran; runs its {@link FollowUp} in the
+   * same transaction.
    *
-   * @param jobId the job id
-   * @param lock the lock of the claim (node and token)
+   * @param end the ending claim
    * @param detail recorded in the job history
-   * @param next the next occurrence, {@code null} if none
-   * @param parentJobId the parent of a child job, whose step receives the outcome; {@code null} if
-   *     none
    * @return the job's new state; empty if the job is not failing on this node (anymore)
    */
-  public Optional<EndedJob> endFailing(
-      UUID jobId, JobLock lock, String detail, NewJob next, UUID parentJobId) {
+  public Optional<EndedJob> endFailing(ClaimEnd end, String detail) {
+    UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
           Optional<ChangedJob> ended =
-              db.one(END_FAILING_SQL, ChangedJob::from, jobId, lock.token());
+              db.one(END_FAILING_SQL, ChangedJob::from, jobId, end.lock().token());
           if (ended.isEmpty()) {
             return Optional.<EndedJob>empty();
           }
+          JobState state = ended.get().state();
           history.record(
-              db,
-              Change.job(
-                  jobId, ended.get().state(), ended.get().attempts(), lock.nodeId(), detail));
-          childEnded(db, jobId, ended.get().state(), parentJobId);
-          boolean scheduled = next != null && insertOccurrence(db, next);
-          return Optional.of(new EndedJob(ended.get().state(), scheduled));
+              db, Change.job(jobId, state, ended.get().attempts(), end.lock().nodeId(), detail));
+          return Optional.of(new EndedJob(state, followUp(db, end, state)));
         },
         e ->
             new BikeschedException(
@@ -1355,7 +1315,7 @@ public final class JobStore {
               db,
               Change.job(
                   jobId,
-                  "FAILING",
+                  JobState.FAILING,
                   failing.get().attempts(),
                   lock.nodeId(),
                   "failure handler failed: "
@@ -1383,35 +1343,22 @@ public final class JobStore {
    * @param nextOccurrenceScheduled whether the next occurrence of its recurring job was inserted
    */
   public record FailedJob(
-      String state,
+      JobState state,
       int maxAttempts,
       Instant scheduledAt,
       int attempts,
       String type,
       boolean nextOccurrenceScheduled) {
 
-    public boolean retried() {
-      return state.equals("SCHEDULED");
-    }
-
-    public boolean compensating() {
-      return state.equals("COMPENSATING");
-    }
-
-    /** Whether the job's failure handler runs next. */
-    public boolean failing() {
-      return state.equals("FAILING");
-    }
-
-    /** Whether the job ended ({@code FAILED} or {@code COMPENSATION_FAILED}). */
-    public boolean ended() {
-      return state.equals("FAILED") || state.equals("COMPENSATION_FAILED");
-    }
-
     /** Maps a row of {@code FAIL_JOB_SQL} or {@code FAIL_COMPENSATION_SQL}. */
     static FailedJob from(Sql.Row row) throws SQLException {
       return new FailedJob(
-          row.string(1), row.integer(2), row.instant(3), row.integer(4), row.string(5), false);
+          row.enumValue(1, JobState.class),
+          row.integer(2),
+          row.instant(3),
+          row.integer(4),
+          row.string(5),
+          false);
     }
 
     FailedJob withNextOccurrence(boolean scheduled) {
@@ -1423,7 +1370,7 @@ public final class JobStore {
      * failing node wakes itself up for it, other nodes are not told.
      */
     void reportDue(Sql db) {
-      if (retried() || compensating() || failing()) {
+      if (!state.isEnded()) {
         db.dueAt(type, scheduledAt);
       }
     }
@@ -1641,19 +1588,11 @@ public final class JobStore {
    * @param attempts the number of attempts including the claimed one
    * @param maxAttempts the maximum number of attempts
    * @param timeout its timeout, {@code null} for the node default
-   * @param recurrence the description of its recurring job's recurrence, {@code null} for a one-off
-   *     job
-   * @param fixedRateAt its planned run if its recurrence is fixed-rate, {@code null} otherwise
-   * @param compensatedState {@code CANCELLED} or {@code FAILED} if the job was claimed to
-   *     compensate its steps, {@code null} if it was claimed to run
-   * @param compensationAttempts the number of compensation attempts including the claimed one
+   * @param phase what it was claimed for: running its handler, compensating or its failure handler
+   * @param origin one-off, a child job or an occurrence of a recurring job
    * @param cancelRequested whether its cancellation was requested via {@code Bikesched.cancel}
    * @param cancelMessage the message of that request, may be {@code null}
    * @param lock the claiming node and the token of the claim; the attempt's writes are fenced by it
-   * @param parentJobId the job that started this one as a child, {@code null} if none
-   * @param failingState {@code FAILED} or {@code COMPENSATION_FAILED} if the job was claimed to run
-   *     its failure handler, {@code null} otherwise
-   * @param failureAttempts the number of runs of its failure handler including the claimed one
    * @param lastError the stored description of its last failure, may be {@code null}
    */
   public record ClaimedJob(
@@ -1665,39 +1604,40 @@ public final class JobStore {
       int attempts,
       int maxAttempts,
       Duration timeout,
-      String recurrence,
-      Instant fixedRateAt,
-      String compensatedState,
-      int compensationAttempts,
+      JobPhase phase,
+      JobOrigin origin,
       boolean cancelRequested,
       String cancelMessage,
       JobLock lock,
-      UUID parentJobId,
-      String failingState,
-      int failureAttempts,
       String lastError) {
 
     /** Maps a row of {@code CLAIM_JOBS_SQL}. */
     static ClaimedJob from(Sql.Row row) throws SQLException {
+      int attempts = row.integer(6);
+      JobState compensatedState = row.enumValue(11, JobState.class);
+      JobState failingState = row.enumValue(18, JobState.class);
+      JobPhase phase;
+      if (failingState != null) {
+        phase = new JobPhase.HandleFailure(failingState, row.integer(19));
+      } else if (compensatedState != null) {
+        phase = new JobPhase.Compensate(compensatedState, row.integer(12));
+      } else {
+        phase = new JobPhase.Run(attempts);
+      }
       return new ClaimedJob(
           row.uuid(1),
           row.string(2),
           row.string(3),
           row.integer(4),
           row.instant(5),
-          row.integer(6),
+          attempts,
           row.integer(7),
           row.millis(8),
-          row.string(9),
-          row.instant(10),
-          row.string(11),
-          row.integer(12),
+          phase,
+          JobOrigin.of(row.uuid(17), row.string(9), row.instant(10)),
           row.bool(13),
           row.string(14),
           new JobLock(row.uuid(15), row.uuid(16)),
-          row.uuid(17),
-          row.string(18),
-          row.integer(19),
           row.string(20));
     }
   }

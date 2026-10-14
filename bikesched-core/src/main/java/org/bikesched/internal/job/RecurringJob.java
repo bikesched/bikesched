@@ -4,6 +4,7 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import org.bikesched.internal.database.JobOrigin;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobBuilder;
@@ -58,9 +59,12 @@ public record RecurringJob(
    */
   Instant nextRun(DefaultJob ended, Instant now) {
     Instant previous =
-        recurrence.isFixedRate() && ended.fixedRateAt() != null
-            ? ended.fixedRateAt()
-            : ended.scheduledAt();
+        switch (ended.origin()) {
+          case JobOrigin.Occurrence(_, Instant fixedRateAt)
+              when recurrence.isFixedRate() && fixedRateAt != null ->
+              fixedRateAt;
+          case JobOrigin.Occurrence _, JobOrigin.OneOff _, JobOrigin.Child _ -> ended.scheduledAt();
+        };
     return nextRun(previous, now);
   }
 
