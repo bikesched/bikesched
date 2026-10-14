@@ -130,12 +130,13 @@ class AdminJsonTest {
   }
 
   @Test
-  void nodeIncludesHeartbeatAndAliveFlag() throws Exception {
+  void nodeIncludesHeartbeatAliveFlagAndRunningJobs() throws Exception {
     assertContract(
-        AdminJson.node(new NodeInfo(ID, "worker", AT, AT, false)),
+        AdminJson.node(new NodeInfo(ID, "worker", AT, AT, false, 2)),
         """
         {"id":"7f0c2a1e-0000-4000-8000-000000000001","name":"worker",
-         "startedAt":"2026-10-11T12:00:00.123456Z","lastHeartbeatAt":"2026-10-11T12:00:00.123456Z","alive":false}
+         "startedAt":"2026-10-11T12:00:00.123456Z","lastHeartbeatAt":"2026-10-11T12:00:00.123456Z","alive":false,
+         "runningJobs":2}
         """);
   }
 

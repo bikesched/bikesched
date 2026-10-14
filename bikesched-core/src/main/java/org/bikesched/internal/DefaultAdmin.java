@@ -149,6 +149,13 @@ final class DefaultAdmin implements Admin {
     return store.findNodes(nodeTimeout);
   }
 
+  @Override
+  public Optional<NodeInfo> findNode(UUID nodeId) {
+    Objects.requireNonNull(nodeId, "nodeId");
+    ensureReady.run();
+    return store.findNode(nodeId, nodeTimeout);
+  }
+
   /**
    * The ids starting with the hex digits of the prefix: the prefix padded with {@code 0} and with
    * {@code f}. PostgreSQL orders {@code uuid} values by their bytes, the order of their hex digits,

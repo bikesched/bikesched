@@ -162,9 +162,11 @@ public final class AdminStore {
 
   private static final String FIND_NODES_SQL =
       """
-            select id, name, started_at, last_heartbeat_at,
-                   last_heartbeat_at >= now() - make_interval(secs => ?)
-              from bikesched_nodes order by name""";
+            select n.id, n.name, n.started_at, n.last_heartbeat_at,
+                   n.last_heartbeat_at >= now() - make_interval(secs => ?),
+                   (select count(*) from bikesched_jobs j where j.locked_by = n.id)::int
+              from bikesched_nodes n
+             %s""";
 
   public List<JobSummary> findJobs(JobQuery query) {
     Objects.requireNonNull(query, "query");
@@ -179,6 +181,10 @@ public final class AdminStore {
     if (!query.states().isEmpty()) {
       conditions.add("state = any(?)");
       parameters.add(Sql.array("text", query.states().stream().map(Enum::name).toArray()));
+    }
+    if (query.nodeId() != null) {
+      conditions.add("locked_by = ?");
+      parameters.add(query.nodeId());
     }
     if (query.createdBefore() != null) {
       conditions.add("(created_at, id) < (?, ?)");
@@ -391,12 +397,31 @@ public final class AdminStore {
     return access.inReadOnlyTransaction(
         db ->
             db.list(
-                FIND_NODES_SQL,
-                row ->
-                    new NodeInfo(
-                        row.uuid(1), row.string(2), row.instant(3), row.instant(4), row.bool(5)),
+                FIND_NODES_SQL.formatted("order by n.name"),
+                AdminStore::nodeInfo,
                 Sql.seconds(nodeTimeout)),
         e -> new BikeschedException("Reading the bikesched nodes failed", e));
+  }
+
+  public Optional<NodeInfo> findNode(UUID nodeId, Duration nodeTimeout) {
+    Objects.requireNonNull(nodeId, "nodeId");
+    Objects.requireNonNull(nodeTimeout, "nodeTimeout");
+    return access.inReadOnlyTransaction(
+        db ->
+            db
+                .list(
+                    FIND_NODES_SQL.formatted("where n.id = ?"),
+                    AdminStore::nodeInfo,
+                    Sql.seconds(nodeTimeout),
+                    nodeId)
+                .stream()
+                .findFirst(),
+        e -> new BikeschedException("Reading bikesched node " + nodeId + " failed", e));
+  }
+
+  private static NodeInfo nodeInfo(Sql.Row row) throws SQLException {
+    return new NodeInfo(
+        row.uuid(1), row.string(2), row.instant(3), row.instant(4), row.bool(5), row.integer(6));
   }
 
   /** The conditions joined with {@code and}, after {@code prefix}; empty without conditions. */

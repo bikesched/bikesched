@@ -116,9 +116,10 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
 
 ## The page
 
-- **Header**: the Jobs and Events tabs with their number of jobs and unexpired events, the
-  registered nodes, online (heartbeat within the node timeout) or offline, and a reload button. Each
-  tab returns to its list with the filters it was left with; the open tab clears them.
+- **Header**: the Jobs, Events and Nodes tabs with their number of jobs, unexpired events and
+  registered nodes (with "1 offline" while a node has no heartbeat within the node timeout), and a
+  reload button. Each tab returns to its list with the filters it was left with; the open tab
+  clears them.
 - **Type and name**: above the job list a select box with the job types and their number of jobs
   (and failed jobs or the recurrence), above the event list one with the event names and their
   number of unexpired events and waiting jobs (a name jobs wait for but nobody published yet is
@@ -153,9 +154,14 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   form lists the jobs waiting for that name and key, which continue right away; the payload must be
   JSON. Retention (node default, 0, 1 hour, 1 day, 7 days) and an idempotency key are optional. The
   server logs every published event with the user.
+- **Nodes**: every registered node by name, online or offline, with its start, last heartbeat and
+  the number of jobs it runs. The list and the open node refresh every 3 seconds while the tab is
+  visible. The node detail shows how long ago its last heartbeat was, its uptime and the jobs it
+  runs, each linked; an offline node says that other nodes release its jobs and later remove it. A
+  running job's Node field links to the node.
 
 Every view is a link (`#/jobs?type=send-invoice&state=FAILED`, `#/jobs?id=3f2a9c1e`, `#/jobs/{id}`,
-`#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`), so
+`#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`, `#/nodes/{id}`), so
 it can be shared or put into an alert. The page follows the browser's light or dark mode.
 
 ## Other HTTP servers
@@ -190,7 +196,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `api/jobs?type=&state=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
+| GET | `api/jobs?type=&state=&node=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
 | GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id starts with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
 | GET | `api/types` | `{"types": [{"type", "total", "counts", "recurrence"}]}` |
@@ -200,7 +206,8 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/event-names` | `{"names": [{"name", "count", "waiting"}]}`: unexpired events and waiting steps per name |
 | GET | `api/recurring-runs?type=&limit=` | `{"type", "pending", "previous": [...]}`: the pending run of a recurring job (`null` if none) and its latest ended runs, newest first |
 | GET | `api/waiting?name=&key=&limit=` | `{"steps": [...]}`: event waits still waiting for the name, longest waiting first |
-| GET | `api/nodes` | `{"nodes": [{"id", "name", "startedAt", "lastHeartbeatAt", "alive"}]}` |
+| GET | `api/nodes` | `{"nodes": [{"id", "name", "startedAt", "lastHeartbeatAt", "alive", "runningJobs"}]}`: by name |
+| GET | `api/nodes/{id}` | `{"node": {...}}`, the same fields; `404` once the node is removed |
 | GET | `api/me` | `{"user", "level", "readOnly", "payloadsShown"}` |
 | POST | `api/jobs/{id}/retry` | `{"retried": true or false}` (only failed jobs are retried) |
 | POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI") |
@@ -224,7 +231,7 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 
 | Method | Returns |
 |---|---|
-| `findJobs(JobQuery)` | jobs by type and states, newest first, in pages (`after(lastJob)`) |
+| `findJobs(JobQuery)` | jobs by type, states and the node running them, newest first, in pages (`after(lastJob)`) |
 | `findJobsByIdPrefix(prefix, limit)` | jobs whose id starts with at least 8 hex digits (or a full id), newest first |
 | `findJob(id)` | one job's summary: state, attempts, times, last error, parent, recurrence, idempotency key, node |
 | `findJobData(id)` | the payload and result as JSON text |
@@ -237,6 +244,7 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findEventNames()` | every event name with its number of unexpired events |
 | `findEventSteps(id)` | the steps that published or received the event |
 | `findWaitingSteps(name, keyPrefix, limit)` | event waits still waiting for the name |
-| `findNodes()` | the registered nodes, alive or not |
+| `findNodes()` | the registered nodes, alive or not, with the number of jobs each runs |
+| `findNode(id)` | one registered node |
 
 Summaries never contain payloads or results; only `findJobData` and `findEventPayload` read them.

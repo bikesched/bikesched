@@ -157,4 +157,12 @@ public interface Admin {
    * @return the nodes, by name
    */
   List<NodeInfo> findNodes();
+
+  /**
+   * Finds a registered node.
+   *
+   * @param nodeId the node id
+   * @return the node, empty if no node with this id is registered (any more)
+   */
+  Optional<NodeInfo> findNode(UUID nodeId);
 }

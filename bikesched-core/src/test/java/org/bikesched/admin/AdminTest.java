@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
@@ -299,6 +300,43 @@ class AdminTest extends AbstractBikeschedTest {
                           }));
     } finally {
       execute("delete from bikesched_nodes where id = '" + deadId + "'");
+    }
+  }
+
+  @Test
+  void findsANodeWithTheJobsItRuns() throws Exception {
+    String type = prefix + "on-node";
+    CountDownLatch release = new CountDownLatch(1);
+    try (Bikesched bikesched = testNode(prefix + "runner").build()) {
+      bikesched.registerJobHandler(type, _ -> release.await());
+      UUID running = bikesched.newJob(type).schedule();
+      UUID scheduled = bikesched.newJob(type).schedule(Duration.ofHours(1));
+      UUID nodeId = bikesched.node().id().orElseThrow();
+      Admin admin = bikesched.admin();
+
+      await()
+          .untilAsserted(
+              () -> assertThat(admin.findNode(nodeId).orElseThrow().runningJobs()).isEqualTo(1));
+      NodeInfo node = admin.findNode(nodeId).orElseThrow();
+      assertThat(node.name()).isEqualTo(prefix + "runner");
+      assertThat(node.alive()).isTrue();
+      assertThat(admin.findNodes()).contains(node);
+      assertThat(admin.findJobs(JobQuery.newest(10).withNode(nodeId)))
+          .extracting(JobSummary::id)
+          .containsExactly(running);
+      assertThat(admin.findJobs(JobQuery.newest(10).withType(type)))
+          .extracting(JobSummary::id)
+          .containsExactlyInAnyOrder(running, scheduled);
+      assertThat(admin.findNode(UUID.randomUUID())).isEmpty();
+
+      release.countDown();
+      await()
+          .untilAsserted(
+              () -> assertThat(admin.findNode(nodeId).orElseThrow().runningJobs()).isZero());
+      assertThat(admin.findJobs(JobQuery.newest(10).withNode(nodeId))).isEmpty();
+      execute("delete from bikesched_jobs where id = '" + scheduled + "'");
+    } finally {
+      release.countDown();
     }
   }
 
