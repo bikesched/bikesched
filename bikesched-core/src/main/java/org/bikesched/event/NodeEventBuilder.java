@@ -47,6 +47,9 @@ public interface NodeEventBuilder<P extends @Nullable Object> extends EventBuild
   NodeEventBuilder<P> payload(@Nullable P payload);
 
   @Override
+  NodeEventBuilder<P> payloadJson(@Nullable String json);
+
+  @Override
   NodeEventBuilder<P> retention(Duration retention);
 
   /**

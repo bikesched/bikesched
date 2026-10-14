@@ -30,6 +30,9 @@ UUID eventId = bikesched.newEvent("payment-received", order.id())
 - An event is identified by its name and key and goes to every step waiting for it.
 - `receive()` returns the payload mapped to the class given to `waitForEvent` by the `JsonMapper`;
   the step stores the payload as it is.
+- Payload that already is JSON text, e.g. a forwarded webhook body, goes in with
+  `.payloadJson(body)` instead of `.payload(...)`: stored as it is, without the `JsonMapper` (a
+  Jackson mapper would turn a `String` into a JSON string). Invalid JSON fails `publish()`.
 - To derive something from the payload, do it after `receive`: a pure conversion can run again on
   every resume; anything with side effects belongs in a [step](steps.md) after the wait. To keep
   the stored copy small, keep the event's payload small (e.g. ids instead of whole documents).

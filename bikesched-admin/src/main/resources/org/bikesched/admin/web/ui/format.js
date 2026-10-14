@@ -37,18 +37,6 @@ export function preciseTime(iso) {
   return `${dateTime(iso)}.${pad(date.getMilliseconds(), 3)}`;
 }
 
-/** "12 s ago", "3 min ago", ... */
-export function ago(iso, now = Date.now()) {
-  if (!iso) {
-    return '-';
-  }
-  const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (seconds < 60) return `${seconds} s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-  if (seconds < 172800) return `${Math.floor(seconds / 3600)} h ago`;
-  return `${Math.floor(seconds / 86400)} d ago`;
-}
-
 /** A duration between two times: "7 d", "2 h 5 min", "30 s". */
 export function duration(fromIso, toIso) {
   let seconds = Math.max(0, Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 1000));

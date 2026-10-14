@@ -53,6 +53,19 @@ export async function post(path) {
   return response.json();
 }
 
+/** POSTs a form (non-empty values only), e.g. an event to publish; same header as post(). */
+export async function postForm(path, params) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'X-Bikesched-Admin': '1' },
+    body: new URLSearchParams(query(params).slice(1)),
+  });
+  if (!response.ok) {
+    throw await failure(response);
+  }
+  return response.json();
+}
+
 /** A query string from the non-empty values, with a leading '?'. */
 export function query(params) {
   const search = new URLSearchParams();

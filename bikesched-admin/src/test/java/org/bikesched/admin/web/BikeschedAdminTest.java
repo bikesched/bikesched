@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
+import org.bikesched.admin.EventQuery;
 import org.bikesched.job.JobState;
 import org.bikesched.job.Recurrence;
 import org.bikesched.test.BikeschedTest;
@@ -338,6 +339,76 @@ class BikeschedAdminTest {
                   .statusCode())
           .isEqualTo(405);
     }
+  }
+
+  @Test
+  void publishesEvents() {
+    String type = prefix + "publish-waiter";
+    String event = prefix + "published";
+    bikesched.registerJobHandler(
+        type, job -> job.complete(job.waitForEvent("await", event, "k-1", String.class).receive()));
+    UUID waiting = bikesched.newJob(type).schedule();
+    awaitState(waiting, JobState.WAITING);
+
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      String csrf = AdminHandler.CSRF_HEADER;
+      String form =
+          "name="
+              + encode(event)
+              + "&key=k-1&payload="
+              + encode("{\"amount\": 42}")
+              + "&retention=PT1H&idempotencyKey=admin-1";
+      assertThat(server.postForm("/api/events", form).statusCode())
+          .as("without the CSRF header")
+          .isEqualTo(403);
+
+      HttpResponse<String> published = server.postForm("/api/events", form, csrf, "1");
+      assertThat(published.statusCode()).isEqualTo(200);
+      JsonObject body = AdminServer.json(published);
+      assertThat(body.getInt("received")).isOne();
+      UUID eventId = UUID.fromString(body.getString("id"));
+      awaitState(waiting, JobState.SUCCEEDED);
+      assertThat(bikesched.admin().findJobData(waiting).orElseThrow().result())
+          .isEqualTo("{\"amount\": 42}");
+      var summary = bikesched.admin().findEvent(eventId).orElseThrow();
+      assertThat(Duration.between(summary.publishedAt(), summary.expiresAt()))
+          .isEqualTo(Duration.ofHours(1));
+      assertThat(summary.idempotencyKey()).isEqualTo("admin-1");
+      assertThat(AdminServer.json(server.postForm("/api/events", form, csrf, "1")).getString("id"))
+          .as("the idempotency key returns the first event")
+          .isEqualTo(eventId.toString());
+
+      assertThat(server.postForm("/api/events", "name=" + encode(event), csrf, "1").body())
+          .contains("needs a name and a key");
+      assertThat(
+              server
+                  .postForm("/api/events", "name=x&key=k&payload=" + encode("{\"a\": }"), csrf, "1")
+                  .body())
+          .contains("not valid JSON");
+      HttpResponse<String> badRetention =
+          server.postForm("/api/events", "name=x&key=k&retention=soon", csrf, "1");
+      assertThat(badRetention.statusCode()).isEqualTo(400);
+      assertThat(badRetention.body()).contains("Malformed retention");
+      assertThat(
+              server
+                  .postForm(
+                      "/api/events",
+                      "name=x&key=k&payload=" + "1".repeat(ExchangeHandler.MAX_BODY_BYTES),
+                      csrf,
+                      "1")
+                  .statusCode())
+          .isEqualTo(413);
+    }
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched).readOnly(true))) {
+      HttpResponse<String> response =
+          server.postForm(
+              "/api/events", "name=" + encode(event) + "&key=k-2", AdminHandler.CSRF_HEADER, "1");
+      assertThat(response.statusCode()).isEqualTo(403);
+      assertThat(response.body()).contains("read-only");
+    }
+    assertThat(bikesched.admin().findEvents(EventQuery.newest(10).withName(event)))
+        .as("only the first form was published")
+        .hasSize(1);
   }
 
   @Test

@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpsExchange;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,6 +18,9 @@ import org.slf4j.LoggerFactory;
 final class ExchangeHandler implements HttpHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(ExchangeHandler.class);
+
+  /** The largest request body: an event payload typed into the page. */
+  static final int MAX_BODY_BYTES = 1024 * 1024;
 
   private final BikeschedAdmin admin;
 
@@ -32,8 +36,14 @@ final class ExchangeHandler implements HttpHandler {
   @Override
   public void handle(HttpExchange exchange) throws IOException {
     try (exchange) {
-      try (InputStream body = exchange.getRequestBody()) {
-        body.transferTo(OutputStream.nullOutputStream()); // the API reads no request bodies
+      String body;
+      try (InputStream in = exchange.getRequestBody()) {
+        byte[] bytes = in.readNBytes(MAX_BODY_BYTES + 1);
+        if (bytes.length > MAX_BODY_BYTES) {
+          exchange.sendResponseHeaders(413, -1);
+          return;
+        }
+        body = bytes.length == 0 ? null : new String(bytes, StandardCharsets.UTF_8);
       }
       if (sendsPasswords
           && !(exchange instanceof HttpsExchange)
@@ -65,7 +75,8 @@ final class ExchangeHandler implements HttpHandler {
               relative,
               exchange.getRequestURI().getRawQuery(),
               headers,
-              exchange.getRemoteAddress().getAddress().getHostAddress());
+              exchange.getRemoteAddress().getAddress().getHostAddress(),
+              body);
       AdminResponse response = admin.handle(request);
       response.headers().forEach((name, value) -> exchange.getResponseHeaders().set(name, value));
       boolean empty = response.body().length == 0;
