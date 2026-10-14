@@ -16,8 +16,6 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.ToIntFunction;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.job.DefaultJob;
@@ -81,13 +79,6 @@ public final class JobPoller implements DueTimes {
   private final ScheduledThreadPoolExecutor timeoutExecutor;
   private final ExecutorService jobExecutor;
   private final Map<UUID, AtomicInteger> activeJobs = new ConcurrentHashMap<>();
-
-  /**
-   * Held while claiming until the claimed jobs are active, and while releasing inactive jobs: a job
-   * claimed but not yet active must not look inactive.
-   */
-  private final ReentrantLock claiming = new ReentrantLock();
-
   private final WakeUpTimer timer;
 
   /** Merges requests to poll now into one poll. */
@@ -280,27 +271,8 @@ public final class JobPoller implements DueTimes {
   }
 
   /** Returns a stable snapshot of jobs whose attempts still run in memory. */
-  private Set<UUID> activeJobIds() {
+  public Set<UUID> activeJobIds() {
     return Set.copyOf(activeJobs.keySet());
-  }
-
-  /**
-   * Runs the release of inactive jobs with the jobs whose attempts still run in memory, while no
-   * poll claims jobs: a job claimed in the database becomes active before the release sees it.
-   * Skipped while a poll claims (it may hang on its connection); the next clean-up tries again.
-   *
-   * @param release releases this node's jobs not among the given active ones
-   * @return the result of the release, {@code 0} if skipped
-   */
-  public int withActiveJobIds(ToIntFunction<Set<UUID>> release) {
-    if (!claiming.tryLock()) {
-      return 0;
-    }
-    try {
-      return release.applyAsInt(activeJobIds());
-    } finally {
-      claiming.unlock();
-    }
   }
 
   private void trackActiveJob(UUID jobId) {
@@ -383,7 +355,6 @@ public final class JobPoller implements DueTimes {
       // so the available permits can only have grown since they were read.
       slots.acquireUninterruptibly(limit);
       List<DefaultJob> jobs = List.of();
-      claiming.lock();
       try {
         jobs =
             database.jobs().claimJobs(nodeId, registry.types(), limit).stream()
@@ -397,9 +368,7 @@ public final class JobPoller implements DueTimes {
                             scheduler,
                             settings.eventListener()))
                 .toList();
-        jobs.forEach(job -> trackActiveJob(job.id()));
       } finally {
-        claiming.unlock();
         slots.release(limit - jobs.size()); // unused slots; all of them if claiming failed
       }
       if (!jobs.isEmpty()) {
@@ -420,6 +389,7 @@ public final class JobPoller implements DueTimes {
    * timeout abandons it).
    */
   private void dispatch(DefaultJob job) {
+    trackActiveJob(job.id());
     var slot = new JobSlot(slots, () -> released(job.id()));
     try {
       jobExecutor.execute(

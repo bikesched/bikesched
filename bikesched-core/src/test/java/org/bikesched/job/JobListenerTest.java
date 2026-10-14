@@ -116,15 +116,15 @@ class JobListenerTest extends AbstractBikeschedTest {
               .schedule();
 
       awaitState(jobId, "CANCELLED");
-      // The compensation's claim can be reported before the attempt's end.
       await()
           .untilAsserted(
-              () -> {
-                assertThat(listener.calls.stream().filter(c -> c.startsWith("claimed ")))
-                    .containsExactly("claimed 1", "claimed compensation 1");
-                assertThat(listener.calls.stream().filter(c -> c.startsWith("ended ")))
-                    .containsExactly("ended 1 COMPENSATING", "ended 1 COMPENSATED");
-              });
+              () ->
+                  assertThat(listener.calls)
+                      .containsExactly(
+                          "claimed 1",
+                          "ended 1 COMPENSATING",
+                          "claimed compensation 1",
+                          "ended 1 COMPENSATED"));
     }
   }
 

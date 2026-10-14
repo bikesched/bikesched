@@ -31,10 +31,6 @@ public final class NodeStore {
              where bikesched_nodes.last_heartbeat_at < now() - make_interval(secs => ?)
             returning id""";
 
-  // Registers a removed node again under its own id; nothing if another node holds the name.
-  private static final String REREGISTER_NODE_SQL =
-      "insert into bikesched_nodes (id, name) values (?, ?) on conflict do nothing";
-
   private static final String HEARTBEAT_SQL =
       "update bikesched_nodes set last_heartbeat_at = now() where id = ?";
 
@@ -87,21 +83,6 @@ public final class NodeStore {
     return access.withConnection(
             db -> db.update(HEARTBEAT_SQL, nodeId),
             e -> new BikeschedException("Heartbeat of bikesched node " + nodeId + " failed", e))
-        > 0;
-  }
-
-  /**
-   * Registers a node again that was removed while it was still running, e.g. after a pause longer
-   * than twice the node timeout: under its own id, so its claims stay its own.
-   *
-   * @param nodeId the node's id
-   * @param name the node's name
-   * @return {@code false} if the name is held by another node in the meantime
-   */
-  public boolean reregisterNode(UUID nodeId, String name) {
-    return access.withConnection(
-            db -> db.update(REREGISTER_NODE_SQL, nodeId, name),
-            e -> new BikeschedException("Registering bikesched node '" + name + "' failed", e))
         > 0;
   }
 

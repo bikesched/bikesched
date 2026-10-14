@@ -62,10 +62,6 @@ dead node's writes can't do any more harm even if it is still running: every cla
 lock token, and the first step, event wait or compensation a stale attempt reaches fails, abandoning
 it with a warning (work outside steps is not covered).
 
-A node that was considered dead while it was still running, e.g. after a pause longer than twice
-the `nodeTimeout`, finds itself removed with its next heartbeat and registers again under its id
-and name (unless another node took the name in the meantime, which it logs as a warning).
-
 `bikesched.node()` describes the node (`name()`, `id()`, `isPolling()`). `close()` stops polling and
 the heartbeat, waits up to 10 seconds for running jobs, returns still-running jobs to `SCHEDULED` for
 other nodes, and deregisters the node.

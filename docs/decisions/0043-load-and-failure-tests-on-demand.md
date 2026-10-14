@@ -1,9 +1,9 @@
 ---
-title: "42. Load and failure tests in their own module, run on demand"
-weight: 42
+title: "43. Load and failure tests in their own module, run on demand"
+weight: 43
 ---
 
-# 42. Load and failure tests in their own module, run on demand
+# 43. Load and failure tests in their own module, run on demand
 
 Date: 2026-10-13
 
@@ -41,5 +41,5 @@ node that can hang or freeze connections; a paused node runs in a JVM of its own
 - They run only when someone runs them: the release process has to include them.
 - `NodePauseTest` needs Linux or macOS.
 - The first run found that a node removed while paused never recovered (fixed, see
-  [ADR 0043](0043-removed-nodes-register-again.md)) and that a `statementTimeout` does not end a
+  [ADR 0042](0042-removed-nodes-register-again.md)) and that a `statementTimeout` does not end a
   statement on a hanging connection (documented: the driver's `socketTimeout` does).

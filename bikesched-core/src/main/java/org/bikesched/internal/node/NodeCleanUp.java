@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.ToIntFunction;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NodeStore;
@@ -34,7 +34,7 @@ public final class NodeCleanUp {
   private final String nodeName;
   private final Duration nodeTimeout;
   private final Duration inactiveJobGrace;
-  private final ActiveJobs activeJobs;
+  private final Supplier<Set<UUID>> activeJobIds;
 
   /**
    * @param database the database
@@ -42,7 +42,7 @@ public final class NodeCleanUp {
    * @param nodeName its name, for logging
    * @param nodeTimeout a node without heartbeat for this long is considered dead
    * @param inactiveJobGrace minimum claim age before recovering inactive jobs of this node
-   * @param activeJobs the jobs whose attempts still run in memory
+   * @param activeJobIds jobs whose attempts still run in memory
    */
   public NodeCleanUp(
       Database database,
@@ -50,27 +50,13 @@ public final class NodeCleanUp {
       String nodeName,
       Duration nodeTimeout,
       Duration inactiveJobGrace,
-      ActiveJobs activeJobs) {
+      Supplier<Set<UUID>> activeJobIds) {
     this.database = Objects.requireNonNull(database, "database");
     this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
     this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
     this.nodeTimeout = Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     this.inactiveJobGrace = Objects.requireNonNull(inactiveJobGrace, "inactiveJobGrace");
-    this.activeJobs = Objects.requireNonNull(activeJobs, "activeJobs");
-  }
-
-  /** The jobs of this node whose attempts still run in memory. */
-  @FunctionalInterface
-  public interface ActiveJobs {
-
-    /**
-     * Runs the release with the ids of the active jobs, while no job is claimed: a job claimed in
-     * the database is active by the time the release runs. Skips it while jobs are being claimed.
-     *
-     * @param release releases the node's jobs that are not active
-     * @return the number of released jobs, {@code 0} if skipped
-     */
-    int withActiveJobIds(ToIntFunction<Set<UUID>> release);
+    this.activeJobIds = Objects.requireNonNull(activeJobIds, "activeJobIds");
   }
 
   /**
@@ -87,8 +73,7 @@ public final class NodeCleanUp {
   private void releaseInactiveJobs() {
     try {
       int released =
-          activeJobs.withActiveJobIds(
-              active -> database.jobs().releaseInactiveJobs(nodeId, inactiveJobGrace, active));
+          database.jobs().releaseInactiveJobs(nodeId, inactiveJobGrace, activeJobIds.get());
       if (released > 0) {
         LOG.warn(
             "Released {} inactive job(s) of bikesched node {} ({}) after no outcome was recorded",

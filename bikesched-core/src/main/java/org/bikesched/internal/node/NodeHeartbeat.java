@@ -12,8 +12,7 @@ import org.slf4j.LoggerFactory;
 /**
  * The heartbeat of a polling node, run by its heartbeat thread every heartbeat interval: updates
  * the node's heartbeat in {@code bikesched_nodes}, so other nodes don't consider it dead and
- * release its running jobs; registers the node again if they removed it nevertheless (see {@link
- * NodeCleanUp}). The more expensive housekeeping runs on its own intervals, see {@link
+ * release its running jobs. The more expensive housekeeping runs on its own intervals, see {@link
  * NodeCleanUp}, {@link EventCleanUp} and {@link RecurringJobRepair}.
  */
 public final class NodeHeartbeat {
@@ -48,18 +47,8 @@ public final class NodeHeartbeat {
     try {
       if (database.nodes().heartbeat(nodeId)) {
         LOG.trace("Heartbeat of bikesched node {} ({})", nodeName, nodeId);
-      } else if (database.nodes().reregisterNode(nodeId, nodeName)) {
-        // Other nodes removed it after missing its heartbeats (e.g. a long pause) and released its
-        // jobs; without registering again, every claim would fail on the missing node.
-        LOG.warn(
-            "bikesched node {} ({}) was removed after missing heartbeats, registered it again",
-            nodeName,
-            nodeId);
       } else {
-        LOG.warn(
-            "bikesched node {} ({}) is no longer registered and its name is held by another node",
-            nodeName,
-            nodeId);
+        LOG.warn("bikesched node {} ({}) is no longer registered", nodeName, nodeId);
       }
     } catch (RuntimeException e) {
       LOG.warn("Heartbeat of bikesched node {} ({}) failed", nodeName, nodeId, e);

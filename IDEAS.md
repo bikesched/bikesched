@@ -77,7 +77,7 @@ over a real database, see [the spec](docs/specs/bikesched-test.md) and
 A first set runs on demand in `bikesched-stress-tests` (database restarts and outages, paused
 nodes, hanging connections; benchmarks for a backlog, a steady load and jobs with child jobs, event
 waits, sleeps and timeouts; see [its README](bikesched-stress-tests/README.md) and
-[ADR 0042](docs/decisions/0042-load-and-failure-tests-on-demand.md)). Still open:
+[ADR 0043](docs/decisions/0043-load-and-failure-tests-on-demand.md)). Still open:
 
 - More failures: a failover to a promoted replica, a database that turns read-only or runs out of
   disk, a pool exhausted by the application's own work.

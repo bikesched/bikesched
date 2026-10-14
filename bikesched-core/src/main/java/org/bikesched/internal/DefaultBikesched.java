@@ -214,7 +214,7 @@ public final class DefaultBikesched implements Bikesched {
               nodeName,
               settings.nodeTimeout(),
               settings.nodeCleanUpInterval(),
-              jobPoller::withActiveJobIds);
+              jobPoller::activeJobIds);
       var recurringJobRepair = new RecurringJobRepair(database, registry::recurringJobs);
       var eventCleanUp = new EventCleanUp(database, id, nodeName);
       node.registered(id);

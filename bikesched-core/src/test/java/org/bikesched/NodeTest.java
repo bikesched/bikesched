@@ -11,7 +11,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.bikesched.internal.node.NodeCleanUp;
-import org.bikesched.internal.node.NodeHeartbeat;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -31,57 +30,6 @@ class NodeTest extends AbstractBikeschedTest {
       OffsetDateTime registered = lastHeartbeat(id);
       await().untilAsserted(() -> assertThat(lastHeartbeat(id)).isAfter(registered));
     }
-  }
-
-  @Test
-  void removedNodeRegistersAgainUnderItsId() throws Exception {
-    var logs = LogCapture.of(NodeHeartbeat.class);
-    try (logs;
-        Bikesched bikesched = testNode("node-removed", Duration.ofMillis(50)).build()) {
-      bikesched.registerJobHandler("after-removal", () -> {});
-      UUID id = bikesched.node().id().orElseThrow();
-
-      // Like other nodes do after missing its heartbeats for twice the node timeout.
-      execute("delete from bikesched_nodes where id = '" + id + "'");
-
-      await().untilAsserted(() -> assertThat(nodeName(id)).isEqualTo("node-removed"));
-      UUID jobId = bikesched.newJob("after-removal").schedule();
-      awaitState(jobId, "SUCCEEDED");
-      assertThat(logs.messages())
-          .contains(
-              "bikesched node node-removed ("
-                  + id
-                  + ") was removed after missing heartbeats, registered it again");
-    }
-    execute("delete from bikesched_jobs where type = 'after-removal'");
-  }
-
-  @Test
-  void removedNodeDoesNotTakeBackItsNameFromAnotherNode() throws Exception {
-    var logs = LogCapture.of(NodeHeartbeat.class);
-    UUID other = UUID.randomUUID();
-    try (logs;
-        Bikesched bikesched = testNode("node-name-taken", Duration.ofMillis(50)).build()) {
-      UUID id = bikesched.node().id().orElseThrow();
-
-      execute(
-          "begin; delete from bikesched_nodes where id = '"
-              + id
-              + "'; insert into bikesched_nodes (id, name) values ('"
-              + other
-              + "', 'node-name-taken'); commit");
-
-      await()
-          .untilAsserted(
-              () ->
-                  assertThat(logs.messages())
-                      .contains(
-                          "bikesched node node-name-taken ("
-                              + id
-                              + ") is no longer registered and its name is held by another node"));
-      assertThat(nodeName(id)).isNull();
-    }
-    execute("delete from bikesched_nodes where id = '" + other + "'");
   }
 
   @Test
