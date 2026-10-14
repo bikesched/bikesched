@@ -2,7 +2,6 @@
 package org.bikesched.stress;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 import org.bikesched.Bikesched;
 
@@ -79,11 +78,6 @@ final class MixedJobs {
   /** Counts the child jobs in the given state. */
   String countChildren(String state) {
     return count(childType, state);
-  }
-
-  /** Both job types, e.g. to register no-op handlers on a client that only schedules. */
-  List<String> types() {
-    return List.of(parentType, childType);
   }
 
   private static String count(String type, String state) {

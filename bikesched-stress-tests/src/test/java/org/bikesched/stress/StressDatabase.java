@@ -101,16 +101,8 @@ final class StressDatabase implements AutoCloseable {
   }
 
   /** The JDBC URL of the database through the given proxy. */
-  String jdbcUrl(TcpProxy via) {
+  private String jdbcUrl(TcpProxy via) {
     return "jdbc:postgresql://127.0.0.1:" + via.port() + "/" + container.getDatabaseName();
-  }
-
-  String username() {
-    return container.getUsername();
-  }
-
-  String password() {
-    return container.getPassword();
   }
 
   /** Stops the database container (a clean shutdown, aborting open transactions). */
@@ -134,14 +126,6 @@ final class StressDatabase implements AutoCloseable {
     start();
   }
 
-  /** Runs a statement on the database. */
-  void execute(String sql) throws SQLException {
-    try (var connection = dataSource().getConnection();
-        var statement = connection.createStatement()) {
-      statement.execute(sql);
-    }
-  }
-
   /** Runs a query returning one number. */
   long queryLong(String sql) throws SQLException {
     try (var connection = dataSource().getConnection();
@@ -150,23 +134,6 @@ final class StressDatabase implements AutoCloseable {
       rs.next();
       return rs.getLong(1);
     }
-  }
-
-  /** The step runs the job recorded in {@code stress_effects}, in order. */
-  List<String> effects(UUID jobId) throws SQLException {
-    List<String> steps = new ArrayList<>();
-    try (var connection = dataSource().getConnection();
-        var select =
-            connection.prepareStatement(
-                "select step from stress_effects where job_id = ? order by at")) {
-      select.setObject(1, jobId);
-      try (var rs = select.executeQuery()) {
-        while (rs.next()) {
-          steps.add(rs.getString(1));
-        }
-      }
-    }
-    return steps;
   }
 
   /** The job's state. */

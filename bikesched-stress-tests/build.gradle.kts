@@ -9,15 +9,16 @@ dependencies {
     testImplementation(libs.postgresql)
 }
 
-// The tests restart databases, pause processes and run for minutes: `build` compiles and formats
-// them but does not run them. `./gradlew :bikesched-stress-tests:stressTest` does, see README.md.
+// The tests restart databases, break connections and run for minutes: `build` compiles and
+// formats them but does not run them. `./gradlew :bikesched-stress-tests:stressTest` does, see
+// README.md.
 tasks.test {
     enabled = false
 }
 
 tasks.register<Test>("stressTest") {
     group = "verification"
-    description = "Runs the load and failure tests (restarts databases, pauses processes)."
+    description = "Runs the load and failure tests (restarts databases, breaks connections)."
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     // Every run measures anew: never up to date, never from the build cache.
@@ -26,6 +27,4 @@ tasks.register<Test>("stressTest") {
     providers.gradlePropertiesPrefixedBy("stress.").get().forEach { (key, value) ->
         systemProperty(key, value)
     }
-    // Room for the load tests' bookkeeping (latencies and step runs per job).
-    maxHeapSize = "1g"
 }

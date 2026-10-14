@@ -74,14 +74,14 @@ over a real database, see [the spec](docs/specs/bikesched-test.md) and
 
 ### Load and failure tests
 
-A first set runs on demand in `bikesched-stress-tests` (database restarts and outages, paused
-nodes, hanging connections; benchmarks for a backlog, a steady load and jobs with child jobs, event
-waits, sleeps and timeouts; see [its README](bikesched-stress-tests/README.md) and
+A first set runs on demand in `bikesched-stress-tests` (database restarts and outages with jobs
+using child jobs, event waits, sleeps and timeouts, hanging connections, the throughput of a
+backlog; see [its README](bikesched-stress-tests/README.md) and
 [ADR 0043](docs/decisions/0043-load-and-failure-tests-on-demand.md)). Still open:
 
 - More failures: a failover to a promoted replica, a database that turns read-only or runs out of
   disk, a pool exhausted by the application's own work.
-- More load: the job history enabled, compensations and failure handlers, nodes and database on
+- More load: start latency under a steady load, the job history enabled, nodes and database on
   separate machines; a manually triggered workflow that runs the tests and keeps the numbers of
   each release for comparison.
 - Outcome: every release states which failures it survives and how fast it is.

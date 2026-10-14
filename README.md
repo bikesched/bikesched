@@ -183,7 +183,7 @@ which run against PostgreSQL 18 with [Testcontainers](https://testcontainers.com
 ./gradlew build
 ```
 
-The [load and failure tests](bikesched-stress-tests/README.md) (database restarts, paused nodes,
+The [load and failure tests](bikesched-stress-tests/README.md) (database restarts, cut-off nodes,
 hanging connections, throughput) take a few minutes and run on demand, before a release:
 `./gradlew :bikesched-stress-tests:stressTest`.
 

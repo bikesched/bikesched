@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
+import org.bikesched.job.JobHandler;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -23,10 +24,11 @@ class HangingConnectionTest {
 
   private static StressDatabase database;
 
+  private final Executions executions = new Executions();
+
   @BeforeAll
-  static void startDatabase() throws Exception {
+  static void startDatabase() {
     database = new StressDatabase();
-    database.execute(PausableNode.EFFECTS_TABLE);
   }
 
   @AfterAll
@@ -56,7 +58,8 @@ class HangingConnectionTest {
       network.heal();
 
       assertRunsJobsAgain(soloType);
-      assertThat(database.effects(jobId)).startsWith("one", "two-started").contains("two-ended");
+      assertThat(executions.of(jobId)).startsWith("one", "two-started").contains("two-ended");
+      assertThat(executions.of(jobId, "one")).as("the completed step was not repeated").isOne();
     }
   }
 
@@ -73,8 +76,8 @@ class HangingConnectionTest {
     assertRecoversFromFrozenConnections(network, pool, "frozen-socket-timeout");
   }
 
-  private static void assertRecoversFromFrozenConnections(
-      TcpProxy network, DataSource pool, String name) throws Exception {
+  private void assertRecoversFromFrozenConnections(TcpProxy network, DataSource pool, String name)
+      throws Exception {
     String type = name + "-" + UUID.randomUUID();
     String soloType = "solo-" + UUID.randomUUID();
     try (Bikesched frozen = node(pool, name, type, soloType);
@@ -102,25 +105,46 @@ class HangingConnectionTest {
    * A node with a statement timeout of 2 seconds whose job of the type takes 2 seconds in step two;
    * it alone handles the solo type.
    */
-  private static Bikesched node(DataSource pool, String name, String type, String soloType) {
+  private Bikesched node(DataSource pool, String name, String type, String soloType) {
     Bikesched node =
         StressNodes.node(pool, name)
             .statementTimeout(Duration.ofSeconds(2))
             .autoStartPolling(false)
             .build();
-    node.registerJobHandler(type, PausableNode.handler(pool, name, Duration.ofSeconds(2)));
+    node.registerJobHandler(type, handler(Duration.ofSeconds(2)));
     node.registerJobHandler(soloType, _ -> {});
     node.start();
     return node;
   }
 
   /** A node with a working network for the same job type, started by the test. */
-  private static Bikesched otherNode(String type) {
+  private Bikesched otherNode(String type) {
     Bikesched node =
         StressNodes.node(database.dataSource(), "other").autoStartPolling(false).build();
-    node.registerJobHandler(
-        type, PausableNode.handler(database.dataSource(), "other", Duration.ZERO));
+    node.registerJobHandler(type, handler(Duration.ZERO));
     return node;
+  }
+
+  /**
+   * A job with two steps: {@code one} records its run, {@code two} records its start, takes the
+   * given time and records its end.
+   */
+  private JobHandler handler(Duration stepTwo) {
+    return job -> {
+      job.step("one", () -> executions.record(job.id(), "one"));
+      job.step(
+          "two",
+          () -> {
+            executions.record(job.id(), "two-started");
+            try {
+              Thread.sleep(stepTwo.toMillis());
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              throw new IllegalStateException(e);
+            }
+            executions.record(job.id(), "two-ended");
+          });
+    };
   }
 
   /** A job of a type only the cut-off node handles succeeds. */
@@ -135,9 +159,9 @@ class HangingConnectionTest {
         .until(() -> database.state(soloJob).equals("SUCCEEDED"));
   }
 
-  private static void awaitEffect(UUID jobId, String step) {
+  private void awaitEffect(UUID jobId, String step) {
     await(step + " of job " + jobId)
         .atMost(Duration.ofSeconds(30))
-        .until(() -> database.effects(jobId).contains(step));
+        .until(() -> executions.of(jobId).contains(step));
   }
 }

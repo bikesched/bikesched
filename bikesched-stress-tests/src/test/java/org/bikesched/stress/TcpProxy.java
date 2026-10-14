@@ -25,8 +25,6 @@ import java.util.function.Supplier;
  *   <li>{@link #freeze()} stops forwarding on the connections open now, for good, while new
  *       connections work: a failover without a TCP reset, where pooled connections to the old
  *       primary hang and fresh ones reach the new one.
- *   <li>{@link #cut()} closes every open connection, like a database restart from the client's
- *       view; new connections work right away.
  * </ul>
  *
  * <p>The upstream address is looked up for every new connection, so the proxy keeps working when a
@@ -80,17 +78,12 @@ final class TcpProxy implements AutoCloseable {
     frozen.addAll(sockets);
   }
 
-  /** Closes every open connection. */
-  void cut() {
-    sockets.forEach(TcpProxy::closeQuietly);
-  }
-
   @Override
   public void close() {
     closed = true;
     closeQuietly(server);
     heal();
-    cut();
+    sockets.forEach(TcpProxy::closeQuietly);
   }
 
   private void accept() {

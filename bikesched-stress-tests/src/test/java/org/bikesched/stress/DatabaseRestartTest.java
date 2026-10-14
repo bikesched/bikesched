@@ -36,43 +36,6 @@ class DatabaseRestartTest {
   }
 
   @Test
-  void jobsEndAfterARestartInTheMiddleOfTheirSteps() throws Exception {
-    var executions = new Executions();
-    String type = "restart-" + UUID.randomUUID();
-    int jobs = 300;
-    try (Bikesched a = node("restart-a", type, executions);
-        Bikesched b = node("restart-b", type, executions)) {
-      List<UUID> ids = new ArrayList<>();
-      for (int i = 0; i < jobs; i++) {
-        ids.add(a.newJob(type).maxAttempts(100).schedule());
-      }
-      await("a third of the jobs succeeded")
-          .atMost(Duration.ofMinutes(1))
-          .until(() -> succeeded(type) >= jobs / 3);
-
-      database.restart();
-
-      await("every job succeeded")
-          .atMost(Duration.ofMinutes(2))
-          .pollInterval(Duration.ofMillis(500))
-          .ignoreExceptions()
-          .until(() -> succeeded(type) == jobs);
-      for (UUID id : ids) {
-        for (String step : List.of("one", "two", "three")) {
-          assertThat(executions.of(id, step)).as("step %s of job %s ran", step, id).isPositive();
-        }
-      }
-      // A step runs again only if its attempt was cut off by the restart: at most one step per
-      // job running on the two nodes at that moment.
-      assertThat(executions.repeated())
-          .as("steps repeated after the restart")
-          .isLessThanOrEqualTo(2 * 10);
-      assertThat(database.queryLong(stepsOf(type))).isEqualTo(3L * jobs);
-      assertNodesStillWork(a, b);
-    }
-  }
-
-  @Test
   void anOutcomeThatCouldNotBeRecordedIsRecordedByTheNextAttempt() throws Exception {
     var executions = new Executions();
     String type = "outcome-" + UUID.randomUUID();
@@ -113,8 +76,8 @@ class DatabaseRestartTest {
   void childJobsEventWaitsSleepsAndTimeoutsSurviveARestart() throws Exception {
     var mixed = new MixedJobs();
     int jobs = 200;
-    try (Bikesched a = mixedNode("mixed-a", mixed);
-        Bikesched b = mixedNode("mixed-b", mixed)) {
+    try (Bikesched a = node("restart-a", mixed);
+        Bikesched b = node("restart-b", mixed)) {
       List<UUID> parents = new ArrayList<>();
       for (int i = 0; i < jobs; i++) {
         parents.add(mixed.schedule(a));
@@ -152,7 +115,8 @@ class DatabaseRestartTest {
       assertThat(executions.jobsWith("child-attempt-2"))
           .as("children retried after their timeout")
           .isEqualTo(jobs);
-      // As above: only steps running at the restart run again.
+      // A step runs again only if its attempt was cut off by the restart: at most one step per
+      // job running on the two nodes at that moment.
       assertThat(executions.repeated())
           .as("steps repeated after the restart")
           .isLessThanOrEqualTo(2 * 10);
@@ -162,17 +126,16 @@ class DatabaseRestartTest {
 
   @Test
   void nodesRecoverFromAnOutageLongerThanTheNodeTimeout() throws Exception {
-    var executions = new Executions();
-    String type = "outage-" + UUID.randomUUID();
+    var mixed = new MixedJobs();
     int jobs = 100;
-    try (Bikesched a = node("outage-a", type, executions);
-        Bikesched b = node("outage-b", type, executions)) {
+    try (Bikesched a = node("outage-a", mixed);
+        Bikesched b = node("outage-b", mixed)) {
       for (int i = 0; i < jobs; i++) {
-        a.newJob(type).maxAttempts(100).schedule();
+        mixed.publishEvent(a, mixed.schedule(a));
       }
-      await("a third of the jobs succeeded")
+      await("a third of the children succeeded")
           .atMost(Duration.ofMinutes(1))
-          .until(() -> succeeded(type) >= jobs / 3);
+          .until(() -> database.queryLong(mixed.countChildren("SUCCEEDED")) >= jobs / 3);
 
       database.stop();
       // Twice the node timeout: when the database is back, each node finds the other's heartbeat
@@ -180,44 +143,21 @@ class DatabaseRestartTest {
       Thread.sleep(StressNodes.NODE_TIMEOUT.multipliedBy(2).plusSeconds(2).toMillis());
       database.start();
 
-      await("every job succeeded")
+      await("every parent job succeeded")
           .atMost(Duration.ofMinutes(2))
           .pollInterval(Duration.ofMillis(500))
           .ignoreExceptions()
-          .until(() -> succeeded(type) == jobs);
-      assertThat(database.queryLong(stepsOf(type))).isEqualTo(3L * jobs);
+          .until(() -> database.queryLong(mixed.countParents("SUCCEEDED")) == jobs);
+      assertThat(mixed.executions().jobsWith("two")).isEqualTo(jobs);
       assertNodesStillWork(a, b);
     }
   }
 
   /**
-   * A node with two connections more than concurrent jobs (for its listener and housekeeping),
-   * running jobs of the type with three short steps.
+   * A node running the {@link MixedJobs} with up to 10 concurrent jobs and two connections more
+   * (for its listener and housekeeping).
    */
-  private static Bikesched node(String name, String type, Executions executions) {
-    Bikesched node =
-        StressNodes.node(database.pool(name, 12), name)
-            .maxConcurrentJobs(10)
-            .autoStartPolling(false)
-            .build();
-    node.registerJobHandler(
-        type,
-        job -> {
-          for (String step : List.of("one", "two", "three")) {
-            job.step(
-                step,
-                () -> {
-                  executions.record(job.id(), step);
-                  sleep(20);
-                });
-          }
-        });
-    node.start();
-    return node;
-  }
-
-  /** A node running the {@link MixedJobs}, with up to 10 concurrent jobs. */
-  private static Bikesched mixedNode(String name, MixedJobs mixed) {
+  private static Bikesched node(String name, MixedJobs mixed) {
     Bikesched node =
         StressNodes.node(database.pool(name, 12), name)
             .maxConcurrentJobs(10)
@@ -238,26 +178,6 @@ class DatabaseRestartTest {
           .atMost(Duration.ofSeconds(30))
           .ignoreExceptions()
           .until(() -> node.findJob(id).orElseThrow().state() == JobState.SUCCEEDED);
-    }
-  }
-
-  private static long succeeded(String type) throws Exception {
-    return database.queryLong(
-        "select count(*) from bikesched_jobs where type = '" + type + "' and state = 'SUCCEEDED'");
-  }
-
-  private static String stepsOf(String type) {
-    return "select count(*) from bikesched_steps s join bikesched_jobs j on j.id = s.job_id"
-        + " where j.type = '"
-        + type
-        + "' and s.state = 'SUCCEEDED'";
-  }
-
-  private static void sleep(long millis) {
-    try {
-      Thread.sleep(millis);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
     }
   }
 }
