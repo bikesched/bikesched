@@ -145,11 +145,12 @@ button { font: inherit; }
   font-size: 13px;
 }
 
-/* Header: brand, the Jobs and Events tabs, the nodes and Reload; two rows on narrow screens. */
+/* Header: brand, the Jobs, Events and Nodes tabs, the signed-in user and Reload; two rows on narrow
+   screens. */
 .topbar {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
-  grid-template-areas: "brand tabs nodes reload";
+  grid-template-areas: "brand tabs user reload";
   align-items: center;
   column-gap: var(--space-5);
   min-height: 60px;
@@ -175,8 +176,8 @@ button { font: inherit; }
 .section-tab:hover { color: var(--text); }
 .section-tab[aria-current="page"] { border-bottom-color: var(--text); color: var(--text); font-weight: 600; }
 .section-tab .count { font-weight: 400; }
-.topbar-nodes {
-  grid-area: nodes;
+.topbar-user {
+  grid-area: user;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -185,22 +186,6 @@ button { font: inherit; }
   padding-block: var(--space-2);
 }
 .reload { grid-area: reload; }
-.nodes-summary { display: none; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
-.nodes-summary.offline .node-dot { background: var(--failed-dot); }
-.node {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  font-size: 12px;
-}
-.node .mono { font-size: 12px; font-weight: 500; }
-.node-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--succeeded-dot); }
-.node.offline { border-color: var(--failed-dot); }
-.node.offline .node-dot { background: var(--failed-dot); }
 
 .banner { margin: var(--space-3) var(--space-5) 0; padding: 10px 12px; border-radius: var(--radius); font-size: 13px; }
 .content .banner { margin: 0 0 var(--space-4); }
@@ -346,6 +331,8 @@ button { font: inherit; }
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
+.state-ONLINE { background: var(--succeeded-bg); color: var(--succeeded-fg); }
+.state-OFFLINE { background: var(--failed-bg); color: var(--failed-fg); }
 .dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 999px; background: var(--scheduled-dot); }
 .state-RUNNING { background: var(--running-bg); color: var(--running-fg); }
 .state-WAITING, .state-POSTPONED { background: var(--waiting-bg); color: var(--waiting-fg); }
@@ -572,6 +559,10 @@ button { font: inherit; }
 .preview .links li { border-top: 1px solid var(--line-soft); }
 .form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
 .button:disabled { opacity: 0.55; cursor: not-allowed; }
+.notice-error { background: var(--failed-bg); color: var(--failed-fg); }
+.offline-text { color: var(--danger); }
+.section-tab .offline-marker { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; color: var(--danger); font-size: 12px; font-weight: 500; }
+.offline-marker .marker-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--failed-dot); }
 .notice-success { background: var(--succeeded-bg); color: var(--succeeded-fg); }
 .step-event { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
 .cell-action { text-align: right; }
@@ -580,12 +571,10 @@ button { font: inherit; }
 @media (max-width: 720px) {
   .topbar {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "brand reload" "tabs nodes";
+    grid-template-areas: "brand reload" "tabs user";
     column-gap: var(--space-3);
     padding: var(--space-2) var(--space-4) 0;
   }
-  .topbar-nodes .nodes-label, .topbar-nodes .node { display: none; }
-  .nodes-summary { display: inline-flex; }
   .field { width: 100%; }
   .field .input { flex: 1 1 10rem; width: auto; min-width: 0; }
   .content { padding: var(--space-4) var(--space-4) 32px; }

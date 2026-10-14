@@ -55,3 +55,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0042](0042-removed-nodes-register-again.md) | Removed nodes register again under their id | Accepted |
 | [0043](0043-sealed-types-for-internal-job-state.md) | Sealed types for the internal job state | Accepted |
 | [0044](0044-publishing-events-from-the-admin-ui.md) | Publishing events from the admin UI | Accepted |
+| [0045](0045-nodes-in-the-admin-ui.md) | Nodes in the admin UI | Accepted |

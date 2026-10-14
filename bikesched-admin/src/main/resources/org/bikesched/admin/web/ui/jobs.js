@@ -297,7 +297,10 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
     ['Updated', dateTime(job.updatedAt)],
     ['Finished', dateTime(job.finishedAt)],
   ];
-  if (job.nodeName) fields.push(['Node', job.nodeName]);
+  const node = job.nodeName && nodes.find((candidate) => candidate.name === job.nodeName);
+  if (job.nodeName) {
+    fields.push(['Node', node ? html`<a href=${toHash({ section: 'nodes', id: node.id })}>${job.nodeName}</a>` : job.nodeName, job.nodeName]);
+  }
   if (job.recurrence) fields.push(['Recurrence', job.recurrence]);
   if (job.idempotencyKey) fields.push(['Idempotency key', job.idempotencyKey]);
 
@@ -316,7 +319,7 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
       <//>
       <dl class="meta">
         ${fields.map(
-          ([label, value]) => html`<div><dt>${label}</dt><dd class="mono" title=${String(value)}>${value}</dd></div>`,
+          ([label, value, title = String(value)]) => html`<div><dt>${label}</dt><dd class="mono" title=${title}>${value}</dd></div>`,
         )}
       </dl>
       ${parent &&

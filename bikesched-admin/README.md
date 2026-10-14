@@ -3,7 +3,7 @@
 A small admin page and JSON API for a bikesched database, embedded in the application that runs
 bikesched: no separate service, no build step, no dependencies beyond `bikesched-core`. User
 documentation: [Admin UI](../docs/admin.md). Design: [spec](../docs/specs/admin-ui.md),
-[publishing events](../docs/specs/admin-publish-events.md).
+[publishing events](../docs/specs/admin-publish-events.md), [nodes](../docs/specs/admin-nodes.md).
 
 ## Scope
 
@@ -75,6 +75,7 @@ response contains them.
 | `resources/…/ui/index.html`, `app.js` | the shell, header with the Jobs and Events tabs, and hash routing |
 | `resources/…/ui/jobs.js`, `events.js` | the job and event lists and details |
 | `resources/…/ui/publish.js` | the form that publishes an event |
+| `resources/…/ui/nodes.js` | the node list and the live node detail |
 | `resources/…/ui/api.js`, `format.js`, `picker.js`, `html.js` | fetch helpers, formatting, the searchable select, Preact and htm setup |
 | `resources/…/ui/admin.css` | all styles, light and dark |
 
