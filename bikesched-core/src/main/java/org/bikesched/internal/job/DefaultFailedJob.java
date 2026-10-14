@@ -2,6 +2,7 @@
 package org.bikesched.internal.job;
 
 import java.util.UUID;
+import org.bikesched.internal.database.JobPhase;
 import org.bikesched.job.FailedJob;
 import org.bikesched.job.JobState;
 
@@ -9,9 +10,15 @@ import org.bikesched.job.JobState;
 final class DefaultFailedJob implements FailedJob {
 
   private final DefaultJob job;
+  private final JobState state;
 
-  DefaultFailedJob(DefaultJob job) {
+  /**
+   * @param job the claimed job
+   * @param failing what it was claimed for: the state it ends in once its failure handler ran
+   */
+  DefaultFailedJob(DefaultJob job, JobPhase.HandleFailure failing) {
     this.job = job;
+    this.state = failing.endState();
   }
 
   @Override
@@ -36,7 +43,7 @@ final class DefaultFailedJob implements FailedJob {
 
   @Override
   public JobState state() {
-    return JobState.valueOf(job.failingState());
+    return state;
   }
 
   @Override
@@ -51,7 +58,7 @@ final class DefaultFailedJob implements FailedJob {
         + ", type="
         + job.type()
         + ", state="
-        + job.failingState()
+        + state
         + ", error="
         + job.lastError()
         + "]";

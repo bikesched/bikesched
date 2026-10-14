@@ -36,7 +36,7 @@ class StepStoreTest extends AbstractStoreTest {
     database.steps().completeStep(jobId, lock(jobId), "a", "{\"x\": 1}");
 
     assertThat(database.steps().findCompletedStep(jobId, "a"))
-        .contains(new StepStore.CompletedStep("STEP", "{\"x\": 1}", false, false, 2));
+        .contains(new StepStore.CompletedStep(StepKind.STEP, "{\"x\": 1}", false, false, 2));
     assertThat(database.steps().startStep(jobId, lock(jobId), "a"))
         .as("no restart once succeeded")
         .isEmpty();
@@ -48,7 +48,7 @@ class StepStoreTest extends AbstractStoreTest {
     assertThat(database.steps().startStep(jobId, lock(jobId), "b")).contains(1);
     database.steps().completeStep(jobId, lock(jobId), "b", null);
     assertThat(database.steps().findCompletedStep(jobId, "b"))
-        .contains(new StepStore.CompletedStep("STEP", null, false, false, 1));
+        .contains(new StepStore.CompletedStep(StepKind.STEP, null, false, false, 1));
   }
 
   @Test
@@ -187,7 +187,7 @@ class StepStoreTest extends AbstractStoreTest {
     StepStore steps = database.steps();
 
     assertThat(steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1)))
-        .isEqualTo(new StepStore.PollStep("RUNNING", null, 1, null, false));
+        .isEqualTo(new StepStore.PollStep.CheckStarted(1, false));
     assertThat(
             countSteps(
                 "name = 'p' and kind = 'POLL' and state = 'RUNNING' and locked_by = '"
@@ -205,21 +205,20 @@ class StepStoreTest extends AbstractStoreTest {
                     + " and now() + interval '6 minutes'"))
         .isEqualTo(1);
 
-    StepStore.PollStep early = steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1));
-    assertThat(early.state()).as("not due: no check").isEqualTo("WAITING");
-    assertThat(early.resumed()).isTrue();
-    assertThat(early.waitUntil()).isEqualTo(wait.waitUntil());
+    assertThat(steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1)))
+        .as("not due: no check")
+        .isEqualTo(new StepStore.PollStep.NotDue(1, wait.waitUntil()));
 
     execute("update bikesched_steps set wait_until = now() where name = 'p'");
     assertThat(steps.startPoll(jobId, lock(jobId), "p", Duration.ofMillis(1)))
-        .isEqualTo(new StepStore.PollStep("RUNNING", null, 2, null, true));
+        .isEqualTo(new StepStore.PollStep.CheckStarted(2, true));
     assertThat(countSteps("name = 'p' and timeout_at > now() + interval '50 minutes'"))
         .as("the first deadline wins")
         .isEqualTo(1);
 
     steps.completePoll(jobId, lock(jobId), "p", "\"ready\"", 2);
     assertThat(steps.startPoll(jobId, lock(jobId), "p", null))
-        .isEqualTo(new StepStore.PollStep("SUCCEEDED", "\"ready\"", 2, null, false));
+        .isEqualTo(new StepStore.PollStep.Ready("\"ready\""));
     assertThat(countRows("bikesched_job_history", "job_id = '" + jobId + "' and step_name = 'p'"))
         .as("only the outcome is recorded")
         .isOne();
@@ -243,7 +242,8 @@ class StepStoreTest extends AbstractStoreTest {
 
     assertThat(wait.timedOut()).isTrue();
     assertThat(wait.checks()).isEqualTo(2);
-    assertThat(steps.startPoll(jobId, lock(jobId), "p", null).state()).isEqualTo("TIMED_OUT");
+    assertThat(steps.startPoll(jobId, lock(jobId), "p", null))
+        .isEqualTo(new StepStore.PollStep.PollTimedOut(2));
     assertThat(
             countRows(
                 "bikesched_job_history",

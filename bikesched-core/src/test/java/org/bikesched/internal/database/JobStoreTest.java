@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.bikesched.job.JobState;
 import org.junit.jupiter.api.Test;
 
 class JobStoreTest extends AbstractStoreTest {
@@ -100,8 +101,7 @@ class JobStoreTest extends AbstractStoreTest {
         .singleElement()
         .satisfies(
             claimed -> {
-              assertThat(claimed.failingState()).isEqualTo("FAILED");
-              assertThat(claimed.failureAttempts()).isEqualTo(2);
+              assertThat(claimed.phase()).isEqualTo(new JobPhase.HandleFailure(JobState.FAILED, 2));
               assertThat(claimed.attempts()).isZero();
             });
   }
@@ -250,7 +250,7 @@ class JobStoreTest extends AbstractStoreTest {
             .jobs()
             .failJob(jobs.get(0).id(), lock(jobs.get(0).id()), "busy", 5, Duration.ofMinutes(10))
             .orElseThrow();
-    assertThat(retried.state()).isEqualTo("SCHEDULED");
+    assertThat(retried.state()).isEqualTo(JobState.SCHEDULED);
     assertThat(retried.maxAttempts()).isEqualTo(5);
     assertThat(retried.scheduledAt())
         .isBetween(Instant.now().plusSeconds(9 * 60), Instant.now().plusSeconds(11 * 60));
@@ -267,7 +267,9 @@ class JobStoreTest extends AbstractStoreTest {
             .jobs()
             .failJob(jobs.get(1).id(), lock(jobs.get(1).id()), "give up", 1, Duration.ofMinutes(10))
             .orElseThrow();
-    assertThat(failed.state()).as("no attempts left: retryAfter is ignored").isEqualTo("FAILED");
+    assertThat(failed.state())
+        .as("no attempts left: retryAfter is ignored")
+        .isEqualTo(JobState.FAILED);
     assertThat(
             count(
                 "id = '"
@@ -295,14 +297,14 @@ class JobStoreTest extends AbstractStoreTest {
                 .jobs()
                 .failJob(first.id(), lock(first.id()), "boom 1", null, null)
                 .map(JobStore.FailedJob::state))
-        .contains("SCHEDULED");
+        .contains(JobState.SCHEDULED);
     claimJobs(node, 10);
     assertThat(
             database
                 .jobs()
                 .failJob(first.id(), lock(first.id()), "boom 2", null, null)
                 .map(JobStore.FailedJob::state))
-        .contains("SCHEDULED");
+        .contains(JobState.SCHEDULED);
     JobStore.ClaimedJob third = claimJobs(node, 10).getFirst();
     assertThat(third.attempts()).isEqualTo(3);
     assertThat(
@@ -310,7 +312,7 @@ class JobStoreTest extends AbstractStoreTest {
                 .jobs()
                 .failJob(first.id(), lock(first.id()), "boom 3", null, null)
                 .map(JobStore.FailedJob::state))
-        .contains("FAILED");
+        .contains(JobState.FAILED);
 
     assertThat(
             count(

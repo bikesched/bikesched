@@ -141,10 +141,7 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
 
   @Override
   public B timeout(Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout");
-    if (timeout.isNegative() || timeout.isZero()) {
-      throw new IllegalArgumentException("timeout must be positive: " + timeout);
-    }
+    ValidationUtil.requirePositive(timeout, "timeout");
     this.timeout = timeout;
     return self();
   }

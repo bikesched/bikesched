@@ -270,6 +270,15 @@ public final class Sql {
       return time == null ? null : time.toInstant();
     }
 
+    /**
+     * A {@code text} column holding the name of an enum constant, {@code null} for SQL {@code
+     * null}.
+     */
+    <E extends Enum<E>> E enumValue(int column, Class<E> type) throws SQLException {
+      String name = rs.getString(column);
+      return name == null ? null : Enum.valueOf(type, name);
+    }
+
     /** A {@code bigint} column holding milliseconds, {@code null} for SQL {@code null}. */
     Duration millis(int column) throws SQLException {
       Long millis = rs.getObject(column, Long.class);

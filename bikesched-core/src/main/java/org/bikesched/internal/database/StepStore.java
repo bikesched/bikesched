@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.ValidationUtil;
+import org.bikesched.job.JobState;
 
 /**
  * The {@code bikesched_steps} table: durable steps of jobs, sleeps, waits for child jobs, polls,
@@ -242,7 +243,8 @@ public final class StepStore {
   // A step of a job, for a poll.
   private static final String FIND_POLL_STEP_SQL =
       """
-            select kind, state, result::text, attempts, wait_until, wait_until <= now()
+            select kind, state, result::text, attempts, wait_until, wait_until <= now(),
+                   coalesce(last_error, '')
               from bikesched_steps where job_id = ? and name = ? for update""";
 
   // Starts the first check of a poll; its deadline (timeout_at) is null without a timeout.
@@ -288,7 +290,7 @@ public final class StepStore {
    * @param compensable whether it has a compensation to run if its job is cancelled or fails
    */
   public record StoredStep(
-      String kind, String state, String result, int attempts, boolean compensable) {}
+      StepKind kind, StepState state, String result, int attempts, boolean compensable) {}
 
   /**
    * Looks up a step of a job.
@@ -304,7 +306,11 @@ public final class StepStore {
                 FIND_STEP_SQL,
                 row ->
                     new StoredStep(
-                        row.string(1), row.string(2), row.string(3), row.integer(4), row.bool(5)),
+                        row.enumValue(1, StepKind.class),
+                        row.enumValue(2, StepState.class),
+                        row.string(3),
+                        row.integer(4),
+                        row.bool(5)),
                 jobId,
                 name),
         e ->
@@ -322,7 +328,7 @@ public final class StepStore {
    * @param attempts the number of attempts it took
    */
   public record CompletedStep(
-      String kind, String result, boolean compensated, boolean compensable, int attempts) {}
+      StepKind kind, String result, boolean compensated, boolean compensable, int attempts) {}
 
   /**
    * A step of a job starting a child job.
@@ -332,7 +338,7 @@ public final class StepStore {
    * @param childJobId the child it started, {@code null} unless the step is a {@code CHILD_JOB}
    * @param attempts its number of attempts (starts of a child)
    */
-  public record ChildJobStep(String kind, String state, UUID childJobId, int attempts) {}
+  public record ChildJobStep(StepKind kind, StepState state, UUID childJobId, int attempts) {}
 
   /**
    * Looks up a step of a job, with the child job it started.
@@ -346,7 +352,12 @@ public final class StepStore {
         db ->
             db.one(
                 FIND_CHILD_JOB_STEP_SQL,
-                row -> new ChildJobStep(row.string(1), row.string(2), row.uuid(3), row.integer(4)),
+                row ->
+                    new ChildJobStep(
+                        row.enumValue(1, StepKind.class),
+                        row.enumValue(2, StepState.class),
+                        row.uuid(3),
+                        row.integer(4)),
                 jobId,
                 name),
         e ->
@@ -354,38 +365,58 @@ public final class StepStore {
                 "Reading step '" + name + "' of bikesched job " + jobId + " failed", e));
   }
 
-  /**
-   * A job's wait for one of its children.
-   *
-   * @param stepName the step that started the child
-   * @param state {@code SUCCEEDED} (the child ended), {@code WAITING}, {@code TIMED_OUT}, or (only
-   *     met while compensating) {@code CANCELLED} or {@code COMPENSATED}
-   * @param childState the state the child ended in, {@code null} unless {@code SUCCEEDED}
-   * @param result the child's result as JSON text, may be {@code null}
-   * @param error the child's error or cancel message, may be {@code null}
-   * @param waitUntil the deadline of the wait, {@code null} if none
-   */
-  public record ChildWait(
-      String stepName,
-      String state,
-      String childState,
-      String result,
-      String error,
-      Instant waitUntil) {}
+  /** A job's wait for one of its children, by the state of the step that started the child. */
+  public sealed interface ChildWait {
+
+    /** The step that started the child. */
+    String stepName();
+
+    /**
+     * The child ended ({@code SUCCEEDED} step): its outcome is stored with the step.
+     *
+     * @param childState the state the child ended in
+     * @param result the child's result as JSON text, may be {@code null}
+     * @param error the child's error or cancel message, may be {@code null}
+     */
+    record ChildEnded(String stepName, JobState childState, String result, String error)
+        implements ChildWait {}
+
+    /** The wait timed out ({@code TIMED_OUT} step). */
+    record ChildTimedOut(String stepName) implements ChildWait {}
+
+    /**
+     * The step waits for the child.
+     *
+     * @param waitUntil the deadline of the wait, {@code null} if none
+     */
+    record ChildWaiting(String stepName, Instant waitUntil) implements ChildWait {}
+
+    /**
+     * The step neither waits nor holds an outcome: only met while compensating ({@code CANCELLED},
+     * {@code COMPENSATED}) or after the step was reset.
+     *
+     * @param state the step's state
+     */
+    record NotWaiting(String stepName, StepState state) implements ChildWait {}
+  }
 
   /** A row of {@code FIND_CHILD_WAIT_SQL}. */
   private record ChildWaitStep(ChildWait childWait, boolean deadlinePassed) {
 
     static ChildWaitStep from(Sql.Row row) throws SQLException {
-      return new ChildWaitStep(
-          new ChildWait(
-              row.string(1),
-              row.string(2),
-              row.string(3),
-              row.string(4),
-              row.string(5),
-              row.instant(6)),
-          row.bool(7));
+      String name = row.string(1);
+      StepState state = row.enumValue(2, StepState.class);
+      ChildWait wait =
+          switch (state) {
+            case SUCCEEDED ->
+                new ChildWait.ChildEnded(
+                    name, row.enumValue(3, JobState.class), row.string(4), row.string(5));
+            case TIMED_OUT -> new ChildWait.ChildTimedOut(name);
+            case WAITING -> new ChildWait.ChildWaiting(name, row.instant(6));
+            case RUNNING, FAILING, FAILED, COMPENSATED, CANCELLED, POSTPONED ->
+                new ChildWait.NotWaiting(name, state);
+          };
+      return new ChildWaitStep(wait, row.bool(7));
     }
   }
 
@@ -410,16 +441,15 @@ public final class StepStore {
           ChildWaitStep step =
               db.one(FIND_CHILD_WAIT_SQL, ChildWaitStep::from, jobId, childJobId)
                   .orElseThrow(() -> notAChild(jobId, childJobId));
-          ChildWait wait = step.childWait();
-          if (!wait.state().equals("WAITING")) {
-            return wait;
+          if (!(step.childWait() instanceof ChildWait.ChildWaiting wait)) {
+            return step.childWait();
           }
           String name = wait.stepName();
           if (step.deadlinePassed()) {
             db.update(TIME_OUT_CHILD_WAIT_SQL, jobId, name);
             history.record(
                 db, Change.step(jobId, name, "TIMED_OUT", null, "waiting for job " + childJobId));
-            return new ChildWait(name, "TIMED_OUT", null, null, null, wait.waitUntil());
+            return new ChildWait.ChildTimedOut(name);
           }
           if (timeout != null && wait.waitUntil() == null) {
             Instant deadline =
@@ -438,7 +468,7 @@ public final class StepStore {
                     "WAITING",
                     null,
                     "waiting for job " + childJobId + " until " + deadline));
-            return new ChildWait(name, "WAITING", null, null, null, deadline);
+            return new ChildWait.ChildWaiting(name, deadline);
           }
           return wait;
         },
@@ -512,7 +542,7 @@ public final class StepStore {
         .flatMap(
             step ->
                 switch (step.state()) {
-                  case "SUCCEEDED" ->
+                  case SUCCEEDED ->
                       Optional.of(
                           new CompletedStep(
                               step.kind(),
@@ -520,7 +550,7 @@ public final class StepStore {
                               false,
                               step.compensable(),
                               step.attempts()));
-                  case "COMPENSATED" ->
+                  case COMPENSATED ->
                       Optional.of(
                           new CompletedStep(
                               step.kind(),
@@ -528,7 +558,8 @@ public final class StepStore {
                               true,
                               step.compensable(),
                               step.attempts()));
-                  default -> Optional.empty();
+                  case RUNNING, WAITING, FAILING, FAILED, TIMED_OUT, CANCELLED, POSTPONED ->
+                      Optional.empty();
                 });
   }
 
@@ -863,9 +894,9 @@ public final class StepStore {
    * @param kind the kind of step, see {@link StoredStep}
    * @return the stored error, or empty if the step is not {@code FAILING} or of another kind
    */
-  public Optional<String> findFailingError(UUID jobId, String name, String kind) {
+  public Optional<String> findFailingError(UUID jobId, String name, StepKind kind) {
     return access.withConnection(
-        db -> db.one(FIND_FAILING_ERROR_SQL, row -> row.string(1), jobId, name, kind),
+        db -> db.one(FIND_FAILING_ERROR_SQL, row -> row.string(1), jobId, name, kind.name()),
         e ->
             new BikeschedException(
                 "Reading step '" + name + "' of bikesched job " + jobId + " failed", e));
@@ -924,24 +955,20 @@ public final class StepStore {
           Optional<SleepStep> step =
               db.one(
                   FIND_SLEEP_STEP_SQL,
-                  row -> new SleepStep(row.string(1), row.string(2), row.instant(3), row.bool(4)),
+                  row ->
+                      new SleepStep(
+                          row.enumValue(1, StepKind.class),
+                          row.enumValue(2, StepState.class),
+                          row.instant(3),
+                          row.bool(4)),
                   jobId,
                   name);
           if (step.isPresent()) {
             SleepStep found = step.get();
-            if (!found.kind().equals("SLEEP")) {
-              throw new IllegalStateException(
-                  "Step '"
-                      + name
-                      + "' of job "
-                      + jobId
-                      + " is "
-                      + describeKind(found.kind())
-                      + ", not a sleep; step names must be unique within a job");
-            }
+            StepKind.SLEEP.require(name, jobId, found.kind());
             return switch (found.state()) {
-              case "SUCCEEDED" -> new Sleep(true, found.wakeUpAt());
-              case "WAITING" -> {
+              case SUCCEEDED -> new Sleep(true, found.wakeUpAt());
+              case WAITING -> {
                 if (!found.due()) {
                   yield new Sleep(false, found.wakeUpAt());
                 }
@@ -949,7 +976,7 @@ public final class StepStore {
                 history.record(db, Change.step(jobId, name, "SUCCEEDED", null, "woke up"));
                 yield new Sleep(true, found.wakeUpAt());
               }
-              default ->
+              case RUNNING, FAILING, FAILED, TIMED_OUT, COMPENSATED, CANCELLED, POSTPONED ->
                   throw new IllegalStateException(
                       "Sleep step '" + name + "' of job " + jobId + " is " + found.state());
             };
@@ -957,7 +984,10 @@ public final class StepStore {
           Sleep started =
               db.one(
                       START_SLEEP_SQL,
-                      row -> new Sleep(row.string(1).equals("SUCCEEDED"), row.instant(2)),
+                      row ->
+                          new Sleep(
+                              row.enumValue(1, StepState.class) == StepState.SUCCEEDED,
+                              row.instant(2)),
                       jobId,
                       name,
                       Sql.timestamp(until),
@@ -980,20 +1010,47 @@ public final class StepStore {
                 "Sleeping in step '" + name + "' of bikesched job " + jobId + " failed", e));
   }
 
-  /**
-   * A poll step after {@link #startPoll}.
-   *
-   * @param state {@code RUNNING} (a check started), {@code WAITING} (the next check is not due
-   *     yet), {@code SUCCEEDED} (ready in an earlier run), {@code TIMED_OUT} or {@code FAILING}
-   *     (its failure handler has to run again)
-   * @param result the ready value as JSON text if {@code SUCCEEDED}, may be {@code null}
-   * @param checks the number of checks so far, including a started one
-   * @param waitUntil the time of the next check if {@code WAITING}
-   * @param resumed whether the poll was waiting when this run reached it (the job was claimed for a
-   *     further check)
-   */
-  public record PollStep(
-      String state, String result, int checks, Instant waitUntil, boolean resumed) {}
+  /** A poll step after {@link #startPoll}. */
+  public sealed interface PollStep {
+
+    /**
+     * A check started ({@code RUNNING}): the first one, a due one, or one after a failed check.
+     *
+     * @param checks the number of checks so far, including the started one
+     * @param resumed whether the poll was waiting when this run reached it (the job was claimed for
+     *     a further check)
+     */
+    record CheckStarted(int checks, boolean resumed) implements PollStep {}
+
+    /**
+     * The next check is not due yet ({@code WAITING}).
+     *
+     * @param checks the number of checks so far
+     * @param waitUntil the time of the next check
+     */
+    record NotDue(int checks, Instant waitUntil) implements PollStep {}
+
+    /**
+     * Ready in an earlier run ({@code SUCCEEDED}).
+     *
+     * @param result the ready value as JSON text, may be {@code null}
+     */
+    record Ready(String result) implements PollStep {}
+
+    /**
+     * Timed out ({@code TIMED_OUT}).
+     *
+     * @param checks the number of checks it took
+     */
+    record PollTimedOut(int checks) implements PollStep {}
+
+    /**
+     * Its failure handler has to run again ({@code FAILING}).
+     *
+     * @param error the stored error, handed to the failure handler
+     */
+    record PollFailing(String error) implements PollStep {}
+  }
 
   /**
    * Reaches a poll: starts a check (the first one, or a further one once it is due or after a
@@ -1018,12 +1075,13 @@ public final class StepStore {
                   FIND_POLL_STEP_SQL,
                   row ->
                       new StoredPoll(
-                          row.string(1),
-                          row.string(2),
+                          row.enumValue(1, StepKind.class),
+                          row.enumValue(2, StepState.class),
                           row.string(3),
                           row.integer(4),
                           row.instant(5),
-                          row.bool(6)),
+                          row.bool(6),
+                          row.string(7)),
                   jobId,
                   name);
           if (step.isEmpty()) {
@@ -1036,26 +1094,18 @@ public final class StepStore {
                         lock.nodeId(),
                         Sql.millis(timeout))
                     .orElseThrow();
-            return new PollStep("RUNNING", null, checks, null, false);
+            return new PollStep.CheckStarted(checks, false);
           }
           StoredPoll found = step.get();
-          if (!found.kind().equals("POLL")) {
-            throw new IllegalStateException(
-                "Step '"
-                    + name
-                    + "' of job "
-                    + jobId
-                    + " is "
-                    + describeKind(found.kind())
-                    + ", not a poll; step names must be unique within a job");
-          }
-          boolean waiting = found.state().equals("WAITING");
+          StepKind.POLL.require(name, jobId, found.kind());
+          boolean waiting = found.state() == StepState.WAITING;
           return switch (found.state()) {
-            case "SUCCEEDED", "TIMED_OUT", "FAILING" ->
-                new PollStep(found.state(), found.result(), found.checks(), null, false);
-            case "WAITING", "FAILED", "RUNNING" -> {
+            case SUCCEEDED -> new PollStep.Ready(found.result());
+            case TIMED_OUT -> new PollStep.PollTimedOut(found.checks());
+            case FAILING -> new PollStep.PollFailing(found.error());
+            case WAITING, FAILED, RUNNING -> {
               if (waiting && !found.due()) {
-                yield new PollStep("WAITING", null, found.checks(), found.waitUntil(), true);
+                yield new PollStep.NotDue(found.checks(), found.waitUntil());
               }
               int checks =
                   db.one(
@@ -1066,9 +1116,9 @@ public final class StepStore {
                           jobId,
                           name)
                       .orElseThrow();
-              yield new PollStep("RUNNING", null, checks, null, waiting);
+              yield new PollStep.CheckStarted(checks, waiting);
             }
-            default ->
+            case COMPENSATED, CANCELLED, POSTPONED ->
                 throw new IllegalStateException(
                     "Poll step '" + name + "' of job " + jobId + " is " + found.state());
           };
@@ -1134,7 +1184,9 @@ public final class StepStore {
                   WAIT_POLL_SQL,
                   row ->
                       new PollWait(
-                          row.string(1).equals("TIMED_OUT"), row.instant(2), row.integer(3)),
+                          row.enumValue(1, StepState.class) == StepState.TIMED_OUT,
+                          row.instant(2),
+                          row.integer(3)),
                   Sql.millis(delay),
                   jobId,
                   name,
@@ -1170,7 +1222,13 @@ public final class StepStore {
 
   /** A row of {@code FIND_POLL_STEP_SQL}. */
   private record StoredPoll(
-      String kind, String state, String result, int checks, Instant waitUntil, boolean due) {}
+      StepKind kind,
+      StepState state,
+      String result,
+      int checks,
+      Instant waitUntil,
+      boolean due,
+      String error) {}
 
   /**
    * A job after suspending it.
@@ -1241,7 +1299,11 @@ public final class StepStore {
             SUSPEND_JOB_SQL,
             row ->
                 new Suspension(
-                    row.string(1), row.instant(2), row.integer(3), row.string(4), row.instant(5)),
+                    row.enumValue(1, JobState.class),
+                    row.instant(2),
+                    row.integer(3),
+                    row.string(4),
+                    row.instant(5)),
             jobId,
             lock.token(),
             stepName);
@@ -1253,7 +1315,7 @@ public final class StepStore {
       // Due again at the deadline or wake-up time, or right away: the node wakes itself up.
       db.dueAt(suspension.type(), suspension.dueAt());
     }
-    boolean waiting = suspension.state().equals("WAITING");
+    boolean waiting = suspension.state() == JobState.WAITING;
     if (!recorded && waiting) {
       return Optional.of(new SuspendedJob(true, suspension.waitUntil()));
     }
@@ -1261,7 +1323,7 @@ public final class StepStore {
         db,
         Change.job(
             jobId,
-            suspension.state(),
+            suspension.state().name(),
             suspension.attempts(),
             lock.nodeId(),
             "suspended at step '"
@@ -1346,28 +1408,10 @@ public final class StepStore {
 
   /** A row of {@code SUSPEND_JOB_SQL}. */
   private record Suspension(
-      String state, Instant waitUntil, int attempts, String type, Instant dueAt) {}
+      JobState state, Instant waitUntil, int attempts, String type, Instant dueAt) {}
 
   /** A row of {@code FIND_SLEEP_STEP_SQL}. */
-  private record SleepStep(String kind, String state, Instant wakeUpAt, boolean due) {}
-
-  /**
-   * Describes a step kind for messages about a step name used for different kinds of steps.
-   *
-   * @param kind the stored kind
-   * @return e.g. {@code "a regular step"}
-   */
-  public static String describeKind(String kind) {
-    return switch (kind) {
-      case "STEP" -> "a regular step";
-      case "SLEEP" -> "a sleep";
-      case "EVENT_WAIT" -> "an event wait";
-      case "EVENT_PUBLISH" -> "an event publish";
-      case "CHILD_JOB" -> "a child job";
-      case "POLL" -> "a poll";
-      default -> "a " + kind + " step";
-    };
-  }
+  private record SleepStep(StepKind kind, StepState state, Instant wakeUpAt, boolean due) {}
 
   /**
    * After a fenced write changed nothing: throws if the job is no longer running on the node

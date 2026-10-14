@@ -4,6 +4,7 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.util.Objects;
 import org.bikesched.event.EventWait;
+import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.StepFailureHandler;
 
 /**
@@ -32,10 +33,7 @@ final class DefaultEventWait<T> implements EventWait<T> {
 
   @Override
   public EventWait<T> timeout(Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout");
-    if (timeout.isNegative() || timeout.isZero()) {
-      throw new IllegalArgumentException("timeout must be positive: " + timeout);
-    }
+    ValidationUtil.requirePositive(timeout, "timeout");
     this.timeout = timeout;
     return this;
   }

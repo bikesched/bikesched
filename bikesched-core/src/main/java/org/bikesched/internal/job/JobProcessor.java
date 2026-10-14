@@ -4,17 +4,25 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.bikesched.BikeschedException;
 import org.bikesched.RetryBackoff;
+import org.bikesched.internal.database.ClaimEnd;
+import org.bikesched.internal.database.ClaimEnd.FollowUp;
 import org.bikesched.internal.database.Database;
+import org.bikesched.internal.database.JobOrigin;
+import org.bikesched.internal.database.JobPhase;
+import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.util.Retry;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
+import org.bikesched.job.JobState;
 import org.bikesched.job.listener.JobAttemptOutcome;
 import org.bikesched.job.listener.JobAttemptResult;
 import org.bikesched.job.listener.JobClaim;
@@ -60,26 +68,36 @@ public final class JobProcessor {
 
   private static final Logger LOG = LoggerFactory.getLogger(JobProcessor.class);
 
-  // Outcomes of processing a job that could not be recorded as such.
-  private static final Outcome NOT_RUNNING =
-      new Outcome(
-          JobAttemptOutcome.NOT_RECORDED,
-          "not recorded, the job was no longer running in this attempt's claim");
-
   /** Recording an outcome writes through the claim's lock token, so it is safe to retry. */
   private static final Retry RECORDING = Retry.of(3, Duration.ofMillis(200));
 
-  private static final Outcome NOT_RECORDED =
-      new Outcome(JobAttemptOutcome.NOT_RECORDED, "not recorded, see the warning above");
+  // Outcomes of processing a job that could not be recorded as such.
+  private static final Reported NOT_RUNNING =
+      new Reported(
+          JobAttemptOutcome.NOT_RECORDED,
+          "not recorded, the job was no longer running in this attempt's claim");
+
+  private static final Reported NOT_RECORDED =
+      new Reported(JobAttemptOutcome.NOT_RECORDED, "not recorded, see the warning above");
+
+  /** What processing a claim ended with; its description is for the debug log. */
+  private sealed interface Outcome {
+
+    String description();
+  }
 
   /**
-   * The recorded outcome of an attempt.
+   * An outcome reported to the {@link JobListener}: recorded, or why it was not.
    *
-   * @param kind what was recorded; {@code null} for an abandoned attempt whose thread returned,
-   *     which was reported when it was abandoned
-   * @param description a description, for the debug log
+   * @param kind what was recorded
    */
-  private record Outcome(JobAttemptOutcome kind, String description) {}
+  private record Reported(JobAttemptOutcome kind, String description) implements Outcome {}
+
+  /**
+   * The thread of an attempt abandoned by the hard timeout returned after all: its outcome is
+   * discarded, the abandoned attempt was reported when it was abandoned.
+   */
+  private record AbandonedReturned(String description) implements Outcome {}
 
   /** A claim being processed, started at {@code startNanos} ({@link System#nanoTime()}). */
   private record Started(JobClaim claim, long startNanos) {
@@ -87,6 +105,56 @@ public final class JobProcessor {
     Duration elapsed() {
       return Duration.ofNanos(System.nanoTime() - startNanos);
     }
+  }
+
+  /** The code an attempt runs: the handler, the compensations or the failure handler. */
+  @FunctionalInterface
+  private interface AttemptBody {
+    void run() throws Exception;
+  }
+
+  /** How an attempt run by {@link #runAttempt} ended, see {@link JobAttempt.End}. */
+  private sealed interface AttemptEnd {
+
+    /** The hard timeout abandoned the attempt; its thread returned now, with {@code failure}. */
+    record Abandoned(Exception failure) implements AttemptEnd {}
+
+    /** A step write found the job released while the attempt ran: record nothing. */
+    record LockLost(Exception failure) implements AttemptEnd {}
+
+    /**
+     * The attempt ended on its own thread: its outcome is to be recorded.
+     *
+     * @param end whether it returned in time or after its timeout
+     * @param failure what the body threw, {@code null} if it returned or suspended the job
+     * @param attempt the attempt, for the timeout of a timed out one
+     */
+    record Ended(JobAttempt.End end, Exception failure, JobAttempt attempt) implements AttemptEnd {}
+  }
+
+  /**
+   * What the handler's attempt amounts to, by precedence when it did several things (see the class
+   * comment): decided by {@link #verdict}, then recorded.
+   */
+  private sealed interface Verdict {
+
+    /** The handler cancelled the job. */
+    record Cancelled(String message) implements Verdict {}
+
+    /** The handler failed the job explicitly, with its retry settings. */
+    record FailedByHandler(DefaultJobFailure failure) implements Verdict {}
+
+    /** The handler suspended the job at a waiting step, or postponed it. */
+    record Suspended(JobSuspended.Suspension suspension) implements Verdict {}
+
+    /** The attempt exceeded its timeout; {@code cause} is what the handler threw, if anything. */
+    record TimedOut(Duration timeout, Exception cause) implements Verdict {}
+
+    /** The handler threw. */
+    record Threw(Exception failure) implements Verdict {}
+
+    /** The handler returned normally. */
+    record Returned() implements Verdict {}
   }
 
   private final Database database;
@@ -175,18 +243,46 @@ public final class JobProcessor {
   }
 
   /**
+   * Runs the body in one attempt of the job. The attempt's timer and, with a hard timeout, the
+   * abandoning of attempts that ignore it are set up by {@link #startAttempt}; the pending
+   * interrupt is cleared afterwards, because this thread still has to record the outcome and
+   * blocking I/O of an interrupted virtual thread fails.
+   */
+  private AttemptEnd runAttempt(DefaultJob job, JobSlot slot, Started started, AttemptBody body) {
+    JobAttempt attempt = startAttempt(job, slot, started);
+    Exception failure = null;
+    try {
+      body.run();
+    } catch (JobSuspended e) {
+      // Control flow: the job waits (job.suspension() is set), recorded by the caller.
+    } catch (Exception e) {
+      failure = e;
+    }
+    JobAttempt.End end = attempt.finish(); // no interrupt can arrive after this
+    // Clear a pending interrupt (timeout, shutdown or the handler's own): this thread still has
+    // to record the outcome, and blocking I/O of an interrupted virtual thread fails.
+    Thread.interrupted();
+    if (end == JobAttempt.End.ABANDONED) {
+      return new AttemptEnd.Abandoned(failure);
+    }
+    if (job.isLockLost()) {
+      return new AttemptEnd.LockLost(failure);
+    }
+    return new AttemptEnd.Ended(end, failure, attempt);
+  }
+
+  /**
    * Records an attempt abandoned by the hard timeout as failed, like a timed-out attempt (on the
    * hard timeout's recorder thread, while the handler's thread may still run).
    */
   private void recordAbandoned(DefaultJob job, Exception failure, Started started) {
-    Outcome outcome;
-    if (job.isFailing()) {
-      outcome = recordFailureHandlerFailure(job, failure);
-    } else if (job.isCompensating()) {
-      outcome = recordCompensationFailure(job, null, failure);
-    } else {
-      outcome = recordFailure(job, failure);
-    }
+    Reported outcome =
+        switch (job.phase()) {
+          case JobPhase.HandleFailure failing -> recordFailureHandlerFailure(job, failing, failure);
+          case JobPhase.Compensate compensating ->
+              recordCompensationFailure(job, compensating, null, failure);
+          case JobPhase.Run _ -> recordFailure(job, failure);
+        };
     notifyListener(
         job,
         () ->
@@ -200,7 +296,7 @@ public final class JobProcessor {
    * the attempt's claim, see {@link DefaultJob#isLockLost()}): records nothing, the job belongs to
    * whichever claim comes next.
    */
-  private Outcome abandon(DefaultJob job, Exception failure) {
+  private Reported abandon(DefaultJob job, Exception failure) {
     LOG.warn(
         "Job {} of type {} is no longer running on bikesched node {} ({}): it was released, e.g."
             + " after missed heartbeats, and may run on another node; abandoning attempt {}"
@@ -211,7 +307,7 @@ public final class JobProcessor {
         nodeId,
         job.attempts(),
         failure);
-    return new Outcome(JobAttemptOutcome.NOT_RECORDED, "abandoned, the job was released");
+    return new Reported(JobAttemptOutcome.NOT_RECORDED, "abandoned, the job was released");
   }
 
   /**
@@ -229,11 +325,13 @@ public final class JobProcessor {
       outcome = runAndRecord(job, slot, started);
     } finally {
       Duration elapsed = started.elapsed();
-      if (outcome.kind() == null) {
-        notifyListener(job, () -> listener.onAbandonedAttemptReturned(started.claim()));
-      } else {
-        var result = new JobAttemptResult(started.claim(), outcome.kind(), elapsed, false);
-        notifyListener(job, () -> listener.onAttemptEnded(result));
+      switch (outcome) {
+        case AbandonedReturned _ ->
+            notifyListener(job, () -> listener.onAbandonedAttemptReturned(started.claim()));
+        case Reported(JobAttemptOutcome kind, _) -> {
+          var result = new JobAttemptResult(started.claim(), kind, elapsed, false);
+          notifyListener(job, () -> listener.onAttemptEnded(result));
+        }
       }
       LOG.debug(
           "Processed job {} of type {} (attempt {}) in {} ms: {}",
@@ -247,20 +345,13 @@ public final class JobProcessor {
 
   private static JobClaim claim(DefaultJob job) {
     Duration delay = Duration.between(job.scheduledAt(), Instant.now());
-    int attempt;
-    if (job.isFailing()) {
-      attempt = job.failureAttempts();
-    } else if (job.isCompensating()) {
-      attempt = job.compensationAttempts();
-    } else {
-      attempt = job.attempts();
-    }
+    JobPhase phase = job.phase();
     return new JobClaim(
         job.id(),
         job.type(),
-        attempt,
-        job.isCompensating(),
-        job.isFailing(),
+        phase.attempt(),
+        phase instanceof JobPhase.Compensate,
+        phase instanceof JobPhase.HandleFailure,
         delay.isNegative() ? Duration.ZERO : delay);
   }
 
@@ -274,324 +365,335 @@ public final class JobProcessor {
   }
 
   /**
-   * Decides what the claimed job needs — the compensation of its steps, the cancellation it asked
-   * for, or its handler (verified here because claiming is not filtered by job type) — and records
-   * the outcome.
-   *
-   * @return the recorded outcome
+   * Decides what the claimed job needs (its failure handler, the compensation of its steps, the
+   * cancellation it asked for, or its handler) and records the outcome.
    */
   private Outcome runAndRecord(DefaultJob job, JobSlot slot, Started started) {
-    if (job.isFailing()) {
-      return runFailureHandler(job, slot, started);
-    }
-    if (job.isCompensating()) {
-      return compensate(job, slot, started);
-    }
-    if (job.cancelRequested()) {
-      return recordCancellation(job, job.cancelRequestMessage(), false);
-    }
+    return switch (job.phase()) {
+      case JobPhase.HandleFailure failing -> runFailureHandler(job, failing, slot, started);
+      case JobPhase.Compensate compensating -> compensate(job, compensating, slot, started);
+      case JobPhase.Run _ when job.cancelRequested() ->
+          recordCancellation(job, job.cancelRequestMessage(), false);
+      case JobPhase.Run _ -> runHandler(job, slot, started);
+    };
+  }
+
+  /**
+   * The handler registered for the job's type, verified here because claiming is not filtered by
+   * job type.
+   *
+   * @param doing what cannot be done without it, for the log
+   */
+  private Optional<JobHandler> handler(DefaultJob job, String doing) {
     JobHandler handler = handlers.apply(job.type());
     if (handler == null) {
       LOG.error(
-          "No handler registered for job type {} on bikesched node {} ({}), cannot run job {}",
+          "No handler registered for job type {} on bikesched node {} ({}), cannot {} job {}",
           job.type(),
           nodeName,
           nodeId,
+          doing,
           job.id());
-      return recordFailure(
-          job,
-          new BikeschedException(
-              "No handler registered for job type '"
-                  + job.type()
-                  + "' on bikesched node "
-                  + nodeName));
     }
-    return runAttempt(job, slot, started, handler);
+    return Optional.ofNullable(handler);
   }
 
-  /**
-   * Runs the handler in one attempt and hands what it did to {@link #recordOutcome}. The attempt's
-   * timer and, with a hard timeout, the abandoning of attempts that ignore it are set up by {@link
-   * #startAttempt}; the pending interrupt is cleared afterwards, because this thread still has to
-   * record the outcome and blocking I/O of an interrupted virtual thread fails.
-   *
-   * @return the recorded outcome
-   */
-  private Outcome runAttempt(DefaultJob job, JobSlot slot, Started started, JobHandler handler) {
-    JobAttempt attempt = startAttempt(job, slot, started);
-    Exception failure = null;
-    try {
-      LOG.debug(
-          "Executing job {} of type {} (attempt {} of {}) on bikesched node {} ({})",
-          job.id(),
-          job.type(),
-          job.attempts(),
-          job.maxAttempts(),
-          nodeName,
-          nodeId);
-      handler.handle(job);
-    } catch (JobSuspended e) {
-      // Control flow: the job waits for an event (job.suspension() is set), handled below.
-    } catch (Exception e) {
-      failure = e;
-    }
-    JobAttempt.End end = attempt.finish(); // no interrupt can arrive after this
-    // Clear a pending interrupt (timeout, shutdown or the handler's own): this thread still has
-    // to record the outcome, and blocking I/O of an interrupted virtual thread fails.
-    Thread.interrupted();
-    if (end == JobAttempt.End.ABANDONED) {
-      return new Outcome(null, hardTimeout.returned(job, failure));
-    }
-    if (job.isLockLost()) {
-      return abandon(job, failure);
-    }
-    return recordOutcome(job, failure, end, attempt);
+  private BikeschedException noHandler(DefaultJob job) {
+    return new BikeschedException(
+        "No handler registered for job type '" + job.type() + "' on bikesched node " + nodeName);
   }
 
-  /**
-   * Records the outcome the attempt ended with, by precedence when the handler did several things
-   * (see the class comment).
-   *
-   * @param failure the exception the handler threw, {@code null} if it returned or suspended
-   * @param end how the attempt ended
-   * @param attempt the attempt, for the timeout of a timed out one
-   * @return the recorded outcome
-   */
-  private Outcome recordOutcome(
-      DefaultJob job, Exception failure, JobAttempt.End end, JobAttempt attempt) {
+  /** Runs the handler in one attempt and records what it did, see {@link #recordOutcome}. */
+  private Outcome runHandler(DefaultJob job, JobSlot slot, Started started) {
+    Optional<JobHandler> handler = handler(job, "run");
+    if (handler.isEmpty()) {
+      return recordFailure(job, noHandler(job));
+    }
+    AttemptBody body =
+        () -> {
+          LOG.debug(
+              "Executing job {} of type {} (attempt {} of {}) on bikesched node {} ({})",
+              job.id(),
+              job.type(),
+              job.attempts(),
+              job.maxAttempts(),
+              nodeName,
+              nodeId);
+          handler.get().handle(job);
+        };
+    return switch (runAttempt(job, slot, started, body)) {
+      case AttemptEnd.Abandoned(Exception failure) ->
+          new AbandonedReturned(hardTimeout.returned(job, failure));
+      case AttemptEnd.LockLost(Exception failure) -> abandon(job, failure);
+      case AttemptEnd.Ended(JobAttempt.End end, Exception failure, JobAttempt attempt) ->
+          recordOutcome(job, verdict(job, failure, end, attempt), failure);
+    };
+  }
+
+  /** What the handler's attempt amounts to, by the precedence documented on the class. */
+  private static Verdict verdict(
+      DefaultJob job, Exception thrown, JobAttempt.End end, JobAttempt attempt) {
     if (job.isCancelled()) {
-      if (failure != null) {
-        // The handler's decision to cancel wins over the failure: no retry.
-        LOG.warn(
-            "Job {} of type {} was cancelled, ignoring the exception thrown by its handler afterwards",
-            job.id(),
-            job.type(),
-            failure);
-      }
-      return recordCancellation(job, job.cancelMessage(), true);
-    } else if (job.failure() != null) {
-      if (failure != null) {
-        // The handler's explicit failure (and its retry settings) wins over the exception.
-        LOG.warn(
-            "Job {} of type {} was failed by its handler, ignoring the exception thrown afterwards",
-            job.id(),
-            job.type(),
-            failure);
-      }
-      DefaultJobFailure explicit = job.failure();
-      Integer remainingAttempts = explicit.remainingAttempts();
-      return recordFailure(
-          job,
-          explicit.message() == null ? "Job failed by its handler" : explicit.message(),
-          null,
-          remainingAttempts == null ? null : job.attempts() + remainingAttempts,
-          explicit.retryDelay());
-    } else if (job.suspension() != null) {
-      if (failure != null) {
-        // The handler caught the suspension and threw afterwards: the wait (or postponement) wins.
-        LOG.warn(
-            "Job {} of type {} was suspended {}, ignoring the exception thrown by its handler"
-                + " afterwards",
-            job.id(),
-            job.type(),
-            job.suspension(),
-            failure);
-      }
-      return switch (job.suspension()) {
-        case JobSuspended.Wait wait -> recordSuspension(job, wait);
-        case JobSuspended.PostponeSuspension postponed -> recordPostponement(job, postponed);
-      };
-    } else if (end == JobAttempt.End.TIMED_OUT) {
-      return recordFailure(
-          job, new BikeschedException("Job timed out after " + attempt.timeout(), failure));
-    } else if (failure != null) {
-      if (job.isFailureHandlingPending()) {
-        // A step's failure handler has to run again: one more attempt, whatever the maximum.
-        return recordFailure(job, failure.toString(), failure, job.attempts() + 1, null);
-      }
-      return recordFailure(job, failure);
-    } else {
-      try {
-        NewJob next = nextOccurrence(job);
-        var completed =
-            RECORDING.call(
-                "Completing job " + job.id() + " failed",
-                () ->
-                    database
-                        .jobs()
-                        .completeJob(
-                            job.id(), job.lock(), job.resultJson(), next, job.parentJobId()));
-        if (completed.isEmpty()) {
+      return new Verdict.Cancelled(job.cancelMessage());
+    }
+    if (job.failure() != null) {
+      return new Verdict.FailedByHandler(job.failure());
+    }
+    if (job.suspension() != null) {
+      return new Verdict.Suspended(job.suspension());
+    }
+    if (end == JobAttempt.End.TIMED_OUT) {
+      return new Verdict.TimedOut(attempt.timeout(), thrown);
+    }
+    return thrown == null ? new Verdict.Returned() : new Verdict.Threw(thrown);
+  }
+
+  /**
+   * Records what the handler's attempt amounts to.
+   *
+   * @param thrown the exception the handler threw, {@code null} if it returned or suspended
+   */
+  private Reported recordOutcome(DefaultJob job, Verdict verdict, Exception thrown) {
+    if (thrown != null) {
+      warnIfIgnored(job, verdict, thrown);
+    }
+    return switch (verdict) {
+      case Verdict.Cancelled(String message) -> recordCancellation(job, message, true);
+      case Verdict.FailedByHandler(DefaultJobFailure failure) ->
+          recordExplicitFailure(job, failure);
+      case Verdict.Suspended(JobSuspended.Wait wait) -> recordSuspension(job, wait);
+      case Verdict.Suspended(JobSuspended.PostponeSuspension postponed) ->
+          recordPostponement(job, postponed);
+      case Verdict.TimedOut(Duration timeout, Exception cause) ->
+          recordFailure(job, new BikeschedException("Job timed out after " + timeout, cause));
+      case Verdict.Threw(Exception failure) when job.isFailureHandlingPending() ->
+          // A step's failure handler has to run again: one more attempt, whatever the maximum.
+          recordFailure(job, failure.toString(), failure, job.attempts() + 1, null);
+      case Verdict.Threw(Exception failure) -> recordFailure(job, failure);
+      case Verdict.Returned() -> recordCompletion(job);
+    };
+  }
+
+  /** The handler threw after deciding the outcome otherwise: its decision wins. */
+  private static void warnIfIgnored(DefaultJob job, Verdict verdict, Exception thrown) {
+    switch (verdict) {
+      case Verdict.Cancelled _ ->
+          // The handler's decision to cancel wins over the failure: no retry.
           LOG.warn(
-              "Job {} was no longer running in this attempt's claim when completing it", job.id());
-          return NOT_RUNNING;
-        }
-        return new Outcome(
-            JobAttemptOutcome.SUCCEEDED,
-            "SUCCEEDED" + nextOccurrenceOutcome(next, completed.get()));
-      } catch (RuntimeException e) {
-        LOG.warn("Completing job {} failed", job.id(), e);
-        return NOT_RECORDED;
-      }
+              "Job {} of type {} was cancelled, ignoring the exception thrown by its handler afterwards",
+              job.id(),
+              job.type(),
+              thrown);
+      case Verdict.FailedByHandler _ ->
+          // The handler's explicit failure (and its retry settings) wins over the exception.
+          LOG.warn(
+              "Job {} of type {} was failed by its handler, ignoring the exception thrown afterwards",
+              job.id(),
+              job.type(),
+              thrown);
+      case Verdict.Suspended(JobSuspended.Suspension suspension) ->
+          // The handler caught the suspension and threw afterwards: the wait (or postponement)
+          // wins.
+          LOG.warn(
+              "Job {} of type {} was suspended {}, ignoring the exception thrown by its handler"
+                  + " afterwards",
+              job.id(),
+              job.type(),
+              suspension,
+              thrown);
+      case Verdict.TimedOut _, Verdict.Threw _, Verdict.Returned _ -> {}
     }
   }
 
-  private Outcome recordPostponement(DefaultJob job, JobSuspended.PostponeSuspension postponed) {
+  private Reported recordExplicitFailure(DefaultJob job, DefaultJobFailure failure) {
+    Integer remainingAttempts = failure.remainingAttempts();
+    return recordFailure(
+        job,
+        failure.message() == null ? "Job failed by its handler" : failure.message(),
+        null,
+        remainingAttempts == null ? null : job.attempts() + remainingAttempts,
+        failure.retryDelay());
+  }
+
+  private Reported recordCompletion(DefaultJob job) {
+    ClaimEnd end = end(job);
+    return recording(
+        job,
+        "Completing",
+        null,
+        () -> database.jobs().completeJob(end, job.resultJson()),
+        completed ->
+            new Reported(
+                JobAttemptOutcome.SUCCEEDED,
+                "SUCCEEDED" + nextOccurrenceOutcome(end, completed.nextOccurrenceScheduled())),
+        () ->
+            LOG.warn(
+                "Job {} was no longer running in this attempt's claim when completing it",
+                job.id()));
+  }
+
+  /**
+   * Writes an outcome (retried, see {@link #RECORDING}) and describes it.
+   *
+   * @param action what the write does, for the messages, e.g. {@code "Completing"}
+   * @param cause the failure being recorded, if any: attached to the exception of a failed write
+   * @param write the write; empty if the job is no longer running in this attempt's claim
+   * @param recorded describes what was written
+   * @param notRunning logs that the job was no longer running in this attempt's claim
+   */
+  private <R> Reported recording(
+      DefaultJob job,
+      String action,
+      Throwable cause,
+      Supplier<Optional<R>> write,
+      Function<R, Reported> recorded,
+      Runnable notRunning) {
     try {
-      var stored =
-          RECORDING.call(
-              "Postponing job " + job.id() + " failed",
-              () ->
-                  database
-                      .steps()
-                      .postponeJob(job.id(), job.lock(), postponed.stepName(), postponed.delay()));
-      if (stored.isEmpty()) {
-        LOG.warn(
-            "Job {} of type {} was postponed but was no longer running in this attempt's claim",
-            job.id(),
-            job.type());
+      Optional<R> written = RECORDING.call(action + " job " + job.id() + " failed", write);
+      if (written.isEmpty()) {
+        notRunning.run();
         return NOT_RUNNING;
       }
-      String step = postponed.stepName() == null ? "" : " in step " + postponed.stepName();
-      return new Outcome(
-          JobAttemptOutcome.POSTPONED,
-          stored.get().cancelRequested()
-              ? "POSTPONED" + step + ", due again right away (cancellation requested)"
-              : "POSTPONED" + step + " until " + stored.get().scheduledAt());
+      return recorded.apply(written.get());
     } catch (RuntimeException e) {
-      LOG.warn("Postponing job {} failed", job.id(), e);
+      if (cause != null) {
+        e.addSuppressed(cause);
+      }
+      LOG.warn("{} job {} failed", action, job.id(), e);
       return NOT_RECORDED;
     }
   }
 
-  private Outcome recordSuspension(DefaultJob job, JobSuspended.Wait suspension) {
-    try {
-      var suspended =
-          RECORDING.call(
-              "Suspending job " + job.id() + " failed",
-              () ->
-                  switch (suspension) {
-                    case JobSuspended.EventSuspension wait ->
-                        database
-                            .events()
-                            .suspendJob(
-                                job.id(),
-                                job.lock(),
-                                wait.stepName(),
-                                wait.eventName(),
-                                wait.eventKey());
-                    case JobSuspended.SleepSuspension sleep ->
-                        database.steps().suspendJob(job.id(), job.lock(), sleep.stepName());
-                    case JobSuspended.JobSuspension wait ->
-                        database
-                            .steps()
-                            .suspendAtChildJob(
-                                job.id(), job.lock(), wait.stepName(), wait.childJobId());
-                    case JobSuspended.PollSuspension poll ->
-                        database
-                            .steps()
-                            .suspendAtPoll(job.id(), job.lock(), poll.stepName(), !poll.resumed());
-                  });
-      if (suspended.isEmpty()) {
-        LOG.warn(
-            "Job {} of type {} waits in step {} but was no longer running in this attempt's claim",
-            job.id(),
-            job.type(),
-            suspension.stepName());
-        return NOT_RUNNING;
-      }
-      if (!suspended.get().waiting()) {
-        String rescheduled =
+  private Reported recordPostponement(DefaultJob job, JobSuspended.PostponeSuspension postponed) {
+    return recording(
+        job,
+        "Postponing",
+        null,
+        () ->
+            database
+                .steps()
+                .postponeJob(job.id(), job.lock(), postponed.stepName(), postponed.delay()),
+        stored -> {
+          String step = postponed.stepName() == null ? "" : " in step " + postponed.stepName();
+          return new Reported(
+              JobAttemptOutcome.POSTPONED,
+              stored.cancelRequested()
+                  ? "POSTPONED" + step + ", due again right away (cancellation requested)"
+                  : "POSTPONED" + step + " until " + stored.scheduledAt());
+        },
+        () ->
+            LOG.warn(
+                "Job {} of type {} was postponed but was no longer running in this attempt's claim",
+                job.id(),
+                job.type()));
+  }
+
+  private Reported recordSuspension(DefaultJob job, JobSuspended.Wait suspension) {
+    return recording(
+        job,
+        "Suspending",
+        null,
+        () ->
             switch (suspension) {
               case JobSuspended.EventSuspension wait ->
-                  wait.event() + " was published while suspending the job";
-              case JobSuspended.SleepSuspension _ ->
-                  "the wake-up time passed while suspending the job";
+                  database
+                      .events()
+                      .suspendJob(
+                          job.id(), job.lock(), wait.stepName(), wait.eventName(), wait.eventKey());
+              case JobSuspended.SleepSuspension sleep ->
+                  database.steps().suspendJob(job.id(), job.lock(), sleep.stepName());
               case JobSuspended.JobSuspension wait ->
-                  "job " + wait.childJobId() + " ended while suspending the job";
-              case JobSuspended.PollSuspension _ ->
-                  "the next check became due while suspending the job";
-            };
-        return new Outcome(JobAttemptOutcome.WAITING, "RESCHEDULED, " + rescheduled);
-      }
-      Instant waitUntil = suspended.get().waitUntil();
-      String outcome =
-          switch (suspension) {
-            case JobSuspended.EventSuspension wait ->
-                "WAITING for "
-                    + wait.event()
-                    + " in step "
-                    + wait.stepName()
-                    + (waitUntil == null ? "" : " until " + waitUntil);
-            case JobSuspended.SleepSuspension sleep ->
-                "SLEEPING in step " + sleep.stepName() + " until " + waitUntil;
-            case JobSuspended.JobSuspension wait ->
-                "WAITING for job "
-                    + wait.childJobId()
-                    + " in step "
-                    + wait.stepName()
-                    + (waitUntil == null ? "" : " until " + waitUntil);
-            case JobSuspended.PollSuspension poll ->
-                "POLLING in step "
-                    + poll.stepName()
-                    + " after check "
-                    + poll.check()
-                    + ", next check at "
-                    + waitUntil;
-          };
-      return new Outcome(JobAttemptOutcome.WAITING, outcome);
-    } catch (RuntimeException e) {
-      LOG.warn("Suspending job {} failed", job.id(), e);
-      return NOT_RECORDED;
-    }
+                  database
+                      .steps()
+                      .suspendAtChildJob(job.id(), job.lock(), wait.stepName(), wait.childJobId());
+              case JobSuspended.PollSuspension poll ->
+                  database
+                      .steps()
+                      .suspendAtPoll(job.id(), job.lock(), poll.stepName(), !poll.resumed());
+            },
+        suspended ->
+            new Reported(
+                JobAttemptOutcome.WAITING,
+                suspended.waiting()
+                    ? waitingOutcome(suspension, suspended.waitUntil())
+                    : "RESCHEDULED, " + rescheduledOutcome(suspension)),
+        () ->
+            LOG.warn(
+                "Job {} of type {} waits in step {} but was no longer running in this attempt's"
+                    + " claim",
+                job.id(),
+                job.type(),
+                suspension.stepName()));
+  }
+
+  /** Why a suspended job was scheduled right away instead of waiting. */
+  private static String rescheduledOutcome(JobSuspended.Wait suspension) {
+    return switch (suspension) {
+      case JobSuspended.EventSuspension wait ->
+          wait.event() + " was published while suspending the job";
+      case JobSuspended.SleepSuspension _ -> "the wake-up time passed while suspending the job";
+      case JobSuspended.JobSuspension wait ->
+          "job " + wait.childJobId() + " ended while suspending the job";
+      case JobSuspended.PollSuspension _ -> "the next check became due while suspending the job";
+    };
+  }
+
+  /** What a suspended job waits for. */
+  private static String waitingOutcome(JobSuspended.Wait suspension, Instant waitUntil) {
+    String until = waitUntil == null ? "" : " until " + waitUntil;
+    return switch (suspension) {
+      case JobSuspended.EventSuspension wait ->
+          "WAITING for " + wait.event() + " in step " + wait.stepName() + until;
+      case JobSuspended.SleepSuspension sleep ->
+          "SLEEPING in step " + sleep.stepName() + " until " + waitUntil;
+      case JobSuspended.JobSuspension wait ->
+          "WAITING for job " + wait.childJobId() + " in step " + wait.stepName() + until;
+      case JobSuspended.PollSuspension poll ->
+          "POLLING in step "
+              + poll.stepName()
+              + " after check "
+              + poll.check()
+              + ", next check at "
+              + waitUntil;
+    };
   }
 
   /**
    * Records the cancellation of a job: by its handler ({@code byHandler}), or on request right
    * after claiming it, without running the handler (which does not use up an attempt).
    */
-  private Outcome recordCancellation(DefaultJob job, String message, boolean byHandler) {
-    try {
-      NewJob next = nextOccurrence(job);
-      var cancelled =
-          RECORDING.call(
-              "Cancelling job " + job.id() + " failed",
-              () ->
-                  database
-                      .jobs()
-                      .cancelJob(
-                          job.id(), job.lock(), message, byHandler, next, job.parentJobId()));
-      if (cancelled.isPresent()) {
-        boolean compensating = cancelled.get().compensating();
-        LOG.info(
-            "Job {} of type {} cancelled {}{}{}",
-            job.id(),
-            job.type(),
-            byHandler
-                ? "by its handler (attempt " + job.attempts() + " of " + job.maxAttempts() + ")"
-                : "on request",
-            message == null ? "" : ": " + message,
-            compensating ? ", compensating its steps" : "");
-        return compensating
-            ? new Outcome(JobAttemptOutcome.COMPENSATING, "COMPENSATING after cancellation")
-            : new Outcome(
-                JobAttemptOutcome.CANCELLED,
-                "CANCELLED"
-                    + nextOccurrenceOutcome(next, cancelled.get().nextOccurrenceScheduled()));
-      } else {
-        LOG.warn(
-            "Job {} of type {} was cancelled but no longer running in this attempt's claim",
-            job.id(),
-            job.type());
-        return NOT_RUNNING;
-      }
-    } catch (RuntimeException e) {
-      LOG.warn("Recording cancellation of job {} failed", job.id(), e);
-      return NOT_RECORDED;
-    }
+  private Reported recordCancellation(DefaultJob job, String message, boolean byHandler) {
+    ClaimEnd end = end(job);
+    return recording(
+        job,
+        "Cancelling",
+        null,
+        () -> database.jobs().cancelJob(end, message, byHandler),
+        cancelled -> {
+          boolean compensating = cancelled.state() == JobState.COMPENSATING;
+          LOG.info(
+              "Job {} of type {} cancelled {}{}{}",
+              job.id(),
+              job.type(),
+              byHandler
+                  ? "by its handler (attempt " + job.attempts() + " of " + job.maxAttempts() + ")"
+                  : "on request",
+              message == null ? "" : ": " + message,
+              compensating ? ", compensating its steps" : "");
+          return compensating
+              ? new Reported(JobAttemptOutcome.COMPENSATING, "COMPENSATING after cancellation")
+              : new Reported(
+                  JobAttemptOutcome.CANCELLED,
+                  "CANCELLED" + nextOccurrenceOutcome(end, cancelled.nextOccurrenceScheduled()));
+        },
+        () ->
+            LOG.warn(
+                "Job {} of type {} was cancelled but no longer running in this attempt's claim",
+                job.id(),
+                job.type()));
   }
 
-  private Outcome recordFailure(DefaultJob job, Exception failure) {
+  private Reported recordFailure(DefaultJob job, Exception failure) {
     return recordFailure(job, failure.toString(), failure, null, null);
   }
 
@@ -600,200 +702,183 @@ public final class JobProcessor {
    * of its completed steps until the first step that has not completed, then runs them, latest step
    * first, and records the outcome.
    */
-  private Outcome compensate(DefaultJob job, JobSlot slot, Started started) {
-    JobHandler handler = handlers.apply(job.type());
-    if (handler == null) {
-      LOG.error(
-          "No handler registered for job type {} on bikesched node {} ({}), cannot compensate job"
-              + " {}",
-          job.type(),
-          nodeName,
-          nodeId,
-          job.id());
-      return recordCompensationFailure(
-          job,
-          null,
-          new BikeschedException(
-              "No handler registered for job type '"
-                  + job.type()
-                  + "' on bikesched node "
-                  + nodeName));
+  private Outcome compensate(
+      DefaultJob job, JobPhase.Compensate compensating, JobSlot slot, Started started) {
+    Optional<JobHandler> handler = handler(job, "compensate");
+    if (handler.isEmpty()) {
+      return recordCompensationFailure(job, compensating, null, noHandler(job));
     }
-    JobAttempt attempt = startAttempt(job, slot, started);
-    String compensatingStep = null;
-    Exception failure = null;
-    int compensated = 0;
-    try {
-      LOG.debug(
-          "Compensating job {} of type {} (compensation attempt {} of {}) on bikesched node {} ({})",
-          job.id(),
-          job.type(),
-          job.compensationAttempts(),
-          job.maxAttempts(),
-          nodeName,
-          nodeId);
-      try {
-        handler.handle(job);
-      } catch (CompensationReplayEnded e) {
-        // The replay reached a step that has not completed: nothing to compensate after it.
-      } catch (Exception e) {
-        LOG.debug(
-            "Handler of job {} threw while replaying it for compensation, compensating the steps"
-                + " completed before: {}",
-            job.id(),
-            e.toString());
-      }
-      for (DefaultJob.PendingCompensation compensation : job.compensations()) {
-        compensatingStep = compensation.stepName();
-        job.compensate(compensation);
-        compensated++;
-      }
-      compensatingStep = null;
-    } catch (Exception e) {
-      failure = e;
-    }
-    JobAttempt.End end = attempt.finish(); // no interrupt can arrive after this
-    Thread.interrupted(); // see runAndRecord
-    if (end == JobAttempt.End.ABANDONED) {
-      return new Outcome(null, hardTimeout.returned(job, failure));
-    }
-    if (job.isLockLost()) {
-      return abandon(job, failure);
-    }
-    if (failure != null) {
-      return recordCompensationFailure(
-          job,
-          compensatingStep,
-          end == JobAttempt.End.TIMED_OUT
-              ? new BikeschedException("Compensation timed out after " + attempt.timeout(), failure)
-              : failure);
-    }
-    return recordCompensated(job, compensated);
+    var progress = new CompensationProgress();
+    AttemptBody body =
+        () -> {
+          LOG.debug(
+              "Compensating job {} of type {} (compensation attempt {} of {}) on bikesched node {}"
+                  + " ({})",
+              job.id(),
+              job.type(),
+              compensating.attempt(),
+              job.maxAttempts(),
+              nodeName,
+              nodeId);
+          try {
+            handler.get().handle(job);
+          } catch (CompensationReplayEnded e) {
+            // The replay reached a step that has not completed: nothing to compensate after it.
+          } catch (Exception e) {
+            LOG.debug(
+                "Handler of job {} threw while replaying it for compensation, compensating the"
+                    + " steps completed before: {}",
+                job.id(),
+                e.toString());
+          }
+          for (CompensationReplay.PendingCompensation compensation : job.compensations()) {
+            progress.step = compensation.stepName();
+            job.compensate(compensation);
+            progress.compensated++;
+          }
+          progress.step = null;
+        };
+    return switch (runAttempt(job, slot, started, body)) {
+      case AttemptEnd.Abandoned(Exception failure) ->
+          new AbandonedReturned(hardTimeout.returned(job, failure));
+      case AttemptEnd.LockLost(Exception failure) -> abandon(job, failure);
+      case AttemptEnd.Ended(JobAttempt.End end, Exception failure, JobAttempt attempt)
+          when failure != null ->
+          recordCompensationFailure(
+              job,
+              compensating,
+              progress.step,
+              end == JobAttempt.End.TIMED_OUT
+                  ? new BikeschedException(
+                      "Compensation timed out after " + attempt.timeout(), failure)
+                  : failure);
+      case AttemptEnd.Ended _ -> recordCompensated(job, progress.compensated);
+    };
   }
 
-  private Outcome recordCompensated(DefaultJob job, int compensated) {
-    try {
-      NewJob next = nextOccurrence(job);
-      var ended =
-          RECORDING.call(
-              "Completing the compensation of job " + job.id() + " failed",
-              () ->
-                  database
-                      .jobs()
-                      .completeCompensation(
-                          job.id(), job.lock(), hasFailureHandler(job), next, job.parentJobId()));
-      if (ended.isEmpty()) {
-        LOG.warn(
-            "Job {} was no longer compensating in this attempt's claim when completing it",
-            job.id());
-        return NOT_RUNNING;
-      }
-      LOG.info(
-          "Job {} of type {} compensated {} step(s), it is {}",
-          job.id(),
-          job.type(),
-          compensated,
-          ended.get().state());
-      if (ended.get().failing()) {
-        return new Outcome(
-            JobAttemptOutcome.FAILING,
-            "COMPENSATED " + compensated + " step(s), FAILING: its failure handler runs next");
-      }
-      return new Outcome(
-          JobAttemptOutcome.COMPENSATED,
-          "COMPENSATED "
-              + compensated
-              + " step(s), "
-              + ended.get().state()
-              + nextOccurrenceOutcome(next, ended.get().nextOccurrenceScheduled()));
-    } catch (RuntimeException e) {
-      LOG.warn("Completing the compensation of job {} failed", job.id(), e);
-      return NOT_RECORDED;
-    }
+  /** How far the compensations of an attempt got; written and read on the job's thread only. */
+  private static final class CompensationProgress {
+
+    /** The compensation running (or failed), {@code null} if none. */
+    private String step;
+
+    /** The number of compensations that ran. */
+    private int compensated;
+  }
+
+  private Reported recordCompensated(DefaultJob job, int compensated) {
+    ClaimEnd end = end(job);
+    return recording(
+        job,
+        "Completing the compensation of",
+        null,
+        () -> database.jobs().completeCompensation(end),
+        ended -> {
+          LOG.info(
+              "Job {} of type {} compensated {} step(s), it is {}",
+              job.id(),
+              job.type(),
+              compensated,
+              ended.state());
+          return switch (ended.state()) {
+            case FAILING ->
+                new Reported(
+                    JobAttemptOutcome.FAILING,
+                    "COMPENSATED "
+                        + compensated
+                        + " step(s), FAILING: its failure handler runs next");
+            case CANCELLED, FAILED ->
+                new Reported(
+                    JobAttemptOutcome.COMPENSATED,
+                    "COMPENSATED "
+                        + compensated
+                        + " step(s), "
+                        + ended.state()
+                        + nextOccurrenceOutcome(end, ended.nextOccurrenceScheduled()));
+            case SCHEDULED, RUNNING, WAITING, SUCCEEDED, COMPENSATING, COMPENSATION_FAILED ->
+                throw unexpected(job, ended.state());
+          };
+        },
+        () ->
+            LOG.warn(
+                "Job {} was no longer compensating in this attempt's claim when completing it",
+                job.id()));
   }
 
   /** Records a failed compensation attempt; {@code step} is the failed compensation, if any. */
-  private Outcome recordCompensationFailure(DefaultJob job, String step, Exception failure) {
+  private Reported recordCompensationFailure(
+      DefaultJob job, JobPhase.Compensate compensating, String step, Exception failure) {
     String error =
         step == null ? failure.toString() : "Compensating step '" + step + "' failed: " + failure;
-    Duration retryAfter = backoffDelay(job, job.compensationAttempts());
-    try {
-      NewJob next = nextOccurrence(job);
-      var failed =
-          RECORDING.call(
-              "Recording the failed compensation of job " + job.id() + " failed",
-              () ->
-                  database
-                      .jobs()
-                      .failCompensation(
-                          job.id(),
-                          job.lock(),
-                          error,
-                          retryAfter,
-                          hasFailureHandler(job),
-                          next,
-                          job.parentJobId()));
-      if (failed.isEmpty()) {
-        LOG.warn(
-            "Compensating job {} of type {} failed and it was no longer compensating in this"
-                + " attempt's claim: {}",
-            job.id(),
-            job.type(),
-            error,
-            failure);
-        return NOT_RUNNING;
-      } else if (failed.get().failing()) {
-        LOG.error(
-            "Compensating job {} of type {} failed permanently after {} compensation attempt(s),"
-                + " running its failure handler: {}",
-            job.id(),
-            job.type(),
-            job.compensationAttempts(),
-            error,
-            failure);
-        return new Outcome(
-            JobAttemptOutcome.FAILING,
-            "FAILING after compensation attempt " + job.compensationAttempts());
-      } else if (failed.get().ended()) {
-        LOG.error(
-            "Compensating job {} of type {} failed permanently after {} compensation attempt(s):"
-                + " {}",
-            job.id(),
-            job.type(),
-            job.compensationAttempts(),
-            error,
-            failure);
-        return new Outcome(
-            JobAttemptOutcome.COMPENSATION_FAILED,
-            "COMPENSATION_FAILED"
-                + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled()));
-      } else {
-        String when =
-            retryAfter == null ? "as soon as possible" : "at " + failed.get().scheduledAt();
-        LOG.warn(
-            "Compensating job {} of type {} failed (compensation attempt {} of {}), compensating"
-                + " again {}: {}",
-            job.id(),
-            job.type(),
-            job.compensationAttempts(),
-            failed.get().maxAttempts(),
-            when,
-            error,
-            failure);
-        return new Outcome(
-            JobAttemptOutcome.COMPENSATION_RETRYING,
-            "COMPENSATING again (attempt "
-                + (job.compensationAttempts() + 1)
-                + " of "
-                + failed.get().maxAttempts()
-                + ") "
-                + when);
-      }
-    } catch (RuntimeException e) {
-      e.addSuppressed(failure);
-      LOG.warn("Recording the failed compensation of job {} failed", job.id(), e);
-      return NOT_RECORDED;
-    }
+    int attempt = compensating.attempt();
+    Duration retryAfter = backoffDelay(job, attempt);
+    ClaimEnd end = end(job);
+    return recording(
+        job,
+        "Recording the failed compensation of",
+        failure,
+        () -> database.jobs().failCompensation(end, error, retryAfter),
+        failed ->
+            switch (failed.state()) {
+              case FAILING -> {
+                LOG.error(
+                    "Compensating job {} of type {} failed permanently after {} compensation"
+                        + " attempt(s), running its failure handler: {}",
+                    job.id(),
+                    job.type(),
+                    attempt,
+                    error,
+                    failure);
+                yield new Reported(
+                    JobAttemptOutcome.FAILING, "FAILING after compensation attempt " + attempt);
+              }
+              case COMPENSATION_FAILED, FAILED -> {
+                LOG.error(
+                    "Compensating job {} of type {} failed permanently after {} compensation"
+                        + " attempt(s): {}",
+                    job.id(),
+                    job.type(),
+                    attempt,
+                    error,
+                    failure);
+                yield new Reported(
+                    JobAttemptOutcome.COMPENSATION_FAILED,
+                    "COMPENSATION_FAILED"
+                        + nextOccurrenceOutcome(end, failed.nextOccurrenceScheduled()));
+              }
+              case COMPENSATING -> {
+                String when =
+                    retryAfter == null ? "as soon as possible" : "at " + failed.scheduledAt();
+                LOG.warn(
+                    "Compensating job {} of type {} failed (compensation attempt {} of {}),"
+                        + " compensating again {}: {}",
+                    job.id(),
+                    job.type(),
+                    attempt,
+                    failed.maxAttempts(),
+                    when,
+                    error,
+                    failure);
+                yield new Reported(
+                    JobAttemptOutcome.COMPENSATION_RETRYING,
+                    "COMPENSATING again (attempt "
+                        + (attempt + 1)
+                        + " of "
+                        + failed.maxAttempts()
+                        + ") "
+                        + when);
+              }
+              case SCHEDULED, RUNNING, WAITING, SUCCEEDED, CANCELLED ->
+                  throw unexpected(job, failed.state());
+            },
+        () ->
+            LOG.warn(
+                "Compensating job {} of type {} failed and it was no longer compensating in this"
+                    + " attempt's claim: {}",
+                job.id(),
+                job.type(),
+                error,
+                failure));
   }
 
   /** Whether the job's type has a failure handler on this node: then it fails into FAILING. */
@@ -803,12 +888,11 @@ public final class JobProcessor {
 
   /**
    * Runs the failure handler of a {@code FAILING} job in one attempt (within the job's timeout,
-   * like {@link #runAttempt}) and records the outcome: the job ends once the handler returned,
+   * like {@link #runHandler}) and records the outcome: the job ends once the handler returned,
    * otherwise the handler runs again, until it ran {@code failureHandlerAttempts} times.
-   *
-   * @return the recorded outcome
    */
-  private Outcome runFailureHandler(DefaultJob job, JobSlot slot, Started started) {
+  private Outcome runFailureHandler(
+      DefaultJob job, JobPhase.HandleFailure failing, JobSlot slot, Started started) {
     JobFailureHandler handler = failureHandlers.apply(job.type());
     if (handler == null) {
       LOG.warn(
@@ -818,140 +902,147 @@ public final class JobProcessor {
           nodeName,
           nodeId,
           job.id(),
-          job.failingState());
+          failing.endState());
       return recordFailingEnded(
           job, "ended without failure handler: none registered on bikesched node " + nodeName);
     }
-    JobAttempt attempt = startAttempt(job, slot, started);
-    Exception failure = null;
-    try {
-      LOG.debug(
-          "Running the failure handler of job {} of type {} (run {} of {}) on bikesched node {}"
-              + " ({})",
-          job.id(),
-          job.type(),
-          job.failureAttempts(),
-          failureHandlerAttempts,
-          nodeName,
-          nodeId);
-      handler.handle(new DefaultFailedJob(job));
-    } catch (Exception e) {
-      failure = e;
-    }
-    JobAttempt.End end = attempt.finish(); // no interrupt can arrive after this
-    Thread.interrupted(); // see runAttempt
-    if (end == JobAttempt.End.ABANDONED) {
-      return new Outcome(null, hardTimeout.returned(job, failure));
-    }
-    if (end == JobAttempt.End.TIMED_OUT) {
-      failure =
-          new BikeschedException("Failure handler timed out after " + attempt.timeout(), failure);
-    }
-    if (failure == null) {
-      return recordFailingEnded(job, "failure handler ran");
-    }
-    return recordFailureHandlerFailure(job, failure);
+    AttemptBody body =
+        () -> {
+          LOG.debug(
+              "Running the failure handler of job {} of type {} (run {} of {}) on bikesched node {}"
+                  + " ({})",
+              job.id(),
+              job.type(),
+              failing.attempt(),
+              failureHandlerAttempts,
+              nodeName,
+              nodeId);
+          handler.handle(new DefaultFailedJob(job, failing));
+        };
+    return switch (runAttempt(job, slot, started, body)) {
+      case AttemptEnd.Abandoned(Exception failure) ->
+          new AbandonedReturned(hardTimeout.returned(job, failure));
+      case AttemptEnd.LockLost(Exception failure) -> abandon(job, failure);
+      case AttemptEnd.Ended(JobAttempt.End end, Exception failure, JobAttempt attempt)
+          when end == JobAttempt.End.TIMED_OUT ->
+          recordFailureHandlerFailure(
+              job,
+              failing,
+              new BikeschedException(
+                  "Failure handler timed out after " + attempt.timeout(), failure));
+      case AttemptEnd.Ended(_, Exception failure, _) when failure != null ->
+          recordFailureHandlerFailure(job, failing, failure);
+      case AttemptEnd.Ended _ -> recordFailingEnded(job, "failure handler ran");
+    };
   }
 
   /**
    * Records a failed run of a job's failure handler: it runs again after the node's backoff, or,
    * once it ran {@code failureHandlerAttempts} times, the job ends without it.
    */
-  private Outcome recordFailureHandlerFailure(DefaultJob job, Exception failure) {
-    if (job.failureAttempts() >= failureHandlerAttempts) {
+  private Reported recordFailureHandlerFailure(
+      DefaultJob job, JobPhase.HandleFailure failing, Exception failure) {
+    int run = failing.attempt();
+    if (run >= failureHandlerAttempts) {
       LOG.error(
           "Failure handler of job {} of type {} gave up after {} run(s), the job ends {}",
           job.id(),
           job.type(),
-          job.failureAttempts(),
-          job.failingState(),
+          run,
+          failing.endState(),
           failure);
       return recordFailingEnded(
-          job, "failure handler gave up after " + job.failureAttempts() + " run(s): " + failure);
+          job, "failure handler gave up after " + run + " run(s): " + failure);
     }
-    Duration retryAfter = backoffDelay(job, job.failureAttempts());
-    try {
-      var again =
-          RECORDING.call(
-              "Recording the failed failure handler of job " + job.id() + " failed",
-              () ->
-                  database
-                      .jobs()
-                      .retryFailureHandler(job.id(), job.lock(), failure.toString(), retryAfter));
-      if (again.isEmpty()) {
-        LOG.warn(
-            "Failure handler of job {} of type {} failed and the job was no longer failing in this"
-                + " attempt's claim",
-            job.id(),
-            job.type(),
-            failure);
-        return NOT_RUNNING;
-      }
-      LOG.warn(
-          "Failure handler of job {} of type {} failed (run {} of {}), it runs again at {}",
-          job.id(),
-          job.type(),
-          job.failureAttempts(),
-          failureHandlerAttempts,
-          again.get(),
-          failure);
-      return new Outcome(
-          JobAttemptOutcome.FAILURE_HANDLER_RETRYING,
-          "FAILING, failure handler runs again (run "
-              + (job.failureAttempts() + 1)
-              + " of "
-              + failureHandlerAttempts
-              + ") at "
-              + again.get());
-    } catch (RuntimeException e) {
-      e.addSuppressed(failure);
-      LOG.warn("Recording the failed failure handler of job {} failed", job.id(), e);
-      return NOT_RECORDED;
-    }
+    Duration retryAfter = backoffDelay(job, run);
+    return recording(
+        job,
+        "Recording the failed failure handler of",
+        failure,
+        () ->
+            database
+                .jobs()
+                .retryFailureHandler(job.id(), job.lock(), failure.toString(), retryAfter),
+        again -> {
+          LOG.warn(
+              "Failure handler of job {} of type {} failed (run {} of {}), it runs again at {}",
+              job.id(),
+              job.type(),
+              run,
+              failureHandlerAttempts,
+              again,
+              failure);
+          return new Reported(
+              JobAttemptOutcome.FAILURE_HANDLER_RETRYING,
+              "FAILING, failure handler runs again (run "
+                  + (run + 1)
+                  + " of "
+                  + failureHandlerAttempts
+                  + ") at "
+                  + again);
+        },
+        () ->
+            LOG.warn(
+                "Failure handler of job {} of type {} failed and the job was no longer failing in"
+                    + " this attempt's claim",
+                job.id(),
+                job.type(),
+                failure));
   }
 
   /** Ends a {@code FAILING} job in the state it was failing for. */
-  private Outcome recordFailingEnded(DefaultJob job, String detail) {
-    try {
-      NewJob next = nextOccurrence(job);
-      var ended =
-          RECORDING.call(
-              "Ending failing job " + job.id() + " failed",
-              () ->
-                  database
-                      .jobs()
-                      .endFailing(job.id(), job.lock(), detail, next, job.parentJobId()));
-      if (ended.isEmpty()) {
-        LOG.warn(
-            "Job {} of type {} was no longer failing in this attempt's claim when ending it",
-            job.id(),
-            job.type());
-        return NOT_RUNNING;
-      }
-      String state = ended.get().state();
-      LOG.info("Job {} of type {} is {}: {}", job.id(), job.type(), state, detail);
-      return new Outcome(
-          state.equals("COMPENSATION_FAILED")
-              ? JobAttemptOutcome.COMPENSATION_FAILED
-              : JobAttemptOutcome.FAILED,
-          state
-              + " after its failure handler"
-              + nextOccurrenceOutcome(next, ended.get().nextOccurrenceScheduled()));
-    } catch (RuntimeException e) {
-      LOG.warn("Ending failing job {} failed", job.id(), e);
-      return NOT_RECORDED;
-    }
+  private Reported recordFailingEnded(DefaultJob job, String detail) {
+    ClaimEnd end = end(job);
+    return recording(
+        job,
+        "Ending failing",
+        null,
+        () -> database.jobs().endFailing(end, detail),
+        ended -> {
+          LOG.info("Job {} of type {} is {}: {}", job.id(), job.type(), ended.state(), detail);
+          JobAttemptOutcome kind =
+              switch (ended.state()) {
+                case COMPENSATION_FAILED -> JobAttemptOutcome.COMPENSATION_FAILED;
+                case FAILED -> JobAttemptOutcome.FAILED;
+                case SCHEDULED, RUNNING, WAITING, SUCCEEDED, CANCELLED, COMPENSATING, FAILING ->
+                    throw unexpected(job, ended.state());
+              };
+          return new Reported(
+              kind,
+              ended.state()
+                  + " after its failure handler"
+                  + nextOccurrenceOutcome(end, ended.nextOccurrenceScheduled()));
+        },
+        () ->
+            LOG.warn(
+                "Job {} of type {} was no longer failing in this attempt's claim when ending it",
+                job.id(),
+                job.type()));
+  }
+
+  /** The ending claim of the job: who holds it and what follows from its end. */
+  private ClaimEnd end(DefaultJob job) {
+    return new ClaimEnd(job.id(), job.lock(), hasFailureHandler(job), followUp(job));
+  }
+
+  /** What follows once the job ended: by its origin. */
+  private FollowUp followUp(DefaultJob job) {
+    return switch (job.origin()) {
+      case JobOrigin.OneOff _ -> new FollowUp.None();
+      case JobOrigin.Child(UUID parentJobId) -> new FollowUp.NotifyParent(parentJobId);
+      case JobOrigin.Occurrence _ ->
+          nextOccurrence(job)
+              .<FollowUp>map(FollowUp.ScheduleNext::new)
+              .orElseGet(FollowUp.None::new);
+    };
   }
 
   /**
-   * The next occurrence to schedule when this job (an occurrence of a recurring job) ends; {@code
-   * null} for a one-off job, or if the recurring job is not registered on this node (a node that
-   * registers it recreates the occurrence when it starts polling) or its recurrence fails.
+   * The next occurrence to schedule when this occurrence of a recurring job ends; empty if the
+   * recurring job is not registered on this node (a node that registers it recreates the occurrence
+   * when it starts polling) or its recurrence fails.
    */
-  private NewJob nextOccurrence(DefaultJob job) {
-    if (job.recurrence() == null) {
-      return null;
-    }
+  private Optional<NewJob> nextOccurrence(DefaultJob job) {
     RecurringJob recurring = recurringJobs.apply(job.type());
     if (recurring == null) {
       LOG.debug(
@@ -960,23 +1051,29 @@ public final class JobProcessor {
           job.type(),
           nodeName,
           nodeId);
-      return null;
+      return Optional.empty();
     }
     try {
-      return recurring.occurrence(recurring.nextRun(job, Instant.now()));
+      return Optional.of(recurring.occurrence(recurring.nextRun(job, Instant.now())));
     } catch (RuntimeException e) {
       LOG.warn("Computing the next occurrence of recurring job {} failed", job.type(), e);
-      return null;
+      return Optional.empty();
     }
   }
 
-  private static String nextOccurrenceOutcome(NewJob next, boolean scheduled) {
-    if (next == null) {
-      return "";
-    }
-    return scheduled
-        ? ", next occurrence at " + next.scheduledAt()
-        : ", next occurrence already pending";
+  private static String nextOccurrenceOutcome(ClaimEnd end, boolean scheduled) {
+    return switch (end.followUp()) {
+      case FollowUp.ScheduleNext(NewJob next) ->
+          scheduled
+              ? ", next occurrence at " + next.scheduledAt()
+              : ", next occurrence already pending";
+      case FollowUp.None _, FollowUp.NotifyParent _ -> "";
+    };
+  }
+
+  /** A state the store does not return for the recorded change. */
+  private static IllegalStateException unexpected(DefaultJob job, JobState state) {
+    return new IllegalStateException("Unexpected state " + state + " of job " + job.id());
   }
 
   /**
@@ -1016,35 +1113,34 @@ public final class JobProcessor {
    * Records a failed attempt; {@code maxAttempts} and {@code retryAfter} override the job's maximum
    * number of attempts and the delay of the next attempt if not {@code null}.
    */
-  private Outcome recordFailure(
+  private Reported recordFailure(
       DefaultJob job, String error, Throwable cause, Integer maxAttempts, Duration retryAfter) {
     Duration retryIn = retryAfter == null ? backoffDelay(job) : retryAfter;
-    try {
-      NewJob next = nextOccurrence(job);
-      var failed =
-          RECORDING.call(
-              "Failing job " + job.id() + " failed",
-              () ->
-                  database
-                      .jobs()
-                      .failJob(
-                          job.id(),
-                          job.lock(),
-                          error,
-                          maxAttempts,
-                          retryIn,
-                          hasFailureHandler(job),
-                          next,
-                          job.parentJobId()));
-      if (failed.isEmpty()) {
-        LOG.warn(
-            "Job {} of type {} failed and was no longer running in this attempt's claim: {}",
-            job.id(),
-            job.type(),
-            error,
-            cause);
-        return NOT_RUNNING;
-      } else if (failed.get().compensating()) {
+    ClaimEnd end = end(job);
+    return recording(
+        job,
+        "Failing",
+        cause,
+        () -> database.jobs().failJob(end, error, maxAttempts, retryIn),
+        failed -> recordedFailure(job, error, cause, retryIn, end, failed),
+        () ->
+            LOG.warn(
+                "Job {} of type {} failed and was no longer running in this attempt's claim: {}",
+                job.id(),
+                job.type(),
+                error,
+                cause));
+  }
+
+  private Reported recordedFailure(
+      DefaultJob job,
+      String error,
+      Throwable cause,
+      Duration retryIn,
+      ClaimEnd end,
+      JobStore.FailedJob failed) {
+    return switch (failed.state()) {
+      case COMPENSATING -> {
         LOG.error(
             "Job {} of type {} failed permanently after {} attempt(s), compensating its steps: {}",
             job.id(),
@@ -1052,9 +1148,10 @@ public final class JobProcessor {
             job.attempts(),
             error,
             cause);
-        return new Outcome(
+        yield new Reported(
             JobAttemptOutcome.COMPENSATING, "COMPENSATING after attempt " + job.attempts());
-      } else if (failed.get().failing()) {
+      }
+      case FAILING -> {
         LOG.error(
             "Job {} of type {} failed permanently after {} attempt(s), running its failure handler:"
                 + " {}",
@@ -1063,8 +1160,9 @@ public final class JobProcessor {
             job.attempts(),
             error,
             cause);
-        return new Outcome(JobAttemptOutcome.FAILING, "FAILING after attempt " + job.attempts());
-      } else if (!failed.get().retried()) {
+        yield new Reported(JobAttemptOutcome.FAILING, "FAILING after attempt " + job.attempts());
+      }
+      case FAILED -> {
         LOG.error(
             "Job {} of type {} failed permanently after {} attempt(s): {}",
             job.id(),
@@ -1072,35 +1170,32 @@ public final class JobProcessor {
             job.attempts(),
             error,
             cause);
-        return new Outcome(
+        yield new Reported(
             JobAttemptOutcome.FAILED,
-            "FAILED" + nextOccurrenceOutcome(next, failed.get().nextOccurrenceScheduled()));
-      } else {
-        String when = retryIn == null ? "as soon as possible" : "at " + failed.get().scheduledAt();
+            "FAILED" + nextOccurrenceOutcome(end, failed.nextOccurrenceScheduled()));
+      }
+      case SCHEDULED -> {
+        String when = retryIn == null ? "as soon as possible" : "at " + failed.scheduledAt();
         LOG.warn(
             "Job {} of type {} failed (attempt {} of {}), it will be retried {}: {}",
             job.id(),
             job.type(),
             job.attempts(),
-            failed.get().maxAttempts(),
+            failed.maxAttempts(),
             when,
             error,
             cause);
-        return new Outcome(
+        yield new Reported(
             JobAttemptOutcome.RETRYING,
             "RESCHEDULED for attempt "
                 + (job.attempts() + 1)
                 + " of "
-                + failed.get().maxAttempts()
+                + failed.maxAttempts()
                 + " "
                 + when);
       }
-    } catch (RuntimeException e) {
-      if (cause != null) {
-        e.addSuppressed(cause);
-      }
-      LOG.warn("Recording failure of job {} failed", job.id(), e);
-      return NOT_RECORDED;
-    }
+      case RUNNING, WAITING, SUCCEEDED, CANCELLED, COMPENSATION_FAILED ->
+          throw unexpected(job, failed.state());
+    };
   }
 }

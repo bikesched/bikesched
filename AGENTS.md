@@ -61,12 +61,13 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
     `NodeCleanUp` (releases jobs of dead nodes, removes them)
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
     event waits via `DefaultEventWait`, sleeps, polls via `DefaultPollBuilder`; `JobSuspended` with
-    its sealed `Suspension` ends an attempt at a wait, sleep or poll; `StepGuard` rejects nested steps), `JobScheduler` (stores
-    built jobs, registers and removes recurring jobs), `JobRegistry` (handlers,
-    recurring jobs and payload types of a node), `JobAttempt` (timeout timer), `HardTimeout` (abandons
-    attempts that ignore their timeout), `JobSlot`, `RecurringJob`, `RecurringJobRepair`,
-    `HistoryCleanUp`, `JobCleanUp`, `DueJobsNotifier` (tells the own poller and, batched, the other
-    nodes about jobs made due), `DueTimes` (the poller's wake-ups, implemented in `claim`)
+    its sealed `Suspension` ends an attempt at a wait, sleep or poll; `StepGuard` rejects nested
+    steps; `CompensationReplay` replays the handler of a job claimed to be compensated),
+    `JobLogContext` (MDC of a job's thread), `JobScheduler` (stores built jobs, registers and
+    removes recurring jobs), `JobRegistry` (handlers, recurring jobs and payload types of a node),
+    `JobAttempt` (timeout timer), `HardTimeout` (abandons attempts that ignore their timeout),
+    `JobSlot`, `RecurringJob`, `RecurringJobRepair`, `HistoryCleanUp`, `JobCleanUp`,
+    `DueJobsNotifier` (tells the own poller and, batched, the other nodes about jobs made due), `DueTimes` (the poller's wake-ups, implemented in `claim`)
   - `internal.job.claim`: `JobPoller` (claiming and running jobs: poller, job slots, job threads,
     timeouts, wake-ups; configured by `JobPollerSettings`), `WakeUpTimer` (one timer, confined to
     the poller thread), `JobNotificationListener` (`LISTEN` connection, reconnects, self-check);
@@ -74,11 +75,11 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   - `internal.event`: `DefaultEventBuilder`, `EventCleanUp`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
     (`ExecutorUtil`: shutting down executors; `ValidationUtil`: name and key checks matching the
-    schema's length constraints, message
-    truncation)
+    schema's length constraints, positive durations, message truncation)
   - `internal.database` (+ `.schema`): `Database`, `DatabaseAccess`, `Sql`, the stores and the rows
-    they read and write (`NewJob`, `DefaultJobInfo`), `DueJobs` (receives the jobs committed writes
-    made due), `DueJobsListening` (the listening connection)
+    they read and write (`NewJob`, `DefaultJobInfo`; a claimed job's `JobPhase` and `JobOrigin`,
+    `ClaimEnd` with its `FollowUp` for ending it, the `StepKind` and `StepState` enums), `DueJobs`
+    (receives the jobs committed writes made due), `DueJobsListening` (the listening connection)
 - The API packages reach the implementation only through the factories in `internal.Internals`
   (plus the `Settings` record the builder fills, and `internal.util`); public API signatures never mention internal
   types. `ArchitectureTest` (ArchUnit) enforces both rules and the package dependencies above.
