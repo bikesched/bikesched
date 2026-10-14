@@ -117,13 +117,21 @@ types that become due before its next interval poll, e.g. delayed jobs scheduled
 
 ## Statement timeout
 
-Without a `statementTimeout`, a statement runs as long as the data source allows: a connection
-that hangs, e.g. after a database failover without a TCP reset, can then block polling or a job
-indefinitely. Set it a good deal above your slowest expected statement (e.g. 30 seconds), or
-configure the equivalent in the data source or pool (the PostgreSQL driver's `socketTimeout`, or
-`options=-c statement_timeout=30s` in the JDBC URL). The node applies it per statement as JDBC
-query timeout, so no session setting is left on pooled connections; it also covers statements of
-[transactional scheduling](jobs.md#transactional-scheduling) on the caller's connection.
+Without a `statementTimeout`, a statement runs as long as the data source allows. Set it a good
+deal above your slowest expected statement (e.g. 30 seconds), or configure the equivalent in the
+data source or pool (`options=-c statement_timeout=30s` in the JDBC URL). The node applies it per
+statement as JDBC query timeout, so no session setting is left on pooled connections; it also
+covers statements of [transactional scheduling](jobs.md#transactional-scheduling) on the caller's
+connection.
+
+A statement timeout does not help against a connection that hangs, e.g. after a database failover
+without a TCP reset: the driver sends the cancel request on a new connection, but the answer would
+arrive on the hanging one, so the statement keeps waiting and can block polling indefinitely. Set
+the PostgreSQL driver's `socketTimeout` (in seconds, e.g. `socketTimeout=60` in the JDBC URL or as
+a data source property) above the statement timeout and your slowest statement: a read that waits
+longer fails and the pool replaces the connection. The connection a node holds to [listen for due
+jobs](#due-jobs-start-right-away) is not affected: the driver waits for notifications with a
+timeout of its own.
 
 ## JSON mapping
 
