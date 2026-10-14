@@ -23,7 +23,9 @@ public interface JobListener {
 
   /**
    * Called once the outcome of an attempt was recorded (or could not be recorded, see {@link
-   * org.bikesched.job.listener.JobAttemptOutcome#NOT_RECORDED}).
+   * org.bikesched.job.listener.JobAttemptOutcome#NOT_RECORDED}). A next attempt due right away
+   * (e.g. the failure handler or a compensation) can be claimed on another thread in the meantime,
+   * so its {@link #onJobClaimed(JobClaim)} may come first.
    *
    * @param result the attempt's result
    */
