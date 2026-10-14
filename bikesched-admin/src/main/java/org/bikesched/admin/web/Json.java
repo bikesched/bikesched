@@ -74,6 +74,16 @@ final class Json {
     };
   }
 
+  /** Why the text is not JSON, {@code null} if it is. */
+  static String invalidReason(String json) {
+    try {
+      JsonParser.any().withLazyNumbers().from(json);
+      return null;
+    } catch (JsonParserException e) {
+      return e.getMessage();
+    }
+  }
+
   private static Object parse(String json) {
     if (json == null) {
       return null;

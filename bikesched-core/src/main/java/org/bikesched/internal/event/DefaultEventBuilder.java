@@ -54,6 +54,12 @@ public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
   }
 
   @Override
+  public NodeEventBuilder<P> payloadJson(String json) {
+    this.payload = json;
+    return this;
+  }
+
+  @Override
   public NodeEventBuilder<P> retention(Duration retention) {
     Objects.requireNonNull(retention, "retention");
     if (retention.isNegative()) {

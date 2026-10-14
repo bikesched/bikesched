@@ -5,6 +5,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -32,6 +33,7 @@ import org.bikesched.admin.WaitingStep;
 import org.bikesched.admin.web.access.AccessGrant;
 import org.bikesched.admin.web.access.AccessLevel;
 import org.bikesched.admin.web.access.AdminAccess;
+import org.bikesched.event.NodeEventBuilder;
 import org.bikesched.job.JobState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -146,7 +148,12 @@ final class AdminHandler {
                   .put(
                       "names",
                       admin.findEventNames().stream()
-                          .map(n -> Json.object().put("name", n.name()).put("count", n.count()))
+                          .map(
+                              n ->
+                                  Json.object()
+                                      .put("name", n.name())
+                                      .put("count", n.count())
+                                      .put("waiting", n.waiting()))
                           .toList());
           case "/api/waiting" -> waiting(admin, params);
           case "/api/recurring-runs" -> recurringRuns(admin, params);
@@ -173,7 +180,8 @@ final class AdminHandler {
 
   private AdminResponse post(AdminRequest request, String user, AccessLevel level) {
     Matcher action = JOB_ACTION.matcher(request.path());
-    if (!action.matches()) {
+    boolean publish = request.path().equals("/api/events");
+    if (!action.matches() && !publish) {
       boolean known = request.path().startsWith("/api/") || request.path().equals("/");
       return known
           ? error(405, "Method not allowed", Map.of("Allow", "GET"))
@@ -184,10 +192,17 @@ final class AdminHandler {
     }
     if (!level.allows(AccessLevel.OPERATE)) {
       return error(
-          403, readOnly ? "The admin is read-only" : "Viewers cannot change jobs", Map.of());
+          403,
+          readOnly
+              ? "The admin is read-only"
+              : publish ? "Viewers cannot publish events" : "Viewers cannot change jobs",
+          Map.of());
+    }
+    String by = user == null ? "" : " by " + user;
+    if (publish) {
+      return publish(request, by);
     }
     UUID jobId = id(action.group(1));
-    String by = user == null ? "" : " by " + user;
     if (action.group(2).equals("retry")) {
       boolean retried = bikesched.retry(jobId);
       if (retried) {
@@ -200,6 +215,50 @@ final class AdminHandler {
       LOG.info("Job {} cancelled from the admin UI{}", jobId, by);
     }
     return json(request, 200, Json.object().put("cancelled", cancelled));
+  }
+
+  /**
+   * Publishes an event from the form-encoded body: {@code name}, {@code key}, {@code payload} (JSON
+   * text), {@code retention} (ISO-8601) and {@code idempotencyKey}, empty ones left out.
+   */
+  private AdminResponse publish(AdminRequest request, String by) {
+    Map<String, String> form = parseQuery(request.body());
+    String name = blankToNull(form.get("name"));
+    String key = blankToNull(form.get("key"));
+    if (name == null || key == null) {
+      throw new BadRequest("An event needs a name and a key");
+    }
+    String payload = blankToNull(form.get("payload"));
+    if (payload != null) {
+      String invalid = Json.invalidReason(payload);
+      if (invalid != null) {
+        throw new BadRequest("The payload is not valid JSON: " + invalid);
+      }
+    }
+    NodeEventBuilder<Object> event = bikesched.newEvent(name, key).payloadJson(payload);
+    String retention = blankToNull(form.get("retention"));
+    if (retention != null) {
+      try {
+        event.retention(Duration.parse(retention));
+      } catch (DateTimeParseException e) {
+        throw new BadRequest("Malformed retention: " + retention);
+      }
+    }
+    String idempotencyKey = blankToNull(form.get("idempotencyKey"));
+    if (idempotencyKey != null) {
+      event.idempotencyKey(idempotencyKey);
+    }
+    UUID eventId = event.publish();
+    // Waiting steps receive the event as it is published, so they are counted right away.
+    int received = bikesched.admin().findEvent(eventId).map(EventSummary::receivedBy).orElse(0);
+    LOG.info(
+        "Event {} ({} / {}) published from the admin UI{}, received by {}",
+        eventId,
+        name,
+        key,
+        by,
+        received);
+    return json(request, 200, Json.object().put("id", eventId).put("received", received));
   }
 
   private Json.Obj jobs(Admin admin, Map<String, String> params) {

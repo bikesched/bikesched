@@ -22,6 +22,9 @@ public interface StepEventBuilder<P extends @Nullable Object> extends EventBuild
   StepEventBuilder<P> payload(@Nullable P payload);
 
   @Override
+  StepEventBuilder<P> payloadJson(@Nullable String json);
+
+  @Override
   StepEventBuilder<P> retention(java.time.Duration retention);
 
   /**

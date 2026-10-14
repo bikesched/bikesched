@@ -124,7 +124,8 @@ public interface Admin {
   Optional<String> findEventPayload(UUID eventId);
 
   /**
-   * Counts the unexpired events of every name.
+   * Counts the unexpired events and the waiting steps of every event name: a name that steps wait
+   * for but nobody published yet is listed with no events.
    *
    * @return one entry per event name, by name
    */

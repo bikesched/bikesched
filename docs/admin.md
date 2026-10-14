@@ -7,9 +7,10 @@ weight: 13
 
 The module `bikesched-admin` (package `org.bikesched.admin.web`) serves a small page showing what
 the jobs of a bikesched database are doing: jobs by type and state, a job with its steps, history,
-child jobs and last error, events with the jobs that published, received or still wait for them,
-and the nodes with their last heartbeat. Failed jobs can be retried and active ones cancelled from
-the page. It is embedded in the application that runs bikesched; there is no separate service.
+child jobs and last error, events with the jobs that published, received or still wait for them, and
+the nodes, online or offline. Failed jobs can be retried and active ones cancelled, and events
+published, from the page. It is embedded in the application that runs bikesched; there is no
+separate service.
 
 ```java
 Bikesched bikesched = Bikesched.builder().dataSource(dataSource).build();
@@ -58,29 +59,30 @@ alongside an unrelocated nanojson dependency.
 
 | Option | Default | Effect |
 |---|---|---|
-| `access(AdminAccess)` | `AdminAccess.open()` | who may see the page and who may retry and cancel, see [Access](#access) |
-| `readOnly(true)` | `false` | no retry and cancel for anyone: every access level is capped at viewing |
+| `access(AdminAccess)` | `AdminAccess.open()` | who may see the page and who may retry, cancel and publish, see [Access](#access) |
+| `readOnly(true)` | `false` | no retry, cancel or publish for anyone: every access level is capped at viewing |
 | `showPayloads(true)` | `false` | shows job payloads and results and event payloads, see [Payloads](#payloads) |
 
 ## Access
 
 An `AdminAccess` (package `org.bikesched.admin.web.access`, with `AccessGrant` and `AccessLevel`)
 decides per request what it may do: `NONE`, `VIEW` (the page and every `GET` route) or `OPERATE`
-(also retry and cancel). The default, `AdminAccess.open()`, lets every request operate: protect the
-path in the application (Spring Security, a reverse proxy) or pick one of the options below.
+(also retry, cancel and publish events). The default, `AdminAccess.open()`, lets every request
+operate: protect the path in the application (Spring Security, a reverse proxy) or pick one of the
+options below.
 
 HTTP Basic authentication with operators and viewers is built in:
 
 ```java
 BikeschedAdmin.of(bikesched)
     .access(AdminAccess.basicAuth()
-        .operator("ops", System.getenv("ADMIN_OPS_PASSWORD"))         // may retry and cancel
+        .operator("ops", System.getenv("ADMIN_OPS_PASSWORD"))         // may retry, cancel, publish
         .viewer("support", System.getenv("ADMIN_SUPPORT_PASSWORD"))   // read only
         .build());
 ```
 
 - Without valid credentials the admin answers `401` with a `WWW-Authenticate` challenge, so the
-  browser shows its login dialog. A viewer's retry or cancel answers `403`.
+  browser shows its login dialog. A viewer's retry, cancel or publish answers `403`.
 - Passwords are kept as SHA-256 digests and compared in constant time. A failed login is logged
   with the user name and the client's address, never with the password.
 - Basic authentication sends the password with every request: serve the admin over HTTPS (the
@@ -99,10 +101,11 @@ AdminAccess byProxy = request -> {
 
 A custom access without a `challenge()` answers denied requests with `403`.
 
-Retry and cancel are `POST` requests that must carry the header `X-Bikesched-Admin: 1`, which the
-page sets. A form or image on another site cannot send it, so a signed-in browser cannot be made to
-change jobs from elsewhere. Every response carries a strict `Content-Security-Policy` (only the
-admin's own files, no inline scripts or styles) and `X-Content-Type-Options: nosniff`.
+Retry, cancel and publish are `POST` requests that must carry the header `X-Bikesched-Admin: 1`,
+which the page sets. A form or image on another site cannot send it, so a signed-in browser cannot
+be made to change jobs or publish events from elsewhere. Every response carries a strict
+`Content-Security-Policy` (only the admin's own files, no inline scripts or styles) and
+`X-Content-Type-Options: nosniff`.
 
 ## Payloads
 
@@ -114,11 +117,12 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
 ## The page
 
 - **Header**: the Jobs and Events tabs with their number of jobs and unexpired events, the
-  registered nodes, alive (heartbeat within the node timeout) or dead, and a reload button. Each
+  registered nodes, online (heartbeat within the node timeout) or offline, and a reload button. Each
   tab returns to its list with the filters it was left with; the open tab clears them.
 - **Type and name**: above the job list a select box with the job types and their number of jobs
   (and failed jobs or the recurrence), above the event list one with the event names and their
-  number of unexpired events. Both have a search field, so many types stay usable. A repeat icon
+  number of unexpired events and waiting jobs (a name jobs wait for but nobody published yet is
+  listed too). Both have a search field, so many types stay usable. A repeat icon
   marks recurring job types.
 - **Jobs**: newest first, filtered by type and by one or more states; "Older jobs" loads the next
   page. A child job names its parent below its type; a run of a recurring job has the repeat icon
@@ -141,16 +145,24 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   job's step or outside a job), the jobs that received it and its payload; "latest" marks the event
   a new wait for its name and key would receive. The "Waiting jobs" tab lists the event waits still
   waiting for the name.
+- **Publish event** (operators): a form in the detail panel, opened by the button above the event
+  list, by "Publish…" on a waiting job or "Publish event…" on a waiting step in a job's detail (name
+  and key filled in) or by "Publish similar" in an event's detail (copied from that event). Picking
+  a known name copies key and payload from its latest unexpired event (the payload only with
+  `showPayloads(true)`); the keys jobs wait for are offered below the key. Before publishing, the
+  form lists the jobs waiting for that name and key, which continue right away; the payload must be
+  JSON. Retention (node default, 0, 1 hour, 1 day, 7 days) and an idempotency key are optional. The
+  server logs every published event with the user.
 
 Every view is a link (`#/jobs?type=send-invoice&state=FAILED`, `#/jobs?id=3f2a9c1e`, `#/jobs/{id}`,
-`#/events/{id}`), so
+`#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`), so
 it can be shared or put into an alert. The page follows the browser's light or dark mode.
 
 ## Other HTTP servers
 
-`handle(AdminRequest)` works with any framework: translate the request (method, path relative to
-the mount point, raw query string, headers, client address) and write the `AdminResponse` back. A
-servlet, for example:
+`handle(AdminRequest)` works with any framework: translate the request (method, path relative to the
+mount point, raw query string, headers, client address, body as text) and write the `AdminResponse`
+back. A servlet, for example:
 
 ```java
 BikeschedAdmin admin = BikeschedAdmin.of(bikesched);
@@ -160,7 +172,8 @@ protected void service(HttpServletRequest req, HttpServletResponse resp) throws 
   Collections.list(req.getHeaderNames()).forEach(name -> headers.put(name, req.getHeader(name)));
   String path = req.getPathInfo() == null ? "/" : req.getPathInfo();
   AdminResponse response = admin.handle(new AdminRequest(
-      req.getMethod(), path, req.getQueryString(), headers, req.getRemoteAddr()));
+      req.getMethod(), path, req.getQueryString(), headers, req.getRemoteAddr(),
+      new String(req.getInputStream().readNBytes(1024 * 1024), StandardCharsets.UTF_8)));
   resp.setStatus(response.status());
   response.headers().forEach(resp::setHeader);
   resp.getOutputStream().write(response.body());
@@ -184,16 +197,17 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/events?name=&key=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix |
 | GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id starts with `id`, as for jobs |
 | GET | `api/events/{id}` | `{"event", "steps", "payloadsShown"}`, plus `payload` with `showPayloads(true)` |
-| GET | `api/event-names` | `{"names": [{"name", "count"}]}` |
+| GET | `api/event-names` | `{"names": [{"name", "count", "waiting"}]}`: unexpired events and waiting steps per name |
 | GET | `api/recurring-runs?type=&limit=` | `{"type", "pending", "previous": [...]}`: the pending run of a recurring job (`null` if none) and its latest ended runs, newest first |
 | GET | `api/waiting?name=&key=&limit=` | `{"steps": [...]}`: event waits still waiting for the name, longest waiting first |
 | GET | `api/nodes` | `{"nodes": [{"id", "name", "startedAt", "lastHeartbeatAt", "alive"}]}` |
 | GET | `api/me` | `{"user", "level", "readOnly", "payloadsShown"}` |
 | POST | `api/jobs/{id}/retry` | `{"retried": true or false}` (only failed jobs are retried) |
 | POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI") |
+| POST | `api/events` | `{"id", "received"}`: publishes an event from a form-encoded body (`name`, `key`, `payload` as JSON text, `retention` as ISO-8601, `idempotencyKey`); `received` counts the steps that got it at once |
 
-Errors are `{"error": "..."}` with `400` (malformed parameter or id), `401`/`403` (access), `404`
-(unknown job, event or path), `405` (wrong method) or `503` (the database cannot be reached).
+Errors are `{"error": "..."}` with `400` (malformed parameter, id or event), `401`/`403` (access),
+`404` (unknown job, event or path), `405` (wrong method) or `503` (the database cannot be reached).
 
 ## Lookups in code
 

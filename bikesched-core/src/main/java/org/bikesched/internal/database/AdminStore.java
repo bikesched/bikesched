@@ -129,10 +129,16 @@ public final class AdminStore {
   private static final String FIND_EVENT_PAYLOAD_SQL =
       "select coalesce(payload::text, 'null') from bikesched_events where id = ?";
 
+  // The waiting steps use bikesched_steps_waiting_idx.
   private static final String FIND_EVENT_NAMES_SQL =
       """
-            select name, count(*) from bikesched_events
-             where expires_at > now() group by name order by name""";
+            select name, sum(events)::int, sum(waiting)::int
+              from (select name, count(*) as events, 0 as waiting from bikesched_events
+                     where expires_at > now() group by name
+                    union all
+                    select event_name, 0, count(*) from bikesched_steps
+                     where kind = 'EVENT_WAIT' and state = 'WAITING' group by event_name) names
+             group by name order by name""";
 
   private static final String FIND_EVENT_STEPS_SQL =
       """
@@ -332,7 +338,8 @@ public final class AdminStore {
     return access.inReadOnlyTransaction(
         db ->
             db.list(
-                FIND_EVENT_NAMES_SQL, row -> new EventNameSummary(row.string(1), row.integer(2))),
+                FIND_EVENT_NAMES_SQL,
+                row -> new EventNameSummary(row.string(1), row.integer(2), row.integer(3))),
         e -> new BikeschedException("Counting bikesched events failed", e));
   }
 
