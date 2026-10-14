@@ -3,7 +3,7 @@
 // route.
 import { getBody } from './api.js';
 import { EventsView } from './events.js';
-import { ago, parseHash, plural, toHash } from './format.js';
+import { parseHash, plural, toHash } from './format.js';
 import { html, render, useEffect, useRef, useState } from './html.js';
 import { JobsView } from './jobs.js';
 
@@ -11,26 +11,16 @@ const navigate = (route) => {
   location.hash = toHash(route);
 };
 
-function useNow(intervalMs) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
-
 function NodesSummary({ nodes }) {
-  const dead = nodes.filter((node) => !node.alive).length;
+  const offline = nodes.filter((node) => !node.alive).length;
   return html`
-    <span class=${`nodes-summary ${dead ? 'dead' : 'alive'}`} title=${nodes.map((node) => `${node.name}: ${node.alive ? 'alive' : 'dead'}`).join('\n')}>
+    <span class=${`nodes-summary ${offline ? 'offline' : 'online'}`} title=${nodes.map((node) => `${node.name}: ${node.alive ? 'online' : 'offline'}`).join('\n')}>
       <span class="node-dot" aria-hidden="true"></span>
-      ${dead ? `${dead} of ${plural(nodes.length, 'node', 'nodes')} dead` : plural(nodes.length, 'node', 'nodes')}
+      ${offline ? `${offline} of ${plural(nodes.length, 'node', 'nodes')} offline` : plural(nodes.length, 'node', 'nodes')}
     </span>`;
 }
 
 function Header({ me, nodes, tabs, onReload }) {
-  const now = useNow(5000);
   const role = me?.level === 'OPERATE' ? 'operator' : 'viewer';
   return html`
     <header class="topbar">
@@ -47,10 +37,10 @@ function Header({ me, nodes, tabs, onReload }) {
         <span class="nodes-label muted small">Nodes</span>
         ${nodes.map(
           (node) => html`
-            <span class=${`node ${node.alive ? 'alive' : 'dead'}`} title=${`${node.name}: ${node.alive ? 'alive' : 'no heartbeat within the node timeout'}`}>
+            <span class=${`node ${node.alive ? 'online' : 'offline'}`} title=${`${node.name}: ${node.alive ? 'online' : 'offline, no heartbeat within the node timeout'}`}>
               <span class="node-dot" aria-hidden="true"></span>
               <span class="mono">${node.name}</span>
-              <span class="muted">${node.alive ? ago(node.lastHeartbeatAt, now) : 'dead'}</span>
+              ${!node.alive && html`<span class="muted">offline</span>`}
             </span>`,
         )}
         ${nodes.length > 0 && html`<${NodesSummary} nodes=${nodes} />`}

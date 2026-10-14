@@ -31,7 +31,8 @@ SQL. A typed JSON payload cannot go through `EventBuilder.payload(P)` with a con
 In scope:
 
 - A "Publish event" form in the event detail panel, opened from the Events tab, from a row of
-  the Waiting jobs tab (name and key filled in) and from an event's detail ("Publish similar").
+  the Waiting jobs tab or a waiting step in a job's detail (name and key filled in) and from an
+  event's detail ("Publish similar").
 - Name: a text input with suggestions (the known names); picking one copies key and payload from
   its latest unexpired event. Key, payload (JSON), retention, idempotency key.
 - Before publishing: the jobs waiting for that name and key; the keys jobs wait for, one click
@@ -112,3 +113,5 @@ inside JSON); `Admin.publishEvent` (the `Admin` interface stays read-only lookup
 - Without `showPayloads(true)` the prefill copies only the key, and the payload hint says why.
 - A "Publish…" column on the Waiting jobs tab opens the form with that step's name and key; the
   key is kept while the payload comes from the latest event of the name.
+- A waiting `EVENT_WAIT` step in a job's detail has "Publish event…" too, opening the same form
+  next to the published events of its name.

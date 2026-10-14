@@ -8,8 +8,8 @@ weight: 13
 The module `bikesched-admin` (package `org.bikesched.admin.web`) serves a small page showing what
 the jobs of a bikesched database are doing: jobs by type and state, a job with its steps, history,
 child jobs and last error, events with the jobs that published, received or still wait for them, and
-the nodes with their last heartbeat. Failed jobs can be retried and active ones cancelled, and
-events published, from the page. It is embedded in the application that runs bikesched; there is no
+the nodes, online or offline. Failed jobs can be retried and active ones cancelled, and events
+published, from the page. It is embedded in the application that runs bikesched; there is no
 separate service.
 
 ```java
@@ -117,7 +117,7 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
 ## The page
 
 - **Header**: the Jobs and Events tabs with their number of jobs and unexpired events, the
-  registered nodes, alive (heartbeat within the node timeout) or dead, and a reload button. Each
+  registered nodes, online (heartbeat within the node timeout) or offline, and a reload button. Each
   tab returns to its list with the filters it was left with; the open tab clears them.
 - **Type and name**: above the job list a select box with the job types and their number of jobs
   (and failed jobs or the recurrence), above the event list one with the event names and their
@@ -146,13 +146,13 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   a new wait for its name and key would receive. The "Waiting jobs" tab lists the event waits still
   waiting for the name.
 - **Publish event** (operators): a form in the detail panel, opened by the button above the event
-  list, by "Publish…" on a waiting job (name and key filled in) or by "Publish similar" in an
-  event's detail (copied from that event). Picking a known name copies key and payload from its
-  latest unexpired event (the payload only with `showPayloads(true)`); the keys jobs wait for are
-  offered below the key. Before publishing, the form lists the jobs waiting for that name and key,
-  which continue right away; the payload must be JSON. Retention (node default, 0, 1 hour, 1 day,
-  7 days) and an idempotency key are optional. The server logs every published event with the
-  user.
+  list, by "Publish…" on a waiting job or "Publish event…" on a waiting step in a job's detail (name
+  and key filled in) or by "Publish similar" in an event's detail (copied from that event). Picking
+  a known name copies key and payload from its latest unexpired event (the payload only with
+  `showPayloads(true)`); the keys jobs wait for are offered below the key. Before publishing, the
+  form lists the jobs waiting for that name and key, which continue right away; the payload must be
+  JSON. Retention (node default, 0, 1 hour, 1 day, 7 days) and an idempotency key are optional. The
+  server logs every published event with the user.
 
 Every view is a link (`#/jobs?type=send-invoice&state=FAILED`, `#/jobs?id=3f2a9c1e`, `#/jobs/{id}`,
 `#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`), so

@@ -256,7 +256,7 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
         ${trimmedName && trimmedKey &&
         html`<div class=${`preview${receivers.length > 0 ? ' preview-receivers' : ''}`} role="status">
           ${receivers.length > 0
-            ? html`<strong>${plural(receivers.length, 'job waits', 'jobs wait')} for ${trimmedName} / ${trimmedKey} and continue right away</strong>
+            ? html`<strong>${plural(receivers.length, 'job waits', 'jobs wait')} for ${trimmedName} / ${trimmedKey} and ${receivers.length === 1 ? 'continues' : 'continue'} right away</strong>
                 <ul class="links">
                   ${receivers.map(
                     (step) => html`<li class="row">

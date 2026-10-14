@@ -349,7 +349,7 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
         )}
       </div>
       <div class="detail-body" role="tabpanel">
-        ${shownTab === 'steps' && html`<${Steps} steps=${steps} ended=${ENDED.includes(job.state)} />`}
+        ${shownTab === 'steps' && html`<${Steps} steps=${steps} ended=${ENDED.includes(job.state)} operator=${operator} />`}
         ${shownTab === 'recurrence' && html`<${Recurrence} job=${job} />`}
         ${shownTab === 'history' && html`<${History} history=${history} nodes=${nodes} />`}
         ${shownTab === 'data' && html`<${JobData} data=${data} ended=${ENDED.includes(job.state)} />`}
@@ -400,7 +400,15 @@ function AncestorPath({ ancestors, job }) {
 // Steps that have not ended while their job has not: their duration counts up.
 const OPEN_STEP_STATES = ['RUNNING', 'WAITING'];
 
-function Steps({ steps, ended }) {
+// Opens the publish form for the event a step waits for, next to the name's published events.
+const publishHref = (step) =>
+  toHash({
+    section: 'events',
+    id: 'new',
+    params: { name: step.eventName, pubName: step.eventName, pubKey: step.eventKey },
+  });
+
+function Steps({ steps, ended, operator }) {
   const counting = !ended && steps.some((step) => !step.finishedAt && OPEN_STEP_STATES.includes(step.state));
   const [now, setNow] = useState(() => new Date().toISOString());
   useEffect(() => {
@@ -435,7 +443,11 @@ function Steps({ steps, ended }) {
               ${step.waitUntil && !step.finishedAt && ` · until ${dateTime(step.waitUntil)}`}
             </div>
             ${step.eventName &&
-            html`<div class="small">Event <span class="mono">${step.eventName}</span> / <span class="mono">${step.eventKey}</span></div>`}
+            html`<div class="step-event small">
+              <span>Event <span class="mono">${step.eventName}</span> / <span class="mono">${step.eventKey}</span></span>
+              ${operator && !ended && step.kind === 'EVENT_WAIT' && step.state === 'WAITING' &&
+              html`<a class="button small" href=${publishHref(step)}>Publish event…</a>`}
+            </div>`}
             ${step.kind === 'CHILD_JOB' && step.childJobId && html`<${ChildJob} step=${step} />`}
             ${step.lastError && html`<pre class="error-box small">${step.lastError}</pre>`}
           </li>`;
