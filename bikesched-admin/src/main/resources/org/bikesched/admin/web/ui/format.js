@@ -99,13 +99,13 @@ export function Dot({ state }) {
   return html`<span class=${`dot state-${state}`} aria-hidden="true"></span>`;
 }
 
-/** Hash routes: #/jobs/{id}?type=…&state=…, #/events/{id}?name=…&key=…&tab=… */
+/** Hash routes: #/jobs/{id}?type=…&state=…, #/events/{id}?name=…&key=…&tab=…, #/nodes/{id} */
 export function parseHash(hash = location.hash) {
   const raw = hash.replace(/^#\/?/, '');
   const [path, search = ''] = raw.split('?');
   const [section, id] = path.split('/');
   return {
-    section: section === 'events' ? 'events' : 'jobs',
+    section: ['events', 'nodes'].includes(section) ? section : 'jobs',
     id: id || null,
     params: Object.fromEntries(new URLSearchParams(search)),
   };

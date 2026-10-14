@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -291,6 +292,35 @@ class BikeschedAdminTest {
           .isEqualTo(waiting.toString());
       assertThat(server.get("/api/waiting").statusCode()).isEqualTo(400);
       assertThat(server.get("/api/events/" + UUID.randomUUID()).statusCode()).isEqualTo(404);
+    }
+  }
+
+  @Test
+  void showsANodeWithTheJobsItRuns() throws Exception {
+    String type = prefix + "on-node";
+    CountDownLatch release = new CountDownLatch(1);
+    bikesched.registerJobHandler(type, _ -> release.await());
+    try {
+      UUID jobId = bikesched.newJob(type).schedule();
+      awaitState(jobId, JobState.RUNNING);
+      UUID nodeId = bikesched.node().id().orElseThrow();
+
+      try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+        JsonObject node = AdminServer.json(server.get("/api/nodes/" + nodeId)).getObject("node");
+        assertThat(node.getString("id")).isEqualTo(nodeId.toString());
+        assertThat(node.getBoolean("alive")).isTrue();
+        assertThat(node.getInt("runningJobs")).isEqualTo(1);
+
+        JsonArray jobs = AdminServer.json(server.get("/api/jobs?node=" + nodeId)).getArray("jobs");
+        assertThat(jobs).hasSize(1);
+        assertThat(jobs.getObject(0).getString("id")).isEqualTo(jobId.toString());
+
+        assertThat(server.get("/api/nodes/" + UUID.randomUUID()).statusCode()).isEqualTo(404);
+        assertThat(server.get("/api/nodes/nope").statusCode()).isEqualTo(400);
+        assertThat(server.get("/api/jobs?node=nope").statusCode()).isEqualTo(400);
+      }
+    } finally {
+      release.countDown();
     }
   }
 

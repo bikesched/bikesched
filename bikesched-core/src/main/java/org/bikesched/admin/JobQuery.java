@@ -21,6 +21,7 @@ import org.jspecify.annotations.Nullable;
  *
  * @param type only jobs of this type; {@code null} for every type
  * @param states only jobs in one of these states; empty for every state
+ * @param nodeId only jobs this node is running now; {@code null} for every job
  * @param createdBefore with {@code beforeId}: only jobs after this position in the order (created
  *     earlier, or at the same time with a smaller id); {@code null} for the first page
  * @param beforeId the id of the last job of the previous page; {@code null} for the first page
@@ -29,6 +30,7 @@ import org.jspecify.annotations.Nullable;
 public record JobQuery(
     @Nullable String type,
     Set<JobState> states,
+    @Nullable UUID nodeId,
     @Nullable Instant createdBefore,
     @Nullable UUID beforeId,
     int limit) {
@@ -57,7 +59,7 @@ public record JobQuery(
    * @return the query
    */
   public static JobQuery newest(int limit) {
-    return new JobQuery(null, Set.of(), null, null, limit);
+    return new JobQuery(null, Set.of(), null, null, null, limit);
   }
 
   /**
@@ -67,7 +69,7 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withType(@Nullable String type) {
-    return new JobQuery(type, states, createdBefore, beforeId, limit);
+    return new JobQuery(type, states, nodeId, createdBefore, beforeId, limit);
   }
 
   /**
@@ -87,7 +89,17 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withStates(Set<JobState> states) {
-    return new JobQuery(type, states, createdBefore, beforeId, limit);
+    return new JobQuery(type, states, nodeId, createdBefore, beforeId, limit);
+  }
+
+  /**
+   * Returns this query restricted to the jobs a node is running now.
+   *
+   * @param nodeId the node id; {@code null} for every job
+   * @return a new query
+   */
+  public JobQuery withNode(@Nullable UUID nodeId) {
+    return new JobQuery(type, states, nodeId, createdBefore, beforeId, limit);
   }
 
   /**
@@ -98,7 +110,7 @@ public record JobQuery(
    */
   public JobQuery after(JobSummary last) {
     Objects.requireNonNull(last, "last");
-    return new JobQuery(type, states, last.createdAt(), last.id(), limit);
+    return new JobQuery(type, states, nodeId, last.createdAt(), last.id(), limit);
   }
 
   static void requireLimit(int limit) {

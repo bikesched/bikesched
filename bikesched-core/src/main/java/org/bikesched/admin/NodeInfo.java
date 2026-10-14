@@ -13,6 +13,12 @@ import java.util.UUID;
  * @param lastHeartbeatAt its last heartbeat
  * @param alive whether its last heartbeat is within the node timeout of the node reading it; other
  *     nodes release the jobs of a dead node
+ * @param runningJobs how many jobs it is running now
  */
 public record NodeInfo(
-    UUID id, String name, Instant startedAt, Instant lastHeartbeatAt, boolean alive) {}
+    UUID id,
+    String name,
+    Instant startedAt,
+    Instant lastHeartbeatAt,
+    boolean alive,
+    int runningJobs) {}

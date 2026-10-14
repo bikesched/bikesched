@@ -65,6 +65,8 @@ final class AdminHandler {
 
   private static final Pattern EVENT = Pattern.compile("/api/events/([^/]+)");
 
+  private static final Pattern NODE = Pattern.compile("/api/nodes/([^/]+)");
+
   private final Bikesched bikesched;
 
   private final boolean readOnly;
@@ -164,10 +166,17 @@ final class AdminHandler {
     if (body == null) {
       Matcher job = JOB.matcher(path);
       Matcher event = EVENT.matcher(path);
+      Matcher node = NODE.matcher(path);
       if (job.matches()) {
         body = job(admin, id(job.group(1))).orElse(null);
       } else if (event.matches()) {
         body = event(admin, id(event.group(1))).orElse(null);
+      } else if (node.matches()) {
+        body =
+            admin
+                .findNode(id(node.group(1)))
+                .map(n -> Json.object().put("node", AdminJson.node(n)))
+                .orElse(null);
       } else if (JOB_ACTION.matcher(path).matches()) {
         return error(405, "Method not allowed", Map.of("Allow", "POST"));
       }
@@ -263,14 +272,18 @@ final class AdminHandler {
 
   private Json.Obj jobs(Admin admin, Map<String, String> params) {
     int limit = limit(params);
-    String idPrefix = idPrefix(params, "type", "state");
+    String idPrefix = idPrefix(params, "type", "state", "node");
     if (idPrefix != null) {
       List<JobSummary> jobs = byIdPrefix(() -> admin.findJobsByIdPrefix(idPrefix, limit));
       return Json.object()
           .put("jobs", jobs.stream().map(AdminJson::job).toList())
           .put("next", null);
     }
-    JobQuery query = JobQuery.newest(limit).withType(blankToNull(params.get("type")));
+    String node = blankToNull(params.get("node"));
+    JobQuery query =
+        JobQuery.newest(limit)
+            .withType(blankToNull(params.get("type")))
+            .withNode(node == null ? null : id(node));
     String states = params.get("state");
     if (states != null && !states.isBlank()) {
       Set<JobState> set = EnumSet.noneOf(JobState.class);
@@ -285,7 +298,9 @@ final class AdminHandler {
     }
     Cursor before = Cursor.parse(params.get("before"));
     if (before != null) {
-      query = new JobQuery(query.type(), query.states(), before.time(), before.id(), limit);
+      query =
+          new JobQuery(
+              query.type(), query.states(), query.nodeId(), before.time(), before.id(), limit);
     }
     List<JobSummary> jobs = admin.findJobs(query);
     String next = null;
