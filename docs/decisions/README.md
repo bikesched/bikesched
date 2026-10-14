@@ -53,3 +53,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0040](0040-admin-nanojson-and-shaded-artifact.md) | Nanojson for admin JSON with an optional shaded artifact | Accepted |
 | [0041](0041-jspecify-nullness-annotations.md) | Nullness of the public API with JSpecify annotations | Accepted |
 | [0042](0042-removed-nodes-register-again.md) | Removed nodes register again under their id | Accepted |
+| [0043](0043-sealed-types-for-internal-job-state.md) | Sealed types for the internal job state | Accepted |

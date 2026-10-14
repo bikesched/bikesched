@@ -11,10 +11,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.bikesched.BikeschedException;
-import org.bikesched.BikeschedLogContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 
 /**
  * The hard timeout of attempts whose handler ignores the interrupt of its timeout (e.g. stuck in
@@ -67,9 +65,7 @@ public final class HardTimeout {
   void abandon(
       DefaultJob job, JobAttempt attempt, JobSlot slot, Consumer<Exception> recordFailure) {
     int running = abandonedThreads.incrementAndGet();
-    try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString());
-        var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
-        var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
+    try (var _ = JobLogContext.open(nodeId, job)) {
       LOG.warn(
           "Job {} of type {} did not stop within {} after its timeout of {} (attempt {} of {}),"
               + " abandoning thread {} on bikesched node {} ({} abandoned thread(s) still"
@@ -95,9 +91,7 @@ public final class HardTimeout {
     try {
       recorder.execute(
           () -> {
-            try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString());
-                var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
-                var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
+            try (var _ = JobLogContext.open(nodeId, job)) {
               recordFailure.accept(failure);
             }
           });
