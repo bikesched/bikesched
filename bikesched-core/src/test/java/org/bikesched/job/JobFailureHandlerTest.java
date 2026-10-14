@@ -512,17 +512,19 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
       UUID jobId = failingJob(bikesched, type);
 
       awaitState(jobId, "FAILED");
+      // The next claim can be reported before the previous attempt's end: claims and ends are each
+      // in order.
       await()
           .untilAsserted(
-              () ->
-                  assertThat(calls)
-                      .containsExactly(
-                          "claimed 1",
-                          "ended 1 " + JobAttemptOutcome.FAILING,
-                          "claimed failing 1",
-                          "ended 1 " + JobAttemptOutcome.FAILURE_HANDLER_RETRYING,
-                          "claimed failing 2",
-                          "ended 2 " + JobAttemptOutcome.FAILED));
+              () -> {
+                assertThat(calls.stream().filter(c -> c.startsWith("claimed ")))
+                    .containsExactly("claimed 1", "claimed failing 1", "claimed failing 2");
+                assertThat(calls.stream().filter(c -> c.startsWith("ended ")))
+                    .containsExactly(
+                        "ended 1 " + JobAttemptOutcome.FAILING,
+                        "ended 1 " + JobAttemptOutcome.FAILURE_HANDLER_RETRYING,
+                        "ended 2 " + JobAttemptOutcome.FAILED);
+              });
     }
   }
 
