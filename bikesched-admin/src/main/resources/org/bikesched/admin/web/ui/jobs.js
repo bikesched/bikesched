@@ -357,12 +357,12 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
     </aside>`;
 }
 
-export function DetailHead({ title, state, id, onClose, children }) {
+export function DetailHead({ title, state, id, plain, onClose, children }) {
   return html`
     <div class="detail-head">
       <div class="detail-title">
         <div class="row">
-          <span class="mono strong">${title}</span>
+          <span class=${plain ? 'strong' : 'mono strong'}>${title}</span>
           ${state && html`<${Badge} state=${state} />`}
         </div>
         ${id && html`<span class="mono muted small break">${id}</span>`}

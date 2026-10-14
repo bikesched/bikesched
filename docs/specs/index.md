@@ -21,3 +21,4 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-11 | [Admin UI](admin-ui.md) | implemented | [ADR 0038](../decisions/0038-admin-ui.md) |
 | 2026-10-13 | [Optional schema migration](optional-schema-migration.md) | implemented | [ADR 0039](../decisions/0039-optional-schema-migration.md) |
 | 2026-10-13 | [Testing support (`bikesched-test`)](bikesched-test.md) | draft | — |
+| 2026-10-14 | [Publishing events from the admin UI](admin-publish-events.md) | implemented | [ADR 0044](../decisions/0044-publishing-events-from-the-admin-ui.md) |

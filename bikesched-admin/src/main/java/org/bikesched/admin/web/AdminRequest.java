@@ -22,9 +22,16 @@ import java.util.TreeMap;
  * @param query the raw (URL-encoded) query string without {@code ?}, {@code null} if none
  * @param headers the request headers, one value per name; names are case-insensitive
  * @param remoteAddress the client's address for log messages, {@code null} if unknown
+ * @param body the request body as text, {@code null} if none; only publishing an event reads one
+ *     (form-encoded)
  */
 public record AdminRequest(
-    String method, String path, String query, Map<String, String> headers, String remoteAddress) {
+    String method,
+    String path,
+    String query,
+    Map<String, String> headers,
+    String remoteAddress,
+    String body) {
 
   /** Checks the method and path and copies the headers into a case-insensitive map. */
   public AdminRequest {
@@ -49,7 +56,7 @@ public record AdminRequest(
    * @return the request
    */
   public static AdminRequest of(String method, String path, String query) {
-    return new AdminRequest(method, path, query, Map.of(), null);
+    return new AdminRequest(method, path, query, Map.of(), null, null);
   }
 
   /**
@@ -63,7 +70,7 @@ public record AdminRequest(
     var copy = new TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER);
     copy.putAll(headers);
     copy.put(Objects.requireNonNull(name, "name"), Objects.requireNonNull(value, "value"));
-    return new AdminRequest(method, path, query, copy, remoteAddress);
+    return new AdminRequest(method, path, query, copy, remoteAddress, body);
   }
 
   /**
@@ -73,7 +80,17 @@ public record AdminRequest(
    * @return the new request
    */
   public AdminRequest withRemoteAddress(String remoteAddress) {
-    return new AdminRequest(method, path, query, headers, remoteAddress);
+    return new AdminRequest(method, path, query, headers, remoteAddress, body);
+  }
+
+  /**
+   * Returns a copy with a body.
+   *
+   * @param body the request body as text, {@code null} for none
+   * @return the new request
+   */
+  public AdminRequest withBody(String body) {
+    return new AdminRequest(method, path, query, headers, remoteAddress, body);
   }
 
   /**

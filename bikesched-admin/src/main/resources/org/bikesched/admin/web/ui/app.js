@@ -122,7 +122,8 @@ function App() {
       ${jobs
         ? html`<${JobsView} route=${route} navigate=${navigate} types=${types} me=${me} nodes=${nodes}
             reloadKey=${reloadKey} onChanged=${() => setCountsKey((key) => key + 1)} />`
-        : html`<${EventsView} route=${route} navigate=${navigate} names=${names} reloadKey=${reloadKey} />`}
+        : html`<${EventsView} route=${route} navigate=${navigate} names=${names} me=${me}
+            reloadKey=${reloadKey} onPublished=${reload} />`}
     </main>`;
 }
 

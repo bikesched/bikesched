@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.BikeschedException;
 import org.bikesched.LogCapture;
 import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.job.Job;
@@ -536,6 +537,27 @@ class EventTest extends AbstractBikeschedTest {
               () -> bikesched.newEvent("negative", key).retention(Duration.ofSeconds(-1)))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("retention must not be negative: PT-1S");
+    } finally {
+      execute("delete from bikesched_events where key = '" + key + "'");
+    }
+  }
+
+  @Test
+  void payloadJsonIsStoredAsItIs() throws Exception {
+    String key = "json-" + UUID.randomUUID();
+    try (Bikesched bikesched = node("node-event-payload-json")) {
+      UUID withPayload =
+          bikesched
+              .newEvent("json", key)
+              .payload("\"ignored\"")
+              .payloadJson("{\"a\": 1}")
+              .publish();
+      UUID withoutPayload = bikesched.newEvent("json", key).payloadJson(null).publish();
+
+      assertThat(bikesched.admin().findEventPayload(withPayload)).contains("{\"a\": 1}");
+      assertThat(bikesched.admin().findEventPayload(withoutPayload)).contains("null");
+      assertThatThrownBy(() -> bikesched.newEvent("json", key).payloadJson("{\"a\": }").publish())
+          .isInstanceOf(BikeschedException.class);
     } finally {
       execute("delete from bikesched_events where key = '" + key + "'");
     }

@@ -37,6 +37,12 @@ public final class DefaultStepEventBuilder<P> implements StepEventBuilder<P> {
   }
 
   @Override
+  public StepEventBuilder<P> payloadJson(String json) {
+    payload = json;
+    return this;
+  }
+
+  @Override
   public StepEventBuilder<P> retention(Duration value) {
     Objects.requireNonNull(value, "retention");
     if (value.isNegative())

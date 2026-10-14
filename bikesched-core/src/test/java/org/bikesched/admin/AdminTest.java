@@ -148,6 +148,9 @@ class AdminTest extends AbstractBikeschedTest {
               });
       assertThat(admin.findWaitingSteps(event, "key-", 10)).hasSize(1);
       assertThat(admin.findWaitingSteps(event, "other", 10)).isEmpty();
+      assertThat(admin.findEventNames())
+          .as("a name only waited for is listed without events")
+          .contains(new EventNameSummary(event, 0, 1));
 
       UUID eventId = bikesched.newEvent(event, "key-1").payload("\"paid\"").publish();
       awaitState(jobId, "SUCCEEDED");
@@ -160,6 +163,7 @@ class AdminTest extends AbstractBikeschedTest {
               org.assertj.core.groups.Tuple.tuple("first", "SUCCEEDED"),
               org.assertj.core.groups.Tuple.tuple("await", "SUCCEEDED"));
       assertThat(admin.findWaitingSteps(event, null, 10)).isEmpty();
+      assertThat(admin.findEventNames()).contains(new EventNameSummary(event, 1, 0));
       assertThat(admin.findEvent(eventId))
           .hasValueSatisfying(
               summary -> {
@@ -206,7 +210,7 @@ class AdminTest extends AbstractBikeschedTest {
           .containsExactly(true, false);
       assertThat(orders.getFirst().receivedBy()).isZero();
       assertThat(admin.findEventNames())
-          .contains(new EventNameSummary(name, 3), new EventNameSummary(prefix + "other", 1));
+          .contains(new EventNameSummary(name, 3, 0), new EventNameSummary(prefix + "other", 1, 0));
       assertThat(admin.findEventSteps(first)).as("published outside a job").isEmpty();
     }
   }

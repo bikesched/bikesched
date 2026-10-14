@@ -41,6 +41,22 @@ public interface EventBuilder<P extends @Nullable Object> {
   EventBuilder<P> payload(@Nullable P payload);
 
   /**
+   * Sets the event payload as JSON text (optional, default none), passed on as it is instead of
+   * through the configured {@link JsonMapper}: for JSON that already is text, e.g. a forwarded
+   * webhook body or a payload typed into the admin UI. Replaces an earlier {@link #payload(Object)
+   * payload}, and the other way round.
+   *
+   * <pre>{@code
+   * bikesched.newEvent("payment-received", orderId).payloadJson(webhookBody).publish();
+   * }</pre>
+   *
+   * @param json the payload as JSON text, {@code null} for none; not checked here, invalid JSON
+   *     makes {@link #publish()} fail
+   * @return this builder
+   */
+  EventBuilder<P> payloadJson(@Nullable String json);
+
+  /**
    * Sets how long the event is kept for steps that start waiting for it later (optional, default
    * the node's {@link BikeschedBuilder#eventRetention(Duration) eventRetention}). Steps waiting
    * when it is published receive it regardless; once the retention has passed, later waits no
