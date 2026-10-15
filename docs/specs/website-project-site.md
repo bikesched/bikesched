@@ -5,7 +5,7 @@ title: "Project website (bikesched.org)"
 # Specification: project website (bikesched.org)
 
 Status: **implemented** — generation (module `bikesched-website`) and deployment to the Cloudflare
-Worker `green-paper-4e4f` (§4.6,
+Worker `bikesched-website` (§4.6,
 [ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md), which superseded static.app
 from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md)) both done, and `bikesched.org`
 serves the site as the Worker's custom domain.
@@ -118,7 +118,7 @@ the repository going public first. Later moved from static.app to Cloudflare
 `.github/workflows/website.yml` builds `./gradlew :bikesched-website:hugoBuild` and runs
 `wrangler deploy` in `bikesched-website/` (`cloudflare/wrangler-action`), authenticated with the
 `CLOUDFLARE_API_KEY` repository secret. `bikesched-website/wrangler.jsonc` deploys
-`build/hugo/publish/` as static assets of the Worker `green-paper-4e4f` (no Worker script), with
+`build/hugo/publish/` as static assets of the Worker `bikesched-website` (no Worker script), with
 Hugo's `404.html` for unknown paths. It runs on push to `main` touching `docs/**`, `README.md` or
 `bikesched-website/**`, plus `workflow_dispatch` for manual runs; pull requests are not deployed.
 The build step sets `HUGO_PARAMS_COMMIT` to the commit SHA, which the footer

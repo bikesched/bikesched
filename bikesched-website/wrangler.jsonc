@@ -2,7 +2,7 @@
 // .github/workflows/website.yml (ADR 0047). No Worker script: Cloudflare serves the files directly.
 {
   "$schema": "https://unpkg.com/wrangler/config-schema.json",
-  "name": "green-paper-4e4f",
+  "name": "bikesched-website",
   "compatibility_date": "2026-10-15",
   "assets": {
     // Output of ./gradlew :bikesched-website:hugoBuild.
