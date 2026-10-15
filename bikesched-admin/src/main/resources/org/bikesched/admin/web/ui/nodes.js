@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // The node list and the live node detail with the jobs the node runs.
 import { ApiError, getBody } from './api.js';
-import { Badge, dateTime, duration, jobHref, plural, shortId, toHash } from './format.js';
+import { Badge, SortedTh, dateTime, duration, jobHref, plural, shortId, toHash } from './format.js';
 import { html, useEffect, useState } from './html.js';
 import { DetailHead } from './jobs.js';
 
@@ -73,7 +73,6 @@ export function NodesView({ route, navigate, reloadKey }) {
   return html`
     <div class="view-head">
       <h1>Nodes</h1>
-      <span class="muted">Registered nodes, by name</span>
     </div>
     ${error && html`<div class="banner banner-error" role="alert">${error}</div>`}
     <div class="split">
@@ -81,7 +80,7 @@ export function NodesView({ route, navigate, reloadKey }) {
         <div class="table-scroll">
           <table class="table">
             <thead>
-              <tr><th>Node</th><th>State</th><th>Started</th><th>Last heartbeat</th><th>Running jobs</th></tr>
+              <tr><${SortedTh} label="Node" descending=${false} title="By name" /><th>State</th><th>Started</th><th>Last heartbeat</th><th>Running jobs</th></tr>
             </thead>
             <tbody>
               ${(nodes || []).map(

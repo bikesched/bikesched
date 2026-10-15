@@ -6,6 +6,7 @@ import {
   Badge,
   IdSearch,
   IdSearchChip,
+  SortedTh,
   dateTime,
   duration,
   isFullId,
@@ -51,7 +52,6 @@ export function EventsView({ route, navigate, names, me, reloadKey, onPublished 
     <div class="view-head">
       <h1>${id ? `Event id ${id}` : name || 'All events'}</h1>
       <div class="row">
-        <span class="muted">Unexpired events, newest first</span>
         ${canPublish &&
         html`<button type="button" class="button primary" onClick=${() => publish({})}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
@@ -153,7 +153,7 @@ function EventList({ route, navigate, idPrefix, name, keyPrefix, names, me, relo
         <div class="table-scroll">
           <table class="table">
             <thead>
-              <tr><th>Event</th><th>Name</th><th>Key</th><th>Published</th><th>Expires</th><th>Received by</th></tr>
+              <tr><th>Event</th><th>Name</th><th>Key</th><${SortedTh} label="Published" descending=${true} title="Newest first" /><th>Expires</th><th>Received by</th></tr>
             </thead>
             <tbody>
               ${events.map(
@@ -173,7 +173,7 @@ function EventList({ route, navigate, idPrefix, name, keyPrefix, names, me, relo
           ${!loading && events.length === 0 && html`<div class="empty">${empty}</div>`}
         </div>
         <div class="panel-foot">
-          <span>${loading ? 'Loading…' : plural(events.length, 'event', 'events') + ' shown'}</span>
+          <span>${loading ? 'Loading…' : plural(events.length, 'unexpired event', 'unexpired events') + ' shown'}</span>
           ${next && html`<button type="button" class="button" onClick=${() => load(next)}>Older events</button>`}
         </div>
       </section>
@@ -290,7 +290,7 @@ function WaitingJobs({ name, keyPrefix, reloadKey, onPublish }) {
       <div class="table-scroll">
         <table class="table">
           <thead>
-            <tr><th>Job</th><th>Type</th><th>Step</th><th>Key</th><th>Waiting since</th><th>Timeout</th>${onPublish && html`<th><span class="sr-only">Publish</span></th>`}</tr>
+            <tr><th>Job</th><th>Type</th><th>Step</th><th>Key</th><${SortedTh} label="Waiting since" descending=${false} title="Longest waiting first" /><th>Timeout</th>${onPublish && html`<th><span class="sr-only">Publish</span></th>`}</tr>
           </thead>
           <tbody>
             ${(steps || []).map(
@@ -313,6 +313,6 @@ function WaitingJobs({ name, keyPrefix, reloadKey, onPublish }) {
         </table>
         ${steps && steps.length === 0 && html`<div class="empty">No job is waiting for ${name}.</div>`}
       </div>
-      <div class="panel-foot"><span>${steps ? `${plural(steps.length, 'waiting step', 'waiting steps')}, longest waiting first` : 'Loading…'}</span></div>
+      <div class="panel-foot"><span>${steps ? plural(steps.length, 'waiting step', 'waiting steps') : 'Loading…'}</span></div>
     </section>`;
 }

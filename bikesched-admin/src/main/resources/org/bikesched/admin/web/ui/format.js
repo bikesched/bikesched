@@ -91,6 +91,13 @@ export function RecurringIcon({ label = 'recurring' }) {
     : html`<svg class="recurring-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
 }
 
+/** The header of the column a table is sorted by, with an arrow; title says how. */
+export function SortedTh({ label, descending, title }) {
+  return html`<th aria-sort=${descending ? 'descending' : 'ascending'} title=${title}>
+    ${label}<span class="sort-arrow" aria-hidden="true">${descending ? '↓' : '↑'}</span>
+  </th>`;
+}
+
 export function Badge({ state }) {
   return html`<span class=${`badge state-${state}`}>${state}</span>`;
 }
