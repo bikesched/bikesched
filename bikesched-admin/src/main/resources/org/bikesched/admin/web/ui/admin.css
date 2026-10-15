@@ -589,3 +589,4 @@ button { font: inherit; }
 .more-options { border-top: 1px solid var(--line-soft); padding-top: var(--space-3); }
 .more-options summary { font-size: 13px; font-weight: 600; cursor: pointer; }
 .more-options .form-grid { margin-top: var(--space-3); }
+.sort-arrow { margin-left: 4px; color: var(--text); font-size: 12px; letter-spacing: 0; }
