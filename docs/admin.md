@@ -127,9 +127,9 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   number of unexpired events and waiting jobs (a name jobs wait for but nobody published yet is
   listed too). Both have a search field, so many types stay usable. A repeat icon
   marks recurring job types.
-- **Jobs**: newest first, filtered by type and by one or more states; "Older jobs" loads the next
-  page. A child job names its parent below its type; a run of a recurring job has the repeat icon
-  and its recurrence there.
+- **Jobs**: newest first (an arrow marks the column a list is sorted by, here Created), filtered
+  by type and by one or more states; "Older jobs" loads the next page. A child job names its
+  parent below its type; a run of a recurring job has the repeat icon and its recurrence there.
 - **Search by id**: the job list and the event list each have an id field. It takes a full id or
   its first 8 characters (the short id the lists show), with or without hyphens, and finds only
   jobs in the job list and only events in the event list. A single match opens its detail; the

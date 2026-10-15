@@ -9,6 +9,7 @@ import {
   IdSearch,
   IdSearchChip,
   STATES,
+  SortedTh,
   dateTime,
   elapsed,
   firstLine,
@@ -109,7 +110,6 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
     <div class="view-head">
       <h1>${id ? `Job id ${id}` : type || 'All jobs'}</h1>
       <div class="row">
-        <span class="muted">Newest first</span>
         ${canSchedule &&
         html`<button type="button" class="button primary" onClick=${() => schedule({ schedType: type })}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
@@ -153,8 +153,9 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
           <table class="table">
             <thead>
               <tr>
-                <th>Job</th><th>Type</th><th>State</th><th>Attempts</th><th>Scheduled</th>
-                <th>Updated</th><th>Last error</th>
+                <th>Job</th><th>Type</th><th>State</th><th>Attempts</th>
+                <${SortedTh} label="Created" descending=${true} title="Newest first" />
+                <th>Scheduled</th><th>Updated</th><th>Last error</th>
               </tr>
             </thead>
             <tbody>
@@ -170,6 +171,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
                     </td>
                     <td><${Badge} state=${job.state} /></td>
                     <td class="mono">${job.attempts}/${job.maxAttempts}</td>
+                    <td class="mono muted">${dateTime(job.createdAt)}</td>
                     <td class="mono muted">${dateTime(job.scheduledAt)}</td>
                     <td class="mono muted">${dateTime(job.updatedAt)}</td>
                     <td class="error-cell" title=${job.lastError || ''}>${firstLine(job.lastError)}</td>
