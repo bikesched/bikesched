@@ -31,6 +31,9 @@ tasks.matching { it.name in setOf("hugo", "hugoBuild", "hugoServer") }.configure
 tasks.named("hugoBuild") {
     inputs.file(rootProject.layout.projectDirectory.file("README.md"))
     inputs.dir(rootProject.layout.projectDirectory.dir("docs"))
+    // The footer links the commit from HUGO_PARAMS_COMMIT (set by the website workflow); without
+    // this input a cached build could keep linking an older commit.
+    inputs.property("commit", providers.environmentVariable("HUGO_PARAMS_COMMIT").orElse(""))
 }
 
 // The Hextra theme ships default placeholder logo artwork (images/logo.svg, images/logo-dark.svg)

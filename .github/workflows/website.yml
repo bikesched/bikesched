@@ -1,6 +1,7 @@
 # Builds the project website (bikesched-website, see docs/specs/website-project-site.md) and
-# publishes it to static.app whenever docs/, the main README.md or the bikesched-website module
-# itself change on main. Pull requests are not deployed, only pushes to main.
+# deploys it to the Cloudflare Worker green-paper-4e4f (ADR 0047) whenever docs/, the main
+# README.md or the bikesched-website module itself change on main. Pull requests are not deployed,
+# only pushes to main.
 
 name: Website
 
@@ -42,42 +43,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Build website
+        env:
+          HUGO_PARAMS_COMMIT: ${{ github.sha }} # linked in the footer
         run: ./gradlew :bikesched-website:hugoBuild
 
-      # The static.app zip API serves index.html and the other files/folders from the zip root, so
-      # the archive is created from inside the publish directory (zip stores paths relative to the
-      # current directory).
-      - name: Zip website
-        working-directory: bikesched-website/build/hugo/publish
-        run: zip -r "${GITHUB_WORKSPACE}/site.zip" .
-
-      - name: Publish to static.app
-        env:
-          API_KEY: ${{ secrets.STATIC_APP_API_KEY }}
-        run: |
-          response=$(curl -sS -w '\n%{http_code}' --oauth2-bearer "${API_KEY}" -X POST https://api.static.app/v1/sites/zip \
-            -F "archive=@site.zip" \
-            -F "pid=le3rpst1ob")
-          http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | sed '$d')
-          echo "$body"
-          if [ "$http_code" -ge 400 ] || ! echo "$body" | grep -q '"status":"success"'; then
-            echo "static.app deploy failed (HTTP $http_code)"
-            exit 1
-          fi
-
-      # The CDN caches assets for up to 4 hours (cache-control: max-age=14400), so without this a
-      # deploy's new files can stay invisible behind a cache hit for that long.
-      - name: Purge static.app cache
-        env:
-          API_KEY: ${{ secrets.STATIC_APP_API_KEY }}
-        run: |
-          response=$(curl -sS -w '\n%{http_code}' --oauth2-bearer "${API_KEY}" -X POST \
-            https://api.static.app/v1/sites/le3rpst1ob/purge-cache)
-          http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | sed '$d')
-          echo "$body"
-          if [ "$http_code" -ge 400 ] || ! echo "$body" | grep -q '"status":"success"'; then
-            echo "static.app cache purge failed (HTTP $http_code)"
-            exit 1
-          fi
+      # Deploys build/hugo/publish/ as the Worker's static assets, configured in
+      # bikesched-website/wrangler.jsonc. Cloudflare purges its cache for the new version itself.
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_KEY }}
+          workingDirectory: bikesched-website
+          command: deploy

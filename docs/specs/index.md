@@ -13,7 +13,7 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-08 | [Poll steps](poll-step.md) | implemented | [ADR 0031](../decisions/0031-poll-steps.md) |
 | 2026-10-08 | [Incidents for permanently failed jobs](incidents.md) | on hold | — |
 | 2026-10-08 | [Waking pollers with LISTEN/NOTIFY](listen-notify.md) | implemented | [ADR 0032](../decisions/0032-batched-notifications-after-commit.md) |
-| 2026-10-09 | [Project website (bikesched.org)](website-project-site.md) | implemented | [ADR 0035](../decisions/0035-website-hosted-on-static-app.md) |
+| 2026-10-09 | [Project website (bikesched.org)](website-project-site.md) | implemented | [ADR 0035](../decisions/0035-website-hosted-on-static-app.md), [ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md) |
 | 2026-10-10 | [Failure handlers for jobs and steps](failure-handlers.md) | implemented | [ADR 0033](../decisions/0033-failure-handlers.md) |
 | 2026-10-10 | [Failure handlers for event waits and polls](wait-failure-handlers.md) | implemented | [ADR 0034](../decisions/0034-wait-timeouts-as-failures.md) |
 | 2026-10-11 | [Idempotency keys for jobs and events](idempotency-keys.md) | implemented | [ADR 0036](../decisions/0036-idempotency-keys.md) |
