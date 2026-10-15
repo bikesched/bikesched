@@ -121,6 +121,9 @@ the repository going public first. Later moved from static.app to Cloudflare
 `build/hugo/publish/` as static assets of the Worker `green-paper-4e4f` (no Worker script), with
 Hugo's `404.html` for unknown paths. It runs on push to `main` touching `docs/**`, `README.md` or
 `bikesched-website/**`, plus `workflow_dispatch` for manual runs; pull requests are not deployed.
+The build step sets `HUGO_PARAMS_COMMIT` to the commit SHA, which the footer
+(`layouts/_partials/custom/footer.html`) links as "Built from <short SHA>"; local builds have no
+commit and show no link.
 
 Custom domain: `bikesched.org` is attached to the Worker in the Cloudflare dashboard (a one-time
 step, not automated by the workflow), matching `hugo.toml`'s `baseURL`.

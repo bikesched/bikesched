@@ -43,6 +43,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Build website
+        env:
+          HUGO_PARAMS_COMMIT: ${{ github.sha }} # linked in the footer
         run: ./gradlew :bikesched-website:hugoBuild
 
       # Deploys build/hugo/publish/ as the Worker's static assets, configured in
