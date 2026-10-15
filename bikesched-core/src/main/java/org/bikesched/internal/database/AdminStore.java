@@ -66,6 +66,10 @@ public final class AdminStore {
   private static final String FIND_JOB_SQL =
       JOB_COLUMNS.formatted("bikesched_jobs") + "\n where j.id = ?";
 
+  // Along the partial unique index on (type, idempotency_key).
+  private static final String FIND_KEYED_JOB_SQL =
+      JOB_COLUMNS.formatted("bikesched_jobs") + "\n where j.type = ? and j.idempotency_key = ?";
+
   // The occurrences of a recurring job: the pending one along bikesched_jobs_recurring_idx, the
   // ended ones as a page along bikesched_jobs_type_created_at_idx.
   private static final String RECURRING_STATES =
@@ -228,6 +232,14 @@ public final class AdminStore {
         e -> new BikeschedException("Reading bikesched job " + jobId + " failed", e));
   }
 
+  public Optional<JobSummary> findJob(String type, String idempotencyKey) {
+    Objects.requireNonNull(type, "type");
+    Objects.requireNonNull(idempotencyKey, "idempotencyKey");
+    return access.inReadOnlyTransaction(
+        db -> db.one(FIND_KEYED_JOB_SQL, AdminStore::jobSummary, type, idempotencyKey),
+        e -> new BikeschedException("Reading bikesched job by idempotency key failed", e));
+  }
+
   public Optional<JobData> findJobData(UUID jobId) {
     Objects.requireNonNull(jobId, "jobId");
     return access.inReadOnlyTransaction(
@@ -289,7 +301,8 @@ public final class AdminStore {
     }
     List<JobTypeSummary> types = new ArrayList<>(byType.size());
     byType.forEach(
-        (type, byState) -> types.add(new JobTypeSummary(type, byState, recurrences.get(type))));
+        (type, byState) ->
+            types.add(new JobTypeSummary(type, byState, recurrences.get(type), false)));
     return types;
   }
 

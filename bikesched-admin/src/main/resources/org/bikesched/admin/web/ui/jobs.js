@@ -22,12 +22,19 @@ import {
 } from './format.js';
 import { html, useEffect, useRef, useState } from './html.js';
 import { Picker } from './picker.js';
+import { ScheduleForm, takeScheduled } from './schedule.js';
 
 const PAGE_SIZE = 50;
 const POLL_MS = 3000;
 const RETRY_MS = 10000;
 
-export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChanged }) {
+// The route of the schedule form is #/jobs/new; these parameters only prefill it.
+const SCHEDULE_PARAMS = ['schedType', 'from'];
+const listParams = (params) =>
+  Object.fromEntries(Object.entries(params).filter(([name]) => !SCHEDULE_PARAMS.includes(name)));
+
+export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChanged, onScheduled }) {
+  const canSchedule = me?.level === 'OPERATE';
   // An id search (route.params.id) replaces the type and state filters.
   const id = route.params.id || '';
   const type = id ? '' : route.params.type || '';
@@ -71,7 +78,9 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
     }
   }
 
-  const typeItems = types.map((summary) => {
+  // Handled types without jobs are only offered by the schedule form.
+  const listedTypes = types.filter((summary) => summary.total > 0);
+  const typeItems = listedTypes.map((summary) => {
     const failed = (summary.counts.FAILED || 0) + (summary.counts.COMPENSATION_FAILED || 0);
     const item = { name: summary.type, count: summary.total, recurring: Boolean(summary.recurrence) };
     if (failed > 0) return { ...item, sub: `${failed} failed`, subClass: 'sub-failed' };
@@ -82,8 +91,8 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
   const setStates = (states) =>
     navigate({ ...route, params: { ...route.params, state: STATES.filter((s) => states.includes(s)).join(',') } });
   const toggle = (s) => setStates(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s]);
-  const open = (jobId) => navigate({ ...route, id: jobId });
-  const href = (jobId) => toHash({ ...route, id: jobId });
+  const open = (jobId) => navigate({ ...route, id: jobId, params: listParams(route.params) });
+  const href = (jobId) => toHash({ ...route, id: jobId, params: listParams(route.params) });
   const search = (text) => navigate({ section: 'jobs', id: null, params: text ? { id: text } : {} });
   const empty = !id
     ? 'No jobs match these filters.'
@@ -92,17 +101,28 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
       : `No job id starts with ${id}.`;
   // The open job's live updates replace only its own row; the rest of the list stays as loaded.
   const updateRow = (job) => setJobs((list) => list.map((row) => (row.id === job.id ? job : row)));
+  // Opens the form next to the list, keeping its filters.
+  const schedule = (prefill) => navigate({ section: 'jobs', id: 'new', params: { ...listParams(route.params), ...prefill } });
+  const closeForm = () => navigate({ ...route, id: null, params: listParams(route.params) });
 
   return html`
     <div class="view-head">
       <h1>${id ? `Job id ${id}` : type || 'All jobs'}</h1>
-      <span class="muted">Newest first</span>
+      <div class="row">
+        <span class="muted">Newest first</span>
+        ${canSchedule &&
+        html`<button type="button" class="button primary" onClick=${() => schedule({ schedType: type })}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          Schedule job
+        </button>`}
+      </div>
     </div>
     <div class="toolbar">
       <div class="field picker-field">
         <div class="field-head">
           <span class="field-label">Job type</span>
-          <span class="muted">${plural(types.length, 'job type', 'job types')}</span>
+          <span class="muted">${plural(listedTypes.length, 'job type', 'job types')}</span>
         </div>
         <${Picker} label="Job type" allLabel="All job types" placeholder="Search job types"
           items=${typeItems} selected=${type || null}
@@ -164,9 +184,25 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
           ${next && html`<button type="button" class="button" onClick=${() => load(next)}>Older jobs</button>`}
         </div>
       </section>
-      ${route.id &&
-      html`<${JobDetail} key=${route.id} jobId=${route.id} me=${me} nodes=${nodes}
-        onUpdate=${updateRow} onChanged=${onChanged} onClose=${() => navigate({ ...route, id: null })} />`}
+      ${route.id === 'new'
+        ? canSchedule
+          ? html`<${ScheduleForm} key=${SCHEDULE_PARAMS.map((p) => route.params[p] || '').join('/')}
+            types=${types} payloadsShown=${me.payloadsShown}
+            prefill=${{ from: route.params.from, type: route.params.schedType }}
+            onClose=${closeForm}
+            onScheduled=${(jobId) => {
+              navigate({ section: 'jobs', id: jobId, params: listParams(route.params) });
+              onScheduled();
+            }} />`
+          : me &&
+            html`<aside class="panel detail" aria-label="Schedule job">
+              <${DetailHead} title="Schedule job" plain=${true} onClose=${closeForm} />
+              <p class="detail-body muted">Only operators can schedule jobs.</p>
+            </aside>`
+        : route.id &&
+          html`<${JobDetail} key=${route.id} jobId=${route.id} me=${me} nodes=${nodes}
+            onUpdate=${updateRow} onChanged=${onChanged} onClose=${() => navigate({ ...route, id: null })}
+            onScheduleSimilar=${canSchedule ? (jobId) => schedule({ from: jobId }) : null} />`}
     </div>`;
 }
 
@@ -174,7 +210,8 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
  * One job, polled every 3 seconds while it is open, the tab is visible and the job has not ended.
  * The ETag makes an unchanged job a 304 without a body, so nothing re-renders.
  */
-export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
+export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose, onScheduleSimilar }) {
+  const [scheduled] = useState(() => takeScheduled(jobId));
   const [data, setData] = useState(null);
   const [live, setLive] = useState('loading');
   const [updatedAt, setUpdatedAt] = useState(null);
@@ -333,8 +370,16 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
         </span>
         ${parent.exists && html`<a class="button small" href=${jobHref(parent.id)}>Parent job</a>`}
       </div>`}
+      ${scheduled &&
+      (scheduled.created
+        ? html`<div class="notice notice-success" role="status">
+            Scheduled <span class="mono strong">${shortId(scheduled.id)}</span>${scheduled.due ? `, due at ${dateTime(scheduled.due)}` : ' to run now'}.
+          </div>`
+        : html`<div class="notice notice-warning" role="status">
+            Not scheduled again: this job already has the idempotency key <span class="mono">${scheduled.idempotencyKey}</span>.
+          </div>`)}
       ${job.lastError && html`<pre class="error-box">${job.lastError}</pre>`}
-      ${(canRetry || canCancel) &&
+      ${(canRetry || canCancel || onScheduleSimilar) &&
       html`<div class="actions">
         ${canRetry && html`<button type="button" class="button primary" onClick=${() => act('retry')}>Retry job</button>`}
         ${canCancel &&
@@ -343,6 +388,8 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose }) {
               <button type="button" class="button danger" onClick=${() => act('cancel')}>Yes, cancel</button>
               <button type="button" class="button" onClick=${() => setConfirmCancel(false)}>Keep it</button>`
           : html`<button type="button" class="button danger-outline" onClick=${() => setConfirmCancel(true)}>Cancel job</button>`)}
+        ${onScheduleSimilar && !confirmCancel &&
+        html`<button type="button" class="button" onClick=${() => onScheduleSimilar(job.id)}>Schedule similar…</button>`}
       </div>`}
       ${notice && html`<div class="notice" role="status">${notice}</div>`}
       <div class="tabs" role="tablist" aria-label="Job detail sections">

@@ -53,6 +53,16 @@ public interface Admin {
   Optional<JobSummary> findJob(UUID jobId);
 
   /**
+   * Looks up the job of a type with an idempotency key, the one scheduling with that key returns
+   * instead of a new job.
+   *
+   * @param type the job type
+   * @param idempotencyKey the idempotency key
+   * @return the job; empty if no job of the type has the key
+   */
+  Optional<JobSummary> findJob(String type, String idempotencyKey);
+
+  /**
    * Reads a job's payload and result as JSON text.
    *
    * @param jobId the job id
@@ -69,7 +79,8 @@ public interface Admin {
   List<StepInfo> findSteps(UUID jobId);
 
   /**
-   * Counts the jobs of every type in the table by state.
+   * Counts the jobs of every type in the table by state. Types this node has a handler for are
+   * listed even without any job yet, see {@link JobTypeSummary#handled()}.
    *
    * @return one entry per job type, by type name
    */

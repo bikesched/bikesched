@@ -3,6 +3,7 @@ package org.bikesched.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import java.time.Duration;
@@ -13,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.BikeschedException;
 import org.bikesched.job.JobState;
 import org.bikesched.job.Recurrence;
 import org.junit.jupiter.api.AfterEach;
@@ -109,6 +111,42 @@ class AdminTest extends AbstractBikeschedTest {
       assertThat(summary.count(JobState.SCHEDULED)).isOne();
       assertThat(summary.count(JobState.RUNNING)).isZero();
       assertThat(summary.total()).isEqualTo(3);
+    }
+  }
+
+  @Test
+  void marksTheTypesThisNodeHandlesAndFindsJobsByIdempotencyKey() {
+    String handled = prefix + "handled";
+    String fresh = prefix + "fresh";
+    String foreign = prefix + "foreign";
+    try (Bikesched other = testNode(prefix + "other").build();
+        Bikesched bikesched = testNode(prefix + "node").build()) {
+      other.registerJobHandler(foreign, _ -> {});
+      other.newJob(foreign).schedule(Duration.ofHours(1));
+      bikesched.registerJobHandler(handled, _ -> {});
+      bikesched.registerJobHandler(fresh, _ -> {});
+      UUID keyed =
+          bikesched
+              .newJob(handled)
+              .payload("\"ignored\"")
+              .payloadJson("{\"a\": 1}")
+              .idempotencyKey("key-1")
+              .schedule(Duration.ofHours(1));
+      UUID empty = bikesched.newJob(handled).payloadJson(null).schedule(Duration.ofHours(1));
+
+      Admin admin = bikesched.admin();
+      assertThat(admin.findJobTypes())
+          .filteredOn(type -> type.type().startsWith(prefix))
+          .extracting(JobTypeSummary::type, JobTypeSummary::total, JobTypeSummary::handled)
+          .containsExactly(
+              tuple(foreign, 1, false), tuple(fresh, 0, true), tuple(handled, 2, true));
+      assertThat(admin.findJobData(keyed).orElseThrow().payload()).isEqualTo("{\"a\": 1}");
+      assertThat(admin.findJobData(empty).orElseThrow().payload()).isNull();
+      assertThat(admin.findJob(handled, "key-1")).map(JobSummary::id).contains(keyed);
+      assertThat(admin.findJob(handled, "key-2")).isEmpty();
+      assertThat(admin.findJob(fresh, "key-1")).isEmpty();
+      assertThatThrownBy(() -> bikesched.newJob(fresh).payloadJson("{\"a\": }").schedule())
+          .isInstanceOf(BikeschedException.class);
     }
   }
 

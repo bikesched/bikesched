@@ -95,6 +95,12 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
     return self();
   }
 
+  @Override
+  public B payloadJson(String json) {
+    this.payload = json;
+    return self();
+  }
+
   /** Sets the handler, for the builders implementing {@code JobHandlerSettings}. */
   B setHandler(JobHandler handler) {
     this.handler = Objects.requireNonNull(handler, "handler");

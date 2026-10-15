@@ -12,9 +12,10 @@ import org.jspecify.annotations.Nullable;
  * @param counts the number of jobs per state; states without jobs are missing
  * @param recurrence the recurrence of a recurring job type (from its pending occurrence); {@code
  *     null} for other types
+ * @param handled whether this node has a handler for the type, so it can schedule jobs of it
  */
 public record JobTypeSummary(
-    String type, Map<JobState, Integer> counts, @Nullable String recurrence) {
+    String type, Map<JobState, Integer> counts, @Nullable String recurrence, boolean handled) {
 
   /** Copies the counts. */
   public JobTypeSummary {
