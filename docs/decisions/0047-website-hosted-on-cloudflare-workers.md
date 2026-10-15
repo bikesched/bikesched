@@ -16,11 +16,11 @@ Accepted. Supersedes [ADR 0035](0035-website-hosted-on-static-app.md).
 [ADR 0035](0035-website-hosted-on-static-app.md) publishes `bikesched-website` to static.app: the
 workflow zips the built site, POSTs it to static.app's API and purges static.app's CDN cache
 afterwards. The project now hosts the site on Cloudflare instead, on the existing Worker
-`green-paper-4e4f`.
+`bikesched-website`.
 
 ## Decision
 
-bikesched deploys `bikesched-website` to the Cloudflare Worker `green-paper-4e4f` as Workers static
+bikesched deploys `bikesched-website` to the Cloudflare Worker `bikesched-website` as Workers static
 assets, without a Worker script. `bikesched-website/wrangler.jsonc` names the Worker and points its
 `assets.directory` at `build/hugo/publish/`, with `not_found_handling: "404-page"` so Hugo's
 `404.html` answers unknown paths. `.github/workflows/website.yml` builds the site

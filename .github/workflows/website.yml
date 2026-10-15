@@ -1,5 +1,5 @@
 # Builds the project website (bikesched-website, see docs/specs/website-project-site.md) and
-# deploys it to the Cloudflare Worker green-paper-4e4f (ADR 0047) whenever docs/, the main
+# deploys it to the Cloudflare Worker bikesched-website (ADR 0047) whenever docs/, the main
 # README.md or the bikesched-website module itself change on main. Pull requests are not deployed,
 # only pushes to main.
 
