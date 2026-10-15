@@ -29,6 +29,10 @@ registered up front with `bikesched.registerJobHandler(type, handler)`. A job sc
 immediately and starts right away on a node handling its type: the scheduling node notifies the
 others, see [Due jobs start right away](configuration.md#due-jobs-start-right-away).
 
+A payload that already is JSON text, e.g. a request body, goes in with `.payloadJson(body)`
+instead of `.payload(...)`: stored as it is, without the `JsonMapper` (a Jackson mapper would turn
+a `String` into a JSON string). Invalid JSON fails `schedule()`.
+
 To check on a job later, look it up by its id:
 
 ```java

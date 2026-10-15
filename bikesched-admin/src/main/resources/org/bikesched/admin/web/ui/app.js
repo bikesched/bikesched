@@ -94,7 +94,7 @@ function App() {
     <main class="content">
       ${route.section === 'jobs' &&
       html`<${JobsView} route=${route} navigate=${navigate} types=${types} me=${me} nodes=${nodes}
-        reloadKey=${reloadKey} onChanged=${() => setCountsKey((key) => key + 1)} />`}
+        reloadKey=${reloadKey} onChanged=${() => setCountsKey((key) => key + 1)} onScheduled=${reload} />`}
       ${route.section === 'events' &&
       html`<${EventsView} route=${route} navigate=${navigate} names=${names} me=${me}
         reloadKey=${reloadKey} onPublished=${reload} />`}

@@ -3,15 +3,16 @@
 A small admin page and JSON API for a bikesched database, embedded in the application that runs
 bikesched: no separate service, no build step, no dependencies beyond `bikesched-core`. User
 documentation: [Admin UI](../docs/admin.md). Design: [spec](../docs/specs/admin-ui.md),
-[publishing events](../docs/specs/admin-publish-events.md), [nodes](../docs/specs/admin-nodes.md).
+[publishing events](../docs/specs/admin-publish-events.md), [nodes](../docs/specs/admin-nodes.md),
+[scheduling jobs](../docs/specs/admin-schedule-jobs.md).
 
 ## Scope
 
 - Shows jobs by type and state, a job with its steps, history, child jobs, last error and
   (optionally) payload and result, events with who published, received or waits for them, and the
   nodes with their heartbeat.
-- Three actions: retry a failed job, cancel an active one and publish an event. Nothing else
-  writes.
+- Four actions: retry a failed job, cancel an active one, schedule a job and publish an event.
+  Nothing else writes.
 - Reads only through `bikesched.admin()` (package `org.bikesched.admin` in core), read-only lookups
   that never return payloads in lists. The serving node does not need to poll.
 
@@ -74,6 +75,7 @@ response contains them.
 | `java/…/Json` | a minimal JSON writer, so no JSON library is needed |
 | `resources/…/ui/index.html`, `app.js` | the shell, header with the Jobs and Events tabs, and hash routing |
 | `resources/…/ui/jobs.js`, `events.js` | the job and event lists and details |
+| `resources/…/ui/schedule.js` | the form that schedules a job |
 | `resources/…/ui/publish.js` | the form that publishes an event |
 | `resources/…/ui/nodes.js` | the node list and the live node detail |
 | `resources/…/ui/api.js`, `format.js`, `picker.js`, `html.js` | fetch helpers, formatting, the searchable select, Preact and htm setup |
