@@ -7,7 +7,8 @@ title: "Project website (bikesched.org)"
 Status: **implemented** — generation (module `bikesched-website`) and deployment to the Cloudflare
 Worker `green-paper-4e4f` (§4.6,
 [ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md), which superseded static.app
-from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md)) both done. The custom domain `bikesched.org` is not yet attached to the Worker.
+from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md)) both done, and `bikesched.org`
+serves the site as the Worker's custom domain.
 
 ## 1. Goal
 
@@ -121,9 +122,8 @@ the repository going public first. Later moved from static.app to Cloudflare
 Hugo's `404.html` for unknown paths. It runs on push to `main` touching `docs/**`, `README.md` or
 `bikesched-website/**`, plus `workflow_dispatch` for manual runs; pull requests are not deployed.
 
-Custom domain: `bikesched.org` is not yet attached to the Worker; the site serves from the
-Worker's `workers.dev` URL until then. A one-time Cloudflare dashboard/DNS step, not automated by
-the workflow.
+Custom domain: `bikesched.org` is attached to the Worker in the Cloudflare dashboard (a one-time
+step, not automated by the workflow), matching `hugo.toml`'s `baseURL`.
 
 ## 5. Documentation
 
@@ -147,14 +147,13 @@ render hook or a missing theme partial fails the build).
 2. ~~Theme (Hextra), overrides, markdown compatibility, front matter~~ (done).
 3. ~~GitHub Actions workflow building and deploying to static.app~~ (done), later to Cloudflare
    Workers (done).
-4. Custom domain: attach `bikesched.org` to the Worker, DNS records, enforce HTTPS.
-5. Remove the IDEAS.md entry once the custom domain serves the site.
+4. ~~Custom domain: attach `bikesched.org` to the Worker~~ (done).
+5. ~~Remove the IDEAS.md entry once the custom domain serves the site~~ (done).
 
 ## 8. Effort
 
-Small: step 4 is dashboard/DNS configuration, no code.
+Small: step 4 was dashboard/DNS configuration, no code.
 
 ## 9. Open questions
 
-1. Who controls the `bikesched.org` DNS zone? Attaching it to the Worker as a custom domain needs
-   the zone on Cloudflare.
+None left: the `bikesched.org` zone is on Cloudflare and attached to the Worker.

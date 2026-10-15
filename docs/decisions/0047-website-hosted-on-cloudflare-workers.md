@@ -37,5 +37,5 @@ are not deployed.
 - The `STATIC_APP_API_KEY` secret and the static.app site are no longer used and can be removed.
 - Wrangler takes the account from the API token; a token with access to several accounts needs a
   `CLOUDFLARE_ACCOUNT_ID` (or `account_id` in `wrangler.jsonc`) as well.
-- The custom domain `bikesched.org` still needs to be attached to the Worker (a one-time Cloudflare
-  dashboard step) before it serves the site.
+- `bikesched.org` is attached to the Worker as its custom domain (a one-time Cloudflare dashboard
+  step), so the site serves at the domain `hugo.toml`'s `baseURL` already names.
