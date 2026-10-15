@@ -8,9 +8,9 @@ weight: 13
 The module `bikesched-admin` (package `org.bikesched.admin.web`) serves a small page showing what
 the jobs of a bikesched database are doing: jobs by type and state, a job with its steps, history,
 child jobs and last error, events with the jobs that published, received or still wait for them, and
-the nodes, online or offline. Failed jobs can be retried and active ones cancelled, and events
-published, from the page. It is embedded in the application that runs bikesched; there is no
-separate service.
+the nodes, online or offline. Failed jobs can be retried and active ones cancelled, and jobs
+scheduled and events published, from the page. It is embedded in the application that runs
+bikesched; there is no separate service.
 
 ```java
 Bikesched bikesched = Bikesched.builder().dataSource(dataSource).build();
@@ -27,8 +27,10 @@ the jar ([Preact](https://preactjs.com) and [htm](https://github.com/developit/h
 reading a JSON API under `api/`; it loads nothing from other hosts.
 
 The node serving the page does not need to poll: a node built with `autoStartPolling(false)` shows
-the jobs of every node on the database. The runnable [admin example](../bikesched-examples/README.md#admin)
-serves the page next to a few demo jobs.
+the jobs of every node on the database. Scheduling jobs from the page needs the job handlers
+registered on it, as `newJob(type)` does in code; any node handling the type runs the job. The
+runnable [admin example](../bikesched-examples/README.md#admin) serves the page next to a few demo
+jobs.
 
 ## Dependencies and shaded jar
 
@@ -59,30 +61,30 @@ alongside an unrelocated nanojson dependency.
 
 | Option | Default | Effect |
 |---|---|---|
-| `access(AdminAccess)` | `AdminAccess.open()` | who may see the page and who may retry, cancel and publish, see [Access](#access) |
-| `readOnly(true)` | `false` | no retry, cancel or publish for anyone: every access level is capped at viewing |
+| `access(AdminAccess)` | `AdminAccess.open()` | who may see the page and who may retry, cancel, schedule and publish, see [Access](#access) |
+| `readOnly(true)` | `false` | no retry, cancel, schedule or publish for anyone: every access level is capped at viewing |
 | `showPayloads(true)` | `false` | shows job payloads and results and event payloads, see [Payloads](#payloads) |
 
 ## Access
 
 An `AdminAccess` (package `org.bikesched.admin.web.access`, with `AccessGrant` and `AccessLevel`)
 decides per request what it may do: `NONE`, `VIEW` (the page and every `GET` route) or `OPERATE`
-(also retry, cancel and publish events). The default, `AdminAccess.open()`, lets every request
-operate: protect the path in the application (Spring Security, a reverse proxy) or pick one of the
-options below.
+(also retry, cancel, schedule jobs and publish events). The default, `AdminAccess.open()`, lets
+every request operate: protect the path in the application (Spring Security, a reverse proxy) or
+pick one of the options below.
 
 HTTP Basic authentication with operators and viewers is built in:
 
 ```java
 BikeschedAdmin.of(bikesched)
     .access(AdminAccess.basicAuth()
-        .operator("ops", System.getenv("ADMIN_OPS_PASSWORD"))         // may retry, cancel, publish
+        .operator("ops", System.getenv("ADMIN_OPS_PASSWORD"))         // may change jobs, events
         .viewer("support", System.getenv("ADMIN_SUPPORT_PASSWORD"))   // read only
         .build());
 ```
 
 - Without valid credentials the admin answers `401` with a `WWW-Authenticate` challenge, so the
-  browser shows its login dialog. A viewer's retry, cancel or publish answers `403`.
+  browser shows its login dialog. A viewer's retry, cancel, schedule or publish answers `403`.
 - Passwords are kept as SHA-256 digests and compared in constant time. A failed login is logged
   with the user name and the client's address, never with the password.
 - Basic authentication sends the password with every request: serve the admin over HTTPS (the
@@ -101,11 +103,11 @@ AdminAccess byProxy = request -> {
 
 A custom access without a `challenge()` answers denied requests with `403`.
 
-Retry, cancel and publish are `POST` requests that must carry the header `X-Bikesched-Admin: 1`,
-which the page sets. A form or image on another site cannot send it, so a signed-in browser cannot
-be made to change jobs or publish events from elsewhere. Every response carries a strict
-`Content-Security-Policy` (only the admin's own files, no inline scripts or styles) and
-`X-Content-Type-Options: nosniff`.
+Retry, cancel, schedule and publish are `POST` requests that must carry the header
+`X-Bikesched-Admin: 1`, which the page sets. A form or image on another site cannot send it, so a
+signed-in browser cannot be made to change jobs or publish events from elsewhere. Every response
+carries a strict `Content-Security-Policy` (only the admin's own files, no inline scripts or styles)
+and `X-Content-Type-Options: nosniff`.
 
 ## Payloads
 
@@ -142,6 +144,15 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   scheduled without a recurrence are not runs and not listed. The tab refreshes every 3 seconds.
   While the job is open and has not ended, the detail refreshes every 3 seconds and updates the
   job's row in the list; an unchanged job costs a `304` without a body.
+- **Schedule job** (operators): a form in the detail panel, opened by the button above the job
+  list (with the type of the list filled in) or by "Schedule similar…" in a job's detail (type,
+  payload, priority and max attempts copied from that job). It offers only the job types the
+  serving node has a handler for; picking one copies the payload of its latest job (only with
+  `showPayloads(true)`). The job runs now, after a delay or at a local date and time; priority,
+  max attempts, timeout and an idempotency key are under "More options". The payload must be
+  JSON. For a recurring type it adds one run and leaves the recurrence as it is. Once scheduled,
+  the new job's detail opens; with an idempotency key a job of the type already has, that job
+  opens instead and nothing is scheduled. The server logs every scheduled job with the user.
 - **Events**: newest first, by name and key prefix. The detail shows who published the event (a
   job's step or outside a job), the jobs that received it and its payload; "latest" marks the event
   a new wait for its name and key would receive. The "Waiting jobs" tab lists the event waits still
@@ -199,7 +210,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/jobs?type=&state=&node=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
 | GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id starts with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
-| GET | `api/types` | `{"types": [{"type", "total", "counts", "recurrence"}]}` |
+| GET | `api/types` | `{"types": [{"type", "total", "counts", "recurrence", "handled"}]}`: `handled` if the serving node has a handler for the type (handled types without jobs are listed too) |
 | GET | `api/events?name=&key=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix |
 | GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id starts with `id`, as for jobs |
 | GET | `api/events/{id}` | `{"event", "steps", "payloadsShown"}`, plus `payload` with `showPayloads(true)` |
@@ -211,9 +222,11 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/me` | `{"user", "level", "readOnly", "payloadsShown"}` |
 | POST | `api/jobs/{id}/retry` | `{"retried": true or false}` (only failed jobs are retried) |
 | POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI") |
+| POST | `api/jobs` | `{"id", "created"}`: schedules a job from a form-encoded body (`type`, `payload` as JSON text, `delay` as ISO-8601 or `at` as an ISO-8601 instant, `priority`, `maxAttempts`, `timeout` as ISO-8601, `idempotencyKey`); `created` is `false` when a job of the type has the idempotency key, whose id is returned |
 | POST | `api/events` | `{"id", "received"}`: publishes an event from a form-encoded body (`name`, `key`, `payload` as JSON text, `retention` as ISO-8601, `idempotencyKey`); `received` counts the steps that got it at once |
 
-Errors are `{"error": "..."}` with `400` (malformed parameter, id or event), `401`/`403` (access),
+Errors are `{"error": "..."}` with `400` (malformed parameter, id, job or event, a type without a
+handler on the serving node), `401`/`403` (access),
 `404` (unknown job, event or path), `405` (wrong method) or `503` (the database cannot be reached).
 
 ## Lookups in code
@@ -234,9 +247,10 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findJobs(JobQuery)` | jobs by type, states and the node running them, newest first, in pages (`after(lastJob)`) |
 | `findJobsByIdPrefix(prefix, limit)` | jobs whose id starts with at least 8 hex digits (or a full id), newest first |
 | `findJob(id)` | one job's summary: state, attempts, times, last error, parent, recurrence, idempotency key, node |
+| `findJob(type, idempotencyKey)` | the job of a type with an idempotency key, the one scheduling with that key returns |
 | `findJobData(id)` | the payload and result as JSON text |
 | `findSteps(id)` | the job's steps in the order they started, with event and child job details |
-| `findJobTypes()` | every job type with its number of jobs per state |
+| `findJobTypes()` | every job type with its number of jobs per state and whether this node handles it (handled types without jobs too) |
 | `findRecurringJobRuns(type, limit)` | a recurring job's pending run and its latest ended runs, newest first |
 | `findEvents(EventQuery)` | unexpired events by name and key prefix, newest first, in pages |
 | `findEventsByIdPrefix(prefix, limit)` | unexpired events whose id starts with at least 8 hex digits |

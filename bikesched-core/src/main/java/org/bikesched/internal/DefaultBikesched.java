@@ -107,7 +107,9 @@ public final class DefaultBikesched implements Bikesched {
     this.settings = settings;
     this.nodeName = settings.nodeName();
     this.node = new DefaultNode(nodeName);
-    this.admin = new DefaultAdmin(database.admin(), settings.nodeTimeout(), this::ensureReady);
+    this.admin =
+        new DefaultAdmin(
+            database.admin(), settings.nodeTimeout(), this::ensureReady, registry.types());
     this.jobScheduler =
         new JobScheduler(
             database,

@@ -12,8 +12,9 @@ const Chevron = () => html`
 
 /**
  * items: [{name, count, sub, subClass, recurring}]; selected: a name or null for the "all" entry.
+ * Without allLabel there is no "all" entry and emptyLabel stands in until a name is selected.
  */
-export function Picker({ label, allLabel, placeholder, items, selected, onSelect }) {
+export function Picker({ label, allLabel, emptyLabel, placeholder, items, selected, onSelect }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const root = useRef(null);
@@ -46,6 +47,8 @@ export function Picker({ label, allLabel, placeholder, items, selected, onSelect
   const matches = items.filter((item) => item.name.toLowerCase().includes(needle));
   const total = items.reduce((sum, item) => sum + (item.count || 0), 0);
 
+  const shown = selected || allLabel || emptyLabel;
+
   const pick = (name) => {
     setOpen(false);
     setSearch('');
@@ -65,8 +68,8 @@ export function Picker({ label, allLabel, placeholder, items, selected, onSelect
   return html`
     <div class="picker" ref=${root}>
       <button type="button" class="picker-trigger" aria-haspopup="listbox" aria-expanded=${open}
-        aria-label=${`${label}: ${selected || allLabel}`} onClick=${() => setOpen(!open)}>
-        <span class="picker-value">${selected || allLabel}</span>
+        aria-label=${`${label}: ${shown}`} onClick=${() => setOpen(!open)}>
+        <span class=${selected || allLabel ? 'picker-value' : 'picker-value muted'}>${shown}</span>
         <${Chevron} />
       </button>
       ${open &&
@@ -81,7 +84,7 @@ export function Picker({ label, allLabel, placeholder, items, selected, onSelect
             }
           }} />
         <div class="picker-options" role="listbox" aria-label=${label}>
-          ${!needle && option(null, allLabel, total)}
+          ${!needle && allLabel && option(null, allLabel, total)}
           ${matches.map((item) => option(item.name, item.name, item.count, item.sub, item.subClass, item.recurring))}
           ${matches.length === 0 && html`<div class="picker-empty">Nothing matches.</div>`}
         </div>

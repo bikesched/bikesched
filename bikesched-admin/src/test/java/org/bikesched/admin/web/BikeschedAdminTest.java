@@ -9,17 +9,20 @@ import com.grack.nanojson.JsonObject;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
 import org.bikesched.admin.EventQuery;
+import org.bikesched.admin.JobQuery;
 import org.bikesched.job.JobState;
 import org.bikesched.job.Recurrence;
 import org.bikesched.test.BikeschedTest;
@@ -360,7 +363,7 @@ class BikeschedAdminTest {
       awaitState(later, JobState.CANCELLED);
 
       assertThat(server.get("/api/jobs/" + later + "/cancel").statusCode()).isEqualTo(405);
-      assertThat(server.post("/api/jobs", csrf, "1").statusCode()).isEqualTo(405);
+      assertThat(server.post("/api/types", csrf, "1").statusCode()).isEqualTo(405);
       assertThat(
               server
                   .send(
@@ -439,6 +442,79 @@ class BikeschedAdminTest {
     assertThat(bikesched.admin().findEvents(EventQuery.newest(10).withName(event)))
         .as("only the first form was published")
         .hasSize(1);
+  }
+
+  @Test
+  void schedulesJobs() {
+    String type = prefix + "scheduled";
+    var payloads = new LinkedBlockingQueue<String>();
+    bikesched.registerJobHandler(type, job -> payloads.add(job.payload()));
+
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      String csrf = AdminHandler.CSRF_HEADER;
+      String form = "type=" + encode(type) + "&payload=" + encode("{\"order\": 7}");
+      assertThat(server.postForm("/api/jobs", form, "X-Other", "1").statusCode())
+          .as("without the CSRF header")
+          .isEqualTo(403);
+
+      JsonObject now = AdminServer.json(server.postForm("/api/jobs", form, csrf, "1"));
+      assertThat(now.getBoolean("created")).isTrue();
+      UUID ran = UUID.fromString(now.getString("id"));
+      awaitState(ran, JobState.SUCCEEDED);
+      assertThat(payloads).containsExactly("{\"order\": 7}");
+
+      String later =
+          "type="
+              + encode(type)
+              + "&delay=PT1H&priority=5&maxAttempts=7&timeout=PT30S&idempotencyKey=admin-1";
+      JsonObject first = AdminServer.json(server.postForm("/api/jobs", later, csrf, "1"));
+      assertThat(first.getBoolean("created")).isTrue();
+      UUID laterId = UUID.fromString(first.getString("id"));
+      var summary = bikesched.admin().findJob(laterId).orElseThrow();
+      assertThat(summary.state()).isEqualTo(JobState.SCHEDULED);
+      assertThat(summary.priority()).isEqualTo(5);
+      assertThat(summary.maxAttempts()).isEqualTo(7);
+      assertThat(summary.scheduledAt()).isAfter(Instant.now().plus(Duration.ofMinutes(50)));
+      JsonObject second = AdminServer.json(server.postForm("/api/jobs", later, csrf, "1"));
+      assertThat(second.getBoolean("created")).as("the idempotency key returns the job").isFalse();
+      assertThat(second.getString("id")).isEqualTo(laterId.toString());
+
+      String at = "2099-01-01T00:00:00Z";
+      UUID atId =
+          UUID.fromString(
+              AdminServer.json(
+                      server.postForm("/api/jobs", "type=" + encode(type) + "&at=" + at, csrf, "1"))
+                  .getString("id"));
+      assertThat(bikesched.admin().findJob(atId).orElseThrow().scheduledAt())
+          .isEqualTo(Instant.parse(at));
+
+      assertThat(server.postForm("/api/jobs", "type=", csrf, "1").body()).contains("needs a type");
+      assertThat(server.postForm("/api/jobs", "type=" + prefix + "unknown", csrf, "1").body())
+          .contains("no handler registered");
+      for (String bad :
+          List.of(
+              "&payload=" + encode("{\"a\": }"),
+              "&delay=PT1M&at=" + at,
+              "&delay=soon",
+              "&delay=-PT1M",
+              "&at=tomorrow",
+              "&priority=high",
+              "&maxAttempts=0",
+              "&timeout=PT0S")) {
+        HttpResponse<String> response =
+            server.postForm("/api/jobs", "type=" + encode(type) + bad, csrf, "1");
+        assertThat(response.statusCode()).as(bad).isEqualTo(400);
+      }
+    }
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched).readOnly(true))) {
+      HttpResponse<String> response =
+          server.postForm("/api/jobs", "type=" + encode(type), AdminHandler.CSRF_HEADER, "1");
+      assertThat(response.statusCode()).isEqualTo(403);
+      assertThat(response.body()).contains("read-only");
+    }
+    assertThat(bikesched.admin().findJobs(JobQuery.newest(10).withType(type)))
+        .as("only the valid forms scheduled a job")
+        .hasSize(3);
   }
 
   @Test

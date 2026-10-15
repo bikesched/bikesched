@@ -580,3 +580,12 @@ button { font: inherit; }
   .content { padding: var(--space-4) var(--space-4) 32px; }
   .meta { grid-template-columns: minmax(0, 1fr); }
 }
+.notice-warning { background: var(--waiting-bg); color: var(--waiting-fg); }
+.segmented { display: flex; border: 1px solid var(--control-line); border-radius: var(--radius); overflow: hidden; }
+.segmented button { flex: 1; min-height: 34px; padding: 0 var(--space-3); border: 0; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.segmented button + button { border-left: 1px solid var(--control-line); }
+.segmented button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-hover); font-weight: 600; }
+.delay-row { display: grid; grid-template-columns: minmax(0, 5rem) minmax(0, 1fr); gap: var(--space-2); }
+.more-options { border-top: 1px solid var(--line-soft); padding-top: var(--space-3); }
+.more-options summary { font-size: 13px; font-weight: 600; cursor: pointer; }
+.more-options .form-grid { margin-top: var(--space-3); }
