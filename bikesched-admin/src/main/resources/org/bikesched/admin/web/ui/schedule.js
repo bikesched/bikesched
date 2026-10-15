@@ -58,7 +58,6 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
   const [when, setWhen] = useState('now');
   const [amount, setAmount] = useState('10');
   const [unit, setUnit] = useState('M');
-  const [at, setAt] = useState('');
   const [priority, setPriority] = useState('0');
   const [maxAttempts, setMaxAttempts] = useState('3');
   const [timeout, setTimeoutValue] = useState('');
@@ -118,17 +117,11 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
   }
   const wholeNumber = (text) => /^-?\d+$/.test(text.trim());
   const amountError = when === 'in' && !(wholeNumber(amount) && Number(amount) >= 0) ? 'A whole number, 0 or more' : null;
-  const atError = when === 'at' && !at ? 'Pick a date and time' : null;
   const priorityError = wholeNumber(priority) ? null : 'A whole number';
   const attemptsError = wholeNumber(maxAttempts) && Number(maxAttempts) >= 1 ? null : 'At least 1';
   const due =
-    when === 'in' && !amountError
-      ? new Date(now + Number(amount) * UNITS.find(([u]) => u === unit)[2] * 1000)
-      : when === 'at' && at
-        ? new Date(at)
-        : null;
-  const past = when === 'at' && due && due.getTime() < Date.now();
-  const ready = summary && !jsonError && !amountError && !atError && !priorityError && !attemptsError && !sending;
+    when === 'in' && !amountError ? new Date(now + Number(amount) * UNITS.find(([u]) => u === unit)[2] * 1000) : null;
+  const ready = summary && !jsonError && !amountError && !priorityError && !attemptsError && !sending;
 
   const pickType = (picked) => {
     setType(picked);
@@ -148,7 +141,6 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
         type,
         payload: payload.trim(),
         delay: when === 'in' ? isoDelay(Number(amount), unit) : '',
-        at: when === 'at' ? due.toISOString() : '',
         priority: priority.trim() === '0' ? '' : priority.trim(),
         maxAttempts: maxAttempts.trim(),
         timeout,
@@ -197,7 +189,7 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
           <div class="field">
             <span class="field-label" id="schedule-when">When</span>
             <div class="segmented" role="group" aria-labelledby="schedule-when">
-              ${[['now', 'Now'], ['in', 'In'], ['at', 'At']].map(
+              ${[['now', 'Now'], ['in', 'In']].map(
                 ([value, label]) => html`<button type="button" aria-pressed=${when === value} onClick=${() => setWhen(value)}>${label}</button>`,
               )}
             </div>
@@ -209,11 +201,8 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
                 ${UNITS.map(([value, label]) => html`<option value=${value}>${label}</option>`)}
               </select>
             </div>`}
-            ${when === 'at' &&
-            html`<input class=${`input mono${atError ? ' invalid' : ''}`} type="datetime-local" step="1" aria-label="Due at"
-              value=${at} onInput=${(event) => setAt(event.target.value)} />`}
-            <span class=${amountError ? 'field-error' : past ? 'field-warning' : 'muted small'}>
-              ${amountError || atError || (past ? 'In the past: it runs right away.' : when === 'now' ? 'Due right away.' : due ? `Due at ${dateTime(due.toISOString())} (your time).` : '')}
+            <span class=${amountError ? 'field-error' : 'muted small'}>
+              ${amountError || (when === 'now' ? 'Due right away.' : due ? `Due at ${dateTime(due.toISOString())} (your time).` : '')}
             </span>
           </div>
         </div>

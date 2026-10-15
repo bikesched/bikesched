@@ -144,15 +144,15 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   scheduled without a recurrence are not runs and not listed. The tab refreshes every 3 seconds.
   While the job is open and has not ended, the detail refreshes every 3 seconds and updates the
   job's row in the list; an unchanged job costs a `304` without a body.
-- **Schedule job** (operators): a form in the detail panel, opened by the button above the job
-  list (with the type of the list filled in) or by "Schedule similar…" in a job's detail (type,
-  payload, priority and max attempts copied from that job). It offers only the job types the
-  serving node has a handler for; picking one copies the payload of its latest job (only with
-  `showPayloads(true)`). The job runs now, after a delay or at a local date and time; priority,
-  max attempts, timeout and an idempotency key are under "More options". The payload must be
-  JSON. For a recurring type it adds one run and leaves the recurrence as it is. Once scheduled,
-  the new job's detail opens; with an idempotency key a job of the type already has, that job
-  opens instead and nothing is scheduled. The server logs every scheduled job with the user.
+- **Schedule job** (operators): a form in the detail panel, opened by the button above the job list
+  (with the type of the list filled in) or by "Schedule similar…" in a job's detail (type, payload,
+  priority and max attempts copied from that job). It offers only the job types the serving node has
+  a handler for; picking one copies the payload of its latest job (only with `showPayloads(true)`).
+  The job runs now or after a delay; priority, max attempts, timeout and an idempotency key are
+  under "More options". The payload must be JSON. For a recurring type it adds one run and leaves
+  the recurrence as it is. Once scheduled, the new job's detail opens; with an idempotency key a job
+  of the type already has, that job opens instead and nothing is scheduled. The server logs every
+  scheduled job with the user.
 - **Events**: newest first, by name and key prefix. The detail shows who published the event (a
   job's step or outside a job), the jobs that received it and its payload; "latest" marks the event
   a new wait for its name and key would receive. The "Waiting jobs" tab lists the event waits still
