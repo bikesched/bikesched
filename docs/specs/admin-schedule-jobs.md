@@ -41,7 +41,7 @@ In scope:
   attempts copied).
 - Type: the types the serving node handles, with their job counts; recurring types marked.
   Picking one copies the payload of its latest job (with `showPayloads(true)` only).
-- When: now, in (a number and a unit), at (a local date and time, sent as an instant).
+- When: now or in (a number and a unit).
 - More options: priority, max attempts, timeout (node default or a choice), idempotency key.
 - `JobSettings.payloadJson(String)` in core; a way for the admin to read the handled types.
 
@@ -131,9 +131,9 @@ read-only lookups).
   the two cases apart. A job stored with the key between the lookup and `schedule()` is reported
   as created; only the notice is wrong then, never the job count.
 - The Jobs tab's type picker leaves out handled types without jobs; only the form offers them.
-- The delay is a whole number of seconds, minutes, hours or days (sent as an ISO-8601 duration),
-  the time a `datetime-local` input in the browser's time zone (sent as an instant). A time in
-  the past is allowed with a hint: the job runs right away.
+- The delay is a whole number of seconds, minutes, hours or days, sent as an ISO-8601 duration.
+- The form has no "At" time picker (Simon, on PR review: not needed for now). The API keeps `at`
+  (an ISO-8601 instant) for scripts.
 - Timeout offers node default, 30 seconds, 1, 5 or 15 minutes and 1 hour.
 - The route parameters are `schedType` and `from`, dropped from the list filters like the publish
   form's.
