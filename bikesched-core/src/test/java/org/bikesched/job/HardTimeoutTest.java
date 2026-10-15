@@ -149,7 +149,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
   void graceMustBePositive() {
     assertThatThrownBy(() -> Bikesched.builder().hardTimeoutGrace(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("hardTimeoutGrace must be positive");
+        .hasMessage("hardTimeoutGrace must be positive: PT0S");
   }
 
   /** Waits like non-interruptible code would: swallows every interrupt. */

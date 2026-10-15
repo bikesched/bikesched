@@ -19,7 +19,7 @@ import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedException;
 import org.bikesched.LogCapture;
-import org.bikesched.internal.event.EventCleanUp;
+import org.bikesched.internal.DefaultBikesched;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.junit.jupiter.api.Test;
@@ -604,7 +604,7 @@ class EventTest extends AbstractBikeschedTest {
   @Test
   void eventCleanUpDeletesEventsOlderThanTheRetention() throws Exception {
     String key = "cleanup-" + UUID.randomUUID();
-    var logs = LogCapture.of(EventCleanUp.class);
+    var logs = LogCapture.of(DefaultBikesched.class);
     try (logs;
         Bikesched bikesched =
             testNode("node-event-cleanup")

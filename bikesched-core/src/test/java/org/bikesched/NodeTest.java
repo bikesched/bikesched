@@ -10,8 +10,8 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.bikesched.internal.DefaultBikesched;
 import org.bikesched.internal.node.NodeCleanUp;
-import org.bikesched.internal.node.NodeHeartbeat;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -35,7 +35,7 @@ class NodeTest extends AbstractBikeschedTest {
 
   @Test
   void removedNodeRegistersAgainUnderItsId() throws Exception {
-    var logs = LogCapture.of(NodeHeartbeat.class);
+    var logs = LogCapture.of(DefaultBikesched.class);
     try (logs;
         Bikesched bikesched = testNode("node-removed", Duration.ofMillis(50)).build()) {
       bikesched.registerJobHandler("after-removal", () -> {});
@@ -58,7 +58,7 @@ class NodeTest extends AbstractBikeschedTest {
 
   @Test
   void removedNodeDoesNotTakeBackItsNameFromAnotherNode() throws Exception {
-    var logs = LogCapture.of(NodeHeartbeat.class);
+    var logs = LogCapture.of(DefaultBikesched.class);
     UUID other = UUID.randomUUID();
     try (logs;
         Bikesched bikesched = testNode("node-name-taken", Duration.ofMillis(50)).build()) {

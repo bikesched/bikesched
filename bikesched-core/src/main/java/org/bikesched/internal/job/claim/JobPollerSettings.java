@@ -2,7 +2,6 @@
 package org.bikesched.internal.job.claim;
 
 import java.time.Duration;
-import java.util.Objects;
 import org.bikesched.RetryBackoff;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.job.listener.JobListener;
@@ -37,15 +36,4 @@ public record JobPollerSettings(
     int failureHandlerAttempts,
     Duration hardTimeoutGrace,
     JobListener jobListener,
-    EventListener eventListener) {
-
-  /** Checks the required settings. */
-  public JobPollerSettings {
-    Objects.requireNonNull(nodeName, "nodeName");
-    Objects.requireNonNull(pollInterval, "pollInterval");
-    Objects.requireNonNull(retryBackoff, "retryBackoff");
-    Objects.requireNonNull(eventRetention, "eventRetention");
-    Objects.requireNonNull(jobListener, "jobListener");
-    Objects.requireNonNull(eventListener, "eventListener");
-  }
-}
+    EventListener eventListener) {}

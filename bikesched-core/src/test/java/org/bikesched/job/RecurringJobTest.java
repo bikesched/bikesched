@@ -14,7 +14,6 @@ import org.bikesched.Bikesched;
 import org.bikesched.LogCapture;
 import org.bikesched.internal.DefaultBikesched;
 import org.bikesched.internal.job.JobScheduler;
-import org.bikesched.internal.job.RecurringJobRepair;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -218,7 +217,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
 
   @Test
   void missingOccurrenceIsRecreatedOnceWhenPollingStarts() throws Exception {
-    var logs = LogCapture.of(RecurringJobRepair.class);
+    var logs = LogCapture.of(DefaultBikesched.class);
     try (logs;
         Bikesched bikesched =
             testNode("node-recurring-repair")
@@ -316,7 +315,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
               }
               return previous.plus(Duration.ofHours(1));
             });
-    var logs = LogCapture.of(RecurringJobRepair.class, DefaultBikesched.class);
+    var logs = LogCapture.of(DefaultBikesched.class);
     try (logs;
         Bikesched bikesched =
             testNode("node-recurring-retry")

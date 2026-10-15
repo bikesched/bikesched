@@ -3,22 +3,15 @@ package org.bikesched.internal;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.RetryBackoff;
 import org.bikesched.event.listener.EventListener;
-import org.bikesched.internal.event.EventCleanUp;
-import org.bikesched.internal.job.HistoryCleanUp;
-import org.bikesched.internal.job.JobCleanUp;
-import org.bikesched.internal.node.NodeCleanUp;
-import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.listener.JobListener;
 
 /**
- * Validated configuration of a {@link DefaultBikesched} node, assembled by {@link
- * BikeschedBuilder}.
+ * Configuration of a node, assembled and validated by {@link BikeschedBuilder}.
  *
  * @param nodeName unique node name
  * @param heartbeatInterval interval between heartbeats
@@ -39,13 +32,13 @@ import org.bikesched.job.listener.JobListener;
  *     waiting later, unless the event sets its own retention
  * @param defaultEventTimeout maximum wait for an event for waits without a timeout of their own;
  *     {@code null} for none
- * @param nodeCleanUpInterval interval between node clean-ups ({@link NodeCleanUp})
- * @param eventCleanUpInterval interval between event clean-ups ({@link EventCleanUp})
+ * @param nodeCleanUpInterval interval between node clean-ups (releases jobs of dead nodes)
+ * @param eventCleanUpInterval interval between event clean-ups (deletes expired events)
  * @param jobHistoryRetention how long job history entries are kept; {@code null} if the node does
  *     not record job history
- * @param jobHistoryCleanUpInterval interval between job history clean-ups ({@link HistoryCleanUp})
+ * @param jobHistoryCleanUpInterval interval between job history clean-ups (deletes old entries)
  * @param jobRetention how long ended jobs are kept
- * @param jobCleanUpInterval interval between job clean-ups ({@link JobCleanUp})
+ * @param jobCleanUpInterval interval between job clean-ups (deletes ended jobs)
  * @param statementTimeout maximum duration of a database statement; {@code null} to leave it to the
  *     data source
  * @param hardTimeoutGrace how long after its timeout an attempt whose handler ignores the interrupt
@@ -81,37 +74,8 @@ public record Settings(
     EventListener eventListener,
     List<RecurrenceParser> recurrenceParsers) {
 
-  /** Validates the settings. */
+  /** Copies the recurrence parsers. */
   public Settings {
-    ValidationUtil.requireName(nodeName, "node name");
-    Objects.requireNonNull(heartbeatInterval, "heartbeatInterval");
-    Objects.requireNonNull(nodeTimeout, "nodeTimeout");
-    Objects.requireNonNull(pollInterval, "pollInterval");
-    Objects.requireNonNull(notifyInterval, "notifyInterval");
-    Objects.requireNonNull(retryBackoff, "retryBackoff");
-    Objects.requireNonNull(jobListener, "jobListener");
-    Objects.requireNonNull(eventListener, "eventListener");
     recurrenceParsers = List.copyOf(recurrenceParsers);
-    Objects.requireNonNull(eventRetention, "eventRetention");
-    Objects.requireNonNull(nodeCleanUpInterval, "nodeCleanUpInterval");
-    Objects.requireNonNull(eventCleanUpInterval, "eventCleanUpInterval");
-    Objects.requireNonNull(jobHistoryCleanUpInterval, "jobHistoryCleanUpInterval");
-    Objects.requireNonNull(jobRetention, "jobRetention");
-    Objects.requireNonNull(jobCleanUpInterval, "jobCleanUpInterval");
-    if (failureHandlerAttempts < 1) {
-      throw new IllegalArgumentException(
-          "failureHandlerAttempts must be >= 1: " + failureHandlerAttempts);
-    }
-    if (maxConcurrentJobs < 1) {
-      throw new IllegalArgumentException("maxConcurrentJobs must be >= 1: " + maxConcurrentJobs);
-    }
-    if (nodeTimeout.compareTo(heartbeatInterval.multipliedBy(2)) < 0) {
-      throw new IllegalArgumentException(
-          "nodeTimeout ("
-              + nodeTimeout
-              + ") must be at least twice the heartbeatInterval ("
-              + heartbeatInterval
-              + ")");
-    }
   }
 }

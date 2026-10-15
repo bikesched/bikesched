@@ -55,9 +55,10 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   records) for the admin UI and custom tooling; summaries never carry payloads or results.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
-  - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `DefaultAdmin`, `Settings`
+  - `internal`: `DefaultBikesched` (wiring, lifecycle, API, heartbeat, clean-ups and the recurring
+    job repair), `DefaultAdmin`, `Settings` (validated by `BikeschedBuilder`)
   - `internal.json`: `RawJsonMapper` (the default mapper, passes JSON strings through)
-  - `internal.node`: `DefaultNode` (the node's name, id and closed state), `NodeHeartbeat`,
+  - `internal.node`: `DefaultNode` (the node's name, id and closed state),
     `NodeCleanUp` (releases jobs of dead nodes, removes them)
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
     event waits via `DefaultEventWait`, sleeps, polls via `DefaultPollBuilder`; `JobSuspended` with
@@ -66,13 +67,13 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
     `JobLogContext` (MDC of a job's thread), `JobScheduler` (stores built jobs, registers and
     removes recurring jobs), `JobRegistry` (handlers, recurring jobs and payload types of a node),
     `JobAttempt` (timeout timer), `HardTimeout` (abandons attempts that ignore their timeout),
-    `JobSlot`, `RecurringJob`, `RecurringJobRepair`, `HistoryCleanUp`, `JobCleanUp`,
+    `JobSlot`, `RecurringJob`,
     `DueJobsNotifier` (tells the own poller and, batched, the other nodes about jobs made due), `DueTimes` (the poller's wake-ups, implemented in `claim`)
   - `internal.job.claim`: `JobPoller` (claiming and running jobs: poller, job slots, job threads,
     timeouts, wake-ups; configured by `JobPollerSettings`), `WakeUpTimer` (one timer, confined to
     the poller thread), `JobNotificationListener` (`LISTEN` connection, reconnects, self-check);
     uses `internal.job`, never the other way round
-  - `internal.event`: `DefaultEventBuilder`, `EventCleanUp`
+  - `internal.event`: `DefaultEventBuilder`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
     (`ExecutorUtil`: shutting down executors; `ValidationUtil`: name and key checks matching the
     schema's length constraints, positive durations, message truncation)

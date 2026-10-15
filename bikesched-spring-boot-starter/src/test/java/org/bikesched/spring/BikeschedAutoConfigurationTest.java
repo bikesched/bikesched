@@ -144,7 +144,8 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
               assertThat(context).hasFailed();
               assertThat(
                       anyCauseMessage(
-                          context.getStartupFailure(), "must be longer than heartbeatInterval"))
+                          context.getStartupFailure(),
+                          "must be at least twice the heartbeatInterval"))
                   .isTrue();
             });
   }
