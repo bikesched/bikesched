@@ -202,10 +202,10 @@ database access.
 
 ### Custom domain for bikesched.org
 
-`bikesched-website` is generated with Hugo and deployed to static.app on every push to `main`
-touching `docs/**`, `README.md` or `bikesched-website/**` (see
-[spec](docs/specs/website-project-site.md),
-[ADR 0035](docs/decisions/0035-website-hosted-on-static-app.md)). The site currently serves from
-the default `https://bikesched.staticdomains.app` subdomain; the already reserved domain
-`bikesched.org` still needs to be configured on static.app and pointed at it by DNS, with HTTPS
-enforced, before `hugo.toml`'s `baseURL` (already `https://bikesched.org/`) matches reality.
+`bikesched-website` is generated with Hugo and deployed to the Cloudflare Worker
+`green-paper-4e4f` on every push to `main` touching `docs/**`, `README.md` or
+`bikesched-website/**` (see [spec](docs/specs/website-project-site.md),
+[ADR 0047](docs/decisions/0047-website-hosted-on-cloudflare-workers.md)). The site currently
+serves from the Worker's `workers.dev` URL; the already reserved domain `bikesched.org` still needs
+to be attached to the Worker as a custom domain, with HTTPS enforced, before `hugo.toml`'s
+`baseURL` (already `https://bikesched.org/`) matches reality.

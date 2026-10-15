@@ -4,10 +4,10 @@ title: "Project website (bikesched.org)"
 
 # Specification: project website (bikesched.org)
 
-Status: **implemented** — generation (module `bikesched-website`) and deployment to static.app
-(§4.6, [ADR 0035](../decisions/0035-website-hosted-on-static-app.md)) both done. The custom domain
-`bikesched.org` is not yet pointed at static.app; the site serves from
-`https://bikesched.staticdomains.app` until then.
+Status: **implemented** — generation (module `bikesched-website`) and deployment to the Cloudflare
+Worker `green-paper-4e4f` (§4.6,
+[ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md), which superseded static.app
+from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md)) both done. The custom domain `bikesched.org` is not yet attached to the Worker.
 
 ## 1. Goal
 
@@ -106,29 +106,29 @@ Three small overrides on top of Hextra, kept to the minimum needed:
 - `[[menu.sidebar]]` entry linking back to `/docs/` (Hextra's sidebar only lists a section's
   children, not the section's own landing page).
 
-### 4.6 Deployment: static.app
+### 4.6 Deployment: Cloudflare Workers
 
 Narrowed from the original IDEAS.md entry down to this one remaining piece, then changed from the
 originally planned GitHub Pages to static.app ([ADR 0035](../decisions/0035-website-hosted-on-static-app.md)):
 GitHub Pages with a custom domain and enforced HTTPS needs a paid plan for a private repository, or
-the repository going public first — a billing/visibility decision outside the scope of shipping a
-website.
+the repository going public first. Later moved from static.app to Cloudflare
+([ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md)).
 
-`.github/workflows/website.yml` builds `./gradlew :bikesched-website:hugoBuild`, zips
-`build/hugo/publish/` with its contents at the archive root, and POSTs it to
-`https://api.static.app/v1/sites/zip` for the pre-created site (`pid` `le3rpst1ob`), authenticated
-with the `STATIC_APP_API_KEY` repository secret. It runs on push to `main` touching `docs/**`,
-`README.md` or `bikesched-website/**`, plus `workflow_dispatch` for manual runs; pull requests are
-not deployed. A `purge-cache` call follows every publish (the CDN otherwise caches assets for up to
-4 hours).
+`.github/workflows/website.yml` builds `./gradlew :bikesched-website:hugoBuild` and runs
+`wrangler deploy` in `bikesched-website/` (`cloudflare/wrangler-action`), authenticated with the
+`CLOUDFLARE_API_KEY` repository secret. `bikesched-website/wrangler.jsonc` deploys
+`build/hugo/publish/` as static assets of the Worker `green-paper-4e4f` (no Worker script), with
+Hugo's `404.html` for unknown paths. It runs on push to `main` touching `docs/**`, `README.md` or
+`bikesched-website/**`, plus `workflow_dispatch` for manual runs; pull requests are not deployed.
 
-Custom domain: `bikesched.org` is not yet configured on static.app or pointed at it by DNS — the
-site currently serves from the default `https://bikesched.staticdomains.app` subdomain. A one-time
-dashboard/DNS step, not automated by the workflow.
+Custom domain: `bikesched.org` is not yet attached to the Worker; the site serves from the
+Worker's `workers.dev` URL until then. A one-time Cloudflare dashboard/DNS step, not automated by
+the workflow.
 
 ## 5. Documentation
 
-- This spec, linked from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md).
+- This spec, linked from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md) and
+  [ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md).
 - No `docs/*.md` page of its own: the website is infrastructure around the existing docs, not a
   feature with its own API or user-facing concept.
 - `AGENTS.md`'s module table has a `bikesched-website` row.
@@ -145,8 +145,9 @@ render hook or a missing theme partial fails the build).
 
 1. ~~Module, Hugo plugin, minimal site, mounts for README.md and docs/~~ (done).
 2. ~~Theme (Hextra), overrides, markdown compatibility, front matter~~ (done).
-3. ~~GitHub Actions workflow building and deploying to static.app~~ (done).
-4. Custom domain: configure `bikesched.org` on static.app, DNS records, enforce HTTPS.
+3. ~~GitHub Actions workflow building and deploying to static.app~~ (done), later to Cloudflare
+   Workers (done).
+4. Custom domain: attach `bikesched.org` to the Worker, DNS records, enforce HTTPS.
 5. Remove the IDEAS.md entry once the custom domain serves the site.
 
 ## 8. Effort
@@ -155,5 +156,5 @@ Small: step 4 is dashboard/DNS configuration, no code.
 
 ## 9. Open questions
 
-1. Who controls the `bikesched.org` DNS zone, and what exact records does static.app ask for to
-   serve a custom domain?
+1. Who controls the `bikesched.org` DNS zone? Attaching it to the Worker as a custom domain needs
+   the zone on Cloudflare.
