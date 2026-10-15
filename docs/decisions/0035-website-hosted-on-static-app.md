@@ -9,8 +9,8 @@ Date: 2026-10-10
 
 ## Status
 
-Accepted. Narrows [the website spec](../specs/website-project-site.md)'s §4.6, which planned
-GitHub Pages.
+Superseded by [ADR 0047](0047-website-hosted-on-cloudflare-workers.md). Narrowed
+[the website spec](../specs/website-project-site.md)'s §4.6, which planned GitHub Pages.
 
 ## Context
 
