@@ -1,7 +1,7 @@
 # Specification: scheduling jobs from the admin UI
 
 Status: **implemented**, [ADR 0046](../decisions/0046-scheduling-jobs-from-the-admin-ui.md),
-[user docs](../admin.md)
+[user docs](../operations/admin.md)
 
 ## 1. Goal
 

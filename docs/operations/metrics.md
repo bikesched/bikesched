@@ -1,6 +1,6 @@
 ---
 title: "Metrics"
-weight: 11
+weight: 2
 ---
 
 # Metrics
@@ -26,7 +26,7 @@ Bikesched bikesched =
 |---|---|---|---|
 | `bikesched.job.claim.delay` | timer | `job.type` | how long after they were due jobs were claimed; rising values mean the nodes fall behind |
 | `bikesched.job.attempts` | timer | `job.type`, `outcome` | attempts by recorded outcome and their duration |
-| `bikesched.job.attempts.abandoned` | counter | `job.type` | attempts abandoned by the [hard timeout](jobs.md#timeouts) |
+| `bikesched.job.attempts.abandoned` | counter | `job.type` | attempts abandoned by the [hard timeout](../jobs/README.md#timeouts) |
 | `bikesched.jobs.active` | gauge | | attempts being processed by the node |
 | `bikesched.jobs.abandoned` | gauge | | abandoned attempts whose thread is still running |
 | `bikesched.events.published` | counter | `event.name`, `source` | published events; `source` is `node` (`bikesched.newEvent`) or `job` (`job.newEvent`) |
@@ -34,13 +34,15 @@ Bikesched bikesched =
 
 `outcome` is the `JobAttemptOutcome` in lower case: `succeeded`, `retrying`, `failed`, `cancelled`,
 `waiting`, `postponed` (the handler called `job.postpone`), `compensating`, `compensated`,
-`compensation_retrying`, `compensation_failed`, `failing` (the job's [failure handler](jobs.md#failure-handlers) runs next; its run then reports `failed` or
-`compensation_failed`), `failure_handler_retrying` or `not_recorded` (the job was released while it ran, or the database write failed; it runs again).
-Alert e.g. on `failed` and `compensation_failed`.
+`compensation_retrying`, `compensation_failed`, `failing` (the job's [failure
+handler](../jobs/README.md#failure-handlers) runs next; its run then reports `failed` or
+`compensation_failed`), `failure_handler_retrying` or `not_recorded` (the job was released while it
+ran, or the database write failed; it runs again). Alert e.g. on `failed` and `compensation_failed`.
 
 The event meters count an event once, when it is published; a step that starts waiting later and
-receives a kept event (see [Retention](events.md#retention)) is not a delivery. Events published in
-the caller's transaction (`connection(…)`) are not counted, see [Own listeners](#own-listeners).
+receives a kept event (see [Retention](../multi-step-jobs/events.md#retention)) is not a delivery.
+Events published in the caller's transaction (`connection(…)`) are not counted, see [Own
+listeners](#own-listeners).
 
 Every meter also carries the tags passed to the constructor. Use one listener per node, and give
 nodes that share a registry a distinguishing tag such as the node name, otherwise their gauges

@@ -1,6 +1,6 @@
 ---
 title: "Spring Boot"
-weight: 12
+weight: 1
 ---
 
 # Spring Boot
@@ -39,8 +39,8 @@ class InvoiceJobs {
 
 Anywhere else: `@Autowired Bikesched bikesched; bikesched.newJob("send-invoice").payload(…).schedule();`.
 
-The [Spring example](../bikesched-examples/README.md#spring-boot), a regular Spring Boot application
-in `bikesched-examples/spring`, runs this against the compose database
+The [Spring example](../../bikesched-examples/README.md#spring-boot), a regular Spring Boot
+application in `bikesched-examples/spring`, runs this against the compose database
 (`./gradlew :bikesched-examples:spring:bootRun`) and shows transactional scheduling and event
 publishing with two services that share no data.
 
@@ -56,8 +56,8 @@ downgrade this to a warning, and none intended. See [Annotations](annotations.md
 signature rules.
 
 **Recurring handlers**: the starter configures the node's
-[recurrence parsers](recurring-jobs.md#recurrence-expressions) with ISO-8601 durations and Spring's
-six-field `CronExpression` syntax, so a handler can declare its schedule next to its type:
+[recurrence parsers](../jobs/recurring-jobs.md#recurrence-expressions) with ISO-8601 durations and
+Spring's six-field `CronExpression` syntax, so a handler can declare its schedule next to its type:
 
 ```java
 @JobHandler(type = "purge-expired-sessions", schedule = "0 0 */6 * * *")
@@ -84,7 +84,7 @@ RecurrenceParser unixCronParser() {
 A `BikeschedCustomizer` runs after this and can replace the whole set with
 `builder.recurrenceParsers(…)`.
 
-See [Cron expressions](recurring-jobs.md#cron-expressions).
+See [Cron expressions](../jobs/recurring-jobs.md#cron-expressions).
 
 **Transactional handlers**: a handler runs on a bikesched job thread, never inside an ambient
 transaction, so `@Transactional` with the default propagation `REQUIRED` simply starts a new one —
@@ -92,7 +92,7 @@ transaction, so `@Transactional` with the default propagation `REQUIRED` simply 
 method that uses the default propagation; it only sees annotations, so a handler that uses a
 `TransactionTemplate` needs no annotation and gets no warning. Step results and job state are always
 written by bikesched outside the handler's transaction, like anywhere else
-([steps.md](steps.md)).
+([steps.md](../multi-step-jobs/steps.md)).
 
 **Scheduling and publishing inside your transaction**: pass the transaction's connection to the
 builder, and the job row (or event) commits and rolls back with it:
@@ -149,21 +149,23 @@ bikesched:
 
 Validation reads migration history without DDL or history writes. Missing history/versions or a
 checksum mismatch fails startup when polling is enabled, otherwise the first database operation.
-It is not physical schema drift detection; see [database migrations](database.md#migrations) for
-permissions and deployment ordering. `auto-start.enabled` only controls polling, not DDL permission.
-An application calling `Bikesched.migrate()` explicitly still requests migration regardless of the
-flag; that call requires migration privileges and does not start polling.
+It is not physical schema drift detection; see [database
+migrations](../operations/database.md#migrations) for permissions and deployment ordering.
+`auto-start.enabled` only controls polling, not DDL permission. An application calling
+`Bikesched.migrate()` explicitly still requests migration regardless of the flag; that call requires
+migration privileges and does not start polling.
 
 ## Properties
 
-Every builder option ([configuration.md](configuration.md)) has a `bikesched.*` property; unset ones
-keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and friends).
+Every builder option ([configuration.md](../getting-started/configuration.md)) has a `bikesched.*`
+property; unset ones keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and
+friends).
 
 | Property | Default | Note |
 |---|---|---|
 | `bikesched.node-name` | `<spring.application.name>-<host name>` | unique per live node; the host name keeps replicas apart |
 | `bikesched.data-source` | the single / `@Primary` `DataSource` | the **bean name** of the one to use, never a JDBC URL; with several candidates and neither the property nor a `@Primary`, the context fails listing them |
-| `bikesched.poll-interval` | 10 seconds | safety net while listening, see [Due jobs](configuration.md#due-jobs-start-right-away) |
+| `bikesched.poll-interval` | 10 seconds | safety net while listening, see [Due jobs](../getting-started/configuration.md#due-jobs-start-right-away) |
 | `bikesched.listen-for-due-jobs` | `true` | holds one pool connection; `false` behind PgBouncer in transaction mode |
 | `bikesched.notify-interval` | 100 ms | |
 | `bikesched.heartbeat-interval` | 5 seconds | |
@@ -177,7 +179,7 @@ keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and f
 | `bikesched.event-retention` | 7 days | |
 | `bikesched.event-clean-up-interval` | 1 hour | |
 | `bikesched.node-clean-up-interval` | 15 seconds | |
-| `bikesched.job-history-retention` | off | enables the [job history](jobs.md#job-history) |
+| `bikesched.job-history-retention` | off | enables the [job history](../jobs/README.md#job-history) |
 | `bikesched.job-history-clean-up-interval` | 1 hour | |
 | `bikesched.job-retention` | 7 days | |
 | `bikesched.job-clean-up-interval` | 1 hour | |
@@ -196,14 +198,16 @@ entirely (define one in tests if you want to set builder options directly).
 With `bikesched-jackson` on the classpath, the starter registers a `JsonMapper` built from the
 context's Jackson 3 `ObjectMapper` (Boot's `JacksonAutoConfiguration`, or yours) — so job payloads
 are ordinary records, mapped exactly like the rest of the application serializes JSON. Without the
-module, payloads stay JSON strings ([configuration.md](configuration.md#json-mapping)). A user
-`JsonMapper` bean wins.
+module, payloads stay JSON strings
+([configuration.md](../getting-started/configuration.md#json-mapping)). A user `JsonMapper` bean
+wins.
 
 With `bikesched-micrometer` and a `MeterRegistry` bean (Boot's Actuator/micrometer registry), an
 automatic `MicrometerJobListener` and `MicrometerEventListener` record the meters of
-[metrics.md](metrics.md), tagged `node` with the resolved node name — so nodes sharing a registry do
-not overwrite each other's gauges. Turn both off with `bikesched.metrics.enabled=false`, or replace
-either with your own `MicrometerJobListener` or `MicrometerEventListener` bean.
+[metrics.md](../operations/metrics.md), tagged `node` with the resolved node name — so nodes sharing
+a registry do not overwrite each other's gauges. Turn both off with
+`bikesched.metrics.enabled=false`, or replace either with your own `MicrometerJobListener` or
+`MicrometerEventListener` bean.
 
 All `JobListener` beans in the context are composed and passed to the node; each gets the same
 events. The same goes for `org.bikesched.event.listener.EventListener` beans (not to be confused

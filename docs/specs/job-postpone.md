@@ -1,7 +1,7 @@
 # Specification: postponing jobs
 
 Status: **implemented** ([ADR 0037](../decisions/0037-job-postpone.md); user docs:
-[Postponing](../jobs.md#postponing)).
+[Postponing](../jobs/README.md#postponing)).
 
 ## 1. Goal
 

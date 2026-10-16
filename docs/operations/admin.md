@@ -1,6 +1,6 @@
 ---
 title: "Admin UI"
-weight: 13
+weight: 1
 ---
 
 # Admin UI
@@ -29,8 +29,8 @@ reading a JSON API under `api/`; it loads nothing from other hosts.
 The node serving the page does not need to poll: a node built with `autoStartPolling(false)` shows
 the jobs of every node on the database. Scheduling jobs from the page needs the job handlers
 registered on it, as `newJob(type)` does in code; any node handling the type runs the job. The
-runnable [admin example](../bikesched-examples/README.md#admin) serves the page next to a few demo
-jobs.
+runnable [admin example](../../bikesched-examples/README.md#admin) serves the page next to a few
+demo jobs.
 
 ## Dependencies and shaded jar
 
@@ -138,9 +138,9 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   with their duration (a child job step links to the child, a child job shows the path to its
   parents), the job history when recorded, and a Data tab with the payload above the result.
   A running or waiting step's duration counts up; a retried step shows its last attempt's. A
-  run of a [recurring job](recurring-jobs.md) has a Recurrence tab: the pending run (the next one
-  with a countdown, or the current one while it runs or waits), then the last 10 ended runs with
-  their state and how long they took from their scheduled time to their end. Jobs of the type
+  run of a [recurring job](../jobs/recurring-jobs.md) has a Recurrence tab: the pending run (the
+  next one with a countdown, or the current one while it runs or waits), then the last 10 ended runs
+  with their state and how long they took from their scheduled time to their end. Jobs of the type
   scheduled without a recurrence are not runs and not listed. The tab refreshes every 3 seconds.
   While the job is open and has not ended, the detail refreshes every 3 seconds and updates the
   job's row in the list; an unchanged job costs a `304` without a body.

@@ -44,4 +44,4 @@ runtime dependencies or schema changes. Scheduling-only Spring applications no l
 database at startup unless application code uses it.
 
 See the [spec](../specs/optional-schema-migration.md) and
-[database guide](../database.md#migrations).
+[database guide](../operations/database.md#migrations).

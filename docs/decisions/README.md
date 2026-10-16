@@ -1,6 +1,6 @@
 ---
 title: "Decisions"
-weight: 12
+weight: 7
 ---
 
 # Architecture decision records
