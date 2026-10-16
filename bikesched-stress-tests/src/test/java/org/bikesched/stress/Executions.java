@@ -16,8 +16,8 @@ final class Executions {
 
   /** Records one run of the step's body. */
   void record(UUID jobId, String step) {
-    counts.computeIfAbsent(jobId + "/" + step, _ -> new AtomicInteger()).incrementAndGet();
-    order.computeIfAbsent(jobId, _ -> new CopyOnWriteArrayList<>()).add(step);
+    counts.computeIfAbsent(jobId + "/" + step, key -> new AtomicInteger()).incrementAndGet();
+    order.computeIfAbsent(jobId, id -> new CopyOnWriteArrayList<>()).add(step);
   }
 
   /** The recorded runs of the job's steps, in order. */

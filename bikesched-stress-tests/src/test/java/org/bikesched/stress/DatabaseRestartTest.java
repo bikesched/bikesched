@@ -172,7 +172,7 @@ class DatabaseRestartTest {
   private static void assertNodesStillWork(Bikesched a, Bikesched b) {
     for (Bikesched node : List.of(a, b)) {
       String type = "still-working-" + UUID.randomUUID();
-      node.registerJobHandler(type, _ -> {});
+      node.registerJobHandler(type, job -> {});
       UUID id = node.newJob(type).schedule();
       await(node.node().name() + " runs jobs again")
           .atMost(Duration.ofSeconds(30))

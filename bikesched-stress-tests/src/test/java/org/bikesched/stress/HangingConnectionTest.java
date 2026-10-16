@@ -112,7 +112,7 @@ class HangingConnectionTest {
             .autoStartPolling(false)
             .build();
     node.registerJobHandler(type, handler(Duration.ofSeconds(2)));
-    node.registerJobHandler(soloType, _ -> {});
+    node.registerJobHandler(soloType, job -> {});
     node.start();
     return node;
   }
@@ -152,7 +152,7 @@ class HangingConnectionTest {
     UUID soloJob;
     try (Bikesched client =
         StressNodes.node(database.dataSource(), "client").autoStartPolling(false).build()) {
-      soloJob = client.newJob(soloType).handler(_ -> {}).schedule(); // never runs: not polling
+      soloJob = client.newJob(soloType).handler(job -> {}).schedule(); // never runs: not polling
     }
     await("the cut-off node runs jobs again")
         .atMost(Duration.ofSeconds(60))

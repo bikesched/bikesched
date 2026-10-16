@@ -50,7 +50,7 @@ class LoadTest {
     String type = "backlog-" + UUID.randomUUID();
     var executions = new Executions();
     try (Bikesched client = node("client-" + UUID.randomUUID(), 5)) {
-      client.registerJobHandler(type, _ -> {}); // never runs: not polling
+      client.registerJobHandler(type, job -> {}); // never runs: not polling
       for (int i = 0; i < JOBS; i++) {
         client.newJob(type).schedule();
       }
