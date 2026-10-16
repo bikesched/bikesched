@@ -44,9 +44,10 @@ goal is to keep it small and easy to drop into your app:
   (`bikesched_*`), and bikesched creates and migrates the schema on first use.
 - **Modern Java**: built for Java 26, with every job on its own virtual thread.
 
-**One thing bikesched isn't**: [a workflow engine](docs/steps.md#workflows). Steps and compensation
-live inside a single job, so there are no process models (BPMN), no visual modelling and no
-orchestration across services. If that's what you're after, have a look at
+**One thing bikesched isn't**:
+[a workflow engine](docs/multi-step-jobs/steps.md#working-with-a-workflow-engine). Steps
+and compensation live inside a single job, so there are no process models (BPMN), no visual
+modelling and no orchestration across services. If that's what you're after, have a look at
 [Camunda](https://camunda.com) (full disclosure: I used to work there, and I'm still a fan) or
 similar tools.
 
@@ -55,12 +56,12 @@ similar tools.
 | [`bikesched-core`](bikesched-core) | the scheduler; depends on the PostgreSQL driver and the SLF4J API only; [optional schema migration spec](docs/specs/optional-schema-migration.md) |
 | [`bikesched-jackson`](bikesched-jackson) | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
 | [`bikesched-kotlin`](bikesched-kotlin) | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
-| [`bikesched-annotations`](bikesched-annotations) | job handlers declared as `@JobHandler` methods, see [Annotations](docs/annotations.md) |
-| [`bikesched-cron`](bikesched-cron) | cron expressions as `CronRecurrence` or as strings (`schedule("0 3 * * *")`, `@JobHandler`), via cron-utils, see [Cron expressions](docs/recurring-jobs.md#cron-expressions) |
-| [`bikesched-micrometer`](bikesched-micrometer) | Micrometer meters for claims, attempts and published events, see [Metrics](docs/metrics.md) |
-| [`bikesched-spring-boot-starter`](bikesched-spring-boot-starter) | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/spring.md) |
-| [`bikesched-admin`](bikesched-admin) | a small admin page and JSON API: jobs, steps, events and nodes, with retry and cancel, served by the JDK's HTTP server or any framework, see [Admin UI](docs/admin.md) |
-| [`bikesched-test`](bikesched-test) | testing support: a test node factory and `JobAwait` wait helpers (Awaitility internally), see [Testing](docs/testing.md) |
+| [`bikesched-annotations`](bikesched-annotations) | job handlers declared as `@JobHandler` methods, see [Annotations](docs/integrations/annotations.md) |
+| [`bikesched-cron`](bikesched-cron) | cron expressions as `CronRecurrence` or as strings (`schedule("0 3 * * *")`, `@JobHandler`), via cron-utils, see [Cron expressions](docs/jobs/recurring-jobs.md#cron-expressions) |
+| [`bikesched-micrometer`](bikesched-micrometer) | Micrometer meters for claims, attempts and published events, see [Metrics](docs/operations/metrics.md) |
+| [`bikesched-spring-boot-starter`](bikesched-spring-boot-starter) | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/integrations/spring.md) |
+| [`bikesched-admin`](bikesched-admin) | a small admin page and JSON API: jobs, steps, events and nodes, with retry and cancel, served by the JDK's HTTP server or any framework, see [Admin UI](docs/operations/admin.md) |
+| [`bikesched-test`](bikesched-test) | testing support: a test node factory and `JobAwait` wait helpers (Awaitility internally), see [Testing](docs/integrations/testing.md) |
 
 ## Features
 
@@ -144,26 +145,24 @@ bikesched.newEvent("payment-intent-updated", webhookPayload.paymentIntentId())
 A plain job scheduler would need its own tables and glue code to carry `order` and
 `paymentIntentId` across that wait, to not create a second payment intent on a retry, and to
 resume on another node after a crash; here it's `job.step(...)` and `job.waitForEvent(...)`. See
-[Steps and compensation](docs/steps.md) and [Events](docs/events.md).
+[Steps and compensation](docs/multi-step-jobs/steps.md) and
+[Events](docs/multi-step-jobs/events.md).
 
 ## Documentation
 
 The [documentation](docs/index.md) covers the concepts in detail:
 
-- [Jobs](docs/jobs.md): scheduling, writing handlers, retries, failure handlers, cancellation,
-  history, retention, timeouts
-- [Steps and compensation](docs/steps.md)
-- [Recurring jobs](docs/recurring-jobs.md)
-- [Events](docs/events.md)
-- [Child jobs](docs/child-jobs.md): starting and waiting for child jobs, job results
+- [Configuration](docs/configuration.md): builder options, nodes, JSON mapping, logging
+- [Jobs](docs/jobs/README.md): scheduling, writing handlers, retries, failure handlers,
+  cancellation, history, retention, timeouts; [recurring jobs](docs/jobs/recurring-jobs.md) and
+  [changing handlers](docs/jobs/changing-handlers.md) safely for jobs in flight
+- [Multi-step jobs](docs/multi-step-jobs/README.md): [steps and
+  compensation](docs/multi-step-jobs/steps.md), [events](docs/multi-step-jobs/events.md) and
+  [child jobs](docs/multi-step-jobs/child-jobs.md)
 - [Patterns](docs/patterns.md): common problems (outbox, deduplication, rate limits, webhooks,
   approvals, fan-out, periodic work, sagas) and the examples solving them
-- [Changing handlers](docs/changing-handlers.md): safe and unsafe handler changes for jobs in
-  flight
-- [Configuration](docs/configuration.md): builder options, nodes, JSON mapping, logging
-- [Kotlin](docs/kotlin.md)
-- [Spring Boot](docs/spring.md): the auto-configured node
-- [Database](docs/database.md): tables, indexes and migrations
+- [Integrations](docs/integrations/README.md): Spring Boot, Kotlin, annotations, testing
+- [Operations](docs/operations/README.md): admin UI, metrics, database tables and migrations
 
 ## Examples
 

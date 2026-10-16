@@ -1,7 +1,7 @@
 # Specification: nodes in the admin UI
 
 Status: **implemented**, [ADR 0045](../decisions/0045-nodes-in-the-admin-ui.md),
-[user docs](../admin.md)
+[user docs](../operations/admin.md)
 
 ## 1. Goal
 

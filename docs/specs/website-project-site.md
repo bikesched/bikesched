@@ -76,8 +76,8 @@ Hugo [module mounts](https://gohugo.io/hugo-modules/configuration/#module-mounts
 outside the module into its `content/` tree at build time, unlike a file copy: `hugo.toml` mounts
 `../../README.md` to `content/_index.md` (the home page) and `../../docs` to `content/docs` (the
 docs section), excluding `docs/specs/**` (internal, per `AGENTS.md`) and remounting
-`docs/index.md` and `docs/decisions/README.md` individually to the `_index.md` name Hugo expects
-for a section's landing page. Nothing under `bikesched-website/` duplicates project content.
+`docs/index.md` and the `README.md` of each docs section (`docs/jobs/`, `docs/decisions/`, …)
+individually to the `_index.md` name Hugo expects for a section's landing page. Nothing under `bikesched-website/` duplicates project content.
 
 ### 4.4 Markdown compatibility
 
@@ -92,8 +92,8 @@ for a section's landing page. Nothing under `bikesched-website/` duplicates proj
   project-level hook needed for alerts.
 - **Front matter**: `docs/*.md` and `README.md` carry a `title` (from each file's first heading,
   added once) so the site's `<title>` tag and navigation labels don't depend on template-side
-  heading parsing, and a `weight` on each top-level docs page matching the reading order in
-  `docs/index.md`'s "Contents" list (the sidebar is alphabetical by default otherwise). Front
+  heading parsing, and a `weight` on each docs page (within its section) matching the reading
+  order in `docs/index.md`'s "Contents" list (the sidebar is alphabetical by default otherwise). Front
   matter is invisible on GitHub.
 
 ### 4.5 Template overrides

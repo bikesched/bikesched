@@ -1,6 +1,6 @@
 ---
 title: "Events"
-weight: 5
+weight: 2
 ---
 
 # Events
@@ -60,11 +60,11 @@ bikesched.newEvent("payment-received", order.id())
   `Duration.ZERO`, the key has no effect.
 - The check runs under the advisory lock `publish` takes on name and key, so concurrent
   duplicates are published once, also with `.connection(connection)`.
-- Keys have 1 to 500 characters. The [event listener](metrics.md#own-listeners) is not called
-  for a duplicate.
+- Keys have 1 to 500 characters. The [event listener](../operations/metrics.md#own-listeners) is not
+  called for a duplicate.
 - Events published by a job (`Job.newEvent`) have no key: their step publishes them once.
 
-Jobs have the same option, see [Idempotency keys](jobs.md#idempotency-keys).
+Jobs have the same option, see [Idempotency keys](../jobs/README.md#idempotency-keys).
 
 ## Lifecycle
 
@@ -109,7 +109,7 @@ Other paths:
 - **Later runs** (after another wait or a retry) return the step's copy of the payload, also after
   the event was deleted.
 
-With the [job history](jobs.md#job-history) enabled, each of these changes is recorded.
+With the [job history](../jobs/README.md#job-history) enabled, each of these changes is recorded.
 
 ## Publishing from jobs
 
@@ -160,7 +160,7 @@ Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id()
 
 Only the name is stored, so events published with the string-based API reach typed waits and vice
 versa. Like job payloads, event payloads should be objects rather than bare values or collections,
-see [Payload design](configuration.md#payload-design).
+see [Payload design](../configuration.md#payload-design).
 
 ## Timeouts
 
@@ -216,5 +216,5 @@ transaction (a PostgreSQL advisory lock), so an event published while a job star
 missed. Cancelling a waiting job marks its wait `CANCELLED`; it no longer receives events.
 
 An `EventListener` (`BikeschedBuilder.eventListener(…)`) is told about every committed
-publication, e.g. for [Metrics](metrics.md#own-listeners); events published in the caller's
-transaction are not reported.
+publication, e.g. for [Metrics](../operations/metrics.md#own-listeners); events published in the
+caller's transaction are not reported.

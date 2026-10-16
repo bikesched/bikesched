@@ -41,8 +41,8 @@ does; this file covers how to change it.
 | `bikesched-annotations` | `@JobHandler` and `JobHandlers` (Java only, package `org.bikesched.annotation`): job handlers declared as annotated methods, invoked via `MethodHandle`; depends on core only (`api`; tests use bikesched-jackson) |
 | `bikesched-cron` | `CronRecurrence` and `CronRecurrenceParser` (Java only, package `org.bikesched.cron`): cron expressions parsed with cron-utils; depends on core and `cron-utils` only (both `api`, cron-utils is an automatic module; tests use bikesched-annotations) |
 | `bikesched-micrometer` | `MicrometerJobListener` and `MicrometerEventListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` and `EventListener` SPIs; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |
-| `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`JobTypeHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
-| `bikesched-admin` | the admin UI (Java only, package `org.bikesched.admin.web`): `BikeschedAdmin` serves a page and a JSON API through a framework-neutral `handle(AdminRequest)` and a JDK `com.sun.net.httpserver` adapter, `AdminAccess` in the subpackage `access` decides per request (open by default, built-in Basic authentication); the page is static files in `src/main/resources/org/bikesched/admin/web/ui/` (ES modules with Preact and htm, copied from their WebJars by the `vendorUi` task, no build step, CSP without inline scripts or styles); depends on core only (`api`); see `docs/admin.md` |
+| `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`JobTypeHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/integrations/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
+| `bikesched-admin` | the admin UI (Java only, package `org.bikesched.admin.web`): `BikeschedAdmin` serves a page and a JSON API through a framework-neutral `handle(AdminRequest)` and a JDK `com.sun.net.httpserver` adapter, `AdminAccess` in the subpackage `access` decides per request (open by default, built-in Basic authentication); the page is static files in `src/main/resources/org/bikesched/admin/web/ui/` (ES modules with Preact and htm, copied from their WebJars by the `vendorUi` task, no build step, CSP without inline scripts or styles); depends on core only (`api`); see `docs/operations/admin.md` |
 | `bikesched-examples` | runnable examples, described in its own `README.md`, in two submodules: `java` (plain Java examples, one package per scenario, each with a Testcontainers test using the shared `util.Database`; JSON via bikesched-jackson) and `spring` (the Spring Boot example as a regular Boot application with the Spring Boot Gradle plugin, `bootRun`) |
 | `bikesched-website` | the project site at `bikesched.org`, generated with Hugo from `README.md` and `docs/` (Hugo module mounts, no content copy) and the Hextra theme (git submodule), described in its own `docs/specs/website-project-site.md` and [ADR 0047](docs/decisions/0047-website-hosted-on-cloudflare-workers.md); built with `./gradlew :bikesched-website:hugoBuild`, deployed to the Cloudflare Worker `bikesched-website` (`bikesched-website/wrangler.jsonc`) by `.github/workflows/website.yml` |
 | `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library`, `bikesched.errorprone` |
@@ -160,7 +160,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - New states go into the table's CHECK constraint. History rows are never deleted on state
   changes; they get a terminal state (`CANCELLED`, `COMPENSATED`) other code paths ignore.
 - A new table also goes into `SchemaMigratorTest` (drop list and expected tables) and the table list
-  in `docs/database.md`.
+  in `docs/operations/database.md`.
 - Changes of jobs and steps are recorded in the job history (optional): a store makes the change
   through `history.change(…)` (a transaction only if the history is enabled) and passes the
   changed rows to `history.record(db, …)` in the same transaction. New state changes do the same.
@@ -229,14 +229,22 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   listed in `docs/decisions/README.md`. Accepted ADRs are not rewritten: a changed decision gets a
   new ADR, and the old one's status becomes "Superseded by ADR NNNN".
 - `README.md` stays minimal: pitch, feature list, quick start, links into `docs/`, examples and
-  build instructions. Details go into `docs/`, one page per concept, linked from `docs/index.md`:
-  `jobs.md` (scheduling, handlers, `Job` method table, failures, cancellation, timeouts), `steps.md`
-  (steps, compensation), `recurring-jobs.md`, `events.md`, `configuration.md` (builder option
-  table, nodes, JSON mapping, logging), `kotlin.md` (extension tables), `database.md` (tables,
-  indexes, migrations), `patterns.md` (one section per problem: a short sketch, why it works, and
-  a link to the runnable example solving it; new examples solving a common problem get a pattern),
-  `changing-handlers.md` (what a job keeps across deploys, safe and unsafe handler changes; update
-  it when replay or what a step stores changes).
+  build instructions. Details go into `docs/`, one page per concept, linked from `docs/index.md`.
+  Pages are grouped into sections, one folder each with a `README.md` landing page (mounted as the
+  section's `_index.md` in `bikesched-website/site/hugo.toml`; a new section needs a mount there)
+  and a `weight` in every page's front matter for the sidebar order:
+  - top level: `configuration.md` (builder option table, nodes, JSON mapping, logging),
+    `patterns.md` (one section per problem: a short sketch, why it works, and a link to the
+    runnable example solving it; new examples solving a common problem get a pattern)
+  - `jobs/`: `README.md` (the Jobs page itself: scheduling, handlers, `Job` method table,
+    failures, cancellation, timeouts), `recurring-jobs.md`, `changing-handlers.md` (what a job
+    keeps across deploys, safe and unsafe handler changes; update it when replay or what a step
+    stores changes)
+  - `multi-step-jobs/`: `steps.md` (steps, sleeping, polling, compensation), `events.md`,
+    `child-jobs.md`
+  - `integrations/`: `spring.md`, `kotlin.md` (extension tables), `annotations.md`, `testing.md`
+  - `operations/`: `admin.md`, `metrics.md`, `database.md` (tables, indexes, migrations)
+  - `decisions/`: the ADRs (below)
 - Keep `docs/` in sync in the same change: samples, the builder option table (defaults checked
   against the code), the Kotlin tables and the database tables. Samples are not compiled, so check
   them against the API; check relative links and anchors after moving sections.

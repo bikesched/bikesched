@@ -9,7 +9,7 @@ import org.bikesched.BikeschedBuilder;
 
 /**
  * Testing support for applications using bikesched: a node factory with sensible test defaults and
- * wait helpers for job outcomes, see {@code docs/testing.md}.
+ * wait helpers for job outcomes, see {@code docs/integrations/testing.md}.
  */
 public final class BikeschedTest {
 

@@ -1,7 +1,7 @@
 # Specification: admin UI
 
 Status: **implemented** ([ADR 0038](../decisions/0038-admin-ui.md), user docs:
-[Admin UI](../admin.md))
+[Admin UI](../operations/admin.md))
 
 ## 1. Goal
 

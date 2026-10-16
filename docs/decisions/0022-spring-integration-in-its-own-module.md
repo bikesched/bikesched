@@ -44,4 +44,4 @@ transparent to users. Jackson, Micrometer and `spring-tx`/`spring-jdbc` stay opt
 - Design details (discovery via a collecting `BeanPostProcessor`, fail-fast migration, the
   `<application-name>-<host>` default node name) are specified in
   [`docs/specs/bikesched-spring-boot-starter.md`](../specs/bikesched-spring-boot-starter.md) and
-  documented in [`docs/spring.md`](../spring.md).
+  documented in [`docs/spring.md`](../integrations/spring.md).

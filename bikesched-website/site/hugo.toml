@@ -48,12 +48,25 @@ theme = "hextra"
     source = "../../docs"
     target = "content/docs"
     # docs/specs is internal (not linked from docs/index.md, see AGENTS.md);
-    # the two index files and the ADR template are mounted individually below
-    # under their Hugo-recognized names instead.
-    files = ["! specs/**", "! index.md", "! decisions/template.md", "! decisions/README.md"]
+    # the index files (docs/index.md and each section's README.md) and the ADR
+    # template are mounted individually below under their Hugo-recognized
+    # names instead.
+    files = ["! specs/**", "! index.md", "! */README.md", "! decisions/template.md"]
   [[module.mounts]]
     source = "../../docs/index.md"
     target = "content/docs/_index.md"
+  [[module.mounts]]
+    source = "../../docs/jobs/README.md"
+    target = "content/docs/jobs/_index.md"
+  [[module.mounts]]
+    source = "../../docs/multi-step-jobs/README.md"
+    target = "content/docs/multi-step-jobs/_index.md"
+  [[module.mounts]]
+    source = "../../docs/integrations/README.md"
+    target = "content/docs/integrations/_index.md"
+  [[module.mounts]]
+    source = "../../docs/operations/README.md"
+    target = "content/docs/operations/_index.md"
   [[module.mounts]]
     source = "../../docs/decisions/README.md"
     target = "content/docs/decisions/_index.md"

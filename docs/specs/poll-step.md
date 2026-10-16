@@ -120,7 +120,7 @@ public sealed interface Poll<T> {
 After an exception the next attempt checks again right away (the step is not `WAITING`); the
 deadline keeps counting. Exceptions are for errors a retry may fix, as for steps; a provider
 answering "failed" is a value (`Poll.ready(new Failed(…))`, see
-[Business outcomes as results](../steps.md#business-outcomes-as-results)).
+[Business outcomes as results](../multi-step-jobs/steps.md#business-outcomes-as-results)).
 
 ### 4.3 Storage
 

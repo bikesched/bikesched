@@ -1,6 +1,6 @@
 ---
 title: "Steps and compensation"
-weight: 3
+weight: 1
 ---
 
 # Steps and compensation
@@ -48,7 +48,7 @@ job.step("send-confirmation", () -> mailer.send(order, payment));
 
 Steps run at least once: a completed step is not repeated, but a step whose side effect happened
 before its completion was stored runs again, e.g. after a crash right after the side effect, or on
-a node that lost its job (see [Nodes](configuration.md#nodes)) while another node runs the step
+a node that lost its job (see [Nodes](../configuration.md#nodes)) while another node runs the step
 too. bikesched stores only one result, but cannot undo the side effect. Pass an idempotency key
 derived from the step to external systems, so they recognize a repeated call:
 
@@ -115,7 +115,7 @@ job.sleepUntil("until-check-in", booking.checkIn().minus(Duration.ofDays(1)));
   from `Instant.now()` doesn't move a sleep that already started.
 - `sleepUntil` with a time that has passed returns right away; the step is stored as completed.
 - The node that suspended the job wakes up at the wake-up time; other nodes find it with their
-  next-due query, see [Due jobs start right away](configuration.md#due-jobs-start-right-away).
+  next-due query, see [Due jobs start right away](../configuration.md#due-jobs-start-right-away).
 - Sleeping does not use up an attempt. Cancelling a sleeping job marks the step `CANCELLED` and runs
   the compensations of its completed steps.
 - Sleeping inside a step handler or a compensation is rejected, like nested steps.
@@ -168,8 +168,8 @@ Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30)
 - An expected negative answer (e.g. the report failed) is a ready value too, see
   [Business outcomes as results](#business-outcomes-as-results); exceptions are for errors a retry
   may fix.
-- The [job history](jobs.md#job-history) records the poll's first wait and its outcome (`ready
-  after 3 checks`), not every check.
+- The [job history](../jobs/README.md#job-history) records the poll's first wait and its outcome
+  (`ready after 3 checks`), not every check.
 - Polling inside a step handler or a compensation is rejected, like nested steps. Cancelling a
   polling job marks the poll `CANCELLED` and runs the compensations of its completed steps.
 
@@ -195,9 +195,9 @@ PaymentSettled settled = webhook != null
 ```
 
 The failure handler can't poll itself (it can't run steps), so the poll comes after the wait. The
-[poll example](../bikesched-examples/README.md#poll) shows both paths.
+[poll example](../../bikesched-examples/README.md#poll) shows both paths.
 
-## Workflows
+## Working with a workflow engine
 
 Bikesched is not a workflow or process orchestration engine: 
 there are no process models (BPMN), no visual modelling and no orchestration
@@ -205,8 +205,8 @@ across services. It is, however, a good building block for an application that w
 nicely with an external workflow or process engine (e.g. Camunda, Temporal, AWS Step Functions): a
 step starts a process there and stores its process id, and a [poll](#polling) step durably waits
 for the process to finish, without holding a thread or a concurrency slot while it runs. The job
-is created in the same [transaction](jobs.md#transactional-scheduling) as the customer row it is
-onboarding, so one never exists without the other:
+is created in the same [transaction](../jobs/README.md#transactional-scheduling) as the customer row
+it is onboarding, so one never exists without the other:
 
 ```java
 try (Connection connection = dataSource.getConnection()) {
@@ -309,8 +309,8 @@ Rate rate = job.newStep("fetch-rate", Rate.class)
 - A resolved step is not compensated, even with `compensateWith`: its side effect failed.
 - If the handler throws, or the node dies before the outcome is recorded, the job gets an extra
   attempt that runs the handler again, so it must be idempotent. After the node's
-  `failureHandlerAttempts` runs (default 3, see [Configuration](configuration.md#builder-options))
-  the step is `FAILED` without it.
+  `failureHandlerAttempts` runs (default 3, see
+  [Configuration](../configuration.md#builder-options)) the step is `FAILED` without it.
 - Steps without a handler just fail.
 
 [Event waits](events.md#timeouts) and [polls](#polling) take the same `onFailure(…)`: it handles

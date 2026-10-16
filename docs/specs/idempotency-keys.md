@@ -2,8 +2,9 @@
 
 Status: **implemented** (core, Kotlin, poll example;
 [ADR 0036](../decisions/0036-idempotency-keys.md)). User docs:
-[`jobs.md#idempotency-keys`](../jobs.md#idempotency-keys),
-[`events.md#idempotency-keys`](../events.md#idempotency-keys), `kotlin.md`, `database.md`.
+[`jobs.md#idempotency-keys`](../jobs/README.md#idempotency-keys),
+[`events.md#idempotency-keys`](../multi-step-jobs/events.md#idempotency-keys), `kotlin.md`,
+`database.md`.
 
 ## 1. Goal
 

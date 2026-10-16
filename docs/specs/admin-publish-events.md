@@ -1,7 +1,7 @@
 # Specification: publishing events from the admin UI
 
 Status: **implemented**, [ADR 0044](../decisions/0044-publishing-events-from-the-admin-ui.md),
-[user docs](../admin.md)
+[user docs](../operations/admin.md)
 
 ## 1. Goal
 

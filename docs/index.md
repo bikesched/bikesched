@@ -37,27 +37,34 @@ and without any coordinator besides PostgreSQL.
 
 ## Contents
 
-1. [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
-   logging
-2. [Jobs](jobs.md): scheduling, writing handlers, retries, cancellation, job history, timeouts
-3. [Steps and compensation](steps.md): durable steps and sagas
-4. [Recurring jobs](recurring-jobs.md): schedules, cron expressions (`bikesched-cron`) and
-   occurrences
-5. [Events](events.md): waiting for and publishing events
-6. [Child jobs](child-jobs.md): starting and waiting for child jobs, job results
-7. [Patterns](patterns.md): outbox, deduplication, rate limits, webhooks, approvals, fan-out,
-   periodic work, sagas
-8. [Changing handlers](changing-handlers.md): what happens to jobs in flight when a deploy
-   changes their handler, safe and unsafe changes
-9. [Kotlin](kotlin.md): the `bikesched-kotlin` extensions
-10. [Annotations](annotations.md): job handlers as `@JobHandler` methods (`bikesched-annotations`)
-11. [Metrics](metrics.md): `JobListener`, `EventListener` and the Micrometer meters
+- [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
+  logging
+- [Jobs](jobs/README.md): scheduling, writing handlers, retries, cancellation, job history,
+  timeouts
+  - [Recurring jobs](jobs/recurring-jobs.md): schedules, cron expressions (`bikesched-cron`) and
+    occurrences
+  - [Changing handlers](jobs/changing-handlers.md): what happens to jobs in flight when a deploy
+    changes their handler, safe and unsafe changes
+- [Multi-step jobs](multi-step-jobs/README.md): durable steps, event waits and child jobs inside
+  one job
+  - [Steps and compensation](multi-step-jobs/steps.md): durable steps, sleeping, polling and sagas
+  - [Events](multi-step-jobs/events.md): waiting for and publishing events
+  - [Child jobs](multi-step-jobs/child-jobs.md): starting and waiting for child jobs, job results
+- [Patterns](patterns.md): outbox, deduplication, rate limits, webhooks, approvals, fan-out,
+  periodic work, sagas
+- [Integrations](integrations/README.md): optional modules on top of the core
+  - [Spring Boot](integrations/spring.md): the auto-configured node
+    (`bikesched-spring-boot-starter`)
+  - [Kotlin](integrations/kotlin.md): the `bikesched-kotlin` extensions
+  - [Annotations](integrations/annotations.md): job handlers as `@JobHandler` methods
+    (`bikesched-annotations`)
+  - [Testing](integrations/testing.md): test nodes and job wait helpers (`bikesched-test`)
+- [Operations](operations/README.md): running bikesched in production
+  - [Admin UI](operations/admin.md): a page for jobs, steps, events and nodes with retry and
+    cancel (`bikesched-admin`), and the lookups behind it
+  - [Metrics](operations/metrics.md): `JobListener`, `EventListener` and the Micrometer meters
     (`bikesched-micrometer`)
-12. [Spring Boot](spring.md): the auto-configured node (`bikesched-spring-boot-starter`)
-13. [Admin UI](admin.md): a page for jobs, steps, events and nodes with retry and cancel
-    (`bikesched-admin`), and the lookups behind it
-14. [Database](database.md): tables, indexes and migrations
-15. [Testing](testing.md): test nodes and job wait helpers (`bikesched-test`)
+  - [Database](operations/database.md): tables, indexes and migrations
 
 The [examples](../bikesched-examples/README.md) show the concepts working together; the
 [patterns](patterns.md) explain which example solves which problem. The
