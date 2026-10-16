@@ -499,7 +499,7 @@ public final class DefaultBikesched implements Bikesched {
     long millis = interval.toMillis();
     executor.scheduleWithFixedDelay(
         () -> {
-          try (var _ =
+          try (var mdc =
               MDC.putCloseable(
                   BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
             task.run();
@@ -532,7 +532,7 @@ public final class DefaultBikesched implements Bikesched {
   private void scheduleOnce(ScheduledExecutorService executor, Runnable task, Duration delay) {
     executor.schedule(
         () -> {
-          try (var _ =
+          try (var mdc =
               MDC.putCloseable(
                   BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
             task.run();

@@ -21,7 +21,7 @@ public final class SimulatedPaymentService implements PaymentService {
       String customerId, BigDecimal amount, String currency, String reference) {
     return reservations.computeIfAbsent(
         reference,
-        _ -> {
+        ignored -> {
           System.out.println(
               "[payment] reserved " + amount + " " + currency + " for customer " + customerId);
           return new PaymentReservation("reservation-" + reference, amount, currency);

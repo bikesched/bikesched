@@ -174,7 +174,7 @@ public interface Job extends EventPublisher {
       step(
           name,
           Void.class,
-          _ -> {
+          ignored -> {
             runnable.run();
             return null;
           });
@@ -411,7 +411,7 @@ public interface Job extends EventPublisher {
    *     .timeout(Duration.ofHours(2))   // optional
    *     .run(step -> switch (reports.status(reportId)) {
    *       case Done d -> Poll.ready(d.report());
-   *       case Pending _ -> Poll.notReady();
+   *       case Pending pending -> Poll.notReady();
    *     });
    * }</pre>
    *

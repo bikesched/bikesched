@@ -284,10 +284,10 @@ class ChildJobTest extends AbstractBikeschedTest {
           job -> {
             job.newStep("reserve", String.class)
                 .compensateWith(
-                    (_, _) -> {
+                    (ignored, ignored2) -> {
                       throw new IllegalStateException("cannot undo");
                     })
-                .run(_ -> "\"reserved\"");
+                .run(ignored -> "\"reserved\"");
             job.fail("then failed");
           });
       UUID parentId =
@@ -359,7 +359,7 @@ class ChildJobTest extends AbstractBikeschedTest {
                     job.step(
                         "until the child ended",
                         Void.class,
-                        _ -> {
+                        ignored -> {
                           awaitState(child, "SUCCEEDED");
                           return null;
                         });
@@ -530,7 +530,7 @@ class ChildJobTest extends AbstractBikeschedTest {
                       job.step(
                           "outer",
                           Void.class,
-                          _ -> {
+                          ignored -> {
                             try {
                               job.newJob("child-in-step-child").schedule();
                             } catch (IllegalStateException e) {
@@ -711,7 +711,7 @@ class ChildJobTest extends AbstractBikeschedTest {
                     child.set(
                         job.newJob("child-compensate-child")
                             .compensateWith(
-                                (_, childId) -> {
+                                (ignored, childId) -> {
                                   compensated.add(childId);
                                   bikesched.cancel(childId, "parent cancelled");
                                 })
@@ -745,7 +745,7 @@ class ChildJobTest extends AbstractBikeschedTest {
                   job -> {
                     UUID child =
                         job.newJob("child-retry-parent-child")
-                            .compensateWith((_, _) -> {})
+                            .compensateWith((ignored, ignored2) -> {})
                             .schedule();
                     childIds.addIfAbsent(child);
                     if (!job.isCompensating() && runs.incrementAndGet() == 1) {

@@ -102,7 +102,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @see #registerJobHandler(String, JobHandler)
    */
   default Bikesched registerJobHandler(String type, Runnable handler) {
-    return registerJobHandler(type, _ -> handler.run());
+    return registerJobHandler(type, ignored -> handler.run());
   }
 
   /**

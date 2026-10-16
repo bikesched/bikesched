@@ -42,7 +42,7 @@ class JobSleepTest extends AbstractBikeschedTest {
                     job.step(
                         "before",
                         Void.class,
-                        _ -> {
+                        ignored -> {
                           calls.add("before");
                           return null;
                         });
@@ -162,7 +162,7 @@ class JobSleepTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("book", Void.class)
                         .compensateWith((step, result) -> calls.add("compensate book"))
-                        .run(_ -> null);
+                        .run(ignored -> null);
                     job.sleep("nap", Duration.ofHours(1));
                     calls.add("after");
                   })
@@ -189,7 +189,7 @@ class JobSleepTest extends AbstractBikeschedTest {
                       job.step(
                           "outer",
                           Void.class,
-                          _ -> {
+                          ignored -> {
                             job.sleep("nap", Duration.ofMinutes(1));
                             return null;
                           }))
@@ -215,7 +215,7 @@ class JobSleepTest extends AbstractBikeschedTest {
               .maxAttempts(1)
               .handler(
                   job -> {
-                    job.step("same", Void.class, _ -> null);
+                    job.step("same", Void.class, ignored -> null);
                     job.sleep("same", Duration.ofMinutes(1));
                   })
               .schedule();

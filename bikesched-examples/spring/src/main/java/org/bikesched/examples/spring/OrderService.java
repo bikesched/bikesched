@@ -58,7 +58,8 @@ public class OrderService {
   public void fulfill(Job job, FulfillOrder command) throws Exception {
     Order order = orders.findById(command.orderId()).orElseThrow();
     UUID fulfillmentId =
-        job.step("fulfill", UUID.class, _ -> fulfillment.fulfill(order.getId(), order.getItem()));
+        job.step(
+            "fulfill", UUID.class, ignored -> fulfillment.fulfill(order.getId(), order.getItem()));
     FulfillmentService.FulfillmentFinished finished =
         job.awaitEvent(
             "await-fulfillment", FulfillmentService.FULFILLMENT_FINISHED, fulfillmentId.toString());

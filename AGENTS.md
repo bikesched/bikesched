@@ -1,13 +1,19 @@
 # AGENTS.md
 
 Guidance for coding agents (and humans) working on bikesched: a PostgreSQL-backed job scheduler
-library for Java 26 with a Kotlin companion module. Read `README.md` and `docs/` for what the library
-does; this file covers how to change it.
+library for Java 21 and later with a Kotlin companion module. Read `README.md` and `docs/` for
+what the library does; this file covers how to change it.
 
 ## Build and run
 
 - Java 26 toolchain (Gradle provisions it if missing), Docker for the tests (Testcontainers,
   `postgres:18`). Gradle wrapper only: `./gradlew build`.
+- The language baseline is Java 21 (`java-release` in the version catalog, ADR 0049): Java is
+  compiled with `--release 21`, Kotlin with `jvmTarget` 21 and `-Xjdk-release=21`, so features and
+  JDK APIs newer than 21 fail the build. That rules out unnamed variables (`_`): name unused
+  lambda parameters, patterns and catch variables `ignored`, give block-scoping resources a
+  descriptive name (`logContext`, `mdc`), and split `case A _, B _` labels into one case each.
+  `-PtestJavaVersion=21` runs the tests on JDK 21, as CI does.
 - Formatting is enforced by Spotless in `check`: run `./gradlew spotlessApply` after editing,
   before `build`. Java uses google-java-format (2-space indent, 100 columns), Kotlin ktfmt in
   Google style. Write new code in that style so patches match.
@@ -25,11 +31,13 @@ does; this file covers how to change it.
 - Every version (libraries, Gradle plugins, Java, the project version) lives in
   `gradle/libs.versions.toml`; no version literals in `.kts` files. Use the latest stable releases.
 - CI: `.github/workflows/build.yml` runs `./gradlew build` on every pull request and push to
-  `main` (Temurin JDK, Docker for Testcontainers), except when only Markdown files and SVG images
-  changed (a `changes` job skips `build`, which still reports success for required checks); a separate job publishes snapshot versions of the
-  library modules to GitHub Packages after successful builds of `main` only (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin
-  `bikesched.publishing` with `maven-publish`). Keep its `java-version` in sync with `java` in the
-  version catalog.
+  `main` (Temurin JDK 26, tests on JDK 21, Docker for Testcontainers), except when only Markdown
+  files and SVG images changed (a `changes` job skips `build`, which still reports success for
+  required checks); a separate job publishes snapshot versions of the library modules to GitHub
+  Packages after successful builds of `main` only
+  (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin `bikesched.publishing`
+  with `maven-publish`). Keep its `java-version` list in sync with `java` and `java-release` in
+  the version catalog.
 
 ## Layout
 

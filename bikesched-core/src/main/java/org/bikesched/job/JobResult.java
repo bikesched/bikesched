@@ -100,7 +100,7 @@ public sealed interface JobResult<T extends @Nullable Object> {
    * @return the result ({@code null} if the child set none), or the fallback
    */
   default @Nullable T orElse(@Nullable T fallback) {
-    if (this instanceof Succeeded<T>(var _, T result)) {
+    if (this instanceof Succeeded<T>(UUID ignored, T result)) {
       return result;
     }
     return fallback;
@@ -113,7 +113,7 @@ public sealed interface JobResult<T extends @Nullable Object> {
    * @throws JobFailedException with this outcome if the child did not succeed or the wait timed out
    */
   default @Nullable T orElseThrow() {
-    if (this instanceof Succeeded<T>(var _, T result)) {
+    if (this instanceof Succeeded<T>(UUID ignored, T result)) {
       return result;
     }
     throw new JobFailedException(this);

@@ -122,9 +122,9 @@ class StepTest extends AbstractBikeschedTest {
                         job.waitForEvent("wait-outside", "nested", "key-1", String.class);
                     List<java.util.concurrent.Callable<?>> nested =
                         List.of(
-                            () -> job.step("inner", String.class, _ -> "\"inner\""),
+                            () -> job.step("inner", String.class, ignored -> "\"inner\""),
                             () -> job.newStep("inner-builder", String.class),
-                            () -> builtOutside.run(_ -> "\"inner\""),
+                            () -> builtOutside.run(ignored -> "\"inner\""),
                             () -> job.waitForEvent("inner-wait", "nested", "key-1", String.class),
                             () -> waitOutside.receive(),
                             () ->
@@ -132,7 +132,9 @@ class StepTest extends AbstractBikeschedTest {
                                         () -> {
                                           try {
                                             return job.step(
-                                                "other-thread", String.class, _ -> "\"inner\"");
+                                                "other-thread",
+                                                String.class,
+                                                ignored -> "\"inner\"");
                                           } catch (Exception e) {
                                             throw new java.util.concurrent.CompletionException(e);
                                           }
@@ -141,7 +143,7 @@ class StepTest extends AbstractBikeschedTest {
                     job.step(
                         "outer",
                         String.class,
-                        _ -> {
+                        ignored -> {
                           for (var call : nested) {
                             try {
                               call.call();
@@ -159,7 +161,7 @@ class StepTest extends AbstractBikeschedTest {
                           }
                           return "\"outer\"";
                         });
-                    job.step("after", String.class, _ -> "\"after\"");
+                    job.step("after", String.class, ignored -> "\"after\"");
                   })
               .schedule();
 
@@ -193,7 +195,7 @@ class StepTest extends AbstractBikeschedTest {
                       job.step(
                           "outer",
                           String.class,
-                          _ -> job.step("inner", String.class, _ -> "\"inner\"")))
+                          ignored -> job.step("inner", String.class, ignored2 -> "\"inner\"")))
               .schedule();
 
       awaitState(jobId, "FAILED");
@@ -289,7 +291,7 @@ class StepTest extends AbstractBikeschedTest {
                           "outer",
                           () -> {
                             try {
-                              job.step("inner", String.class, _ -> "\"inner\"");
+                              job.step("inner", String.class, ignored -> "\"inner\"");
                             } catch (Exception e) {
                               rejected.complete(e);
                             }

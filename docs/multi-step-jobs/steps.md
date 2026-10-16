@@ -16,8 +16,8 @@ again; its stored result is returned instead:
 ```java
 bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
-    Payment payment = job.step("charge-card", Payment.class, _ -> payments.charge(order));
-    job.step("send-confirmation", Void.class, _ -> {
+    Payment payment = job.step("charge-card", Payment.class, step -> payments.charge(order));
+    job.step("send-confirmation", Void.class, step -> {
         mailer.send(order, payment);   // if this fails, the retry does not charge the card again
         return null;                   // Void steps store no result
     });
@@ -134,7 +134,7 @@ Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30)
         .timeout(Duration.ofHours(2))   // optional
         .run(step -> switch (reports.status(reportId)) {
             case Done d -> Poll.ready(d.report());
-            case Pending _ -> Poll.notReady();
+            case Pending pending -> Poll.notReady();
         });
 ```
 
@@ -192,7 +192,7 @@ PaymentSettled settled = webhook != null
         ? webhook
         : job.newPoll("poll-payment", PaymentSettled.class, Duration.ofMinutes(1))
                 .timeout(Duration.ofHours(1))
-                .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
+                .run(step -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
 ```
 
 The failure handler can't poll itself (it can't run steps), so the poll comes after the wait. The
@@ -222,13 +222,13 @@ try (Connection connection = dataSource.getConnection()) {
 bikesched.registerJobHandler("onboard-customer", job -> {
     Customer customer = job.payload(Customer.class);
     String processId = job.step("start-onboarding-process", String.class,
-            _ -> workflowEngine.startProcess("onboard-customer", Map.of("customerId", customer.id())));
+            step -> workflowEngine.startProcess("onboard-customer", Map.of("customerId", customer.id())));
 
     ProcessResult result = job.newPoll("await-onboarding-process", ProcessResult.class, Duration.ofSeconds(30))
             .timeout(Duration.ofHours(4))
-            .run(_ -> switch (workflowEngine.status(processId)) {
+            .run(step -> switch (workflowEngine.status(processId)) {
                 case Completed c -> Poll.ready(c.result());
-                case Running _ -> Poll.notReady();
+                case Running running -> Poll.notReady();
             });
 
     job.step("activate-account", () -> accounts.activate(customer, result));
@@ -252,7 +252,7 @@ bikesched.registerJobHandler("order", job -> {
     Order order = job.payload(Order.class);
     Reservation reservation = job.newStep("reserve-payment", Reservation.class)
             .compensateWith((step, r) -> payments.release(r))   // gets the step and its stored result
-            .run(_ -> payments.reserve(order));
+            .run(step -> payments.reserve(order));
     job.step("ship", () -> shipping.ship(order, reservation));
 });
 

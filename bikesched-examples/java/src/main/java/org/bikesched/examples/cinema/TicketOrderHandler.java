@@ -47,7 +47,7 @@ public final class TicketOrderHandler implements JobTypeHandler<TicketOrder> {
         job.step(
             "reserve-seats",
             SeatReservation.class,
-            _ -> {
+            ignored -> {
               var reserved = new SeatReservation("R-" + shortId(), order.seats());
               out.printf(
                   "[cinema]  reserved seats %s for %s at %s (%s)%n",
@@ -63,7 +63,7 @@ public final class TicketOrderHandler implements JobTypeHandler<TicketOrder> {
         job.step(
             "charge-payment",
             PaymentReceipt.class,
-            _ -> {
+            ignored -> {
               var charged = new PaymentReceipt("P-" + shortId(), order.total());
               out.printf(
                   "[payment] charged %s EUR to %s (%s)%n",
@@ -75,7 +75,7 @@ public final class TicketOrderHandler implements JobTypeHandler<TicketOrder> {
     job.step(
         "mail-tickets",
         Void.class,
-        _ -> {
+        ignored -> {
           out.printf(
               "[mail]    sent %d ticket(s) for %s to %s (reservation %s, payment %s)%n",
               reservation.seats().size(),

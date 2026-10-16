@@ -254,7 +254,7 @@ class WaitFailureHandlerTest extends AbstractBikeschedTest {
                       job.newPoll("p", String.class, Duration.ofMillis(50))
                           .timeout(SHORT)
                           .onFailure(failing -> runs.incrementAndGet())
-                          .run(_ -> Poll.notReady()))
+                          .run(ignored -> Poll.notReady()))
               .schedule();
 
       awaitState(jobId, "FAILED");
@@ -291,7 +291,7 @@ class WaitFailureHandlerTest extends AbstractBikeschedTest {
                                     failing.resolve("\"fallback\"");
                                   })
                               .run(
-                                  _ -> {
+                                  ignored -> {
                                     throw new IllegalStateException(
                                         "check " + checks.incrementAndGet() + " failed");
                                   })))
@@ -328,7 +328,7 @@ class WaitFailureHandlerTest extends AbstractBikeschedTest {
                             .receive();
                     job.newStep("reserve", String.class)
                         .compensateWith((step, result) -> calls.add("release " + payment))
-                        .run(_ -> "\"r\"");
+                        .run(ignored -> "\"r\"");
                     if (!job.isCompensating()) {
                       throw new IllegalStateException("fails permanently");
                     }

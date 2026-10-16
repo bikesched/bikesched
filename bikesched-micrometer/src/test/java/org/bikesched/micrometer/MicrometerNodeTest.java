@@ -39,7 +39,7 @@ class MicrometerNodeTest {
         BikeschedTest.testNode(DATA_SOURCE, "micrometer")
             .jobListener(new MicrometerJobListener(registry))
             .build()) {
-      bikesched.registerJobHandler(type, _ -> {});
+      bikesched.registerJobHandler(type, ignored -> {});
       UUID jobId = bikesched.newJob(type).schedule();
 
       BikeschedTest.awaitJob(bikesched, jobId).timeout(Duration.ofSeconds(15)).untilSucceeded();

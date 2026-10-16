@@ -104,7 +104,7 @@ public final class RateLimitExample {
             job.step(
                 "send",
                 String.class,
-                _ -> {
+                ignored -> {
                   // The check sits in the step, next to the call it guards: once the step
                   // succeeded, a later replay of the job neither takes a token nor sends again.
                   ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);

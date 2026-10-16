@@ -92,7 +92,7 @@ path:
 record Order(String id, int version) {}   // version 0: scheduled before the change
 
 bikesched.registerJobHandler(ORDER, (job, order) -> {
-    Reservation reservation = job.step("reserve", Reservation.class, _ -> stock.reserve(order));
+    Reservation reservation = job.step("reserve", Reservation.class, step -> stock.reserve(order));
     if (order.version() >= 2) {
         job.step("check-fraud", () -> fraud.check(order));   // new step, only for new jobs
     }

@@ -90,7 +90,7 @@ final class JobNotificationListener {
             .daemon()
             .start(
                 () -> {
-                  try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString())) {
+                  try (var mdc = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString())) {
                     run();
                   }
                 });

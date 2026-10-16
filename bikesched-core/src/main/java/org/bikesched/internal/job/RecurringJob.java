@@ -58,10 +58,12 @@ public record RecurringJob(
   Instant nextRun(DefaultJob ended, Instant now) {
     Instant previous =
         switch (ended.origin()) {
-          case JobOrigin.Occurrence(_, Instant fixedRateAt)
+          case JobOrigin.Occurrence(String ignored, Instant fixedRateAt)
               when recurrence.isFixedRate() && fixedRateAt != null ->
               fixedRateAt;
-          case JobOrigin.Occurrence _, JobOrigin.OneOff _, JobOrigin.Child _ -> ended.scheduledAt();
+          case JobOrigin.Occurrence ignored -> ended.scheduledAt();
+          case JobOrigin.OneOff ignored -> ended.scheduledAt();
+          case JobOrigin.Child ignored -> ended.scheduledAt();
         };
     return nextRun(previous, now);
   }
