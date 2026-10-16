@@ -13,6 +13,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.Bikesched;
 import org.bikesched.job.JobState;
+import org.bikesched.job.listener.JobAttemptOutcome;
+import org.bikesched.job.listener.JobAttemptResult;
+import org.bikesched.job.listener.JobListener;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -42,8 +45,21 @@ class DatabaseRestartTest {
     var handlerDone = new CountDownLatch(1);
     var databaseDown = new CountDownLatch(1);
     var attempts = new AtomicInteger();
+    var notRecorded = new CountDownLatch(1);
+    JobListener listener =
+        new JobListener() {
+          @Override
+          public void onAttemptEnded(JobAttemptResult result) {
+            if (result.outcome() == JobAttemptOutcome.NOT_RECORDED) {
+              notRecorded.countDown();
+            }
+          }
+        };
     try (Bikesched node =
-        StressNodes.node(database.pool("outcome", 12), "outcome").autoStartPolling(false).build()) {
+        StressNodes.node(database.pool("outcome", 12), "outcome")
+            .jobListener(listener)
+            .autoStartPolling(false)
+            .build()) {
       node.registerJobHandler(
           type,
           job -> {
@@ -60,7 +76,9 @@ class DatabaseRestartTest {
       assertThat(handlerDone.await(30, TimeUnit.SECONDS)).isTrue();
       database.stop();
       databaseDown.countDown();
-      Thread.sleep(5_000); // longer than the node retries recording the outcome
+      assertThat(notRecorded.await(30, TimeUnit.SECONDS))
+          .as("the node gave up recording the outcome")
+          .isTrue();
       database.start();
 
       await("job succeeded")

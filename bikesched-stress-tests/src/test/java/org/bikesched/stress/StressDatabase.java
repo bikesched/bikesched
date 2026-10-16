@@ -30,7 +30,9 @@ final class StressDatabase implements AutoCloseable {
   private volatile InetSocketAddress address;
 
   StressDatabase() {
-    container = new PostgreSQLContainer("postgres:18");
+    // Room for the load test's pools when scaled up (three nodes with 50 job slots each).
+    container =
+        new PostgreSQLContainer("postgres:18").withCommand("postgres", "-c", "max_connections=500");
     container.start();
     address = new InetSocketAddress(container.getHost(), container.getMappedPort(5432));
     proxy = newProxy();
