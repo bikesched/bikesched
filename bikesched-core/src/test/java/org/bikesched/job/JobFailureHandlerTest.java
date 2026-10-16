@@ -57,7 +57,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               .payload("\"order-1\"")
               .maxAttempts(2)
               .handler(
-                  _ -> {
+                  ignored -> {
                     throw new IllegalStateException("boom");
                   })
               .schedule();
@@ -107,7 +107,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               .newJob(timedOut)
               .maxAttempts(1)
               .timeout(Duration.ofMillis(100))
-              .handler(_ -> Thread.sleep(5_000))
+              .handler(ignored -> Thread.sleep(5_000))
               .schedule();
       UUID failId =
           bikesched
@@ -139,7 +139,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               .newJob(type)
               .maxAttempts(1)
               .timeout(Duration.ofMillis(100))
-              .handler(_ -> ignoreInterruptsUntil(release))
+              .handler(ignored -> ignoreInterruptsUntil(release))
               .schedule();
 
       awaitState(jobId, "FAILED");
@@ -159,14 +159,14 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
     var calls = new AtomicInteger();
     var attempts = new AtomicInteger();
     try (Bikesched bikesched = testNode("node-failure-handler-not").build()) {
-      bikesched.registerJobFailureHandler(retried, _ -> calls.incrementAndGet());
-      bikesched.registerJobFailureHandler(cancelled, _ -> calls.incrementAndGet());
+      bikesched.registerJobFailureHandler(retried, ignored -> calls.incrementAndGet());
+      bikesched.registerJobFailureHandler(cancelled, ignored -> calls.incrementAndGet());
       UUID retriedId =
           bikesched
               .newJob(retried)
               .maxAttempts(3)
               .handler(
-                  _ -> {
+                  ignored -> {
                     if (attempts.incrementAndGet() < 3) {
                       throw new IllegalStateException("not yet");
                     }
@@ -179,7 +179,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               .newJob(without)
               .maxAttempts(1)
               .handler(
-                  _ -> {
+                  ignored -> {
                     throw new IllegalStateException("boom");
                   })
               .schedule();
@@ -208,8 +208,8 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     job.newStep("reserve", String.class)
-                        .compensateWith((_, _) -> calls.add("compensated"))
-                        .run(_ -> "\"reserved\"");
+                        .compensateWith((ignored, ignored2) -> calls.add("compensated"))
+                        .run(ignored -> "\"reserved\"");
                     throw new IllegalStateException("boom");
                   })
               .schedule();
@@ -226,10 +226,10 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("reserve", String.class)
                         .compensateWith(
-                            (_, _) -> {
+                            (ignored, ignored2) -> {
                               throw new IllegalStateException("cannot undo");
                             })
-                        .run(_ -> "\"reserved\"");
+                        .run(ignored -> "\"reserved\"");
                     throw new IllegalStateException("boom");
                   })
               .schedule();
@@ -262,14 +262,14 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
                 .build()) {
       bikesched.registerJobFailureHandler(
           recovers,
-          _ -> {
+          ignored -> {
             if (recoverCalls.incrementAndGet() == 1) {
               throw new java.io.IOException("dead letters down");
             }
           });
       bikesched.registerJobFailureHandler(
           givesUp,
-          _ -> {
+          ignored -> {
             giveUpCalls.incrementAndGet();
             throw new java.io.IOException("dead letters down");
           });
@@ -316,7 +316,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
     var logs = LogCapture.of(JobProcessor.class);
     try (logs;
         Bikesched bikesched = testNode("node-failure-handler-removed").build()) {
-      bikesched.registerJobHandler(type, _ -> {});
+      bikesched.registerJobHandler(type, ignored -> {});
 
       awaitState(jobId, "FAILED");
       assertThat(count("id = '" + jobId + "' and attempts = 3 and failure_attempts = 1")).isOne();
@@ -336,12 +336,12 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-failure-handler-child").build()) {
       bikesched.registerJobHandler(
           child,
-          _ -> {
+          ignored -> {
             throw new IllegalStateException("boom");
           });
       bikesched.registerJobFailureHandler(
           child,
-          _ -> {
+          ignored -> {
             Thread.sleep(200);
             calls.add("child handled");
           });
@@ -369,7 +369,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = testNode("node-failure-handler-recurring").build()) {
       bikesched.registerJobFailureHandler(
           type,
-          _ -> {
+          ignored -> {
             handling.countDown();
             assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
           });
@@ -377,7 +377,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
           .newJob(type)
           .maxAttempts(1)
           .handler(
-              _ -> {
+              ignored -> {
                 throw new IllegalStateException("boom");
               })
           .schedule(Recurrence.every(Duration.ofHours(1)), Duration.ZERO);
@@ -420,7 +420,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               .payload("\"order-1\"")
               .maxAttempts(1)
               .handler(
-                  (_, _) -> {
+                  (ignored, ignored2) -> {
                     throw new IllegalStateException("boom");
                   })
               .schedule();
@@ -462,7 +462,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               .newJob(type)
               .maxAttempts(1)
               .handler(
-                  _ -> {
+                  ignored -> {
                     throw new IllegalStateException("boom");
                   })
               .failureHandler(failed -> handled.add("first " + failed.id()))
@@ -471,13 +471,13 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
           bikesched
               .newJob(type)
               .maxAttempts(1)
-              .failureHandler((failed, _) -> handled.add("second " + failed.id()))
+              .failureHandler((failed, ignored) -> handled.add("second " + failed.id()))
               .schedule();
 
       awaitState(first, "FAILED");
       awaitState(second, "FAILED");
       assertThat(handled).containsExactlyInAnyOrder("first " + first, "first " + second);
-      assertThatThrownBy(() -> bikesched.registerJobFailureHandler(type, _ -> {}))
+      assertThatThrownBy(() -> bikesched.registerJobFailureHandler(type, ignored -> {}))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("A failure handler for job type '" + type + "' is already registered");
     }
@@ -504,7 +504,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
         testNode("node-failure-handler-listener").jobListener(listener).build()) {
       bikesched.registerJobFailureHandler(
           type,
-          _ -> {
+          ignored -> {
             if (runs.incrementAndGet() == 1) {
               throw new java.io.IOException("dead letters down");
             }
@@ -534,7 +534,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
         .newJob(type)
         .maxAttempts(1)
         .handler(
-            _ -> {
+            ignored -> {
               throw new IllegalStateException("boom");
             })
         .schedule();

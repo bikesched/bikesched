@@ -64,7 +64,9 @@ public final class EventExample {
           // the step's result, so later runs of the handler wait with the same id.
           UUID id =
               job.step(
-                  "call-service", UUID.class, _ -> service.process(payload.id(), payload.delay()));
+                  "call-service",
+                  UUID.class,
+                  ignored -> service.process(payload.id(), payload.delay()));
 
           // Step 2: wait for the event with that id. If it was already published, it is received
           // right away; otherwise (delay) the job is suspended until it is, and this handler runs

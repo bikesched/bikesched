@@ -69,7 +69,9 @@ class PostponeTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     job.step(
-                        "reserve", String.class, _ -> "\"r-" + reserved.incrementAndGet() + "\"");
+                        "reserve",
+                        String.class,
+                        ignored -> "\"r-" + reserved.incrementAndGet() + "\"");
                     job.step(
                         "charge",
                         String.class,
@@ -140,7 +142,7 @@ class PostponeTest extends AbstractBikeschedTest {
                       job.step(
                           "charge",
                           String.class,
-                          _ -> {
+                          step -> {
                             if (runs.incrementAndGet() == 1) {
                               try {
                                 job.postpone(SHORT);
@@ -194,8 +196,9 @@ class PostponeTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     job.newStep("reserve", String.class)
-                        .compensateWith((_, _) -> rejected.add(attempt(() -> job.postpone(SHORT))))
-                        .run(_ -> "\"r-1\"");
+                        .compensateWith(
+                            (ignored, ignored2) -> rejected.add(attempt(() -> job.postpone(SHORT))))
+                        .run(ignored -> "\"r-1\"");
                     job.cancel("compensate");
                   })
               .schedule();
@@ -206,9 +209,9 @@ class PostponeTest extends AbstractBikeschedTest {
               .handler(
                   job ->
                       job.newStep("charge", String.class)
-                          .onFailure(_ -> rejected.add(attempt(() -> job.postpone(SHORT))))
+                          .onFailure(ignored -> rejected.add(attempt(() -> job.postpone(SHORT))))
                           .run(
-                              _ -> {
+                              ignored -> {
                                 throw new IllegalStateException("declined");
                               }))
               .schedule();
@@ -220,7 +223,7 @@ class PostponeTest extends AbstractBikeschedTest {
                   job ->
                       job.newPoll("await", String.class, SHORT)
                           .run(
-                              _ -> {
+                              ignored -> {
                                 rejected.add(attempt(() -> job.postpone(SHORT)));
                                 return Poll.ready("\"done\"");
                               }))
@@ -249,8 +252,8 @@ class PostponeTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     job.newStep("reserve", String.class)
-                        .compensateWith((_, reservation) -> compensated.complete(reservation))
-                        .run(_ -> "\"r-1\"");
+                        .compensateWith((ignored, reservation) -> compensated.complete(reservation))
+                        .run(ignored -> "\"r-1\"");
                     job.postpone(Duration.ofHours(1));
                   })
               .schedule();

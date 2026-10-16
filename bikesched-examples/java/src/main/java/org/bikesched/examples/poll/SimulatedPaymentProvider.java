@@ -52,7 +52,7 @@ public final class SimulatedPaymentProvider {
       BigDecimal amount, Duration settlesAfter, Webhook webhook, String idempotencyKey) {
     return paymentsByIdempotencyKey.computeIfAbsent(
         idempotencyKey,
-        _ -> {
+        ignored -> {
           String paymentId = "pay_" + UUID.randomUUID().toString().substring(0, 8);
           out.printf(
               "%s [provider] created %s for %s%n", PollExample.timestamp(), paymentId, amount);
@@ -95,7 +95,8 @@ public final class SimulatedPaymentProvider {
    * @return the settled payment, empty while it is pending
    */
   public Optional<PaymentSettled> status(String paymentId) {
-    int call = statusCalls.computeIfAbsent(paymentId, _ -> new AtomicInteger()).incrementAndGet();
+    int call =
+        statusCalls.computeIfAbsent(paymentId, ignored -> new AtomicInteger()).incrementAndGet();
     Optional<PaymentSettled> payment = Optional.ofNullable(settled.get(paymentId));
     out.printf(
         "%s [provider] status of %s (call %d): %s%n",

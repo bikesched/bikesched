@@ -51,7 +51,7 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
         .run(
             context -> {
               Bikesched node = context.getBean(Bikesched.class);
-              node.registerJobHandler(type, _ -> {});
+              node.registerJobHandler(type, ignored -> {});
               UUID jobId = node.newJob(type).schedule();
               BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(first.claimed.get()).isOne();
@@ -91,7 +91,7 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
         .run(
             context -> {
               Bikesched node = context.getBean(Bikesched.class);
-              node.registerJobHandler(type, _ -> {});
+              node.registerJobHandler(type, ignored -> {});
               UUID jobId = node.newJob(type).schedule();
               BikeschedTest.awaitJob(node, jobId).untilEnded();
               assertThat(registry.find("bikesched.job.attempts").tags("node", nodeName).timer())
@@ -127,7 +127,7 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
         .run(
             context -> {
               Bikesched node = context.getBean(Bikesched.class);
-              node.registerJobHandler(type, _ -> {});
+              node.registerJobHandler(type, ignored -> {});
               UUID jobId = node.newJob(type).schedule();
               BikeschedTest.awaitJob(node, jobId).untilEnded();
               node.newEvent(unique("metrics-off-event"), "k").publish();

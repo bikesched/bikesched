@@ -50,7 +50,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
                     if (attempts.incrementAndGet() == 1) {
                       ignoreInterruptsUntil(release);
                       try {
-                        job.step("late", String.class, _ -> "\"stale\"");
+                        job.step("late", String.class, ignored -> "\"stale\"");
                       } catch (RuntimeException e) {
                         staleWriteFailures.add(e);
                       } finally {
@@ -60,7 +60,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
                       // Only the first attempt is meant to time out; on a slow machine the
                       // retry's step alone can take longer than TIMEOUT.
                       job.updateTimeout(Duration.ofSeconds(10));
-                      job.step("done", String.class, _ -> "\"retry\"");
+                      job.step("done", String.class, ignored -> "\"retry\"");
                     }
                   })
               .schedule();
@@ -126,7 +126,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
               .newJob(type)
               .maxAttempts(1)
               .timeout(TIMEOUT)
-              .handler(_ -> ignoreInterruptsUntil(release))
+              .handler(ignored -> ignoreInterruptsUntil(release))
               .schedule();
       awaitState(jobId, "RUNNING");
 

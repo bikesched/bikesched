@@ -150,12 +150,12 @@ public final class TaxiBooking {
     // 1. Hand the request to the broker, which forwards it to its drivers.
     job.newStep("send-to-broker", Void.class)
         .compensateWith(
-            (_, _) -> {
+            (ignored, ignored2) -> {
               LOG.info("Compensating: withdrawing {}", describe(ride));
               broker.cancelRide(ride.rideId());
             })
         .run(
-            _ -> {
+            ignored -> {
               LOG.info("Executing: requesting {}", describe(ride));
               broker.requestRide(ride);
               return null;
@@ -171,7 +171,7 @@ public final class TaxiBooking {
       job.step(
           "notify-no-driver",
           Void.class,
-          _ -> {
+          ignored -> {
             LOG.info("Executing: no driver accepted {}", describe(ride));
             notifications.send(customer, "Sorry, no taxi is available right now.");
             return null;
@@ -184,7 +184,7 @@ public final class TaxiBooking {
     job.step(
         "ask-for-price",
         Void.class,
-        _ -> {
+        ignored -> {
           LOG.info("Executing: asking {} to accept {}", customer, describe(offer));
           notifications.send(
               customer,
@@ -213,12 +213,12 @@ public final class TaxiBooking {
     PaymentReservation reservation =
         job.newStep("reserve-payment", PaymentReservation.class)
             .compensateWith(
-                (_, stored) -> {
+                (ignored, stored) -> {
                   LOG.info("Compensating: releasing {}", describe(stored));
                   payments.release(stored);
                 })
             .run(
-                _ -> {
+                ignored -> {
                   PaymentReservation reserved =
                       payments.reserve(customer, offer.price(), offer.currency(), ride.rideId());
                   LOG.info("Executing: reserved {}", describe(reserved));
@@ -230,7 +230,7 @@ public final class TaxiBooking {
         job.step(
             "approve-ride",
             RideApproval.class,
-            _ -> {
+            ignored -> {
               LOG.info("Executing: approving {} with {}", describe(ride), describe(reservation));
               return broker.approveRide(ride.rideId(), offer, reservation);
             });
@@ -239,7 +239,7 @@ public final class TaxiBooking {
     job.step(
         "notify-eta",
         Void.class,
-        _ -> {
+        ignored -> {
           LOG.info(
               "Executing: notifying {} of {}, arriving in {} minutes",
               customer,

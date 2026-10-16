@@ -73,7 +73,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
             .maxConcurrentJobs(20)
             .autoStartPolling(false)
             .build()) {
-      bikesched.registerJobHandler(jobType, _ -> completed.incrementAndGet());
+      bikesched.registerJobHandler(jobType, ignored -> completed.incrementAndGet());
       for (int i = 0; i < 20; i++) {
         bikesched.newJob(jobType).schedule();
       }

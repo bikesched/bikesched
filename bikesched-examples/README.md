@@ -59,7 +59,7 @@ publishes an event keyed by it, with both ids as payload (`EventPayload(id, jobI
 waits for that event:
 
 ```java
-UUID id = job.step("call-service", UUID.class, _ -> service.process(payload.id(), payload.delay()));
+UUID id = job.step("call-service", UUID.class, step -> service.process(payload.id(), payload.delay()));
 EventPayload event = job.awaitEvent("await-event", EVENT_TYPE, id.toString());
 ```
 
@@ -89,7 +89,7 @@ jobs: `notify-customer` waits for `order-shipped` keyed by the order id, and `sh
 parcel over to the carrier and publishes the event:
 
 ```java
-String trackingId = job.step("hand-over-to-carrier", String.class, _ -> carrier.handOver(order));
+String trackingId = job.step("hand-over-to-carrier", String.class, step -> carrier.handOver(order));
 UUID eventId = job.newEvent(ORDER_SHIPPED, order.orderId())
         .payload(new OrderShipped(order.orderId(), trackingId))
         .publish();
@@ -175,7 +175,7 @@ PaymentSettled settled = webhook != null
         ? webhook
         : job.newPoll("poll-payment", PaymentSettled.class, POLL_INTERVAL)
                 .timeout(Duration.ofSeconds(30))
-                .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
+                .run(step -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
 job.step("mark-paid", () -> { … });
 ```
 
@@ -207,7 +207,7 @@ token from a bucket before each call; without one, it postpones the job until th
 again:
 
 ```java
-job.step("send", String.class, _ -> {
+job.step("send", String.class, step -> {
     ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
     if (!probe.isConsumed()) {
         job.postpone(Duration.ofNanos(probe.getNanosToWaitForRefill()));   // no attempt used up
@@ -301,8 +301,8 @@ List<UUID> children = album.files().stream()
         .toList();
 for (int i = 0; i < children.size(); i++) {
     switch (job.waitForJob(children.get(i), Thumbnail.class)) {
-        case JobResult.Succeeded<Thumbnail>(_, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
-        case JobResult.Failed<Thumbnail> _ -> skipped.add(album.files().get(i));
+        case JobResult.Succeeded<Thumbnail>(UUID childId, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
+        case JobResult.Failed<Thumbnail> failed -> skipped.add(album.files().get(i));
         case JobResult<Thumbnail> other -> throw new IllegalStateException("Unexpected outcome: " + other);
     }
 }
@@ -324,7 +324,7 @@ both register the recurring job `clean-up-sessions`, as every node does on start
 
 ```java
 bikesched.newJob(CLEAN_UP_SESSIONS)
-        .handler(_ -> out.printf("%s [%s] run %d: removed expired sessions%n", timestamp(), node, runs.incrementAndGet()))
+        .handler(job -> out.printf("%s [%s] run %d: removed expired sessions%n", timestamp(), node, runs.incrementAndGet()))
         .schedule(Recurrence.every(Duration.ofSeconds(1)));
 ```
 
@@ -497,7 +497,7 @@ public class OrderService {
   @JobHandler(type = "fulfill-order")                                             // found by the starter
   public void fulfill(Job job, FulfillOrder command) throws Exception {
     Order order = orders.findById(command.orderId()).orElseThrow();
-    var fulfillmentId = job.step("fulfill", UUID.class, _ -> fulfillment.fulfill(order.getId(), order.getItem()));
+    var fulfillmentId = job.step("fulfill", UUID.class, step -> fulfillment.fulfill(order.getId(), order.getItem()));
     job.awaitEvent("await-fulfillment", FULFILLMENT_FINISHED, fulfillmentId.toString());
     order.markFulfilled(); // …
   }

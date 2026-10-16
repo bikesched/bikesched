@@ -41,7 +41,7 @@ public final class SimulatedPaymentProvider {
    */
   public String charge(String orderId, String cardNumber, BigDecimal amount, String idempotencyKey)
       throws CardDeclinedException, IOException {
-    int call = calls.computeIfAbsent(orderId, _ -> new AtomicInteger()).incrementAndGet();
+    int call = calls.computeIfAbsent(orderId, ignored -> new AtomicInteger()).incrementAndGet();
     System.out.println(
         "[payment]  charging " + amount + " for " + orderId + " (call " + call + ")");
     return switch (cardNumber) {

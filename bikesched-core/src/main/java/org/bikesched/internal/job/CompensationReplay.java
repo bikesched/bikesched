@@ -93,8 +93,10 @@ final class CompensationReplay {
     var wait = database.steps().findChildWait(jobId, childJobId);
     return switch (wait) {
       case StepStore.ChildWait.ChildEnded ended -> DefaultJob.jobResult(childJobId, ended, read);
-      case StepStore.ChildWait.ChildTimedOut _ -> new JobResult.TimedOut<>(childJobId);
-      case StepStore.ChildWait.ChildWaiting _, StepStore.ChildWait.NotWaiting _ ->
+      case StepStore.ChildWait.ChildTimedOut ignored -> new JobResult.TimedOut<>(childJobId);
+      case StepStore.ChildWait.ChildWaiting ignored ->
+          throw new CompensationReplayEnded(wait.stepName());
+      case StepStore.ChildWait.NotWaiting ignored ->
           throw new CompensationReplayEnded(wait.stepName());
     };
   }

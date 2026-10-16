@@ -59,7 +59,7 @@ public class FulfillmentService {
               } catch (InterruptedException e) {
                 return;
               }
-              transactions.executeWithoutResult(_ -> finish(orderId, fulfillmentId));
+              transactions.executeWithoutResult(ignored -> finish(orderId, fulfillmentId));
             });
     return fulfillmentId;
   }

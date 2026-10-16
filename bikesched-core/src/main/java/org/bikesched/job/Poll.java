@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  * Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30))
  *     .run(step -> switch (reports.status(reportId)) {
  *       case Done d -> Poll.ready(d.report());
- *       case Pending _ -> Poll.notReady();
+ *       case Pending pending -> Poll.notReady();
  *     });
  * }</pre>
  *

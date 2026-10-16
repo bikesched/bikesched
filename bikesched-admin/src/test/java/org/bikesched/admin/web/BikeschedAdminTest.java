@@ -153,7 +153,7 @@ class BikeschedAdminTest {
   @Test
   void findsJobsAndEventsByTheFirstDigitsOfTheirId() {
     String type = prefix + "by-id";
-    bikesched.registerJobHandler(type, _ -> {});
+    bikesched.registerJobHandler(type, ignored -> {});
     UUID jobId = bikesched.newJob(type).schedule(Duration.ofHours(1));
     UUID eventId = bikesched.newEvent(prefix + "by-id", "k").publish();
 
@@ -179,7 +179,7 @@ class BikeschedAdminTest {
   @Test
   void showsTheRunsOfARecurringJob() {
     String type = prefix + "recurring";
-    bikesched.registerJobHandler(type, _ -> {});
+    bikesched.registerJobHandler(type, ignored -> {});
     bikesched.newJob(type).schedule(Recurrence.every(Duration.ofMillis(200)), Duration.ZERO);
 
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
@@ -216,7 +216,7 @@ class BikeschedAdminTest {
     bikesched.registerJobHandler(
         parentType,
         job -> {
-          job.step("prepare", String.class, _ -> "\"prepared\"");
+          job.step("prepare", String.class, ignored -> "\"prepared\"");
           UUID child = job.newJob(childType).stepName("run-child").schedule();
           job.waitForJob(child, String.class);
         });
@@ -302,7 +302,7 @@ class BikeschedAdminTest {
   void showsANodeWithTheJobsItRuns() throws Exception {
     String type = prefix + "on-node";
     CountDownLatch release = new CountDownLatch(1);
-    bikesched.registerJobHandler(type, _ -> release.await());
+    bikesched.registerJobHandler(type, ignored -> release.await());
     try {
       UUID jobId = bikesched.newJob(type).schedule();
       awaitState(jobId, JobState.RUNNING);
@@ -519,7 +519,7 @@ class BikeschedAdminTest {
 
   @Test
   void aReadOnlyAdminRejectsRetryAndCancel() {
-    bikesched.registerJobHandler(prefix + "read-only", _ -> {});
+    bikesched.registerJobHandler(prefix + "read-only", ignored -> {});
     UUID later = bikesched.newJob(prefix + "read-only").schedule(Duration.ofHours(1));
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched).readOnly(true))) {
       HttpResponse<String> response =
@@ -574,7 +574,7 @@ class BikeschedAdminTest {
 
   @Test
   void anUnchangedJobAnswersNotModified() {
-    bikesched.registerJobHandler(prefix + "etag", _ -> {});
+    bikesched.registerJobHandler(prefix + "etag", ignored -> {});
     UUID later = bikesched.newJob(prefix + "etag").schedule(Duration.ofHours(1));
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
       HttpResponse<String> first = server.get("/api/jobs/" + later);

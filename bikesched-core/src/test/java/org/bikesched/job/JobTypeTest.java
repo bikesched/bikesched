@@ -23,7 +23,7 @@ class JobTypeTest extends AbstractBikeschedTest {
     JobType<Payment> payment = JobType.of(unique("payment"), Payment.class);
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-job-type")) {
-      bikesched.registerJobHandler(payment, (_, p) -> received.complete(p));
+      bikesched.registerJobHandler(payment, (ignored, p) -> received.complete(p));
 
       UUID jobId = bikesched.newJob(payment).payload(new Payment("order-1", 100)).schedule();
 
@@ -40,7 +40,7 @@ class JobTypeTest extends AbstractBikeschedTest {
       bikesched
           .newJob(payment)
           .payload(new Payment("order-2", 200))
-          .handler((_, p) -> received.complete(p))
+          .handler((ignored, p) -> received.complete(p))
           .schedule();
 
       assertThat(received.get(10, TimeUnit.SECONDS)).isEqualTo(new Payment("order-2", 200));
@@ -84,7 +84,7 @@ class JobTypeTest extends AbstractBikeschedTest {
     JobType<Payment> payment = JobType.of(unique("payment-none"), Payment.class);
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-job-type-null")) {
-      bikesched.registerJobHandler(payment, (_, p) -> received.complete(p));
+      bikesched.registerJobHandler(payment, (ignored, p) -> received.complete(p));
 
       bikesched.newJob(payment).schedule();
 
@@ -98,7 +98,7 @@ class JobTypeTest extends AbstractBikeschedTest {
     JobType<Payment> payment = JobType.of(name, Payment.class);
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-job-type-mixed")) {
-      bikesched.registerJobHandler(payment, (_, p) -> received.complete(p));
+      bikesched.registerJobHandler(payment, (ignored, p) -> received.complete(p));
 
       bikesched.newJob(name).payload(new Payment("order-3", 300)).schedule();
 
@@ -110,7 +110,7 @@ class JobTypeTest extends AbstractBikeschedTest {
   void nameIsUsedWithOnePayloadClassOnly() throws Exception {
     String name = unique("payment-conflict");
     try (Bikesched bikesched = node("node-job-type-conflict")) {
-      bikesched.registerJobHandler(JobType.of(name, Payment.class), (_, _) -> {});
+      bikesched.registerJobHandler(JobType.of(name, Payment.class), (ignored, ignored2) -> {});
 
       assertThatThrownBy(() -> bikesched.newJob(JobType.of(name, String.class)))
           .isInstanceOf(IllegalArgumentException.class)
@@ -131,7 +131,7 @@ class JobTypeTest extends AbstractBikeschedTest {
       bikesched
           .newJob(payment)
           .payload(new Payment("monthly", 10))
-          .handler((_, _) -> {})
+          .handler((ignored, ignored2) -> {})
           .schedule(Recurrence.every(Duration.ofHours(1)), Duration.ofHours(1));
       assertThat(count("type = '" + payment.name() + "' and state = 'SCHEDULED'")).isOne();
 

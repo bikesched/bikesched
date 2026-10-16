@@ -30,7 +30,7 @@ final class SimulatedImageService {
    * @throws InterruptedException if interrupted while resizing
    */
   Optional<Thumbnail> resize(String albumId, String file) throws InterruptedException {
-    calls.computeIfAbsent(file, _ -> new AtomicInteger()).incrementAndGet();
+    calls.computeIfAbsent(file, ignored -> new AtomicInteger()).incrementAndGet();
     out.printf("%s [images]  resizing %s%n", FanOutExample.timestamp(), file);
     Thread.sleep(1000);
     if (!file.endsWith(".jpg")) {

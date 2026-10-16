@@ -87,7 +87,7 @@ Take a token from a shared bucket before the call. Without one, postpone the job
 refills:
 
 ```java
-job.step("send", String.class, _ -> {
+job.step("send", String.class, step -> {
     ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);   // Bucket4j, stored in PostgreSQL
     if (!probe.isConsumed()) {
         job.postpone(Duration.ofNanos(probe.getNanosToWaitForRefill()));
@@ -115,7 +115,7 @@ PaymentSettled settled = job.waitForEvent("await-webhook", PAYMENT_SETTLED, paym
         .receive();
 if (settled == null) {
     settled = job.newPoll("poll-payment", PaymentSettled.class, Duration.ofMinutes(1))
-            .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
+            .run(step -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
 }
 ```
 
@@ -175,8 +175,8 @@ List<UUID> children = album.files().stream()
         .toList();
 for (UUID child : children) {
     switch (job.waitForJob(child, Thumbnail.class)) {
-        case JobResult.Succeeded<Thumbnail>(_, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
-        case JobResult.Failed<Thumbnail> _ -> skipped++;
+        case JobResult.Succeeded<Thumbnail>(UUID childId, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
+        case JobResult.Failed<Thumbnail> failed -> skipped++;
         case JobResult<Thumbnail> other -> throw new IllegalStateException("Unexpected outcome: " + other);
     }
 }
@@ -196,7 +196,7 @@ so each run happens once, on whichever node claims it:
 
 ```java
 bikesched.newJob("clean-up-sessions")
-        .handler(_ -> sessions.removeExpired())
+        .handler(job -> sessions.removeExpired())
         .schedule(Recurrence.every(Duration.ofHours(1)));   // or daily/weekly, cron via bikesched-cron
 ```
 
@@ -215,12 +215,12 @@ completed steps are undone, latest first:
 
 ```java
 job.newStep("send-to-broker", Void.class)
-        .compensateWith((_, _) -> broker.cancelRide(ride.rideId()))
-        .run(_ -> { broker.requestRide(ride); return null; });
+        .compensateWith((step, result) -> broker.cancelRide(ride.rideId()))
+        .run(step -> { broker.requestRide(ride); return null; });
 PaymentReservation reservation = job.newStep("reserve-payment", PaymentReservation.class)
-        .compensateWith((_, stored) -> payments.release(stored))
-        .run(_ -> payments.reserve(customer, offer.price(), offer.currency(), ride.rideId()));
-job.step("approve-ride", RideApproval.class, _ -> broker.approveRide(ride.rideId(), offer, reservation));
+        .compensateWith((step, stored) -> payments.release(stored))
+        .run(step -> payments.reserve(customer, offer.price(), offer.currency(), ride.rideId()));
+job.step("approve-ride", RideApproval.class, step -> broker.approveRide(ride.rideId(), offer, reservation));
 ```
 
 - `bikesched.cancel(jobId, reason)` from outside and `job.cancel(reason)` inside run the same

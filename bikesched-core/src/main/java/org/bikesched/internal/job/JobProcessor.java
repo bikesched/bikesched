@@ -233,7 +233,7 @@ public final class JobProcessor {
             nodeId.toString(),
             hard == null ? null : hard.grace(),
             hard == null
-                ? _ -> {}
+                ? ignored -> {}
                 : abandoned ->
                     hard.abandon(
                         job, abandoned, slot, failure -> recordAbandoned(job, failure, started)));
@@ -286,7 +286,7 @@ public final class JobProcessor {
           case JobPhase.HandleFailure failing -> recordFailureHandlerFailure(job, failing, failure);
           case JobPhase.Compensate compensating ->
               recordCompensationFailure(job, compensating, null, failure);
-          case JobPhase.Run _ -> recordFailure(job, failure);
+          case JobPhase.Run ignored -> recordFailure(job, failure);
         };
     notifyListener(
         job,
@@ -331,9 +331,9 @@ public final class JobProcessor {
     } finally {
       Duration elapsed = started.elapsed();
       switch (outcome) {
-        case AbandonedReturned _ ->
+        case AbandonedReturned ignored ->
             notifyListener(job, () -> listener.onAbandonedAttemptReturned(started.claim()));
-        case Reported(JobAttemptOutcome kind, _) -> {
+        case Reported(JobAttemptOutcome kind, String ignored) -> {
           var result = new JobAttemptResult(started.claim(), kind, elapsed, false);
           notifyListener(job, () -> listener.onAttemptEnded(result));
         }
@@ -377,9 +377,9 @@ public final class JobProcessor {
     return switch (job.phase()) {
       case JobPhase.HandleFailure failing -> runFailureHandler(job, failing, slot, started);
       case JobPhase.Compensate compensating -> compensate(job, compensating, slot, started);
-      case JobPhase.Run _ when job.cancelRequested() ->
+      case JobPhase.Run ignored when job.cancelRequested() ->
           recordCancellation(job, job.cancelRequestMessage(), false);
-      case JobPhase.Run _ -> runHandler(job, slot, started);
+      case JobPhase.Run ignored -> runHandler(job, slot, started);
     };
   }
 
@@ -482,14 +482,14 @@ public final class JobProcessor {
   /** The handler threw after deciding the outcome otherwise: its decision wins. */
   private static void warnIfIgnored(DefaultJob job, Verdict verdict, Exception thrown) {
     switch (verdict) {
-      case Verdict.Cancelled _ ->
+      case Verdict.Cancelled ignored ->
           // The handler's decision to cancel wins over the failure: no retry.
           LOG.warn(
               "Job {} of type {} was cancelled, ignoring the exception thrown by its handler afterwards",
               job.id(),
               job.type(),
               thrown);
-      case Verdict.FailedByHandler _ ->
+      case Verdict.FailedByHandler ignored ->
           // The handler's explicit failure (and its retry settings) wins over the exception.
           LOG.warn(
               "Job {} of type {} was failed by its handler, ignoring the exception thrown afterwards",
@@ -506,7 +506,9 @@ public final class JobProcessor {
               job.type(),
               suspension,
               thrown);
-      case Verdict.TimedOut _, Verdict.Threw _, Verdict.Returned _ -> {}
+      case Verdict.TimedOut ignored -> {}
+      case Verdict.Threw ignored -> {}
+      case Verdict.Returned ignored -> {}
     }
   }
 
@@ -636,10 +638,12 @@ public final class JobProcessor {
     return switch (suspension) {
       case JobSuspended.EventSuspension wait ->
           wait.event() + " was published while suspending the job";
-      case JobSuspended.SleepSuspension _ -> "the wake-up time passed while suspending the job";
+      case JobSuspended.SleepSuspension ignored ->
+          "the wake-up time passed while suspending the job";
       case JobSuspended.JobSuspension wait ->
           "job " + wait.childJobId() + " ended while suspending the job";
-      case JobSuspended.PollSuspension _ -> "the next check became due while suspending the job";
+      case JobSuspended.PollSuspension ignored ->
+          "the next check became due while suspending the job";
     };
   }
 
@@ -757,7 +761,7 @@ public final class JobProcessor {
                   ? new BikeschedException(
                       "Compensation timed out after " + attempt.timeout(), failure)
                   : failure);
-      case AttemptEnd.Ended _ -> recordCompensated(job, progress.compensated);
+      case AttemptEnd.Ended ignored -> recordCompensated(job, progress.compensated);
     };
   }
 
@@ -935,9 +939,10 @@ public final class JobProcessor {
               failing,
               new BikeschedException(
                   "Failure handler timed out after " + attempt.timeout(), failure));
-      case AttemptEnd.Ended(_, Exception failure, _) when failure != null ->
+      case AttemptEnd.Ended(JobAttempt.End ignored, Exception failure, JobAttempt alsoIgnored)
+          when failure != null ->
           recordFailureHandlerFailure(job, failing, failure);
-      case AttemptEnd.Ended _ -> recordFailingEnded(job, "failure handler ran");
+      case AttemptEnd.Ended ignored -> recordFailingEnded(job, "failure handler ran");
     };
   }
 
@@ -1033,9 +1038,9 @@ public final class JobProcessor {
   /** What follows once the job ended: by its origin. */
   private FollowUp followUp(DefaultJob job) {
     return switch (job.origin()) {
-      case JobOrigin.OneOff _ -> new FollowUp.None();
+      case JobOrigin.OneOff ignored -> new FollowUp.None();
       case JobOrigin.Child(UUID parentJobId) -> new FollowUp.NotifyParent(parentJobId);
-      case JobOrigin.Occurrence _ ->
+      case JobOrigin.Occurrence ignored ->
           nextOccurrence(job)
               .<FollowUp>map(FollowUp.ScheduleNext::new)
               .orElseGet(FollowUp.None::new);
@@ -1072,7 +1077,8 @@ public final class JobProcessor {
           scheduled
               ? ", next occurrence at " + next.scheduledAt()
               : ", next occurrence already pending";
-      case FollowUp.None _, FollowUp.NotifyParent _ -> "";
+      case FollowUp.None ignored -> "";
+      case FollowUp.NotifyParent ignored -> "";
     };
   }
 

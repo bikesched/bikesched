@@ -65,7 +65,7 @@ public final class HardTimeout {
   void abandon(
       DefaultJob job, JobAttempt attempt, JobSlot slot, Consumer<Exception> recordFailure) {
     int running = abandonedThreads.incrementAndGet();
-    try (var _ = JobLogContext.open(nodeId, job)) {
+    try (var logContext = JobLogContext.open(nodeId, job)) {
       LOG.warn(
           "Job {} of type {} did not stop within {} after its timeout of {} (attempt {} of {}),"
               + " abandoning thread {} on bikesched node {} ({} abandoned thread(s) still"
@@ -91,7 +91,7 @@ public final class HardTimeout {
     try {
       recorder.execute(
           () -> {
-            try (var _ = JobLogContext.open(nodeId, job)) {
+            try (var logContext = JobLogContext.open(nodeId, job)) {
               recordFailure.accept(failure);
             }
           });

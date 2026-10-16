@@ -42,7 +42,7 @@ goal is to keep it small and easy to drop into your app:
   you use.
 - **PostgreSQL is all you need**: jobs, durable steps, events and nodes live in plain tables
   (`bikesched_*`), and bikesched creates and migrates the schema on first use.
-- **Modern Java**: built for Java 26, with every job on its own virtual thread.
+- **Modern Java**: runs on Java 21 and later, with every job on its own virtual thread.
 
 **One thing bikesched isn't**:
 [a workflow engine](docs/multi-step-jobs/steps.md#working-with-a-workflow-engine). Steps
@@ -122,7 +122,7 @@ bikesched.registerJobHandler("order", job -> {
 
     // Creates a Stripe PaymentIntent; runs once, a retried or resumed job gets the id back instead
     String paymentIntentId = job.step("create-payment-intent", String.class,
-            _ -> stripe.createPaymentIntent(order).id());
+            step -> stripe.createPaymentIntent(order).id());
 
     // Suspends (no thread held) until Stripe's webhook reports on this payment intent
     PaymentUpdated webhook = job.waitForEvent("await-payment", "payment-intent-updated", paymentIntentId,
@@ -177,7 +177,9 @@ wired by the starter — live in the [`bikesched-examples`](bikesched-examples/R
 ## Building
 
 Requirements: JDK 26 (or let Gradle provision it via the toolchain) and Docker for the tests,
-which run against PostgreSQL 18 with [Testcontainers](https://testcontainers.com).
+which run against PostgreSQL 18 with [Testcontainers](https://testcontainers.com). The build
+compiles for Java 21, the oldest Java version bikesched supports
+([ADR 0049](docs/decisions/0049-java-21-baseline.md)).
 
 ```shell
 ./gradlew build

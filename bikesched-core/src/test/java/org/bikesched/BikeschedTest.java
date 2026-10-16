@@ -65,7 +65,7 @@ class BikeschedTest extends AbstractBikeschedTest {
             .nodeTimeout(Duration.ofSeconds(5))
             .build()) {
       String type = "timings-" + UUID.randomUUID();
-      bikesched.registerJobHandler(type, _ -> {});
+      bikesched.registerJobHandler(type, ignored -> {});
       UUID jobId = bikesched.newJob(type).schedule();
       awaitState(jobId, "SUCCEEDED");
       assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo(bikesched.node().name());
@@ -234,7 +234,8 @@ class BikeschedTest extends AbstractBikeschedTest {
   void logsRedactedDatabaseUrlOnStartup() {
     var logs = LogCapture.of(DatabaseInitializer.class);
     try (logs;
-        Bikesched _ = Bikesched.builder().dataSource(dataSource).nodeName("node-db-url").build()) {
+        Bikesched ignored =
+            Bikesched.builder().dataSource(dataSource).nodeName("node-db-url").build()) {
       assertThat(logs.events())
           .filteredOn(e -> e.getFormattedMessage().startsWith("Database: "))
           .singleElement()

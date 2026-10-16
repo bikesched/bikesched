@@ -21,7 +21,7 @@ class StatementTimeoutNodeTest extends AbstractBikeschedTest {
       UUID jobId =
           bikesched
               .newJob(unique("statement-timeout"))
-              .handler(job -> job.step("s", String.class, _ -> "\"done\""))
+              .handler(job -> job.step("s", String.class, ignored -> "\"done\""))
               .schedule();
 
       awaitState(jobId, "SUCCEEDED");
