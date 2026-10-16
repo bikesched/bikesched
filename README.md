@@ -185,6 +185,10 @@ compiles for Java 21, the oldest Java version bikesched supports
 ./gradlew build
 ```
 
+The [load and failure tests](bikesched-stress-tests/README.md) (database restarts, cut-off nodes,
+hanging connections, throughput) take a few minutes and run on demand, before a release:
+`./gradlew :bikesched-stress-tests:stressTest`.
+
 To try it out locally, start PostgreSQL with Docker Compose and run the
 [simple example](bikesched-examples/README.md#simple), which registers a handler and runs one job:
 
