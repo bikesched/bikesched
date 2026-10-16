@@ -13,7 +13,6 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.bikesched.BikeschedException;
 import org.bikesched.BikeschedLogContext;
-import org.bikesched.JsonMapper;
 import org.bikesched.RetryBackoff;
 import org.bikesched.event.EventTimeoutException;
 import org.bikesched.event.EventType;
@@ -49,6 +48,7 @@ import org.bikesched.job.StepBuilder;
 import org.bikesched.job.StepFailureHandler;
 import org.bikesched.job.StepHandler;
 import org.bikesched.job.StepJobBuilder;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -78,20 +78,20 @@ public final class DefaultJob implements Job {
   private final JobLock lock;
 
   private final String type;
-  private final String payload;
+  private final @Nullable String payload;
   private final int priority;
   private final Instant scheduledAt;
   private final int attempts;
   private final int maxAttempts;
-  private final Duration timeout;
+  private final @Nullable Duration timeout;
   private final JobPhase phase;
   private final JobOrigin origin;
-  private final String lastError;
+  private final @Nullable String lastError;
   private final boolean cancelRequested;
-  private final String cancelRequestMessage;
+  private final @Nullable String cancelRequestMessage;
 
   /** Replays the handler while the job is claimed to be compensated, {@code null} otherwise. */
-  private final CompensationReplay replay;
+  private final @Nullable CompensationReplay replay;
 
   /** Rejects steps and event waits while a step handler or compensation runs. */
   private final StepGuard stepGuard;
@@ -102,18 +102,18 @@ public final class DefaultJob implements Job {
   // Set by the handler, read by bikesched after the handler returned (the handler may use other
   // threads).
   private volatile boolean cancelled;
-  private volatile String cancelMessage;
-  private volatile DefaultJobFailure failure;
-  private volatile Result result;
-  private volatile JobSuspended.Suspension suspension;
-  private volatile JobAttempt attempt;
-  private volatile StepRetry stepRetry;
+  private volatile @Nullable String cancelMessage;
+  private volatile @Nullable DefaultJobFailure failure;
+  private volatile @Nullable Result result;
+  private volatile JobSuspended.@Nullable Suspension suspension;
+  private volatile @Nullable JobAttempt attempt;
+  private volatile @Nullable StepRetry stepRetry;
   private volatile boolean failureHandlingPending;
-  private volatile Duration defaultEventTimeout;
+  private volatile @Nullable Duration defaultEventTimeout;
   private volatile boolean lockLost;
 
   /** The step whose handler runs right now (not its failure handler), {@code null} if none. */
-  private volatile String runningStep;
+  private volatile @Nullable String runningStep;
 
   /**
    * A job claimed by this node, accessing its steps and events through the database.
@@ -132,14 +132,13 @@ public final class DefaultJob implements Job {
       int failureHandlerAttempts,
       JobScheduler scheduler,
       EventListener eventListener) {
-    this.database = Objects.requireNonNull(database, "database");
-    this.eventListener = Objects.requireNonNull(eventListener, "eventListener");
-    this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
-    this.defaultEventRetention =
-        Objects.requireNonNull(defaultEventRetention, "defaultEventRetention");
+    this.database = database;
+    this.eventListener = eventListener;
+    this.scheduler = scheduler;
+    this.defaultEventRetention = defaultEventRetention;
     this.failureHandlerAttempts = failureHandlerAttempts;
     this.id = claimed.id();
-    this.lock = Objects.requireNonNull(claimed.lock(), "lock");
+    this.lock = claimed.lock();
     this.type = claimed.type();
     this.payload = claimed.payload();
     this.priority = claimed.priority();
@@ -147,8 +146,8 @@ public final class DefaultJob implements Job {
     this.attempts = claimed.attempts();
     this.maxAttempts = claimed.maxAttempts();
     this.timeout = claimed.timeout();
-    this.phase = Objects.requireNonNull(claimed.phase(), "phase");
-    this.origin = Objects.requireNonNull(claimed.origin(), "origin");
+    this.phase = claimed.phase();
+    this.origin = claimed.origin();
     this.lastError = claimed.lastError();
     this.cancelRequested = claimed.cancelRequested();
     this.cancelRequestMessage = claimed.cancelMessage();
@@ -171,7 +170,8 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public <T> StepEventBuilder<T> newEvent(EventType<T> eventType, String eventKey) {
+  public <T extends @Nullable Object> StepEventBuilder<T> newEvent(
+      EventType<T> eventType, String eventKey) {
     Objects.requireNonNull(eventType, "eventType");
     ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultStepEventBuilder<>(
@@ -181,9 +181,9 @@ public final class DefaultJob implements Job {
   private UUID publishEventStep(
       String eventName,
       String eventKey,
-      String eventPayload,
-      Duration retention,
-      String requestedStepName) {
+      @Nullable String eventPayload,
+      @Nullable Duration retention,
+      @Nullable String requestedStepName) {
     String stepName =
         stepName(requestedStepName, "publish " + eventName, "Default event publishing step name");
     stepGuard.requireNoneRunning("publish an event as step '" + stepName + "'");
@@ -224,7 +224,7 @@ public final class DefaultJob implements Job {
    *
    * @param what what the default name is, for the message
    */
-  private static String stepName(String requested, String defaultName, String what) {
+  private static String stepName(@Nullable String requested, String defaultName, String what) {
     if (requested == null
         && defaultName.codePointCount(0, defaultName.length()) > ValidationUtil.MAX_NAME_LENGTH) {
       throw new IllegalArgumentException(
@@ -263,12 +263,12 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public String payload() {
+  public @Nullable String payload() {
     return payload;
   }
 
   @Override
-  public <T> T payload(Class<T> type) {
+  public <T extends @Nullable Object> @Nullable T payload(Class<T> type) {
     Objects.requireNonNull(type, "type");
     return payload == null ? null : database.jsonMapper().fromJson(payload, type);
   }
@@ -289,7 +289,7 @@ public final class DefaultJob implements Job {
   }
 
   /** The stored description of the job's last failure, {@code null} if none. */
-  String lastError() {
+  @Nullable String lastError() {
     return lastError;
   }
 
@@ -299,7 +299,7 @@ public final class DefaultJob implements Job {
   }
 
   /** The message of the requested cancellation, {@code null} if none. */
-  String cancelRequestMessage() {
+  @Nullable String cancelRequestMessage() {
     return cancelRequestMessage;
   }
 
@@ -355,7 +355,7 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public void cancel(String message) {
+  public void cancel(@Nullable String message) {
     this.cancelMessage = message;
     this.cancelled = true;
   }
@@ -366,12 +366,12 @@ public final class DefaultJob implements Job {
   }
 
   /** The message passed to {@link #cancel(String)}, {@code null} if none. */
-  String cancelMessage() {
+  @Nullable String cancelMessage() {
     return cancelMessage;
   }
 
   @Override
-  public JobFailure fail(String message) {
+  public JobFailure fail(@Nullable String message) {
     var failure = new DefaultJobFailure(message);
     this.failure = failure;
     return failure;
@@ -396,20 +396,20 @@ public final class DefaultJob implements Job {
   }
 
   /** The failure the handler marked the attempt with, {@code null} if none. */
-  DefaultJobFailure failure() {
+  @Nullable DefaultJobFailure failure() {
     return failure;
   }
 
   /** A result set by the handler: JSON text, {@code null} for a {@code null} result. */
-  private record Result(String json) {}
+  private record Result(@Nullable String json) {}
 
   @Override
-  public void complete(Object result) {
-    this.result = new Result(result == null ? null : database.jsonMapper().toJson(result));
+  public void complete(@Nullable Object result) {
+    this.result = new Result(toJson(result));
   }
 
   /** The result set by the handler as JSON text, {@code null} if none. */
-  String resultJson() {
+  @Nullable String resultJson() {
     Result current = result;
     return current == null ? null : current.json();
   }
@@ -422,7 +422,7 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public <T> StepJobBuilder<T> newJob(JobType<T> type) {
+  public <T extends @Nullable Object> StepJobBuilder<T> newJob(JobType<T> type) {
     Objects.requireNonNull(type, "type");
     requireChildrenAllowed(type.name());
     scheduler.requirePayloadType(type);
@@ -453,7 +453,9 @@ public final class DefaultJob implements Job {
    * @return the child's id, the same on every run
    */
   UUID startChildJob(
-      String requestedStepName, NewJob child, CompensationHandler<? super UUID> compensation) {
+      @Nullable String requestedStepName,
+      NewJob child,
+      @Nullable CompensationHandler<? super UUID> compensation) {
     String stepName =
         stepName(requestedStepName, "start " + child.type(), "Default child job step name");
     stepGuard.requireNoneRunning("start a child job as step '" + stepName + "'");
@@ -488,12 +490,14 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public <T> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType) {
+  public <T extends @Nullable Object> JobResult<T> waitForJob(
+      UUID childJobId, Class<T> resultType) {
     return waitForChildJob(childJobId, resultType, null);
   }
 
   @Override
-  public <T> JobResult<T> waitForJob(UUID childJobId, Class<T> resultType, Duration timeout) {
+  public <T extends @Nullable Object> JobResult<T> waitForJob(
+      UUID childJobId, Class<T> resultType, Duration timeout) {
     ValidationUtil.requirePositive(timeout, "timeout");
     return waitForChildJob(childJobId, resultType, timeout);
   }
@@ -502,7 +506,8 @@ public final class DefaultJob implements Job {
    * Waits for a child job: returns its outcome (stored with its step when it ended), the timed-out
    * wait, or suspends the job by throwing {@link JobSuspended}.
    */
-  private <T> JobResult<T> waitForChildJob(UUID childJobId, Class<T> resultType, Duration timeout) {
+  private <T extends @Nullable Object> JobResult<T> waitForChildJob(
+      UUID childJobId, Class<T> resultType, @Nullable Duration timeout) {
     Objects.requireNonNull(childJobId, "childJobId");
     Objects.requireNonNull(resultType, "resultType");
     stepGuard.requireNoneRunning("wait for job " + childJobId);
@@ -555,13 +560,16 @@ public final class DefaultJob implements Job {
   }
 
   /** The outcome of a child job as stored with its step once the child ended. */
-  static <T> JobResult<T> jobResult(
-      UUID childJobId, ChildWait.ChildEnded ended, Function<String, T> read) {
+  static <T extends @Nullable Object> JobResult<T> jobResult(
+      UUID childJobId, ChildWait.ChildEnded ended, Function<@Nullable String, @Nullable T> read) {
     return switch (ended.childState()) {
       case SUCCEEDED -> new JobResult.Succeeded<>(childJobId, read.apply(ended.result()));
-      case FAILED -> new JobResult.Failed<>(childJobId, ended.error());
+      case FAILED ->
+          new JobResult.Failed<>(childJobId, Objects.requireNonNullElse(ended.error(), ""));
       case CANCELLED -> new JobResult.Cancelled<>(childJobId, ended.error());
-      case COMPENSATION_FAILED -> new JobResult.CompensationFailed<>(childJobId, ended.error());
+      case COMPENSATION_FAILED ->
+          new JobResult.CompensationFailed<>(
+              childJobId, Objects.requireNonNullElse(ended.error(), ""));
       case SCHEDULED, RUNNING, WAITING, COMPENSATING, FAILING ->
           throw new IllegalStateException(
               "Unknown state " + ended.childState() + " of child job " + childJobId);
@@ -580,12 +588,12 @@ public final class DefaultJob implements Job {
   }
 
   /** Sets the node's default timeout of waits for events without their own timeout. */
-  void defaultEventTimeout(Duration timeout) {
+  void defaultEventTimeout(@Nullable Duration timeout) {
     this.defaultEventTimeout = timeout;
   }
 
   /** The node's default timeout of waits for events, {@code null} for none. */
-  Duration defaultEventTimeout() {
+  @Nullable Duration defaultEventTimeout() {
     return defaultEventTimeout;
   }
 
@@ -595,7 +603,8 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public <T> T step(String name, Class<T> resultType, StepHandler<T> handler) throws Exception {
+  public <T extends @Nullable Object> @Nullable T step(
+      String name, Class<T> resultType, StepHandler<T> handler) throws Exception {
     return step(name, resultType, handler, null, null, null);
   }
 
@@ -603,7 +612,7 @@ public final class DefaultJob implements Job {
   record StepRetry(RetryBackoff backoff, int failedAttempts) {}
 
   /** The retry backoff of the step that made the attempt fail, {@code null} if none. */
-  StepRetry stepRetry() {
+  @Nullable StepRetry stepRetry() {
     return stepRetry;
   }
 
@@ -611,16 +620,15 @@ public final class DefaultJob implements Job {
    * Runs a step, with a compensation or without ({@code null}), and with its own retry backoff or
    * without ({@code null}).
    */
-  <T> T step(
+  <T extends @Nullable Object> @Nullable T step(
       String name,
       Class<T> resultType,
       StepHandler<T> handler,
-      CompensationHandler<? super T> compensation,
-      RetryBackoff retryBackoff,
-      StepFailureHandler<T> failureHandler)
+      @Nullable CompensationHandler<? super T> compensation,
+      @Nullable RetryBackoff retryBackoff,
+      @Nullable StepFailureHandler<T> failureHandler)
       throws Exception {
     Objects.requireNonNull(resultType, "resultType");
-    JsonMapper mapper = database.jsonMapper();
     StepHandler<T> run = handler;
     if (retryBackoff != null && handler != null) {
       run =
@@ -635,13 +643,7 @@ public final class DefaultJob implements Job {
             }
           };
     }
-    return runStep(
-        name,
-        run,
-        mapper::toJson,
-        json -> mapper.fromJson(json, resultType),
-        compensation,
-        failureHandler);
+    return runStep(name, run, reader(resultType), compensation, failureHandler);
   }
 
   /**
@@ -653,7 +655,7 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public <T> StepBuilder<T> newStep(String name, Class<T> resultType) {
+  public <T extends @Nullable Object> StepBuilder<T> newStep(String name, Class<T> resultType) {
     ValidationUtil.requireName(name, "step name");
     Objects.requireNonNull(resultType, "resultType");
     stepGuard.requireNoneRunning("create step '" + name + "'");
@@ -661,14 +663,16 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public <T> PollBuilder<T> newPoll(String name, Class<T> resultType, Duration interval) {
+  public <T extends @Nullable Object> PollBuilder<T> newPoll(
+      String name, Class<T> resultType, Duration interval) {
     ValidationUtil.requireName(name, "step name");
     ValidationUtil.requirePositive(interval, "interval");
     return newPoll(name, resultType, RetryBackoff.fixed(interval));
   }
 
   @Override
-  public <T> PollBuilder<T> newPoll(String name, Class<T> resultType, RetryBackoff interval) {
+  public <T extends @Nullable Object> PollBuilder<T> newPoll(
+      String name, Class<T> resultType, RetryBackoff interval) {
     ValidationUtil.requireName(name, "step name");
     Objects.requireNonNull(resultType, "resultType");
     Objects.requireNonNull(interval, "interval");
@@ -676,13 +680,12 @@ public final class DefaultJob implements Job {
     return new DefaultPollBuilder<>(this, name, resultType, interval);
   }
 
-  private <T> T runStep(
+  private <T extends @Nullable Object> @Nullable T runStep(
       String name,
       StepHandler<T> handler,
-      Function<? super T, String> toJson,
-      Function<String, T> fromJson,
-      CompensationHandler<? super T> compensation,
-      StepFailureHandler<T> failureHandler)
+      Function<@Nullable String, @Nullable T> fromJson,
+      @Nullable CompensationHandler<? super T> compensation,
+      @Nullable StepFailureHandler<T> failureHandler)
       throws Exception {
     ValidationUtil.requireName(name, "step name");
     Objects.requireNonNull(handler, "handler");
@@ -702,14 +705,13 @@ public final class DefaultJob implements Job {
             var failure =
                 new BikeschedException("Step '" + name + "' failed: " + failingError.get());
             return resolvedOrThrow(
-                handleFailingStep(name, failureHandler, toJson, failingError.get(), failure),
-                failure);
+                handleFailingStep(name, failureHandler, failingError.get(), failure), failure);
           }
         }
         var stepAttempt = fenced(() -> database.steps().startStep(id, lock, name));
         if (stepAttempt.isPresent()) {
           return executeStep(
-              name, stepAttempt.get(), handler, toJson, compensation != null, failureHandler);
+              name, stepAttempt.get(), handler, compensation != null, failureHandler);
         }
         // Completed in the meantime, or a step of another kind (e.g. still waiting for an event).
         database
@@ -723,8 +725,9 @@ public final class DefaultJob implements Job {
     }
   }
 
-  private static <T> T read(StepStore.CompletedStep step, Function<String, T> fromJson) {
-    return step.result() == null ? null : fromJson.apply(step.result());
+  private static <T extends @Nullable Object> @Nullable T read(
+      StepStore.CompletedStep step, Function<@Nullable String, @Nullable T> fromJson) {
+    return fromJson.apply(step.result());
   }
 
   /** The step name in the logging context, see {@link #stepContext(String)}. */
@@ -749,7 +752,7 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public <T> EventWait<T> waitForEvent(
+  public <T extends @Nullable Object> EventWait<T> waitForEvent(
       String stepName, String eventName, String eventKey, Class<T> payloadType) {
     ValidationUtil.requireName(stepName, "step name");
     ValidationUtil.requireName(eventName, "event name");
@@ -760,13 +763,15 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public <T> EventWait<T> waitForEvent(String stepName, EventType<T> eventType, String eventKey) {
+  public <T extends @Nullable Object> EventWait<T> waitForEvent(
+      String stepName, EventType<T> eventType, String eventKey) {
     Objects.requireNonNull(eventType, "eventType");
     return waitForEvent(stepName, eventType.name(), eventKey, eventType.payloadType());
   }
 
   @Override
-  public <T> T awaitEvent(String stepName, EventType<T> eventType, String eventKey) {
+  public <T extends @Nullable Object> @Nullable T awaitEvent(
+      String stepName, EventType<T> eventType, String eventKey) {
     return waitForEvent(stepName, eventType, eventKey).receive();
   }
 
@@ -788,7 +793,7 @@ public final class DefaultJob implements Job {
    * Sleeps as a step: returns once the sleep is over (in this or an earlier run), or suspends the
    * job by throwing {@link JobSuspended}. Exactly one of {@code duration} and {@code until} is set.
    */
-  private void sleepStep(String stepName, Duration duration, Instant until) {
+  private void sleepStep(String stepName, @Nullable Duration duration, @Nullable Instant until) {
     stepGuard.requireNoneRunning("sleep as step '" + stepName + "'");
     if (replay != null) {
       // Replay only: return after a completed sleep, never start or continue one.
@@ -821,12 +826,12 @@ public final class DefaultJob implements Job {
    * @param failureHandler handles a timeout, and a check failing in the job's last attempt; {@code
    *     null} to fail the job (with a {@link PollTimeoutException} after a timeout)
    */
-  <T> T poll(
+  <T extends @Nullable Object> @Nullable T poll(
       String name,
       Class<T> resultType,
       RetryBackoff interval,
-      Duration timeout,
-      StepFailureHandler<T> failureHandler,
+      @Nullable Duration timeout,
+      @Nullable StepFailureHandler<T> failureHandler,
       PollHandler<T> handler)
       throws Exception {
     stepGuard.requireNoneRunning("poll as step '" + name + "'");
@@ -835,20 +840,18 @@ public final class DefaultJob implements Job {
       return replay.poll(name, reader(resultType));
     }
     try (var _ = stepContext(name)) {
-      Function<? super T, String> toJson = database.jsonMapper()::toJson;
       var poll = fenced(() -> database.steps().startPoll(id, lock, name, timeout));
       return switch (poll) {
-        case StepStore.PollStep.Ready(String result) -> {
+        case StepStore.PollStep.Ready(@Nullable String result) -> {
           LOG.debug("Step {} of job {} already completed, reusing its result", name, id);
           yield reader(resultType).apply(result);
         }
         case StepStore.PollStep.PollTimedOut(int checks) ->
-            timedOut(name, failureHandler, toJson, pollTimeout(name, checks, timeout));
+            timedOut(name, failureHandler, pollTimeout(name, checks, timeout));
         case StepStore.PollStep.PollFailing(String error) ->
             stillFailing(
                 name,
                 failureHandler,
-                toJson,
                 error,
                 new BikeschedException("Poll '" + name + "' failed: " + error));
         case StepStore.PollStep.NotDue(int checks, Instant waitUntil) -> {
@@ -860,18 +863,17 @@ public final class DefaultJob implements Job {
           throw suspend(new JobSuspended.PollSuspension(name, checks, waitUntil, true));
         }
         case StepStore.PollStep.CheckStarted started ->
-            check(name, interval, timeout, failureHandler, toJson, handler, started);
+            check(name, interval, timeout, failureHandler, handler, started);
       };
     }
   }
 
   /** Runs one check of a poll, see {@link #poll}. */
-  private <T> T check(
+  private <T extends @Nullable Object> @Nullable T check(
       String name,
       RetryBackoff interval,
-      Duration timeout,
-      StepFailureHandler<T> failureHandler,
-      Function<? super T, String> toJson,
+      @Nullable Duration timeout,
+      @Nullable StepFailureHandler<T> failureHandler,
       PollHandler<T> handler,
       StepStore.PollStep.CheckStarted poll)
       throws Exception {
@@ -891,7 +893,7 @@ public final class DefaultJob implements Job {
       switch (outcome) {
         case Poll.Ready<T> ready -> {
           T value = ready.value();
-          String json = value == null ? null : database.jsonMapper().toJson(value);
+          String json = toJson(value);
           fenced(() -> database.steps().completePoll(id, lock, name, json, check));
           LOG.debug(
               "Step {} of job {} ready after check {} in {} ms",
@@ -905,8 +907,7 @@ public final class DefaultJob implements Job {
       }
     } catch (Exception e) {
       if (failureHandler != null && attempts >= maxAttempts) {
-        return resolvedOrThrow(
-            failStepWithHandler(name, check, failureHandler, toJson, e, start), e);
+        return resolvedOrThrow(failStepWithHandler(name, check, failureHandler, e, start), e);
       }
       LOG.debug(
           "Step {} of job {} (check {}) FAILED in {} ms: {}",
@@ -927,7 +928,7 @@ public final class DefaultJob implements Job {
     var wait = fenced(() -> database.steps().waitPoll(id, lock, name, delay));
     if (wait.timedOut()) {
       LOG.debug("Step {} of job {} timed out after check {}", name, id, check);
-      return timedOut(name, failureHandler, toJson, pollTimeout(name, wait.checks(), timeout));
+      return timedOut(name, failureHandler, pollTimeout(name, wait.checks(), timeout));
     }
     LOG.debug(
         "Step {} of job {}: check {} not ready, checking again at {}, suspending the job",
@@ -962,7 +963,8 @@ public final class DefaultJob implements Job {
     return Duration.ZERO;
   }
 
-  private static PollTimeoutException pollTimeout(String name, int checks, Duration timeout) {
+  private static PollTimeoutException pollTimeout(
+      String name, int checks, @Nullable Duration timeout) {
     return new PollTimeoutException(
         "Polling in step '"
             + name
@@ -980,16 +982,13 @@ public final class DefaultJob implements Job {
    *
    * @return the result the step was resolved with
    */
-  private <T> T timedOut(
-      String name,
-      StepFailureHandler<T> handler,
-      Function<? super T, String> toJson,
-      BikeschedException timeout) {
+  private <T extends @Nullable Object> T timedOut(
+      String name, @Nullable StepFailureHandler<T> handler, BikeschedException timeout) {
     if (handler != null) {
       String error = ValidationUtil.truncateMessage(timeout.toString());
       LOG.debug("Step {} of job {} is FAILING: {}", name, id, timeout.getMessage());
       fenced(() -> database.steps().markTimedOutStepFailing(id, lock, name, error));
-      if (handleFailingStep(name, handler, toJson, error, timeout)
+      if (handleFailingStep(name, handler, error, timeout)
           instanceof FailureHandling.Resolved<T>(T result)) {
         return result;
       }
@@ -1003,14 +1002,13 @@ public final class DefaultJob implements Job {
    *
    * @return the result the step was resolved with
    */
-  private <T> T stillFailing(
+  private <T extends @Nullable Object> T stillFailing(
       String name,
-      StepFailureHandler<T> handler,
-      Function<? super T, String> toJson,
+      @Nullable StepFailureHandler<T> handler,
       String error,
       BikeschedException failure) {
     if (handler != null
-        && handleFailingStep(name, handler, toJson, error, failure)
+        && handleFailingStep(name, handler, error, failure)
             instanceof FailureHandling.Resolved<T>(T result)) {
       return result;
     }
@@ -1043,12 +1041,12 @@ public final class DefaultJob implements Job {
 
   /** A call run with the step name in the logging context. */
   @FunctionalInterface
-  interface StepCall<R> {
+  interface StepCall<R extends @Nullable Object> {
     R call() throws Exception;
   }
 
   /** The step the handler suspended the job at, {@code null} if it did not wait or sleep. */
-  JobSuspended.Suspension suspension() {
+  JobSuspended.@Nullable Suspension suspension() {
     return suspension;
   }
 
@@ -1063,16 +1061,15 @@ public final class DefaultJob implements Job {
    *     EventTimeoutException}
    * @param timeoutMessage the message of the {@link EventTimeoutException}
    */
-  <T> T awaitEventStep(
+  <T extends @Nullable Object> @Nullable T awaitEventStep(
       String stepName,
       String eventName,
       String eventKey,
-      Duration timeout,
+      @Nullable Duration timeout,
       Class<T> payloadType,
-      StepFailureHandler<T> failureHandler,
+      @Nullable StepFailureHandler<T> failureHandler,
       String timeoutMessage) {
-    Function<String, T> read = reader(payloadType);
-    Function<? super T, String> toJson = database.jsonMapper()::toJson;
+    Function<@Nullable String, @Nullable T> read = reader(payloadType);
     stepGuard.requireNoneRunning("wait for an event as step '" + stepName + "'");
     if (replay != null) {
       // Replay only: return what the wait stored, never start or time out a wait.
@@ -1083,7 +1080,7 @@ public final class DefaultJob implements Job {
           fenced(
               () -> database.events().awaitEvent(id, lock, stepName, eventName, eventKey, timeout));
       return switch (wait) {
-        case EventStore.EventWaitResult.Received(String json) -> {
+        case EventStore.EventWaitResult.Received(@Nullable String json) -> {
           LOG.debug("Step {} of job {} received event {}/{}", stepName, id, eventName, eventKey);
           yield read.apply(json);
         }
@@ -1094,12 +1091,11 @@ public final class DefaultJob implements Job {
               id,
               eventName,
               eventKey);
-          yield timedOut(
-              stepName, failureHandler, toJson, new EventTimeoutException(timeoutMessage));
+          yield timedOut(stepName, failureHandler, new EventTimeoutException(timeoutMessage));
         }
         case EventStore.EventWaitResult.Failing(String error) ->
             stillFailing(
-                stepName, failureHandler, toJson, error, new EventTimeoutException(timeoutMessage));
+                stepName, failureHandler, error, new EventTimeoutException(timeoutMessage));
         case EventStore.EventWaitResult.Failed _ ->
             throw failWithoutRetry(new EventTimeoutException(timeoutMessage));
         case EventStore.EventWaitResult.Waiting(Instant waitUntil) -> {
@@ -1116,18 +1112,22 @@ public final class DefaultJob implements Job {
     }
   }
 
+  /** Writes a result as JSON text, {@code null} for {@code null}. */
+  private @Nullable String toJson(@Nullable Object value) {
+    return value == null ? null : database.jsonMapper().toJson(value);
+  }
+
   /** Reads a stored result (JSON text, may be {@code null}) as the given type. */
-  <T> Function<String, T> reader(Class<T> type) {
+  <T extends @Nullable Object> Function<@Nullable String, @Nullable T> reader(Class<T> type) {
     return json -> json == null ? null : database.jsonMapper().fromJson(json, type);
   }
 
-  private <T> T executeStep(
+  private <T extends @Nullable Object> @Nullable T executeStep(
       String name,
       int stepAttempt,
       StepHandler<T> handler,
-      Function<? super T, String> toJson,
       boolean compensable,
-      StepFailureHandler<T> failureHandler)
+      @Nullable StepFailureHandler<T> failureHandler)
       throws Exception {
     LOG.debug("Executing step {} of job {} (attempt {})", name, id, stepAttempt);
     long start = System.nanoTime();
@@ -1150,12 +1150,11 @@ public final class DefaultJob implements Job {
         // The handler caught the postponement and returned: the step still keeps no result.
         throw new JobSuspended(postponed);
       }
-      String json = result == null ? null : toJson.apply(result);
+      String json = toJson(result);
       fenced(() -> database.steps().completeStep(id, lock, name, json, compensable));
     } catch (Exception e) {
       if (failureHandler != null && attempts >= maxAttempts) {
-        return resolvedOrThrow(
-            failStepWithHandler(name, stepAttempt, failureHandler, toJson, e, start), e);
+        return resolvedOrThrow(failStepWithHandler(name, stepAttempt, failureHandler, e, start), e);
       }
       recordStepFailure(name, stepAttempt, e, start);
       throw e;
@@ -1170,26 +1169,26 @@ public final class DefaultJob implements Job {
   }
 
   /** How handling a {@code FAILING} step with its failure handler ended. */
-  private sealed interface FailureHandling<T> {
+  private sealed interface FailureHandling<T extends @Nullable Object> {
 
     /**
      * The handler resolved the step: it {@code SUCCEEDED} with this result.
      *
      * @param result the fallback result, may be {@code null}
      */
-    record Resolved<T>(T result) implements FailureHandling<T> {}
+    record Resolved<T extends @Nullable Object>(@Nullable T result) implements FailureHandling<T> {}
 
     /**
      * The step is not resolved: it {@code FAILED} after its handler ran or gave up, it was no
      * longer {@code FAILING}, or it could not be marked {@code FAILING}.
      */
-    record Unresolved<T>() implements FailureHandling<T> {}
+    record Unresolved<T extends @Nullable Object>() implements FailureHandling<T> {}
 
     /**
      * The handler threw (or handling it could not be recorded): the step stays {@code FAILING} and
      * the handler runs again in the job's next attempt, see {@link #isFailureHandlingPending()}.
      */
-    record RunAgain<T>() implements FailureHandling<T> {}
+    record RunAgain<T extends @Nullable Object>() implements FailureHandling<T> {}
   }
 
   /**
@@ -1197,8 +1196,8 @@ public final class DefaultJob implements Job {
    *
    * @throws Exception {@code failure} if the step was not resolved
    */
-  private static <T> T resolvedOrThrow(FailureHandling<T> handling, Exception failure)
-      throws Exception {
+  private static <T extends @Nullable Object> T resolvedOrThrow(
+      FailureHandling<T> handling, Exception failure) throws Exception {
     return switch (handling) {
       case FailureHandling.Resolved<T>(T result) -> result;
       case FailureHandling.Unresolved<T> _, FailureHandling.RunAgain<T> _ -> throw failure;
@@ -1209,13 +1208,8 @@ public final class DefaultJob implements Job {
    * The step failed in the job's last attempt: marks it {@code FAILING}, runs its failure handler
    * and only then marks it {@code FAILED}, or {@code SUCCEEDED} if the handler resolved it.
    */
-  private <T> FailureHandling<T> failStepWithHandler(
-      String name,
-      int stepAttempt,
-      StepFailureHandler<T> handler,
-      Function<? super T, String> toJson,
-      Exception failure,
-      long start) {
+  private <T extends @Nullable Object> FailureHandling<T> failStepWithHandler(
+      String name, int stepAttempt, StepFailureHandler<T> handler, Exception failure, long start) {
     LOG.debug(
         "Step {} of job {} (attempt {}) is FAILING after {} ms, attempts used up: {}",
         name,
@@ -1230,7 +1224,7 @@ public final class DefaultJob implements Job {
       failure.addSuppressed(e);
       return new FailureHandling.Unresolved<>();
     }
-    return handleFailingStep(name, handler, toJson, error, failure);
+    return handleFailingStep(name, handler, error, failure);
   }
 
   /**
@@ -1243,12 +1237,8 @@ public final class DefaultJob implements Job {
    * @param failure the exception failing the job unless the step is resolved; collects the
    *     handler's exceptions
    */
-  private <T> FailureHandling<T> handleFailingStep(
-      String name,
-      StepFailureHandler<T> handler,
-      Function<? super T, String> toJson,
-      String error,
-      Exception failure) {
+  private <T extends @Nullable Object> FailureHandling<T> handleFailingStep(
+      String name, StepFailureHandler<T> handler, String error, Exception failure) {
     try {
       var run = fenced(() -> database.steps().startFailureHandler(id, lock, name));
       if (run.isEmpty()) {
@@ -1280,7 +1270,7 @@ public final class DefaultJob implements Job {
               handlerFailure);
         }
         T result = failing.result();
-        String json = result == null ? null : toJson.apply(result);
+        String json = toJson(result);
         fenced(() -> database.steps().resolveFailingStep(id, lock, name, json));
         stepRetry = null;
         LOG.debug("Step {} of job {} SUCCEEDED, resolved by its failure handler", name, id);
@@ -1316,14 +1306,14 @@ public final class DefaultJob implements Job {
   }
 
   /** The step's failure handler runs again: the job gets an extra attempt for it. */
-  private <T> FailureHandling<T> runAgain() {
+  private <T extends @Nullable Object> FailureHandling<T> runAgain() {
     failureHandlingPending = true;
     return new FailureHandling.RunAgain<>();
   }
 
   /** The failure handler of a step ran {@code runs} times without success: the step fails. */
-  private <T> FailureHandling<T> giveUpFailureHandler(
-      String name, int runs, Exception lastFailure) {
+  private <T extends @Nullable Object> FailureHandling<T> giveUpFailureHandler(
+      String name, int runs, @Nullable Exception lastFailure) {
     LOG.error(
         "Failure handler of step {} of job {} gave up after {} run(s), the step FAILED",
         name,
@@ -1369,7 +1359,7 @@ public final class DefaultJob implements Job {
   }
 
   /** Runs a fenced step write, remembering a lost job lock. */
-  private <T> T fenced(Supplier<T> write) {
+  private <T extends @Nullable Object> T fenced(Supplier<T> write) {
     try {
       return write.get();
     } catch (JobLockLostException e) {

@@ -3,6 +3,7 @@ package org.bikesched.internal.job;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Keeps steps from nesting: while a step handler or a compensation of a job runs, the job rejects
@@ -15,7 +16,7 @@ final class StepGuard {
   private final UUID jobId;
 
   /** The running step handler or compensation, e.g. {@code step 'charge'}; {@code null} if none. */
-  private final AtomicReference<String> running = new AtomicReference<>();
+  private final AtomicReference<@Nullable String> running = new AtomicReference<>();
 
   StepGuard(UUID jobId) {
     this.jobId = jobId;
@@ -40,7 +41,8 @@ final class StepGuard {
    * @param description the handler, e.g. {@code step 'charge'}
    * @throws IllegalStateException if another step handler or compensation runs
    */
-  <R> R run(String description, DefaultJob.StepCall<R> call) throws Exception {
+  <R extends @Nullable Object> R run(String description, DefaultJob.StepCall<R> call)
+      throws Exception {
     String current = running.compareAndExchange(null, description);
     if (current != null) {
       throw nested("run " + description, current);

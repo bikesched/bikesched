@@ -5,12 +5,12 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
 import javax.sql.DataSource;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
 import org.bikesched.internal.database.schema.SchemaMigrator;
 import org.bikesched.job.Job;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Entry point to bikesched's database: schema migration and one store per table ({@link #nodes()},
@@ -70,9 +70,13 @@ public final class Database {
    *     leave it to the data source
    */
   public Database(
-      DataSource dataSource, JsonMapper jsonMapper, boolean jobHistory, Duration statementTimeout) {
-    this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
-    this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
+      DataSource dataSource,
+      JsonMapper jsonMapper,
+      boolean jobHistory,
+      @Nullable Duration statementTimeout) {
+
+    this.dataSource = dataSource;
+    this.jsonMapper = jsonMapper;
     this.access = new DatabaseAccess(dataSource, statementTimeout);
     this.history = new HistoryStore(access, jobHistory);
     this.nodes = new NodeStore(access);
@@ -166,7 +170,7 @@ public final class Database {
    * @param url the JDBC URL, may be {@code null}
    * @return the URL without credentials, e.g. {@code jdbc:postgresql://localhost:5432/bikesched}
    */
-  public static String redactUrl(String url) {
+  public static String redactUrl(@Nullable String url) {
     if (url == null) {
       return "<unknown>";
     }

@@ -6,29 +6,30 @@ import java.util.Objects;
 import org.bikesched.event.EventWait;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.StepFailureHandler;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link EventWait} implementation, waiting as a step of a {@link DefaultJob}.
  *
  * @param <T> the payload type
  */
-final class DefaultEventWait<T> implements EventWait<T> {
+final class DefaultEventWait<T extends @Nullable Object> implements EventWait<T> {
 
   private final DefaultJob job;
   private final String stepName;
   private final String eventName;
   private final String eventKey;
   private final Class<T> payloadType;
-  private Duration timeout;
-  private StepFailureHandler<T> failureHandler;
+  private @Nullable Duration timeout;
+  private @Nullable StepFailureHandler<T> failureHandler;
 
   DefaultEventWait(
       DefaultJob job, String stepName, String eventName, String eventKey, Class<T> payloadType) {
-    this.job = Objects.requireNonNull(job, "job");
+    this.job = job;
     this.stepName = stepName;
     this.eventName = eventName;
     this.eventKey = eventKey;
-    this.payloadType = Objects.requireNonNull(payloadType, "payloadType");
+    this.payloadType = payloadType;
   }
 
   @Override
@@ -46,7 +47,7 @@ final class DefaultEventWait<T> implements EventWait<T> {
 
   /** Waits with its own timeout, or else the node's default event timeout, if any. */
   @Override
-  public T receive() {
+  public @Nullable T receive() {
     Duration effective = timeout != null ? timeout : job.defaultEventTimeout();
     String timeoutMessage =
         "Waiting for event "

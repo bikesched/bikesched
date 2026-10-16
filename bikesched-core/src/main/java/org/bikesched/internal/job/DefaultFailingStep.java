@@ -3,18 +3,19 @@ package org.bikesched.internal.job;
 
 import java.util.UUID;
 import org.bikesched.job.FailingStep;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link FailingStep} handed to a step's failure handler; records a {@link #resolve(Object)}
  * for {@link DefaultJob} to check after the handler returned (it may resolve from other threads).
  */
-final class DefaultFailingStep<T> implements FailingStep<T> {
+final class DefaultFailingStep<T extends @Nullable Object> implements FailingStep<T> {
 
   private final UUID jobId;
   private final String name;
   private final String error;
   private volatile boolean resolved;
-  private volatile T result;
+  private volatile @Nullable T result;
 
   DefaultFailingStep(UUID jobId, String name, String error) {
     this.jobId = jobId;
@@ -38,7 +39,7 @@ final class DefaultFailingStep<T> implements FailingStep<T> {
   }
 
   @Override
-  public void resolve(T result) {
+  public void resolve(@Nullable T result) {
     this.result = result;
     this.resolved = true;
   }
@@ -47,7 +48,7 @@ final class DefaultFailingStep<T> implements FailingStep<T> {
     return resolved;
   }
 
-  T result() {
+  @Nullable T result() {
     return result;
   }
 

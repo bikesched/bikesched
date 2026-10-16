@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal;
 
-import java.util.Objects;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.JsonMapper;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.json.RawJsonMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The only way from the API packages into the implementation: the API creates instances through
@@ -26,8 +26,8 @@ public final class Internals {
    *     passes JSON strings through ({@link RawJsonMapper})
    * @return the node; already polling if {@link Settings#autoStartPolling()} is set
    */
-  public static Bikesched create(Settings settings, DataSource dataSource, JsonMapper jsonMapper) {
-    Objects.requireNonNull(settings, "settings");
+  public static Bikesched create(
+      Settings settings, DataSource dataSource, @Nullable JsonMapper jsonMapper) {
     JsonMapper mapper = jsonMapper != null ? jsonMapper : RawJsonMapper.INSTANCE;
     var database =
         new Database(

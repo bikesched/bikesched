@@ -5,6 +5,7 @@ import java.util.UUID;
 import org.bikesched.internal.database.JobPhase;
 import org.bikesched.job.FailedJob;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /** The {@link FailedJob} handed to a job's failure handler: a view of the claimed FAILING job. */
 final class DefaultFailedJob implements FailedJob {
@@ -32,12 +33,12 @@ final class DefaultFailedJob implements FailedJob {
   }
 
   @Override
-  public String payload() {
+  public @Nullable String payload() {
     return job.payload();
   }
 
   @Override
-  public <T> T payload(Class<T> type) {
+  public <T extends @Nullable Object> @Nullable T payload(Class<T> type) {
     return job.payload(type);
   }
 
@@ -47,7 +48,7 @@ final class DefaultFailedJob implements FailedJob {
   }
 
   @Override
-  public String error() {
+  public @Nullable String error() {
     return job.lastError();
   }
 

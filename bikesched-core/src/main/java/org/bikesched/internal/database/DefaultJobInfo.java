@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link JobInfo} implementation.
@@ -19,12 +20,15 @@ import org.bikesched.job.JobState;
  * @param jsonMapper reads the result
  */
 public record DefaultJobInfo(
-    UUID id, String type, JobState state, String resultJson, UUID parent, JsonMapper jsonMapper)
+    UUID id,
+    String type,
+    JobState state,
+    @Nullable String resultJson,
+    @Nullable UUID parent,
+    JsonMapper jsonMapper)
     implements JobInfo {
 
-  public DefaultJobInfo {
-    Objects.requireNonNull(jsonMapper, "jsonMapper");
-  }
+  public DefaultJobInfo {}
 
   @Override
   public <T> Optional<T> result(Class<T> type) {

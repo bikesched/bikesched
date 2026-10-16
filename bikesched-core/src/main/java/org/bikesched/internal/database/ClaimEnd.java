@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.database;
 
-import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -15,11 +14,7 @@ import java.util.UUID;
  */
 public record ClaimEnd(UUID jobId, JobLock lock, boolean failureHandler, FollowUp followUp) {
 
-  public ClaimEnd {
-    Objects.requireNonNull(jobId, "jobId");
-    Objects.requireNonNull(lock, "lock");
-    Objects.requireNonNull(followUp, "followUp");
-  }
+  public ClaimEnd {}
 
   /** A claim ending without failure handler or follow-up, e.g. in store tests. */
   public static ClaimEnd of(UUID jobId, JobLock lock) {

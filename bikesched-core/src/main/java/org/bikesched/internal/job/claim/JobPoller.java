@@ -31,6 +31,7 @@ import org.bikesched.internal.job.JobSlot;
 import org.bikesched.internal.util.ExecutorUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -104,10 +105,11 @@ public final class JobPoller implements DueTimes {
    * @param processor runs the claimed jobs
    * @param listener receives the notifications of other nodes; {@code null} if not listening
    */
-  private record Running(UUID nodeId, JobProcessor processor, JobNotificationListener listener) {}
+  private record Running(
+      UUID nodeId, JobProcessor processor, @Nullable JobNotificationListener listener) {}
 
   /** Set (once) by {@link #start(UUID)}; {@code null} until then. */
-  private volatile Running running;
+  private volatile @Nullable Running running;
 
   /**
    * Creates the poller; it polls once {@link #start(UUID) started}.
@@ -145,6 +147,7 @@ public final class JobPoller implements DueTimes {
    *
    * @param id the node's id
    */
+  @SuppressWarnings("FutureReturnValueIgnored") // runs until shutdown, polls never throw
   public void start(UUID id) {
     var processor =
         new JobProcessor(
@@ -288,7 +291,7 @@ public final class JobPoller implements DueTimes {
   }
 
   /** The node's id for log messages; {@code null} until started. */
-  private UUID nodeId() {
+  private @Nullable UUID nodeId() {
     Running started = running;
     return started == null ? null : started.nodeId();
   }
@@ -367,6 +370,10 @@ public final class JobPoller implements DueTimes {
   }
 
   private boolean pollOnce(boolean wokenUp) {
+    Running started = running;
+    if (started == null) {
+      return false; // only started pollers claim jobs
+    }
     // Must never throw: an exception would silently cancel all future polls.
     try {
       int free = slots.availablePermits();
@@ -400,7 +407,7 @@ public final class JobPoller implements DueTimes {
       claiming.lock();
       try {
         jobs =
-            database.jobs().claimJobs(nodeId(), registry.types(), limit).stream()
+            database.jobs().claimJobs(started.nodeId(), registry.types(), limit).stream()
                 .map(
                     claimed ->
                         new DefaultJob(
@@ -420,7 +427,7 @@ public final class JobPoller implements DueTimes {
         LOG.debug("bikesched node {} ({}) claimed {} job(s)", nodeName, nodeId(), jobs.size());
       }
       for (DefaultJob job : jobs) {
-        dispatch(job);
+        dispatch(started, job);
       }
       return jobs.size() == limit;
     } catch (RuntimeException e) {
@@ -433,8 +440,7 @@ public final class JobPoller implements DueTimes {
    * Runs a claimed job on its own virtual thread; the job's slot is held until it ends (or the hard
    * timeout abandons it).
    */
-  private void dispatch(DefaultJob job) {
-    Running started = running; // set: only started pollers claim jobs
+  private void dispatch(Running started, DefaultJob job) {
     var slot = new JobSlot(slots, () -> released(job.id()));
     try {
       jobExecutor.execute(

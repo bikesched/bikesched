@@ -4,8 +4,8 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
@@ -58,11 +58,11 @@ public final class DueJobsNotifier implements DueJobs, AutoCloseable {
    */
   public DueJobsNotifier(
       JobStore store, Duration notifyInterval, boolean notifying, DueTimes local, String nodeName) {
-    this.store = Objects.requireNonNull(store, "store");
-    this.notifyInterval = Objects.requireNonNull(notifyInterval, "notifyInterval");
+    this.store = store;
+    this.notifyInterval = notifyInterval;
     this.notifying = notifying;
-    this.local = Objects.requireNonNull(local, "local");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
+    this.local = local;
+    this.nodeName = nodeName;
     this.executor =
         new ScheduledThreadPoolExecutor(
             1, Thread.ofPlatform().name("bikesched-notifier").daemon().factory());
@@ -71,6 +71,7 @@ public final class DueJobsNotifier implements DueJobs, AutoCloseable {
   }
 
   @Override
+  @SuppressWarnings("FutureReturnValueIgnored") // flush() never throws
   public void dueNow(Set<String> types) {
     local.dueNow(types);
     if (!notifying) {
@@ -102,9 +103,9 @@ public final class DueJobsNotifier implements DueJobs, AutoCloseable {
     // next flush.
     flushScheduled.set(false);
     List<String> types = new ArrayList<>();
-    for (String type : batch) {
-      batch.remove(type);
-      types.add(type);
+    for (Iterator<String> pending = batch.iterator(); pending.hasNext(); ) {
+      types.add(pending.next());
+      pending.remove();
     }
     if (types.isEmpty()) {
       return;

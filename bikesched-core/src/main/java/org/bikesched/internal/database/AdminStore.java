@@ -9,7 +9,6 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
@@ -26,6 +25,7 @@ import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Read-only lookups across the tables for {@link org.bikesched.admin.Admin}; every method runs in
@@ -37,7 +37,7 @@ public final class AdminStore {
   private final DatabaseAccess access;
 
   AdminStore(DatabaseAccess access) {
-    this.access = Objects.requireNonNull(access, "access");
+    this.access = access;
   }
 
   // The columns of a JobSummary from the jobs in %s; 'infinity' (a wait without a deadline)
@@ -173,7 +173,6 @@ public final class AdminStore {
              %s""";
 
   public List<JobSummary> findJobs(JobQuery query) {
-    Objects.requireNonNull(query, "query");
     // Only the filters in use go into the statement: "? is null or ..." would keep the planner
     // from reading the page along an index.
     List<String> conditions = new ArrayList<>();
@@ -226,29 +225,24 @@ public final class AdminStore {
   }
 
   public Optional<JobSummary> findJob(UUID jobId) {
-    Objects.requireNonNull(jobId, "jobId");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_JOB_SQL, AdminStore::jobSummary, jobId),
         e -> new BikeschedException("Reading bikesched job " + jobId + " failed", e));
   }
 
   public Optional<JobSummary> findJob(String type, String idempotencyKey) {
-    Objects.requireNonNull(type, "type");
-    Objects.requireNonNull(idempotencyKey, "idempotencyKey");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_KEYED_JOB_SQL, AdminStore::jobSummary, type, idempotencyKey),
         e -> new BikeschedException("Reading bikesched job by idempotency key failed", e));
   }
 
   public Optional<JobData> findJobData(UUID jobId) {
-    Objects.requireNonNull(jobId, "jobId");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_JOB_DATA_SQL, row -> new JobData(row.string(1), row.string(2)), jobId),
         e -> new BikeschedException("Reading the data of bikesched job " + jobId + " failed", e));
   }
 
   public List<StepInfo> findSteps(UUID jobId) {
-    Objects.requireNonNull(jobId, "jobId");
     return access.inReadOnlyTransaction(
         db ->
             db.list(
@@ -307,7 +301,6 @@ public final class AdminStore {
   }
 
   public List<EventSummary> findEvents(EventQuery query) {
-    Objects.requireNonNull(query, "query");
     List<String> conditions = new ArrayList<>();
     List<Object> parameters = new ArrayList<>();
     if (query.name() != null) {
@@ -338,14 +331,12 @@ public final class AdminStore {
   }
 
   public Optional<EventSummary> findEvent(UUID eventId) {
-    Objects.requireNonNull(eventId, "eventId");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_EVENT_SQL, AdminStore::eventSummary, eventId),
         e -> new BikeschedException("Reading bikesched event " + eventId + " failed", e));
   }
 
   public Optional<String> findEventPayload(UUID eventId) {
-    Objects.requireNonNull(eventId, "eventId");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_EVENT_PAYLOAD_SQL, row -> row.string(1), eventId),
         e ->
@@ -363,7 +354,6 @@ public final class AdminStore {
   }
 
   public List<EventStep> findEventSteps(UUID eventId) {
-    Objects.requireNonNull(eventId, "eventId");
     return access.inReadOnlyTransaction(
         db ->
             db.list(
@@ -381,8 +371,8 @@ public final class AdminStore {
                 "Reading the steps of bikesched event " + eventId + " failed", e));
   }
 
-  public List<WaitingStep> findWaitingSteps(String eventName, String keyPrefix, int limit) {
-    Objects.requireNonNull(eventName, "eventName");
+  public List<WaitingStep> findWaitingSteps(
+      String eventName, @Nullable String keyPrefix, int limit) {
     var prefix =
         Sql.typed(keyPrefix == null || keyPrefix.isEmpty() ? null : keyPrefix, Types.VARCHAR);
     return access.inReadOnlyTransaction(
@@ -406,7 +396,6 @@ public final class AdminStore {
   }
 
   public List<NodeInfo> findNodes(Duration nodeTimeout) {
-    Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     return access.inReadOnlyTransaction(
         db ->
             db.list(
@@ -417,8 +406,6 @@ public final class AdminStore {
   }
 
   public Optional<NodeInfo> findNode(UUID nodeId, Duration nodeTimeout) {
-    Objects.requireNonNull(nodeId, "nodeId");
-    Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     return access.inReadOnlyTransaction(
         db ->
             db

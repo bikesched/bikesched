@@ -34,7 +34,7 @@ class ValidationUtilTest {
 
   @Test
   void longMessagesAreTruncated() {
-    assertThat(ValidationUtil.truncateMessage(null)).isNull();
+    assertThat(ValidationUtil.truncateMessage((String) null)).isNull();
     String limit = "m".repeat(ValidationUtil.MAX_MESSAGE_LENGTH);
     assertThat(ValidationUtil.truncateMessage(limit)).isSameAs(limit);
 

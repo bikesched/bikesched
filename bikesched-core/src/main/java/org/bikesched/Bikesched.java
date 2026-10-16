@@ -269,6 +269,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @return a builder for the event
    * @throws IllegalArgumentException if the event name is blank
    */
+  @Override
   NodeEventBuilder<Object> newEvent(String eventName, String eventKey);
 
   /**
@@ -284,6 +285,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * @param <T> the payload type
    * @return a builder for the event
    */
+  @Override
   <T extends @Nullable Object> NodeEventBuilder<T> newEvent(
       EventType<T> eventType, String eventKey);
 

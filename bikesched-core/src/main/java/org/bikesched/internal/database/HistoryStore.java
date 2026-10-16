@@ -4,13 +4,13 @@ package org.bikesched.internal.database;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.internal.database.DatabaseAccess.SqlExceptionHandler;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@code bikesched_job_history} table: one row per change of a job or of one of its steps.
@@ -26,7 +26,7 @@ public final class HistoryStore {
   private final boolean enabled;
 
   HistoryStore(DatabaseAccess access, boolean enabled) {
-    this.access = Objects.requireNonNull(access, "access");
+    this.access = access;
     this.enabled = enabled;
   }
 
@@ -66,21 +66,29 @@ public final class HistoryStore {
    * @param detail what happened, may be {@code null}; truncated like other messages
    */
   public record Change(
-      UUID jobId, String stepName, String state, Integer attempt, UUID nodeId, String detail) {
+      UUID jobId,
+      @Nullable String stepName,
+      String state,
+      @Nullable Integer attempt,
+      @Nullable UUID nodeId,
+      @Nullable String detail) {
 
     /** A change of the job itself. */
-    public static Change job(UUID jobId, String state, int attempt, UUID nodeId, String detail) {
+    public static Change job(
+        UUID jobId, String state, int attempt, @Nullable UUID nodeId, @Nullable String detail) {
       return new Change(jobId, null, state, attempt, nodeId, detail);
     }
 
     /** A change of the job itself. */
-    public static Change job(UUID jobId, JobState state, int attempt, UUID nodeId, String detail) {
+    public static Change job(
+        UUID jobId, JobState state, int attempt, @Nullable UUID nodeId, @Nullable String detail) {
       return job(jobId, state.name(), attempt, nodeId, detail);
     }
 
     /** A change of a step, made by the node running the job (or the given node). */
     public static Change step(
-        UUID jobId, String stepName, String state, UUID nodeId, String detail) {
+        UUID jobId, String stepName, String state, @Nullable UUID nodeId, @Nullable String detail) {
+
       return new Change(jobId, stepName, state, null, nodeId, detail);
     }
   }
@@ -94,7 +102,7 @@ public final class HistoryStore {
    * Runs a statement (or several) changing jobs or steps: in a transaction if the history is
    * enabled, so the recorded entries commit with the change, otherwise on a plain connection.
    */
-  <T> T change(Sql.Work<T> work, SqlExceptionHandler onFailure) {
+  <T extends @Nullable Object> T change(Sql.Work<T> work, SqlExceptionHandler onFailure) {
     return enabled ? access.inTransaction(work, onFailure) : access.withConnection(work, onFailure);
   }
 
@@ -111,11 +119,11 @@ public final class HistoryStore {
     }
     int size = changes.size();
     var jobIds = new UUID[size];
-    var stepNames = new String[size];
+    var stepNames = new @Nullable String[size];
     var states = new String[size];
-    var attempts = new Integer[size];
-    var nodeIds = new UUID[size];
-    var details = new String[size];
+    var attempts = new @Nullable Integer[size];
+    var nodeIds = new @Nullable UUID[size];
+    var details = new @Nullable String[size];
     for (int i = 0; i < size; i++) {
       Change change = changes.get(i);
       jobIds[i] = change.jobId();

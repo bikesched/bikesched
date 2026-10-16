@@ -3,7 +3,6 @@ package org.bikesched.internal.node;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.ToIntFunction;
@@ -51,12 +50,12 @@ public final class NodeCleanUp {
       Duration nodeTimeout,
       Duration inactiveJobGrace,
       ActiveJobs activeJobs) {
-    this.database = Objects.requireNonNull(database, "database");
-    this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
-    this.nodeTimeout = Objects.requireNonNull(nodeTimeout, "nodeTimeout");
-    this.inactiveJobGrace = Objects.requireNonNull(inactiveJobGrace, "inactiveJobGrace");
-    this.activeJobs = Objects.requireNonNull(activeJobs, "activeJobs");
+    this.database = database;
+    this.nodeId = nodeId;
+    this.nodeName = nodeName;
+    this.nodeTimeout = nodeTimeout;
+    this.inactiveJobGrace = inactiveJobGrace;
+    this.activeJobs = activeJobs;
   }
 
   /** The jobs of this node whose attempts still run in memory. */

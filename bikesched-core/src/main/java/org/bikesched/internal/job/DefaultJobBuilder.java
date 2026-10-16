@@ -15,10 +15,11 @@ import org.bikesched.job.Recurrence;
 import org.bikesched.job.TransactionalJobBuilder;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
+import org.jspecify.annotations.Nullable;
 
 /** The {@link JobBuilder} implementation. */
-public final class DefaultJobBuilder<P> extends BaseJobBuilder<JobBuilder<P>, P>
-    implements JobBuilder<P> {
+public final class DefaultJobBuilder<P extends @Nullable Object>
+    extends BaseJobBuilder<JobBuilder<P>, P> implements JobBuilder<P> {
 
   public DefaultJobBuilder(
       String type, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {

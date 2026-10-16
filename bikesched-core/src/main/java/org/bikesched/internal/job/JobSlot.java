@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.job;
 
-import java.util.Objects;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -21,8 +20,8 @@ public final class JobSlot {
    * @param onRelease runs once when the slot is released
    */
   public JobSlot(Semaphore slots, Runnable onRelease) {
-    this.slots = Objects.requireNonNull(slots, "slots");
-    this.onRelease = Objects.requireNonNull(onRelease, "onRelease");
+    this.slots = slots;
+    this.onRelease = onRelease;
   }
 
   /** Releases the slot; does nothing if it was released before. */
