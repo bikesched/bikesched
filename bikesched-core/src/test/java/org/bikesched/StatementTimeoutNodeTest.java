@@ -35,7 +35,7 @@ class StatementTimeoutNodeTest extends AbstractBikeschedTest {
   void statementTimeoutMustBePositive() {
     assertThatThrownBy(() -> Bikesched.builder().statementTimeout(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("statementTimeout must be positive");
+        .hasMessage("statementTimeout must be positive: PT0S");
   }
 
   private static String unique(String name) {

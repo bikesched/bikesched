@@ -169,8 +169,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder defaultJobTimeout(Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout");
-    this.defaultJobTimeout = requirePositive(timeout, "defaultJobTimeout");
+    this.defaultJobTimeout = ValidationUtil.requirePositive(timeout, "defaultJobTimeout");
     return this;
   }
 
@@ -220,8 +219,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder defaultEventTimeout(Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout");
-    this.defaultEventTimeout = requirePositive(timeout, "defaultEventTimeout");
+    this.defaultEventTimeout = ValidationUtil.requirePositive(timeout, "defaultEventTimeout");
     return this;
   }
 
@@ -237,8 +235,7 @@ public final class BikeschedBuilder {
    * @see Job#waitForEvent(String, String, String, Class)
    */
   public BikeschedBuilder eventRetention(Duration retention) {
-    Objects.requireNonNull(retention, "retention");
-    this.eventRetention = requirePositive(retention, "eventRetention");
+    this.eventRetention = ValidationUtil.requirePositive(retention, "eventRetention");
     return this;
   }
 
@@ -253,8 +250,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder nodeCleanUpInterval(Duration interval) {
-    Objects.requireNonNull(interval, "interval");
-    this.nodeCleanUpInterval = requirePositive(interval, "nodeCleanUpInterval");
+    this.nodeCleanUpInterval = ValidationUtil.requirePositive(interval, "nodeCleanUpInterval");
     return this;
   }
 
@@ -266,8 +262,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder eventCleanUpInterval(Duration interval) {
-    Objects.requireNonNull(interval, "interval");
-    this.eventCleanUpInterval = requirePositive(interval, "eventCleanUpInterval");
+    this.eventCleanUpInterval = ValidationUtil.requirePositive(interval, "eventCleanUpInterval");
     return this;
   }
 
@@ -282,8 +277,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder jobHistory(Duration retention) {
-    Objects.requireNonNull(retention, "retention");
-    this.jobHistoryRetention = requirePositive(retention, "jobHistory retention");
+    this.jobHistoryRetention = ValidationUtil.requirePositive(retention, "jobHistory retention");
     return this;
   }
 
@@ -296,8 +290,8 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder jobHistoryCleanUpInterval(Duration interval) {
-    Objects.requireNonNull(interval, "interval");
-    this.jobHistoryCleanUpInterval = requirePositive(interval, "jobHistoryCleanUpInterval");
+    this.jobHistoryCleanUpInterval =
+        ValidationUtil.requirePositive(interval, "jobHistoryCleanUpInterval");
     return this;
   }
 
@@ -313,8 +307,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder jobRetention(Duration retention) {
-    Objects.requireNonNull(retention, "retention");
-    this.jobRetention = requirePositive(retention, "jobRetention");
+    this.jobRetention = ValidationUtil.requirePositive(retention, "jobRetention");
     return this;
   }
 
@@ -326,8 +319,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder jobCleanUpInterval(Duration interval) {
-    Objects.requireNonNull(interval, "interval");
-    this.jobCleanUpInterval = requirePositive(interval, "jobCleanUpInterval");
+    this.jobCleanUpInterval = ValidationUtil.requirePositive(interval, "jobCleanUpInterval");
     return this;
   }
 
@@ -343,8 +335,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder statementTimeout(Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout");
-    this.statementTimeout = requirePositive(timeout, "statementTimeout");
+    this.statementTimeout = ValidationUtil.requirePositive(timeout, "statementTimeout");
     return this;
   }
 
@@ -361,8 +352,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder hardTimeoutGrace(Duration grace) {
-    Objects.requireNonNull(grace, "grace");
-    this.hardTimeoutGrace = requirePositive(grace, "hardTimeoutGrace");
+    this.hardTimeoutGrace = ValidationUtil.requirePositive(grace, "hardTimeoutGrace");
     return this;
   }
 
@@ -408,7 +398,7 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Interval between the heartbeats this node writes while it polls; must be shorter than {@link
+   * Interval between the heartbeats this node writes while it polls; at most half the {@link
    * #nodeTimeout(Duration)}. Lower values detect a crashed node sooner at the cost of one write per
    * interval; defaults to 5 seconds.
    *
@@ -416,21 +406,21 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder heartbeatInterval(Duration heartbeatInterval) {
-    this.heartbeatInterval = requirePositive(heartbeatInterval, "heartbeatInterval");
+    this.heartbeatInterval = ValidationUtil.requirePositive(heartbeatInterval, "heartbeatInterval");
     return this;
   }
 
   /**
    * Time without heartbeat after which a node is considered dead: its running jobs are released and
-   * its name may be taken over. Must be longer than {@link #heartbeatInterval(Duration)} (tolerate
-   * the interval plus a missed heartbeat, e.g. several intervals for nodes with long GC pauses);
-   * defaults to 30 seconds.
+   * its name may be taken over. Must be at least twice the {@link #heartbeatInterval(Duration)}
+   * (tolerate the interval plus a missed heartbeat, e.g. several intervals for nodes with long GC
+   * pauses); defaults to 30 seconds.
    *
-   * @param nodeTimeout the timeout, positive and longer than the heartbeat interval
+   * @param nodeTimeout the timeout, positive and at least twice the heartbeat interval
    * @return this builder
    */
   public BikeschedBuilder nodeTimeout(Duration nodeTimeout) {
-    this.nodeTimeout = requirePositive(nodeTimeout, "nodeTimeout");
+    this.nodeTimeout = ValidationUtil.requirePositive(nodeTimeout, "nodeTimeout");
     return this;
   }
 
@@ -446,7 +436,7 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder pollInterval(Duration pollInterval) {
-    this.pollInterval = requirePositive(pollInterval, "pollInterval");
+    this.pollInterval = ValidationUtil.requirePositive(pollInterval, "pollInterval");
     return this;
   }
 
@@ -481,15 +471,8 @@ public final class BikeschedBuilder {
    * @return this builder
    */
   public BikeschedBuilder notifyInterval(Duration notifyInterval) {
-    this.notifyInterval = requirePositive(notifyInterval, "notifyInterval");
+    this.notifyInterval = ValidationUtil.requirePositive(notifyInterval, "notifyInterval");
     return this;
-  }
-
-  private static Duration requirePositive(Duration duration, String name) {
-    if (duration.isNegative() || duration.isZero()) {
-      throw new IllegalArgumentException(name + " must be positive");
-    }
-    return duration;
   }
 
   /**
@@ -507,11 +490,11 @@ public final class BikeschedBuilder {
     if (dataSource == null) {
       throw new IllegalStateException("dataSource is required");
     }
-    if (nodeTimeout.compareTo(heartbeatInterval) <= 0) {
+    if (nodeTimeout.compareTo(heartbeatInterval.multipliedBy(2)) < 0) {
       throw new IllegalArgumentException(
           "nodeTimeout ("
               + nodeTimeout
-              + ") must be longer than heartbeatInterval ("
+              + ") must be at least twice the heartbeatInterval ("
               + heartbeatInterval
               + "), otherwise a healthy node's jobs are released");
     }
