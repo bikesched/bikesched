@@ -9,15 +9,20 @@ import com.grack.nanojson.JsonObject;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
+import org.bikesched.admin.EventQuery;
+import org.bikesched.admin.JobQuery;
 import org.bikesched.job.JobState;
 import org.bikesched.job.Recurrence;
 import org.bikesched.test.BikeschedTest;
@@ -148,7 +153,7 @@ class BikeschedAdminTest {
   @Test
   void findsJobsAndEventsByTheFirstDigitsOfTheirId() {
     String type = prefix + "by-id";
-    bikesched.registerJobHandler(type, _ -> {});
+    bikesched.registerJobHandler(type, ignored -> {});
     UUID jobId = bikesched.newJob(type).schedule(Duration.ofHours(1));
     UUID eventId = bikesched.newEvent(prefix + "by-id", "k").publish();
 
@@ -174,7 +179,7 @@ class BikeschedAdminTest {
   @Test
   void showsTheRunsOfARecurringJob() {
     String type = prefix + "recurring";
-    bikesched.registerJobHandler(type, _ -> {});
+    bikesched.registerJobHandler(type, ignored -> {});
     bikesched.newJob(type).schedule(Recurrence.every(Duration.ofMillis(200)), Duration.ZERO);
 
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
@@ -211,7 +216,7 @@ class BikeschedAdminTest {
     bikesched.registerJobHandler(
         parentType,
         job -> {
-          job.step("prepare", String.class, _ -> "\"prepared\"");
+          job.step("prepare", String.class, ignored -> "\"prepared\"");
           UUID child = job.newJob(childType).stepName("run-child").schedule();
           job.waitForJob(child, String.class);
         });
@@ -294,6 +299,35 @@ class BikeschedAdminTest {
   }
 
   @Test
+  void showsANodeWithTheJobsItRuns() throws Exception {
+    String type = prefix + "on-node";
+    CountDownLatch release = new CountDownLatch(1);
+    bikesched.registerJobHandler(type, ignored -> release.await());
+    try {
+      UUID jobId = bikesched.newJob(type).schedule();
+      awaitState(jobId, JobState.RUNNING);
+      UUID nodeId = bikesched.node().id().orElseThrow();
+
+      try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+        JsonObject node = AdminServer.json(server.get("/api/nodes/" + nodeId)).getObject("node");
+        assertThat(node.getString("id")).isEqualTo(nodeId.toString());
+        assertThat(node.getBoolean("alive")).isTrue();
+        assertThat(node.getInt("runningJobs")).isEqualTo(1);
+
+        JsonArray jobs = AdminServer.json(server.get("/api/jobs?node=" + nodeId)).getArray("jobs");
+        assertThat(jobs).hasSize(1);
+        assertThat(jobs.getObject(0).getString("id")).isEqualTo(jobId.toString());
+
+        assertThat(server.get("/api/nodes/" + UUID.randomUUID()).statusCode()).isEqualTo(404);
+        assertThat(server.get("/api/nodes/nope").statusCode()).isEqualTo(400);
+        assertThat(server.get("/api/jobs?node=nope").statusCode()).isEqualTo(400);
+      }
+    } finally {
+      release.countDown();
+    }
+  }
+
+  @Test
   void retriesAndCancelsJobs() {
     String type = prefix + "actions";
     var failOnce = new AtomicBoolean(true);
@@ -329,7 +363,7 @@ class BikeschedAdminTest {
       awaitState(later, JobState.CANCELLED);
 
       assertThat(server.get("/api/jobs/" + later + "/cancel").statusCode()).isEqualTo(405);
-      assertThat(server.post("/api/jobs", csrf, "1").statusCode()).isEqualTo(405);
+      assertThat(server.post("/api/types", csrf, "1").statusCode()).isEqualTo(405);
       assertThat(
               server
                   .send(
@@ -341,8 +375,151 @@ class BikeschedAdminTest {
   }
 
   @Test
+  void publishesEvents() {
+    String type = prefix + "publish-waiter";
+    String event = prefix + "published";
+    bikesched.registerJobHandler(
+        type, job -> job.complete(job.waitForEvent("await", event, "k-1", String.class).receive()));
+    UUID waiting = bikesched.newJob(type).schedule();
+    awaitState(waiting, JobState.WAITING);
+
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      String csrf = AdminHandler.CSRF_HEADER;
+      String form =
+          "name="
+              + encode(event)
+              + "&key=k-1&payload="
+              + encode("{\"amount\": 42}")
+              + "&retention=PT1H&idempotencyKey=admin-1";
+      assertThat(server.postForm("/api/events", form).statusCode())
+          .as("without the CSRF header")
+          .isEqualTo(403);
+
+      HttpResponse<String> published = server.postForm("/api/events", form, csrf, "1");
+      assertThat(published.statusCode()).isEqualTo(200);
+      JsonObject body = AdminServer.json(published);
+      assertThat(body.getInt("received")).isOne();
+      UUID eventId = UUID.fromString(body.getString("id"));
+      awaitState(waiting, JobState.SUCCEEDED);
+      assertThat(bikesched.admin().findJobData(waiting).orElseThrow().result())
+          .isEqualTo("{\"amount\": 42}");
+      var summary = bikesched.admin().findEvent(eventId).orElseThrow();
+      assertThat(Duration.between(summary.publishedAt(), summary.expiresAt()))
+          .isEqualTo(Duration.ofHours(1));
+      assertThat(summary.idempotencyKey()).isEqualTo("admin-1");
+      assertThat(AdminServer.json(server.postForm("/api/events", form, csrf, "1")).getString("id"))
+          .as("the idempotency key returns the first event")
+          .isEqualTo(eventId.toString());
+
+      assertThat(server.postForm("/api/events", "name=" + encode(event), csrf, "1").body())
+          .contains("needs a name and a key");
+      assertThat(
+              server
+                  .postForm("/api/events", "name=x&key=k&payload=" + encode("{\"a\": }"), csrf, "1")
+                  .body())
+          .contains("not valid JSON");
+      HttpResponse<String> badRetention =
+          server.postForm("/api/events", "name=x&key=k&retention=soon", csrf, "1");
+      assertThat(badRetention.statusCode()).isEqualTo(400);
+      assertThat(badRetention.body()).contains("Malformed retention");
+      assertThat(
+              server
+                  .postForm(
+                      "/api/events",
+                      "name=x&key=k&payload=" + "1".repeat(ExchangeHandler.MAX_BODY_BYTES),
+                      csrf,
+                      "1")
+                  .statusCode())
+          .isEqualTo(413);
+    }
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched).readOnly(true))) {
+      HttpResponse<String> response =
+          server.postForm(
+              "/api/events", "name=" + encode(event) + "&key=k-2", AdminHandler.CSRF_HEADER, "1");
+      assertThat(response.statusCode()).isEqualTo(403);
+      assertThat(response.body()).contains("read-only");
+    }
+    assertThat(bikesched.admin().findEvents(EventQuery.newest(10).withName(event)))
+        .as("only the first form was published")
+        .hasSize(1);
+  }
+
+  @Test
+  void schedulesJobs() {
+    String type = prefix + "scheduled";
+    var payloads = new LinkedBlockingQueue<String>();
+    bikesched.registerJobHandler(type, job -> payloads.add(job.payload()));
+
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      String csrf = AdminHandler.CSRF_HEADER;
+      String form = "type=" + encode(type) + "&payload=" + encode("{\"order\": 7}");
+      assertThat(server.postForm("/api/jobs", form, "X-Other", "1").statusCode())
+          .as("without the CSRF header")
+          .isEqualTo(403);
+
+      JsonObject now = AdminServer.json(server.postForm("/api/jobs", form, csrf, "1"));
+      assertThat(now.getBoolean("created")).isTrue();
+      UUID ran = UUID.fromString(now.getString("id"));
+      awaitState(ran, JobState.SUCCEEDED);
+      assertThat(payloads).containsExactly("{\"order\": 7}");
+
+      String later =
+          "type="
+              + encode(type)
+              + "&delay=PT1H&priority=5&maxAttempts=7&timeout=PT30S&idempotencyKey=admin-1";
+      JsonObject first = AdminServer.json(server.postForm("/api/jobs", later, csrf, "1"));
+      assertThat(first.getBoolean("created")).isTrue();
+      UUID laterId = UUID.fromString(first.getString("id"));
+      var summary = bikesched.admin().findJob(laterId).orElseThrow();
+      assertThat(summary.state()).isEqualTo(JobState.SCHEDULED);
+      assertThat(summary.priority()).isEqualTo(5);
+      assertThat(summary.maxAttempts()).isEqualTo(7);
+      assertThat(summary.scheduledAt()).isAfter(Instant.now().plus(Duration.ofMinutes(50)));
+      JsonObject second = AdminServer.json(server.postForm("/api/jobs", later, csrf, "1"));
+      assertThat(second.getBoolean("created")).as("the idempotency key returns the job").isFalse();
+      assertThat(second.getString("id")).isEqualTo(laterId.toString());
+
+      String at = "2099-01-01T00:00:00Z";
+      UUID atId =
+          UUID.fromString(
+              AdminServer.json(
+                      server.postForm("/api/jobs", "type=" + encode(type) + "&at=" + at, csrf, "1"))
+                  .getString("id"));
+      assertThat(bikesched.admin().findJob(atId).orElseThrow().scheduledAt())
+          .isEqualTo(Instant.parse(at));
+
+      assertThat(server.postForm("/api/jobs", "type=", csrf, "1").body()).contains("needs a type");
+      assertThat(server.postForm("/api/jobs", "type=" + prefix + "unknown", csrf, "1").body())
+          .contains("no handler registered");
+      for (String bad :
+          List.of(
+              "&payload=" + encode("{\"a\": }"),
+              "&delay=PT1M&at=" + at,
+              "&delay=soon",
+              "&delay=-PT1M",
+              "&at=tomorrow",
+              "&priority=high",
+              "&maxAttempts=0",
+              "&timeout=PT0S")) {
+        HttpResponse<String> response =
+            server.postForm("/api/jobs", "type=" + encode(type) + bad, csrf, "1");
+        assertThat(response.statusCode()).as(bad).isEqualTo(400);
+      }
+    }
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched).readOnly(true))) {
+      HttpResponse<String> response =
+          server.postForm("/api/jobs", "type=" + encode(type), AdminHandler.CSRF_HEADER, "1");
+      assertThat(response.statusCode()).isEqualTo(403);
+      assertThat(response.body()).contains("read-only");
+    }
+    assertThat(bikesched.admin().findJobs(JobQuery.newest(10).withType(type)))
+        .as("only the valid forms scheduled a job")
+        .hasSize(3);
+  }
+
+  @Test
   void aReadOnlyAdminRejectsRetryAndCancel() {
-    bikesched.registerJobHandler(prefix + "read-only", _ -> {});
+    bikesched.registerJobHandler(prefix + "read-only", ignored -> {});
     UUID later = bikesched.newJob(prefix + "read-only").schedule(Duration.ofHours(1));
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched).readOnly(true))) {
       HttpResponse<String> response =
@@ -397,7 +574,7 @@ class BikeschedAdminTest {
 
   @Test
   void anUnchangedJobAnswersNotModified() {
-    bikesched.registerJobHandler(prefix + "etag", _ -> {});
+    bikesched.registerJobHandler(prefix + "etag", ignored -> {});
     UUID later = bikesched.newJob(prefix + "etag").schedule(Duration.ofHours(1));
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
       HttpResponse<String> first = server.get("/api/jobs/" + later);

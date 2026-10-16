@@ -37,18 +37,6 @@ export function preciseTime(iso) {
   return `${dateTime(iso)}.${pad(date.getMilliseconds(), 3)}`;
 }
 
-/** "12 s ago", "3 min ago", ... */
-export function ago(iso, now = Date.now()) {
-  if (!iso) {
-    return '-';
-  }
-  const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (seconds < 60) return `${seconds} s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-  if (seconds < 172800) return `${Math.floor(seconds / 3600)} h ago`;
-  return `${Math.floor(seconds / 86400)} d ago`;
-}
-
 /** A duration between two times: "7 d", "2 h 5 min", "30 s". */
 export function duration(fromIso, toIso) {
   let seconds = Math.max(0, Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 1000));
@@ -103,6 +91,13 @@ export function RecurringIcon({ label = 'recurring' }) {
     : html`<svg class="recurring-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
 }
 
+/** The header of the column a table is sorted by, with an arrow; title says how. */
+export function SortedTh({ label, descending, title }) {
+  return html`<th aria-sort=${descending ? 'descending' : 'ascending'} title=${title}>
+    ${label}<span class="sort-arrow" aria-hidden="true">${descending ? '↓' : '↑'}</span>
+  </th>`;
+}
+
 export function Badge({ state }) {
   return html`<span class=${`badge state-${state}`}>${state}</span>`;
 }
@@ -111,13 +106,13 @@ export function Dot({ state }) {
   return html`<span class=${`dot state-${state}`} aria-hidden="true"></span>`;
 }
 
-/** Hash routes: #/jobs/{id}?type=…&state=…, #/events/{id}?name=…&key=…&tab=… */
+/** Hash routes: #/jobs/{id}?type=…&state=…, #/events/{id}?name=…&key=…&tab=…, #/nodes/{id} */
 export function parseHash(hash = location.hash) {
   const raw = hash.replace(/^#\/?/, '');
   const [path, search = ''] = raw.split('?');
   const [section, id] = path.split('/');
   return {
-    section: section === 'events' ? 'events' : 'jobs',
+    section: ['events', 'nodes'].includes(section) ? section : 'jobs',
     id: id || null,
     params: Object.fromEntries(new URLSearchParams(search)),
   };

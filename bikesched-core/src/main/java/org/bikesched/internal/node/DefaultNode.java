@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.node;
 
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.bikesched.Node;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A node's identity and lifecycle state: its name, its id once registered (polling started) and
@@ -16,7 +16,7 @@ public final class DefaultNode implements Node {
   private final String name;
 
   /** Set (once) when the node registers; {@code null} until then. */
-  private volatile UUID id;
+  private volatile @Nullable UUID id;
 
   private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -24,7 +24,7 @@ public final class DefaultNode implements Node {
    * @param name the node's name
    */
   public DefaultNode(String name) {
-    this.name = Objects.requireNonNull(name, "name");
+    this.name = name;
   }
 
   /**
@@ -34,7 +34,6 @@ public final class DefaultNode implements Node {
    * @throws IllegalStateException if the node already registered
    */
   public void registered(UUID id) {
-    Objects.requireNonNull(id, "id");
     if (this.id != null) {
       throw new IllegalStateException("bikesched node " + name + " is already registered");
     }

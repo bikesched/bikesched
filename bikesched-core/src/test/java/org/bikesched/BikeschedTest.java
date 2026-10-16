@@ -40,7 +40,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void nodeTimeoutMustBeLongerThanTheHeartbeatInterval() {
+  void nodeTimeoutMustBeAtLeastTwiceTheHeartbeatInterval() {
     assertThatThrownBy(
             () ->
                 Bikesched.builder()
@@ -50,7 +50,7 @@ class BikeschedTest extends AbstractBikeschedTest {
                     .build())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(
-            "nodeTimeout (PT5S) must be longer than heartbeatInterval (PT5S), otherwise a healthy"
+            "nodeTimeout (PT5S) must be at least twice the heartbeatInterval (PT5S), otherwise a healthy"
                 + " node's jobs are released");
   }
 
@@ -65,7 +65,7 @@ class BikeschedTest extends AbstractBikeschedTest {
             .nodeTimeout(Duration.ofSeconds(5))
             .build()) {
       String type = "timings-" + UUID.randomUUID();
-      bikesched.registerJobHandler(type, _ -> {});
+      bikesched.registerJobHandler(type, ignored -> {});
       UUID jobId = bikesched.newJob(type).schedule();
       awaitState(jobId, "SUCCEEDED");
       assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo(bikesched.node().name());
@@ -234,7 +234,8 @@ class BikeschedTest extends AbstractBikeschedTest {
   void logsRedactedDatabaseUrlOnStartup() {
     var logs = LogCapture.of(DatabaseInitializer.class);
     try (logs;
-        Bikesched _ = Bikesched.builder().dataSource(dataSource).nodeName("node-db-url").build()) {
+        Bikesched ignored =
+            Bikesched.builder().dataSource(dataSource).nodeName("node-db-url").build()) {
       assertThat(logs.events())
           .filteredOn(e -> e.getFormattedMessage().startsWith("Database: "))
           .singleElement()

@@ -1,7 +1,7 @@
 # Specification: admin UI
 
 Status: **implemented** ([ADR 0038](../decisions/0038-admin-ui.md), user docs:
-[Admin UI](../admin.md))
+[Admin UI](../operations/admin.md))
 
 ## 1. Goal
 
@@ -246,7 +246,8 @@ the mount path with their content type; no external resources:
 
 Layout and content:
 
-- Header: the nodes as small badges (name, alive or dead, last heartbeat as "12 s ago").
+- Header: the nodes as small badges (name, "offline" for a node without heartbeat; no heartbeat
+  age, which read as stale because the header does not refresh on its own).
 - Design: [bikesched admin UI](https://claude.ai/artifact/U2nQTQy9jYSbRfqgnQVFCP) (clickable
   mockup with sample data).
 - Side bar with two sections, Jobs and Events. Each has a select box with a search field (a
@@ -480,8 +481,8 @@ None left; they are decisions 7 to 12 below.
   import map, an inline script the CSP forbids; the `vendorUi` task rewrites the import to the
   relative file.
 - The page's icon and the header logo are the project's logo, `docs/logo.svg`, copied into the
-  resources by the `logoUi` task, so it has one source. It is drawn for light backgrounds, so dark
-  mode shows it on a light disc.
+  resources by the `logoUi` task, so it has one source. It is shown as it is, vertically centered
+  in the header, without a disc behind it (a disc cut off its edges).
 - After a retry or cancel from the page, the counts reload but the list keeps its rows, as
   for the live updates.
 - Each step shows its duration right of its state badge ("412 ms", "1.8 s", "5 min 37 s", at

@@ -9,7 +9,6 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.TreeMap;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -59,7 +58,7 @@ public final class SchemaMigrator {
   }
 
   SchemaMigrator(DataSource dataSource, List<Migration> migrations) {
-    this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+    this.dataSource = dataSource;
     for (int i = 1; i < migrations.size(); i++) {
       if (migrations.get(i).version() <= migrations.get(i - 1).version()) {
         throw new IllegalArgumentException("Migration versions must be strictly increasing");

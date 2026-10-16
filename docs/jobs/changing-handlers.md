@@ -1,6 +1,6 @@
 ---
 title: "Changing handlers"
-weight: 8
+weight: 2
 ---
 
 # Changing handlers
@@ -33,7 +33,7 @@ Jobs meet the new code whenever they start an attempt after the deploy: jobs `WA
 event, a sleep, a poll or a child job, jobs `SCHEDULED` for later, for a retry or after
 `postpone`, jobs `COMPENSATING` or `FAILING`, and jobs that were `RUNNING` on a node that stopped
 (`close()` returns them to `SCHEDULED`, a crashed node's jobs are released). A `FAILED` job meets
-it when you [retry](jobs.md#failures-and-retries) it.
+it when you [retry](README.md#failures-and-retries) it.
 
 During a rolling deploy, old and new nodes claim the same job types. A job may run its next attempt
 on either version, also on an old node after a new one ran it. A change must therefore work in both
@@ -48,7 +48,7 @@ directions until the last old node is gone, or be split into two deploys (see
 | change code inside a completed step | not run again; only jobs that have not completed the step run the new code |
 | add a step after the last step any job in flight has reached | runs once, like any new step |
 | reorder steps without changing their names | completed steps return their results wherever they are called; a step moved before the point where a job is waiting runs when it resumes, if it has not run yet |
-| add optional properties to payloads, step results, event payloads and job results | stored JSON still maps, see [Payload design](configuration.md#payload-design) |
+| add optional properties to payloads, step results, event payloads and job results | stored JSON still maps, see [Payload design](../getting-started/configuration.md#payload-design) |
 | change a sleep's duration, a wait's or poll's timeout | started sleeps, waits and polls keep their stored times; new ones use the new values |
 | change a poll's interval, a step's `retryBackoff`, its `onFailure` or `compensateWith` handler, a job failure handler | applies from the next check, retry or run; a compensation receives the step's stored result |
 | change `priority`, `maxAttempts` or `timeout` on a builder | applies to jobs scheduled afterwards |
@@ -92,7 +92,7 @@ path:
 record Order(String id, int version) {}   // version 0: scheduled before the change
 
 bikesched.registerJobHandler(ORDER, (job, order) -> {
-    Reservation reservation = job.step("reserve", Reservation.class, _ -> stock.reserve(order));
+    Reservation reservation = job.step("reserve", Reservation.class, step -> stock.reserve(order));
     if (order.version() >= 2) {
         job.step("check-fraud", () -> fraud.check(order));   // new step, only for new jobs
     }
@@ -133,7 +133,7 @@ results and events exchanged between services.
 ### Draining jobs
 
 Before removing a handler, a branch or a type, check that no job still needs it. The
-[lookups](admin.md#lookups-in-code) behind the admin UI count and list them:
+[lookups](../operations/admin.md#lookups-in-code) behind the admin UI count and list them:
 
 ```java
 Admin admin = bikesched.admin();
@@ -144,7 +144,7 @@ List<JobSummary> open = admin.findJobs(JobQuery.newest(100).withType("order")
 ```
 
 Jobs waiting without a deadline may never end on their own: cancel them, or publish the event they
-wait for. `FAILED` jobs stay until the [job retention](jobs.md#job-retention); a retried job runs
+wait for. `FAILED` jobs stay until the [job retention](README.md#job-retention); a retried job runs
 only on a node with a handler for its type.
 
 ## Checklist
@@ -158,5 +158,5 @@ only on a node with a handler for its type.
 - Keep code outside steps deterministic: base conditions on the payload and on stored step results.
 - Keep the handler of a type registered while jobs of the type are in flight.
 - Test the new code against jobs the old code suspended: run a job with the old handler on one
-  [test node](testing.md) until it is `WAITING`, close the node, and resume the job on a node with
-  the new handler.
+  [test node](../integrations/testing.md) until it is `WAITING`, close the node, and resume the job
+  on a node with the new handler.

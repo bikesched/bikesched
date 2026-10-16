@@ -261,7 +261,7 @@ class JobTimeoutTest extends AbstractBikeschedTest {
   void timeoutsMustBePositive() {
     assertThatThrownBy(() -> Bikesched.builder().defaultJobTimeout(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("defaultJobTimeout must be positive");
+        .hasMessage("defaultJobTimeout must be positive: PT0S");
     try (Bikesched bikesched = testNode("node-timeout-invalid").build()) {
       assertThatThrownBy(() -> bikesched.newJob("x").timeout(Duration.ofSeconds(-1)))
           .isInstanceOf(IllegalArgumentException.class)

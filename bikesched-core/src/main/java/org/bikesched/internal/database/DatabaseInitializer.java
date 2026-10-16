@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.database;
 
-import java.util.Objects;
 import org.bikesched.BikeschedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +23,7 @@ public final class DatabaseInitializer {
   private volatile boolean initialized;
 
   public DatabaseInitializer(Database database, boolean migrateSchema) {
-    this.database = Objects.requireNonNull(database, "database");
+    this.database = database;
     this.migrateSchema = migrateSchema;
   }
 

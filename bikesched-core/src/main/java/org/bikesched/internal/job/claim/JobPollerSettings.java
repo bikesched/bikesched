@@ -2,10 +2,10 @@
 package org.bikesched.internal.job.claim;
 
 import java.time.Duration;
-import java.util.Objects;
 import org.bikesched.RetryBackoff;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.job.listener.JobListener;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The node settings the {@link JobPoller} uses.
@@ -30,22 +30,11 @@ public record JobPollerSettings(
     int maxConcurrentJobs,
     Duration pollInterval,
     boolean listenForDueJobs,
-    Duration defaultJobTimeout,
-    Duration defaultEventTimeout,
+    @Nullable Duration defaultJobTimeout,
+    @Nullable Duration defaultEventTimeout,
     Duration eventRetention,
     RetryBackoff retryBackoff,
     int failureHandlerAttempts,
-    Duration hardTimeoutGrace,
+    @Nullable Duration hardTimeoutGrace,
     JobListener jobListener,
-    EventListener eventListener) {
-
-  /** Checks the required settings. */
-  public JobPollerSettings {
-    Objects.requireNonNull(nodeName, "nodeName");
-    Objects.requireNonNull(pollInterval, "pollInterval");
-    Objects.requireNonNull(retryBackoff, "retryBackoff");
-    Objects.requireNonNull(eventRetention, "eventRetention");
-    Objects.requireNonNull(jobListener, "jobListener");
-    Objects.requireNonNull(eventListener, "eventListener");
-  }
-}
+    EventListener eventListener) {}

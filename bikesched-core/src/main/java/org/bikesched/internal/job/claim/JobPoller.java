@@ -23,6 +23,7 @@ import org.bikesched.internal.database.Database;
 import org.bikesched.internal.job.DefaultJob;
 import org.bikesched.internal.job.DueTimes;
 import org.bikesched.internal.job.HardTimeout;
+import org.bikesched.internal.job.JobLogContext;
 import org.bikesched.internal.job.JobProcessor;
 import org.bikesched.internal.job.JobRegistry;
 import org.bikesched.internal.job.JobScheduler;
@@ -30,6 +31,7 @@ import org.bikesched.internal.job.JobSlot;
 import org.bikesched.internal.util.ExecutorUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobHandler;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -96,13 +98,18 @@ public final class JobPoller implements DueTimes {
   /** Set by a wake-up that found no free slot: the next released slot polls. */
   private final AtomicBoolean wakeWhenSlotFrees = new AtomicBoolean();
 
-  /** Receives the notifications of other nodes; {@code null} if not listening. */
-  private volatile JobNotificationListener listener;
+  /**
+   * What the poller needs once started.
+   *
+   * @param nodeId the node's id
+   * @param processor runs the claimed jobs
+   * @param listener receives the notifications of other nodes; {@code null} if not listening
+   */
+  private record Running(
+      UUID nodeId, JobProcessor processor, @Nullable JobNotificationListener listener) {}
 
-  /** Set (once) by {@link #start(UUID)}, together with the processor; {@code null} until then. */
-  private volatile UUID nodeId;
-
-  private volatile JobProcessor processor;
+  /** Set (once) by {@link #start(UUID)}; {@code null} until then. */
+  private volatile @Nullable Running running;
 
   /**
    * Creates the poller; it polls once {@link #start(UUID) started}.
@@ -140,8 +147,9 @@ public final class JobPoller implements DueTimes {
    *
    * @param id the node's id
    */
+  @SuppressWarnings("FutureReturnValueIgnored") // runs until shutdown, polls never throw
   public void start(UUID id) {
-    processor =
+    var processor =
         new JobProcessor(
             database,
             id,
@@ -158,7 +166,18 @@ public final class JobPoller implements DueTimes {
                 ? null
                 : new HardTimeout(settings.hardTimeoutGrace(), jobExecutor, id, nodeName),
             settings.jobListener());
-    nodeId = id;
+    var listener =
+        settings.listenForDueJobs()
+            ? new JobNotificationListener(
+                database.jobs(),
+                registry::types,
+                this::pollNow,
+                this::wakeUpAndLookAhead,
+                settings.pollInterval(),
+                nodeName,
+                id)
+            : null;
+    running = new Running(id, processor, listener);
     long millis = settings.pollInterval().toMillis();
     pollerExecutor.scheduleWithFixedDelay(
         () ->
@@ -173,23 +192,14 @@ public final class JobPoller implements DueTimes {
     registry.onNewHandler(this::wakeUpAndLookAhead);
     // The jobs that became due before this node polled, or become due within the first interval.
     wakeUpAndLookAhead();
-    if (settings.listenForDueJobs()) {
-      listener =
-          new JobNotificationListener(
-              database.jobs(),
-              registry::types,
-              this::pollNow,
-              this::wakeUpAndLookAhead,
-              settings.pollInterval(),
-              nodeName,
-              id);
+    if (listener != null) {
       listener.start();
     }
   }
 
   /** Polls right away (merged with other requests); ignored until started and after closing. */
   public void pollNow() {
-    if (nodeId == null || !pollRequested.compareAndSet(false, true)) {
+    if (running == null || !pollRequested.compareAndSet(false, true)) {
       return;
     }
     submit(
@@ -211,7 +221,7 @@ public final class JobPoller implements DueTimes {
 
   @Override
   public void dueAt(String type, Instant dueAt) {
-    if (nodeId == null || !registry.types().contains(type)) {
+    if (running == null || !registry.types().contains(type)) {
       return;
     }
     Instant now = Instant.now();
@@ -225,7 +235,7 @@ public final class JobPoller implements DueTimes {
 
   /** Polls and then looks for the jobs due within the next interval, on the poller thread. */
   private void wakeUpAndLookAhead() {
-    if (nodeId == null) {
+    if (running == null) {
       return;
     }
     submit(
@@ -236,7 +246,7 @@ public final class JobPoller implements DueTimes {
   }
 
   private void timerFired() {
-    LOG.debug("bikesched node {} ({}) woken up by its timer", nodeName, nodeId);
+    LOG.debug("bikesched node {} ({}) woken up by its timer", nodeName, nodeId());
     armForNextDue();
     poll(true);
   }
@@ -257,7 +267,8 @@ public final class JobPoller implements DueTimes {
           .nextDueIn(registry.types(), settings.pollInterval())
           .ifPresent(delay -> timer.arm(Instant.now().plus(delay)));
     } catch (RuntimeException e) {
-      LOG.warn("Looking up the next due job failed on bikesched node {} ({})", nodeName, nodeId, e);
+      LOG.warn(
+          "Looking up the next due job failed on bikesched node {} ({})", nodeName, nodeId(), e);
     }
   }
 
@@ -271,12 +282,18 @@ public final class JobPoller implements DueTimes {
   }
 
   private void onPollerThread(Runnable task) {
-    try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId))) {
+    try (var mdc = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId()))) {
       task.run();
     } catch (RuntimeException e) {
       // Must never throw: an exception would cancel the interval polls.
-      LOG.warn("Waking up bikesched node {} ({}) failed", nodeName, nodeId, e);
+      LOG.warn("Waking up bikesched node {} ({}) failed", nodeName, nodeId(), e);
     }
+  }
+
+  /** The node's id for log messages; {@code null} until started. */
+  private @Nullable UUID nodeId() {
+    Running started = running;
+    return started == null ? null : started.nodeId();
   }
 
   /** Returns a stable snapshot of jobs whose attempts still run in memory. */
@@ -304,7 +321,7 @@ public final class JobPoller implements DueTimes {
   }
 
   private void trackActiveJob(UUID jobId) {
-    activeJobs.computeIfAbsent(jobId, _ -> new AtomicInteger()).incrementAndGet();
+    activeJobs.computeIfAbsent(jobId, ignored -> new AtomicInteger()).incrementAndGet();
   }
 
   /** A job's slot was released: polls if a wake-up found no free slot. */
@@ -318,7 +335,7 @@ public final class JobPoller implements DueTimes {
   private void untrackActiveJob(UUID jobId) {
     activeJobs.computeIfPresent(
         jobId,
-        (_, count) -> {
+        (ignored, count) -> {
           count.decrementAndGet();
           return count.get() == 0 ? null : count;
         });
@@ -329,9 +346,9 @@ public final class JobPoller implements DueTimes {
    * jobs still running stay {@code RUNNING} in the database for the caller to release.
    */
   public void close() {
-    JobNotificationListener listening = listener;
-    if (listening != null) {
-      listening.close();
+    Running started = running;
+    if (started != null && started.listener() != null) {
+      started.listener().close();
     }
     ExecutorUtil.shutdownAndAwait(pollerExecutor, "poller");
     ExecutorUtil.shutdownAndAwait(jobExecutor, "job executor");
@@ -353,6 +370,10 @@ public final class JobPoller implements DueTimes {
   }
 
   private boolean pollOnce(boolean wokenUp) {
+    Running started = running;
+    if (started == null) {
+      return false; // only started pollers claim jobs
+    }
     // Must never throw: an exception would silently cancel all future polls.
     try {
       int free = slots.availablePermits();
@@ -360,7 +381,7 @@ public final class JobPoller implements DueTimes {
         if (wokenUp) {
           wakeWhenSlotFrees.set(true);
         }
-        LOG.debug("bikesched node {} ({}) is at capacity, skipping poll", nodeName, nodeId);
+        LOG.debug("bikesched node {} ({}) is at capacity, skipping poll", nodeName, nodeId());
         return false;
       }
       if (registry.types().isEmpty()) {
@@ -369,14 +390,14 @@ public final class JobPoller implements DueTimes {
         LOG.debug(
             "bikesched node {} ({}) has no job handlers registered, skipping poll",
             nodeName,
-            nodeId);
+            nodeId());
         return false;
       }
       int limit = Math.min(free, POLL_BATCH_SIZE);
       LOG.debug(
           "bikesched node {} ({}) polling for up to {} job(s), {} free slot(s)",
           nodeName,
-          nodeId,
+          nodeId(),
           limit,
           free);
       // Never blocks: only this (single) poller thread acquires, job threads only release,
@@ -386,7 +407,7 @@ public final class JobPoller implements DueTimes {
       claiming.lock();
       try {
         jobs =
-            database.jobs().claimJobs(nodeId, registry.types(), limit).stream()
+            database.jobs().claimJobs(started.nodeId(), registry.types(), limit).stream()
                 .map(
                     claimed ->
                         new DefaultJob(
@@ -403,14 +424,14 @@ public final class JobPoller implements DueTimes {
         slots.release(limit - jobs.size()); // unused slots; all of them if claiming failed
       }
       if (!jobs.isEmpty()) {
-        LOG.debug("bikesched node {} ({}) claimed {} job(s)", nodeName, nodeId, jobs.size());
+        LOG.debug("bikesched node {} ({}) claimed {} job(s)", nodeName, nodeId(), jobs.size());
       }
       for (DefaultJob job : jobs) {
-        dispatch(job);
+        dispatch(started, job);
       }
       return jobs.size() == limit;
     } catch (RuntimeException e) {
-      LOG.warn("Polling for jobs failed on bikesched node {} ({})", nodeName, nodeId, e);
+      LOG.warn("Polling for jobs failed on bikesched node {} ({})", nodeName, nodeId(), e);
       return false;
     }
   }
@@ -419,15 +440,13 @@ public final class JobPoller implements DueTimes {
    * Runs a claimed job on its own virtual thread; the job's slot is held until it ends (or the hard
    * timeout abandons it).
    */
-  private void dispatch(DefaultJob job) {
+  private void dispatch(Running started, DefaultJob job) {
     var slot = new JobSlot(slots, () -> released(job.id()));
     try {
       jobExecutor.execute(
           () -> {
-            try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId));
-                var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
-                var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
-              processor.process(job, slot);
+            try (var logContext = JobLogContext.open(started.nodeId(), job)) {
+              started.processor().process(job, slot);
             } finally {
               slot.release();
             }

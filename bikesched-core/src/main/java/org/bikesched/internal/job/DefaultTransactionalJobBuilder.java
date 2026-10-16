@@ -11,10 +11,11 @@ import org.bikesched.job.JobHandler;
 import org.bikesched.job.TransactionalJobBuilder;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
+import org.jspecify.annotations.Nullable;
 
 /** The {@link TransactionalJobBuilder} implementation. */
-final class DefaultTransactionalJobBuilder<P> extends BaseJobBuilder<TransactionalJobBuilder<P>, P>
-    implements TransactionalJobBuilder<P> {
+final class DefaultTransactionalJobBuilder<P extends @Nullable Object>
+    extends BaseJobBuilder<TransactionalJobBuilder<P>, P> implements TransactionalJobBuilder<P> {
 
   private final Connection connection;
 

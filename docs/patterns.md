@@ -1,6 +1,6 @@
 ---
 title: "Patterns"
-weight: 7
+weight: 4
 ---
 
 # Patterns
@@ -37,7 +37,7 @@ transaction {
 - The job runs at least once, so its calls need idempotency keys (next patterns).
 
 Example: [Kotlin shop](../bikesched-examples/README.md#kotlin-shop). Details:
-[Transactional scheduling](jobs.md#transactional-scheduling).
+[Transactional scheduling](jobs/README.md#transactional-scheduling).
 
 ## Deduplicating incoming messages
 
@@ -56,7 +56,7 @@ UUID jobId = bikesched.newJob(ANSWER_MESSAGE)
   tenant to keys from several tenants.
 
 Example: [Chat](../bikesched-examples/README.md#chat). Details:
-[Idempotency keys](jobs.md#idempotency-keys).
+[Idempotency keys](jobs/README.md#idempotency-keys).
 
 ## Calling an unreliable API
 
@@ -78,8 +78,8 @@ ChargeOutcome outcome = job.step("charge-card", ChargeOutcome.class, step -> {
 - A completed step is never repeated, also when a later step fails.
 
 Example: [Outcome](../bikesched-examples/README.md#outcome). Details:
-[Business outcomes as results](steps.md#business-outcomes-as-results),
-[Failures and retries](jobs.md#failures-and-retries).
+[Business outcomes as results](multi-step-jobs/steps.md#business-outcomes-as-results),
+[Failures and retries](jobs/README.md#failures-and-retries).
 
 ## Staying within a rate limit
 
@@ -87,7 +87,7 @@ Take a token from a shared bucket before the call. Without one, postpone the job
 refills:
 
 ```java
-job.step("send", String.class, _ -> {
+job.step("send", String.class, step -> {
     ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);   // Bucket4j, stored in PostgreSQL
     if (!probe.isConsumed()) {
         job.postpone(Duration.ofNanos(probe.getNanosToWaitForRefill()));
@@ -100,7 +100,7 @@ job.step("send", String.class, _ -> {
 - A bucket in the database holds the limit across all nodes.
 
 Example: [Rate limit](../bikesched-examples/README.md#rate-limit). Details:
-[Postponing](jobs.md#postponing).
+[Postponing](jobs/README.md#postponing).
 
 ## Waiting for a webhook
 
@@ -115,7 +115,7 @@ PaymentSettled settled = job.waitForEvent("await-webhook", PAYMENT_SETTLED, paym
         .receive();
 if (settled == null) {
     settled = job.newPoll("poll-payment", PaymentSettled.class, Duration.ofMinutes(1))
-            .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
+            .run(step -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
 }
 ```
 
@@ -131,8 +131,8 @@ bikesched.newEvent(PAYMENT_SETTLED, payment.paymentId())
   receives it right away.
 - The payment id is a stored step result, so every resume waits for the same payment.
 
-Example: [Poll](../bikesched-examples/README.md#poll). Details: [Events](events.md),
-[Polling](steps.md#polling).
+Example: [Poll](../bikesched-examples/README.md#poll). Details: [Events](multi-step-jobs/events.md),
+[Polling](multi-step-jobs/steps.md#polling).
 
 ## Approval with reminder and escalation
 
@@ -163,7 +163,7 @@ if (decision == null) {
 - The job holds no thread or slot during the days it waits.
 
 Example: [Approval](../bikesched-examples/README.md#approval). Details:
-[Timeouts](events.md#timeouts).
+[Timeouts](multi-step-jobs/events.md#timeouts).
 
 ## Fan-out/fan-in
 
@@ -175,8 +175,8 @@ List<UUID> children = album.files().stream()
         .toList();
 for (UUID child : children) {
     switch (job.waitForJob(child, Thumbnail.class)) {
-        case JobResult.Succeeded<Thumbnail>(_, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
-        case JobResult.Failed<Thumbnail> _ -> skipped++;
+        case JobResult.Succeeded<Thumbnail>(UUID childId, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
+        case JobResult.Failed<Thumbnail> failed -> skipped++;
         case JobResult<Thumbnail> other -> throw new IllegalStateException("Unexpected outcome: " + other);
     }
 }
@@ -186,7 +186,8 @@ for (UUID child : children) {
 - The parent waits without a thread. A failed child doesn't fail the parent; it decides from the
   outcome.
 
-Example: [Fan-out](../bikesched-examples/README.md#fan-out). Details: [Child jobs](child-jobs.md).
+Example: [Fan-out](../bikesched-examples/README.md#fan-out). Details: [Child
+jobs](multi-step-jobs/child-jobs.md).
 
 ## Periodic work
 
@@ -195,7 +196,7 @@ so each run happens once, on whichever node claims it:
 
 ```java
 bikesched.newJob("clean-up-sessions")
-        .handler(_ -> sessions.removeExpired())
+        .handler(job -> sessions.removeExpired())
         .schedule(Recurrence.every(Duration.ofHours(1)));   // or daily/weekly, cron via bikesched-cron
 ```
 
@@ -205,7 +206,7 @@ bikesched.newJob("clean-up-sessions")
   it into steps.
 
 Example: [Recurring](../bikesched-examples/README.md#recurring). Details:
-[Recurring jobs](recurring-jobs.md).
+[Recurring jobs](jobs/recurring-jobs.md).
 
 ## Saga
 
@@ -214,12 +215,12 @@ completed steps are undone, latest first:
 
 ```java
 job.newStep("send-to-broker", Void.class)
-        .compensateWith((_, _) -> broker.cancelRide(ride.rideId()))
-        .run(_ -> { broker.requestRide(ride); return null; });
+        .compensateWith((step, result) -> broker.cancelRide(ride.rideId()))
+        .run(step -> { broker.requestRide(ride); return null; });
 PaymentReservation reservation = job.newStep("reserve-payment", PaymentReservation.class)
-        .compensateWith((_, stored) -> payments.release(stored))
-        .run(_ -> payments.reserve(customer, offer.price(), offer.currency(), ride.rideId()));
-job.step("approve-ride", RideApproval.class, _ -> broker.approveRide(ride.rideId(), offer, reservation));
+        .compensateWith((step, stored) -> payments.release(stored))
+        .run(step -> payments.reserve(customer, offer.price(), offer.currency(), ride.rideId()));
+job.step("approve-ride", RideApproval.class, step -> broker.approveRide(ride.rideId(), offer, reservation));
 ```
 
 - `bikesched.cancel(jobId, reason)` from outside and `job.cancel(reason)` inside run the same
@@ -227,4 +228,4 @@ job.step("approve-ride", RideApproval.class, _ -> broker.approveRide(ride.rideId
 - Compensations run at least once, so they must be idempotent.
 
 Example: [Taxi booking](../bikesched-examples/README.md#taxi-booking). Details:
-[Compensation](steps.md#compensation).
+[Compensation](multi-step-jobs/steps.md#compensation).

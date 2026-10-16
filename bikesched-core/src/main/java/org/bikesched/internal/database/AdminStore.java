@@ -9,7 +9,6 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
@@ -26,6 +25,7 @@ import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Read-only lookups across the tables for {@link org.bikesched.admin.Admin}; every method runs in
@@ -37,7 +37,7 @@ public final class AdminStore {
   private final DatabaseAccess access;
 
   AdminStore(DatabaseAccess access) {
-    this.access = Objects.requireNonNull(access, "access");
+    this.access = access;
   }
 
   // The columns of a JobSummary from the jobs in %s; 'infinity' (a wait without a deadline)
@@ -65,6 +65,10 @@ public final class AdminStore {
 
   private static final String FIND_JOB_SQL =
       JOB_COLUMNS.formatted("bikesched_jobs") + "\n where j.id = ?";
+
+  // Along the partial unique index on (type, idempotency_key).
+  private static final String FIND_KEYED_JOB_SQL =
+      JOB_COLUMNS.formatted("bikesched_jobs") + "\n where j.type = ? and j.idempotency_key = ?";
 
   // The occurrences of a recurring job: the pending one along bikesched_jobs_recurring_idx, the
   // ended ones as a page along bikesched_jobs_type_created_at_idx.
@@ -129,10 +133,16 @@ public final class AdminStore {
   private static final String FIND_EVENT_PAYLOAD_SQL =
       "select coalesce(payload::text, 'null') from bikesched_events where id = ?";
 
+  // The waiting steps use bikesched_steps_waiting_idx.
   private static final String FIND_EVENT_NAMES_SQL =
       """
-            select name, count(*) from bikesched_events
-             where expires_at > now() group by name order by name""";
+            select name, sum(events)::int, sum(waiting)::int
+              from (select name, count(*) as events, 0 as waiting from bikesched_events
+                     where expires_at > now() group by name
+                    union all
+                    select event_name, 0, count(*) from bikesched_steps
+                     where kind = 'EVENT_WAIT' and state = 'WAITING' group by event_name) names
+             group by name order by name""";
 
   private static final String FIND_EVENT_STEPS_SQL =
       """
@@ -156,12 +166,13 @@ public final class AdminStore {
 
   private static final String FIND_NODES_SQL =
       """
-            select id, name, started_at, last_heartbeat_at,
-                   last_heartbeat_at >= now() - make_interval(secs => ?)
-              from bikesched_nodes order by name""";
+            select n.id, n.name, n.started_at, n.last_heartbeat_at,
+                   n.last_heartbeat_at >= now() - make_interval(secs => ?),
+                   (select count(*) from bikesched_jobs j where j.locked_by = n.id)::int
+              from bikesched_nodes n
+             %s""";
 
   public List<JobSummary> findJobs(JobQuery query) {
-    Objects.requireNonNull(query, "query");
     // Only the filters in use go into the statement: "? is null or ..." would keep the planner
     // from reading the page along an index.
     List<String> conditions = new ArrayList<>();
@@ -173,6 +184,10 @@ public final class AdminStore {
     if (!query.states().isEmpty()) {
       conditions.add("state = any(?)");
       parameters.add(Sql.array("text", query.states().stream().map(Enum::name).toArray()));
+    }
+    if (query.nodeId() != null) {
+      conditions.add("locked_by = ?");
+      parameters.add(query.nodeId());
     }
     if (query.createdBefore() != null) {
       conditions.add("(created_at, id) < (?, ?)");
@@ -210,21 +225,24 @@ public final class AdminStore {
   }
 
   public Optional<JobSummary> findJob(UUID jobId) {
-    Objects.requireNonNull(jobId, "jobId");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_JOB_SQL, AdminStore::jobSummary, jobId),
         e -> new BikeschedException("Reading bikesched job " + jobId + " failed", e));
   }
 
+  public Optional<JobSummary> findJob(String type, String idempotencyKey) {
+    return access.inReadOnlyTransaction(
+        db -> db.one(FIND_KEYED_JOB_SQL, AdminStore::jobSummary, type, idempotencyKey),
+        e -> new BikeschedException("Reading bikesched job by idempotency key failed", e));
+  }
+
   public Optional<JobData> findJobData(UUID jobId) {
-    Objects.requireNonNull(jobId, "jobId");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_JOB_DATA_SQL, row -> new JobData(row.string(1), row.string(2)), jobId),
         e -> new BikeschedException("Reading the data of bikesched job " + jobId + " failed", e));
   }
 
   public List<StepInfo> findSteps(UUID jobId) {
-    Objects.requireNonNull(jobId, "jobId");
     return access.inReadOnlyTransaction(
         db ->
             db.list(
@@ -277,12 +295,12 @@ public final class AdminStore {
     }
     List<JobTypeSummary> types = new ArrayList<>(byType.size());
     byType.forEach(
-        (type, byState) -> types.add(new JobTypeSummary(type, byState, recurrences.get(type))));
+        (type, byState) ->
+            types.add(new JobTypeSummary(type, byState, recurrences.get(type), false)));
     return types;
   }
 
   public List<EventSummary> findEvents(EventQuery query) {
-    Objects.requireNonNull(query, "query");
     List<String> conditions = new ArrayList<>();
     List<Object> parameters = new ArrayList<>();
     if (query.name() != null) {
@@ -313,14 +331,12 @@ public final class AdminStore {
   }
 
   public Optional<EventSummary> findEvent(UUID eventId) {
-    Objects.requireNonNull(eventId, "eventId");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_EVENT_SQL, AdminStore::eventSummary, eventId),
         e -> new BikeschedException("Reading bikesched event " + eventId + " failed", e));
   }
 
   public Optional<String> findEventPayload(UUID eventId) {
-    Objects.requireNonNull(eventId, "eventId");
     return access.inReadOnlyTransaction(
         db -> db.one(FIND_EVENT_PAYLOAD_SQL, row -> row.string(1), eventId),
         e ->
@@ -332,12 +348,12 @@ public final class AdminStore {
     return access.inReadOnlyTransaction(
         db ->
             db.list(
-                FIND_EVENT_NAMES_SQL, row -> new EventNameSummary(row.string(1), row.integer(2))),
+                FIND_EVENT_NAMES_SQL,
+                row -> new EventNameSummary(row.string(1), row.integer(2), row.integer(3))),
         e -> new BikeschedException("Counting bikesched events failed", e));
   }
 
   public List<EventStep> findEventSteps(UUID eventId) {
-    Objects.requireNonNull(eventId, "eventId");
     return access.inReadOnlyTransaction(
         db ->
             db.list(
@@ -355,8 +371,8 @@ public final class AdminStore {
                 "Reading the steps of bikesched event " + eventId + " failed", e));
   }
 
-  public List<WaitingStep> findWaitingSteps(String eventName, String keyPrefix, int limit) {
-    Objects.requireNonNull(eventName, "eventName");
+  public List<WaitingStep> findWaitingSteps(
+      String eventName, @Nullable String keyPrefix, int limit) {
     var prefix =
         Sql.typed(keyPrefix == null || keyPrefix.isEmpty() ? null : keyPrefix, Types.VARCHAR);
     return access.inReadOnlyTransaction(
@@ -380,16 +396,32 @@ public final class AdminStore {
   }
 
   public List<NodeInfo> findNodes(Duration nodeTimeout) {
-    Objects.requireNonNull(nodeTimeout, "nodeTimeout");
     return access.inReadOnlyTransaction(
         db ->
             db.list(
-                FIND_NODES_SQL,
-                row ->
-                    new NodeInfo(
-                        row.uuid(1), row.string(2), row.instant(3), row.instant(4), row.bool(5)),
+                FIND_NODES_SQL.formatted("order by n.name"),
+                AdminStore::nodeInfo,
                 Sql.seconds(nodeTimeout)),
         e -> new BikeschedException("Reading the bikesched nodes failed", e));
+  }
+
+  public Optional<NodeInfo> findNode(UUID nodeId, Duration nodeTimeout) {
+    return access.inReadOnlyTransaction(
+        db ->
+            db
+                .list(
+                    FIND_NODES_SQL.formatted("where n.id = ?"),
+                    AdminStore::nodeInfo,
+                    Sql.seconds(nodeTimeout),
+                    nodeId)
+                .stream()
+                .findFirst(),
+        e -> new BikeschedException("Reading bikesched node " + nodeId + " failed", e));
+  }
+
+  private static NodeInfo nodeInfo(Sql.Row row) throws SQLException {
+    return new NodeInfo(
+        row.uuid(1), row.string(2), row.instant(3), row.instant(4), row.bool(5), row.integer(6));
   }
 
   /** The conditions joined with {@code and}, after {@code prefix}; empty without conditions. */

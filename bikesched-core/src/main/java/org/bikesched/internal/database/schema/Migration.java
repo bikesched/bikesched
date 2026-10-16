@@ -8,7 +8,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.Objects;
 
 /**
  * A single versioned SQL migration loaded from the classpath.
@@ -23,8 +22,6 @@ record Migration(int version, String description, String resource) {
     if (version < 1) {
       throw new IllegalArgumentException("version must be >= 1: " + version);
     }
-    Objects.requireNonNull(description, "description");
-    Objects.requireNonNull(resource, "resource");
   }
 
   /** Loads the script; line endings are normalized so checksums are platform independent. */

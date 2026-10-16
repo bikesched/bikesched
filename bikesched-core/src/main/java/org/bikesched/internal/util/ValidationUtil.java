@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.util;
 
+import java.time.Duration;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Validates the names and keys stored in {@code text} columns: node names, job types, step names,
@@ -56,18 +58,38 @@ public final class ValidationUtil {
   }
 
   /**
+   * Checks a duration that must be positive: a timeout, delay, interval or sleep.
+   *
+   * @param duration the duration to check
+   * @param what what the duration is, for the messages, e.g. {@code "timeout"}
+   * @return the duration
+   * @throws NullPointerException if the duration is null
+   * @throws IllegalArgumentException if the duration is zero or negative
+   */
+  public static Duration requirePositive(Duration duration, String what) {
+    Objects.requireNonNull(duration, what);
+    if (duration.isNegative() || duration.isZero()) {
+      throw new IllegalArgumentException(what + " must be positive: " + duration);
+    }
+    return duration;
+  }
+
+  /**
    * Shortens a message to at most {@link #MAX_MESSAGE_LENGTH} characters, ending in {@code "…
    * (truncated)"} if it was longer.
    *
    * @param message the message, may be {@code null}
+   * @param <S> {@code String} or {@code @Nullable String}: the result is {@code null} only for
+   *     {@code null}
    * @return the message, shortened if needed; {@code null} for {@code null}
    */
-  public static String truncateMessage(String message) {
+  @SuppressWarnings("unchecked") // S can only be String: the shortened message is an S
+  public static <S extends @Nullable String> S truncateMessage(S message) {
     if (message == null || message.codePointCount(0, message.length()) <= MAX_MESSAGE_LENGTH) {
       return message;
     }
     int keep = MAX_MESSAGE_LENGTH - TRUNCATED.length();
-    return message.substring(0, message.offsetByCodePoints(0, keep)) + TRUNCATED;
+    return (S) (message.substring(0, message.offsetByCodePoints(0, keep)) + TRUNCATED);
   }
 
   private static String require(String value, String what, int maxLength) {

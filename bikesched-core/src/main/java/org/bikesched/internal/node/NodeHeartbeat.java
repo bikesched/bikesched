@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.node;
 
-import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.event.EventCleanUp;
@@ -30,9 +29,9 @@ public final class NodeHeartbeat {
    * @param nodeName its name, for logging
    */
   public NodeHeartbeat(Database database, UUID nodeId, String nodeName) {
-    this.database = Objects.requireNonNull(database, "database");
-    this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
+    this.database = database;
+    this.nodeId = nodeId;
+    this.nodeName = nodeName;
   }
 
   /**

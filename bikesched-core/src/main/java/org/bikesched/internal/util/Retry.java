@@ -2,7 +2,6 @@
 package org.bikesched.internal.util;
 
 import java.time.Duration;
-import java.util.Objects;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,13 +28,14 @@ public final class Retry {
   }
 
   /**
+   * Creates a retry.
+   *
    * @param attempts how often the call is made at most
    * @param delay how long to wait between two attempts
    * @return the retry
    * @throws IllegalArgumentException if there is less than one attempt or the delay is negative
    */
   public static Retry of(int attempts, Duration delay) {
-    Objects.requireNonNull(delay, "delay");
     if (attempts < 1) {
       throw new IllegalArgumentException("attempts must be at least 1, but was " + attempts);
     }

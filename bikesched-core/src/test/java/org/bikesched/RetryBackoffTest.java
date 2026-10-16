@@ -30,7 +30,7 @@ class RetryBackoffTest {
     for (int attempt = 1; attempt <= maxSeconds.length; attempt++) {
       Duration max = Duration.ofSeconds(maxSeconds[attempt - 1]);
       int failedAttempt = attempt;
-      assertThat(IntStream.range(0, 100).mapToObj(_ -> backoff.delay(failedAttempt)))
+      assertThat(IntStream.range(0, 100).mapToObj(ignored -> backoff.delay(failedAttempt)))
           .allSatisfy(delay -> assertThat(delay).isBetween(max.dividedBy(2), max))
           .as("jittered")
           .doesNotHaveDuplicates();

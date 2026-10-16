@@ -1,6 +1,6 @@
 ---
 title: "Recurring jobs"
-weight: 4
+weight: 1
 ---
 
 # Recurring jobs

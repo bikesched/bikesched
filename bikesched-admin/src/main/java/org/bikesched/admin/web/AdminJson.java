@@ -101,6 +101,7 @@ final class AdminJson {
         .put("name", node.name())
         .put("startedAt", node.startedAt())
         .put("lastHeartbeatAt", node.lastHeartbeatAt())
-        .put("alive", node.alive());
+        .put("alive", node.alive())
+        .put("runningJobs", node.runningJobs());
   }
 }

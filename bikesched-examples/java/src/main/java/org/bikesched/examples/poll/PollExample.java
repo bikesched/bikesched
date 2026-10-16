@@ -145,7 +145,7 @@ public final class PollExample {
                   : job.newPoll("poll-payment", PaymentSettled.class, POLL_INTERVAL)
                       .timeout(Duration.ofSeconds(30))
                       .run(
-                          _ ->
+                          ignored ->
                               provider
                                   .status(paymentId)
                                   .map(Poll::ready)
@@ -155,7 +155,7 @@ public final class PollExample {
           job.step(
               "mark-paid",
               Void.class,
-              _ -> {
+              ignored -> {
                 out.printf(
                     "%s [shop]     order %s paid (%s, %s)%n",
                     timestamp(),

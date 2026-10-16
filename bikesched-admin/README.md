@@ -2,14 +2,17 @@
 
 A small admin page and JSON API for a bikesched database, embedded in the application that runs
 bikesched: no separate service, no build step, no dependencies beyond `bikesched-core`. User
-documentation: [Admin UI](../docs/admin.md). Design: [spec](../docs/specs/admin-ui.md).
+documentation: [Admin UI](../docs/operations/admin.md). Design: [spec](../docs/specs/admin-ui.md),
+[publishing events](../docs/specs/admin-publish-events.md), [nodes](../docs/specs/admin-nodes.md),
+[scheduling jobs](../docs/specs/admin-schedule-jobs.md).
 
 ## Scope
 
 - Shows jobs by type and state, a job with its steps, history, child jobs, last error and
   (optionally) payload and result, events with who published, received or waits for them, and the
   nodes with their heartbeat.
-- Two actions: retry a failed job and cancel an active one. Nothing else writes.
+- Four actions: retry a failed job, cancel an active one, schedule a job and publish an event.
+  Nothing else writes.
 - Reads only through `bikesched.admin()` (package `org.bikesched.admin` in core), read-only lookups
   that never return payloads in lists. The serving node does not need to poll.
 
@@ -35,21 +38,22 @@ server.createContext("/bikesched", BikeschedAdmin.of(bikesched).httpHandler());
 ## Access and authentication
 
 Everything about access is in the package `org.bikesched.admin.web.access`. `AdminAccess` decides
-per request: `NONE`, `VIEW` (the page and every `GET`) or `OPERATE` (also retry and cancel).
+per request: `NONE`, `VIEW` (the page and every `GET`) or `OPERATE` (also retry, cancel and
+publish).
 
 - `AdminAccess.open()` is the default and lets everyone operate. Protect the path in the
   application (Spring Security, a reverse proxy) or configure one of the options below.
 - `AdminAccess.basicAuth()` is built in: operators and viewers with passwords, kept as SHA-256
-  digests and compared in constant time. Missing credentials get `401` with a challenge, a
-  viewer's retry or cancel gets `403`. Serve it over HTTPS; on a plain `HttpServer` a warning is
+  digests and compared in constant time. Missing credentials get `401` with a challenge, a viewer's
+  retry, cancel or publish gets `403`. Serve it over HTTPS; on a plain `HttpServer` a warning is
   logged once.
 - Any other scheme is a custom `AdminAccess`, e.g. trusting a header set by an authenticating
   proxy.
 - `readOnly(true)` caps every level at `VIEW`.
 
-Independent of access: retry and cancel are `POST`s that need the header `X-Bikesched-Admin: 1`
-(blocks cross-site requests from a signed-in browser), and every response sets a strict
-Content-Security-Policy (own files only, no inline scripts or styles) and `nosniff`.
+Independent of access: retry, cancel and publish are `POST`s that need the header
+`X-Bikesched-Admin: 1` (blocks cross-site requests from a signed-in browser), and every response
+sets a strict Content-Security-Policy (own files only, no inline scripts or styles) and `nosniff`.
 
 ## Payloads
 
@@ -62,7 +66,7 @@ response contains them.
 | Path (`src/main/…`) | Contents |
 |---|---|
 | `java/…/BikeschedAdmin` | entry point and options |
-| `java/…/AdminHandler` | access check, routing, JSON responses, retry and cancel, ETags and security headers |
+| `java/…/AdminHandler` | access check, routing, JSON responses, retry, cancel and publish, ETags and security headers |
 | `java/…/StaticFiles` | loads the files of `ui/` from the jar with their content types |
 | `java/…/AdminRequest`, `AdminResponse` | the framework-neutral request and response |
 | `java/…/ExchangeHandler` | the adapter to `com.sun.net.httpserver` |
@@ -71,6 +75,9 @@ response contains them.
 | `java/…/Json` | a minimal JSON writer, so no JSON library is needed |
 | `resources/…/ui/index.html`, `app.js` | the shell, header with the Jobs and Events tabs, and hash routing |
 | `resources/…/ui/jobs.js`, `events.js` | the job and event lists and details |
+| `resources/…/ui/schedule.js` | the form that schedules a job |
+| `resources/…/ui/publish.js` | the form that publishes an event |
+| `resources/…/ui/nodes.js` | the node list and the live node detail |
 | `resources/…/ui/api.js`, `format.js`, `picker.js`, `html.js` | fetch helpers, formatting, the searchable select, Preact and htm setup |
 | `resources/…/ui/admin.css` | all styles, light and dark |
 

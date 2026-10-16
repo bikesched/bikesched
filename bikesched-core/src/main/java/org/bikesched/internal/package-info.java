@@ -4,4 +4,7 @@
  * and node clean-up. Jobs, events and database access live in the subpackages {@code job}, {@code
  * event} and {@code database}. Not exported by the module; not part of the API.
  */
+@NullMarked
 package org.bikesched.internal;
+
+import org.jspecify.annotations.NullMarked;

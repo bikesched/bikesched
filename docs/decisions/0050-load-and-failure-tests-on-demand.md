@@ -1,9 +1,9 @@
 ---
-title: "43. Load and failure tests in their own module, run on demand"
-weight: 43
+title: "50. Load and failure tests in their own module, run on demand"
+weight: 50
 ---
 
-# 43. Load and failure tests in their own module, run on demand
+# 50. Load and failure tests in their own module, run on demand
 
 Date: 2026-10-13
 

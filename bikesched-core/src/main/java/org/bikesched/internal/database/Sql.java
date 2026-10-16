@@ -19,6 +19,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Statement helpers on a connection: the only place in the stores that prepares statements and
@@ -56,7 +58,7 @@ public final class Sql {
    * @param queryTimeoutSeconds the JDBC query timeout of every statement in seconds, 0 for none
    */
   public Sql(Connection connection, int queryTimeoutSeconds) {
-    this.connection = Objects.requireNonNull(connection, "connection");
+    this.connection = connection;
     if (queryTimeoutSeconds < 0) {
       throw new IllegalArgumentException("queryTimeoutSeconds must not be negative");
     }
@@ -70,7 +72,7 @@ public final class Sql {
    * @param type the job type
    */
   public void dueNow(String type) {
-    dueNow.add(Objects.requireNonNull(type, "type"));
+    dueNow.add(type);
   }
 
   /**
@@ -81,8 +83,7 @@ public final class Sql {
    * @param at when it is due
    */
   public void dueAt(String type, Instant at) {
-    Objects.requireNonNull(at, "at");
-    dueAt.merge(Objects.requireNonNull(type, "type"), at, (a, b) -> a.isBefore(b) ? a : b);
+    dueAt.merge(type, at, (a, b) -> a.isBefore(b) ? a : b);
   }
 
   /**
@@ -112,7 +113,7 @@ public final class Sql {
 
   /** Work on an {@link Sql}; any {@link SQLException} is wrapped by the caller of the work. */
   @FunctionalInterface
-  public interface Work<T> {
+  public interface Work<T extends @Nullable Object> {
     T run(Sql sql) throws SQLException;
   }
 
@@ -129,7 +130,7 @@ public final class Sql {
    * @return the mapped first row, empty if the query returns no row
    * @throws NullPointerException if the mapper returns {@code null}
    */
-  public <T> Optional<T> one(String sql, RowMapper<T> mapper, Object... parameters)
+  public <T> Optional<T> one(String sql, RowMapper<T> mapper, @Nullable Object... parameters)
       throws SQLException {
     try (PreparedStatement statement = prepare(sql, parameters);
         ResultSet rs = statement.executeQuery()) {
@@ -144,7 +145,7 @@ public final class Sql {
   }
 
   /** Runs a query and maps all rows, in result order. */
-  public <T> List<T> list(String sql, RowMapper<T> mapper, Object... parameters)
+  public <T> List<T> list(String sql, RowMapper<T> mapper, @Nullable Object... parameters)
       throws SQLException {
     try (PreparedStatement statement = prepare(sql, parameters);
         ResultSet rs = statement.executeQuery()) {
@@ -162,20 +163,20 @@ public final class Sql {
    *
    * @return the number of affected rows
    */
-  public int update(String sql, Object... parameters) throws SQLException {
+  public int update(String sql, @Nullable Object... parameters) throws SQLException {
     try (PreparedStatement statement = prepare(sql, parameters)) {
       return statement.executeUpdate();
     }
   }
 
   /** Runs a statement for its side effect only, e.g. {@code select pg_advisory_xact_lock(...)}. */
-  public void execute(String sql, Object... parameters) throws SQLException {
+  public void execute(String sql, @Nullable Object... parameters) throws SQLException {
     try (PreparedStatement statement = prepare(sql, parameters)) {
       statement.execute();
     }
   }
 
-  private PreparedStatement prepare(String sql, Object[] parameters) throws SQLException {
+  private PreparedStatement prepare(String sql, @Nullable Object[] parameters) throws SQLException {
     PreparedStatement statement = connection.prepareStatement(sql);
     try {
       if (queryTimeoutSeconds > 0) {
@@ -203,10 +204,10 @@ public final class Sql {
    * @param value the value, may be {@code null}
    * @param sqlType the {@link Types} constant
    */
-  public record Typed(Object value, int sqlType) {}
+  public record Typed(@Nullable Object value, int sqlType) {}
 
   /** A nullable parameter with an explicit SQL type, see {@link Types}. */
-  public static Typed typed(Object value, int sqlType) {
+  public static Typed typed(@Nullable Object value, int sqlType) {
     return new Typed(value, sqlType);
   }
 
@@ -216,21 +217,23 @@ public final class Sql {
    * @param type the PostgreSQL element type, e.g. {@code uuid} or {@code text}
    * @param values the elements, may contain {@code null}s
    */
-  public record Array(String type, Object[] values) {}
+  // Only handed to JDBC, never compared: the array's identity semantics do not matter.
+  @SuppressWarnings("ArrayRecordComponent")
+  public record Array(String type, @Nullable Object[] values) {}
 
   /** An array parameter of the given PostgreSQL element type, see {@link Array}. */
-  public static Array array(String type, Object[] values) {
+  public static Array array(String type, @Nullable Object[] values) {
     return new Array(type, values);
   }
 
   /** A nullable {@code timestamptz} parameter. */
-  public static Typed timestamp(Instant instant) {
+  public static Typed timestamp(@Nullable Instant instant) {
     return typed(
         instant == null ? null : instant.atOffset(ZoneOffset.UTC), Types.TIMESTAMP_WITH_TIMEZONE);
   }
 
   /** A nullable duration as a {@code bigint} parameter in milliseconds. */
-  public static Typed millis(Duration duration) {
+  public static Typed millis(@Nullable Duration duration) {
     return typed(duration == null ? null : duration.toMillis(), Types.BIGINT);
   }
 
@@ -242,8 +245,13 @@ public final class Sql {
   /**
    * Typed, null-safe access to the current row of a result set; columns are 1-based.
    *
+   * <p>Whether a getter returns {@code null} depends on the column, which only the schema knows, so
+   * the getters are not null-marked: NOT NULL columns map into non-null fields, nullable columns
+   * into {@code @Nullable} ones.
+   *
    * @param rs the result set, positioned on a row
    */
+  @NullUnmarked
   public record Row(ResultSet rs) {
 
     String string(int column) throws SQLException {
@@ -268,6 +276,15 @@ public final class Sql {
     Instant instant(int column) throws SQLException {
       OffsetDateTime time = rs.getObject(column, OffsetDateTime.class);
       return time == null ? null : time.toInstant();
+    }
+
+    /**
+     * A {@code text} column holding the name of an enum constant, {@code null} for SQL {@code
+     * null}.
+     */
+    <E extends Enum<E>> E enumValue(int column, Class<E> type) throws SQLException {
+      String name = rs.getString(column);
+      return name == null ? null : Enum.valueOf(type, name);
     }
 
     /** A {@code bigint} column holding milliseconds, {@code null} for SQL {@code null}. */

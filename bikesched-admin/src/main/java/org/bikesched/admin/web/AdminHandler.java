@@ -5,6 +5,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -32,6 +33,9 @@ import org.bikesched.admin.WaitingStep;
 import org.bikesched.admin.web.access.AccessGrant;
 import org.bikesched.admin.web.access.AccessLevel;
 import org.bikesched.admin.web.access.AdminAccess;
+import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.job.IdempotentJobBuilder;
+import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,6 +66,8 @@ final class AdminHandler {
   private static final Pattern JOB_ACTION = Pattern.compile("/api/jobs/([^/]+)/(retry|cancel)");
 
   private static final Pattern EVENT = Pattern.compile("/api/events/([^/]+)");
+
+  private static final Pattern NODE = Pattern.compile("/api/nodes/([^/]+)");
 
   private final Bikesched bikesched;
 
@@ -146,7 +152,12 @@ final class AdminHandler {
                   .put(
                       "names",
                       admin.findEventNames().stream()
-                          .map(n -> Json.object().put("name", n.name()).put("count", n.count()))
+                          .map(
+                              n ->
+                                  Json.object()
+                                      .put("name", n.name())
+                                      .put("count", n.count())
+                                      .put("waiting", n.waiting()))
                           .toList());
           case "/api/waiting" -> waiting(admin, params);
           case "/api/recurring-runs" -> recurringRuns(admin, params);
@@ -157,10 +168,17 @@ final class AdminHandler {
     if (body == null) {
       Matcher job = JOB.matcher(path);
       Matcher event = EVENT.matcher(path);
+      Matcher node = NODE.matcher(path);
       if (job.matches()) {
         body = job(admin, id(job.group(1))).orElse(null);
       } else if (event.matches()) {
         body = event(admin, id(event.group(1))).orElse(null);
+      } else if (node.matches()) {
+        body =
+            admin
+                .findNode(id(node.group(1)))
+                .map(n -> Json.object().put("node", AdminJson.node(n)))
+                .orElse(null);
       } else if (JOB_ACTION.matcher(path).matches()) {
         return error(405, "Method not allowed", Map.of("Allow", "POST"));
       }
@@ -173,7 +191,9 @@ final class AdminHandler {
 
   private AdminResponse post(AdminRequest request, String user, AccessLevel level) {
     Matcher action = JOB_ACTION.matcher(request.path());
-    if (!action.matches()) {
+    boolean publish = request.path().equals("/api/events");
+    boolean schedule = request.path().equals("/api/jobs");
+    if (!action.matches() && !publish && !schedule) {
       boolean known = request.path().startsWith("/api/") || request.path().equals("/");
       return known
           ? error(405, "Method not allowed", Map.of("Allow", "GET"))
@@ -184,10 +204,22 @@ final class AdminHandler {
     }
     if (!level.allows(AccessLevel.OPERATE)) {
       return error(
-          403, readOnly ? "The admin is read-only" : "Viewers cannot change jobs", Map.of());
+          403,
+          readOnly
+              ? "The admin is read-only"
+              : publish
+                  ? "Viewers cannot publish events"
+                  : schedule ? "Viewers cannot schedule jobs" : "Viewers cannot change jobs",
+          Map.of());
+    }
+    String by = user == null ? "" : " by " + user;
+    if (publish) {
+      return publish(request, by);
+    }
+    if (schedule) {
+      return schedule(request, by);
     }
     UUID jobId = id(action.group(1));
-    String by = user == null ? "" : " by " + user;
     if (action.group(2).equals("retry")) {
       boolean retried = bikesched.retry(jobId);
       if (retried) {
@@ -202,16 +234,127 @@ final class AdminHandler {
     return json(request, 200, Json.object().put("cancelled", cancelled));
   }
 
+  /**
+   * Publishes an event from the form-encoded body: {@code name}, {@code key}, {@code payload} (JSON
+   * text), {@code retention} (ISO-8601) and {@code idempotencyKey}, empty ones left out.
+   */
+  private AdminResponse publish(AdminRequest request, String by) {
+    Map<String, String> form = parseQuery(request.body());
+    String name = blankToNull(form.get("name"));
+    String key = blankToNull(form.get("key"));
+    if (name == null || key == null) {
+      throw new BadRequest("An event needs a name and a key");
+    }
+    String payload = blankToNull(form.get("payload"));
+    if (payload != null) {
+      String invalid = Json.invalidReason(payload);
+      if (invalid != null) {
+        throw new BadRequest("The payload is not valid JSON: " + invalid);
+      }
+    }
+    NodeEventBuilder<Object> event = bikesched.newEvent(name, key).payloadJson(payload);
+    String retention = blankToNull(form.get("retention"));
+    if (retention != null) {
+      try {
+        event.retention(Duration.parse(retention));
+      } catch (DateTimeParseException e) {
+        throw new BadRequest("Malformed retention: " + retention);
+      }
+    }
+    String idempotencyKey = blankToNull(form.get("idempotencyKey"));
+    if (idempotencyKey != null) {
+      event.idempotencyKey(idempotencyKey);
+    }
+    UUID eventId = event.publish();
+    // Waiting steps receive the event as it is published, so they are counted right away.
+    int received = bikesched.admin().findEvent(eventId).map(EventSummary::receivedBy).orElse(0);
+    LOG.info(
+        "Event {} ({} / {}) published from the admin UI{}, received by {}",
+        eventId,
+        name,
+        key,
+        by,
+        received);
+    return json(request, 200, Json.object().put("id", eventId).put("received", received));
+  }
+
+  /**
+   * Schedules a one-off job from the form-encoded body: {@code type}, {@code payload} (JSON text),
+   * {@code delay} (ISO-8601 duration) or {@code at} (ISO-8601 instant), {@code priority}, {@code
+   * maxAttempts}, {@code timeout} (ISO-8601 duration) and {@code idempotencyKey}, empty ones left
+   * out. Answers the job's id and whether it is new: a job of the type with the idempotency key is
+   * returned instead of a new one.
+   */
+  private AdminResponse schedule(AdminRequest request, String by) {
+    Map<String, String> form = parseQuery(request.body());
+    String type = blankToNull(form.get("type"));
+    if (type == null) {
+      throw new BadRequest("A job needs a type");
+    }
+    String payload = blankToNull(form.get("payload"));
+    if (payload != null) {
+      String invalid = Json.invalidReason(payload);
+      if (invalid != null) {
+        throw new BadRequest("The payload is not valid JSON: " + invalid);
+      }
+    }
+    String delay = blankToNull(form.get("delay"));
+    String at = blankToNull(form.get("at"));
+    if (delay != null && at != null) {
+      throw new BadRequest("A job is scheduled either after a delay or at a time, not both");
+    }
+    JobBuilder<Object> job = bikesched.newJob(type).payloadJson(payload);
+    String priority = blankToNull(form.get("priority"));
+    if (priority != null) {
+      job.priority(integer("priority", priority));
+    }
+    String maxAttempts = blankToNull(form.get("maxAttempts"));
+    if (maxAttempts != null) {
+      job.maxAttempts(integer("maxAttempts", maxAttempts));
+    }
+    String timeout = blankToNull(form.get("timeout"));
+    if (timeout != null) {
+      job.timeout(duration("timeout", timeout));
+    }
+    String idempotencyKey = blankToNull(form.get("idempotencyKey"));
+    if (idempotencyKey != null) {
+      Optional<JobSummary> existing = bikesched.admin().findJob(type, idempotencyKey);
+      if (existing.isPresent()) {
+        return json(
+            request, 200, Json.object().put("id", existing.get().id()).put("created", false));
+      }
+    }
+    UUID jobId;
+    if (idempotencyKey != null) {
+      IdempotentJobBuilder<Object> keyed = job.idempotencyKey(idempotencyKey);
+      jobId =
+          delay != null
+              ? keyed.schedule(duration("delay", delay))
+              : at != null ? keyed.schedule(instant("at", at)) : keyed.schedule();
+    } else {
+      jobId =
+          delay != null
+              ? job.schedule(duration("delay", delay))
+              : at != null ? job.schedule(instant("at", at)) : job.schedule();
+    }
+    LOG.info("Job {} ({}) scheduled from the admin UI{}", jobId, type, by);
+    return json(request, 200, Json.object().put("id", jobId).put("created", true));
+  }
+
   private Json.Obj jobs(Admin admin, Map<String, String> params) {
     int limit = limit(params);
-    String idPrefix = idPrefix(params, "type", "state");
+    String idPrefix = idPrefix(params, "type", "state", "node");
     if (idPrefix != null) {
       List<JobSummary> jobs = byIdPrefix(() -> admin.findJobsByIdPrefix(idPrefix, limit));
       return Json.object()
           .put("jobs", jobs.stream().map(AdminJson::job).toList())
           .put("next", null);
     }
-    JobQuery query = JobQuery.newest(limit).withType(blankToNull(params.get("type")));
+    String node = blankToNull(params.get("node"));
+    JobQuery query =
+        JobQuery.newest(limit)
+            .withType(blankToNull(params.get("type")))
+            .withNode(node == null ? null : id(node));
     String states = params.get("state");
     if (states != null && !states.isBlank()) {
       Set<JobState> set = EnumSet.noneOf(JobState.class);
@@ -226,7 +369,9 @@ final class AdminHandler {
     }
     Cursor before = Cursor.parse(params.get("before"));
     if (before != null) {
-      query = new JobQuery(query.type(), query.states(), before.time(), before.id(), limit);
+      query =
+          new JobQuery(
+              query.type(), query.states(), query.nodeId(), before.time(), before.id(), limit);
     }
     List<JobSummary> jobs = admin.findJobs(query);
     String next = null;
@@ -247,7 +392,8 @@ final class AdminHandler {
                   .put("type", type.type())
                   .put("total", type.total())
                   .put("counts", counts)
-                  .put("recurrence", type.recurrence());
+                  .put("recurrence", type.recurrence())
+                  .put("handled", type.handled());
             })
         .toList();
   }
@@ -515,6 +661,30 @@ final class AdminHandler {
       return UUID.fromString(value);
     } catch (IllegalArgumentException e) {
       throw new BadRequest("Malformed id: " + value);
+    }
+  }
+
+  private static int integer(String name, String value) {
+    try {
+      return Integer.parseInt(value.trim());
+    } catch (NumberFormatException e) {
+      throw new BadRequest("Malformed " + name + ": " + value);
+    }
+  }
+
+  private static Duration duration(String name, String value) {
+    try {
+      return Duration.parse(value.trim());
+    } catch (DateTimeParseException e) {
+      throw new BadRequest("Malformed " + name + ": " + value);
+    }
+  }
+
+  private static Instant instant(String name, String value) {
+    try {
+      return Instant.parse(value.trim());
+    } catch (DateTimeParseException e) {
+      throw new BadRequest("Malformed " + name + ": " + value);
     }
   }
 

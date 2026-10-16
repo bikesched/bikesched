@@ -42,7 +42,7 @@ class StatementTimeoutTest extends AbstractStoreTest {
 
   private static Optional<Integer> sleep(DatabaseAccess access, double seconds) {
     return access.withConnection(
-        db -> db.one("select 1 from pg_sleep(?)", _ -> 1, seconds),
+        db -> db.one("select 1 from pg_sleep(?)", ignored -> 1, seconds),
         e -> new BikeschedException("sleeping failed", e));
   }
 }

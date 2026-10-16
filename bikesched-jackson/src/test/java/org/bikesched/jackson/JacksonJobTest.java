@@ -59,7 +59,7 @@ class JacksonJobTest {
                 job.step(
                     "create-receipt",
                     Receipt.class,
-                    _ -> new Receipt(order.id(), payment.reference()));
+                    ignored -> new Receipt(order.id(), payment.reference()));
             receipt.complete(stored);
           });
 
@@ -82,6 +82,34 @@ class JacksonJobTest {
         .isEqualTo("{\"id\": \"o-1\", \"amount\": 100}");
     assertThat(query("select result::text from bikesched_steps where name = 'create-receipt'"))
         .isEqualTo("{\"orderId\": \"o-1\", \"reference\": \"pay-7\"}");
+  }
+
+  @Test
+  void payloadJsonBypassesTheMapper() throws Exception {
+    var payment = new CompletableFuture<Payment>();
+    try (Bikesched bikesched =
+        BikeschedTest.testNode(DATA_SOURCE, "jackson-json")
+            .jsonMapper(new JacksonJsonMapper())
+            .build()) {
+      bikesched.registerJobHandler(
+          "await-json",
+          job ->
+              payment.complete(
+                  job.waitForEvent("await", "paid-json", "o-2", Payment.class).receive()));
+      UUID jobId = bikesched.newJob("await-json").schedule();
+      BikeschedTest.awaitJob(bikesched, jobId)
+          .timeout(Duration.ofSeconds(15))
+          .untilState(JobState.WAITING);
+
+      // payload("{...}") would store a JSON string; payloadJson stores the object it contains.
+      bikesched
+          .newEvent("paid-json", "o-2")
+          .payloadJson("{\"orderId\": \"o-2\", \"amount\": 5, \"reference\": \"pay-8\"}")
+          .publish();
+
+      assertThat(payment.get(15, TimeUnit.SECONDS)).isEqualTo(new Payment("o-2", 5, "pay-8"));
+      BikeschedTest.awaitJob(bikesched, jobId).timeout(Duration.ofSeconds(15)).untilSucceeded();
+    }
   }
 
   private static String query(String sql) throws Exception {

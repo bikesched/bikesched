@@ -1,19 +1,28 @@
 # AGENTS.md
 
 Guidance for coding agents (and humans) working on bikesched: a PostgreSQL-backed job scheduler
-library for Java 26 with a Kotlin companion module. Read `README.md` and `docs/` for what the library
-does; this file covers how to change it.
+library for Java 21 and later with a Kotlin companion module. Read `README.md` and `docs/` for
+what the library does; this file covers how to change it.
 
 ## Build and run
 
 - Java 26 toolchain (Gradle provisions it if missing), Docker for the tests (Testcontainers,
   `postgres:18`). Gradle wrapper only: `./gradlew build`.
+- The language baseline is Java 21 (`java-release` in the version catalog, ADR 0049): Java is
+  compiled with `--release 21`, Kotlin with `jvmTarget` 21 and `-Xjdk-release=21`, so features and
+  JDK APIs newer than 21 fail the build. That rules out unnamed variables (`_`): name unused
+  lambda parameters, patterns and catch variables `ignored`, give block-scoping resources a
+  descriptive name (`logContext`, `mdc`), and split `case A _, B _` labels into one case each.
+  `-PtestJavaVersion=21` runs the tests on JDK 21, as CI does.
 - Formatting is enforced by Spotless in `check`: run `./gradlew spotlessApply` after editing,
   before `build`. Java uses google-java-format (2-space indent, 100 columns), Kotlin ktfmt in
   Google style. Write new code in that style so patches match.
 - Compiler settings fail on warnings: Java `-Xlint:all -Werror`, Kotlin `allWarningsAsErrors` and
   explicit API mode (`public` and return types on every public declaration). Javadoc runs with
   `-Werror` too; also check the build log for warnings, not only failures.
+- `bikesched-core` compiles with Error Prone and NullAway (convention plugin
+  `bikesched.errorprone`, ADR 0048): NullAway findings are errors, Error Prone warnings fail the
+  build through `-Werror`. Test sources are not checked.
 - Local database: `docker compose up -d` (prefix `POSTGRES_PORT=5433` if 5432 is taken), then
   run an example, e.g. `./gradlew :bikesched-examples:java:runSimple`.
 - Source files start with `// SPDX-License-Identifier: Apache-2.0`; Spotless adds it (and
@@ -22,11 +31,13 @@ does; this file covers how to change it.
 - Every version (libraries, Gradle plugins, Java, the project version) lives in
   `gradle/libs.versions.toml`; no version literals in `.kts` files. Use the latest stable releases.
 - CI: `.github/workflows/build.yml` runs `./gradlew build` on every pull request and push to
-  `main` (Temurin JDK, Docker for Testcontainers), except when only Markdown files and SVG images
-  changed (a `changes` job skips `build`, which still reports success for required checks); a separate job publishes snapshot versions of the
-  library modules to GitHub Packages after successful builds of `main` only (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin
-  `bikesched.publishing` with `maven-publish`). Keep its `java-version` in sync with `java` in the
-  version catalog.
+  `main` (Temurin JDK 26, tests on JDK 21, Docker for Testcontainers), except when only Markdown
+  files and SVG images changed (a `changes` job skips `build`, which still reports success for
+  required checks); a separate job publishes snapshot versions of the library modules to GitHub
+  Packages after successful builds of `main` only
+  (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin `bikesched.publishing`
+  with `maven-publish`). Keep its `java-version` list in sync with `java` and `java-release` in
+  the version catalog.
 
 ## Layout
 
@@ -38,12 +49,12 @@ does; this file covers how to change it.
 | `bikesched-annotations` | `@JobHandler` and `JobHandlers` (Java only, package `org.bikesched.annotation`): job handlers declared as annotated methods, invoked via `MethodHandle`; depends on core only (`api`; tests use bikesched-jackson) |
 | `bikesched-cron` | `CronRecurrence` and `CronRecurrenceParser` (Java only, package `org.bikesched.cron`): cron expressions parsed with cron-utils; depends on core and `cron-utils` only (both `api`, cron-utils is an automatic module; tests use bikesched-annotations) |
 | `bikesched-micrometer` | `MicrometerJobListener` and `MicrometerEventListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` and `EventListener` SPIs; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |
-| `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`JobTypeHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
-| `bikesched-admin` | the admin UI (Java only, package `org.bikesched.admin.web`): `BikeschedAdmin` serves a page and a JSON API through a framework-neutral `handle(AdminRequest)` and a JDK `com.sun.net.httpserver` adapter, `AdminAccess` in the subpackage `access` decides per request (open by default, built-in Basic authentication); the page is static files in `src/main/resources/org/bikesched/admin/web/ui/` (ES modules with Preact and htm, copied from their WebJars by the `vendorUi` task, no build step, CSP without inline scripts or styles); depends on core only (`api`); see `docs/admin.md` |
+| `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`JobTypeHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/integrations/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
+| `bikesched-admin` | the admin UI (Java only, package `org.bikesched.admin.web`): `BikeschedAdmin` serves a page and a JSON API through a framework-neutral `handle(AdminRequest)` and a JDK `com.sun.net.httpserver` adapter, `AdminAccess` in the subpackage `access` decides per request (open by default, built-in Basic authentication); the page is static files in `src/main/resources/org/bikesched/admin/web/ui/` (ES modules with Preact and htm, copied from their WebJars by the `vendorUi` task, no build step, CSP without inline scripts or styles); depends on core only (`api`); see `docs/operations/admin.md` |
 | `bikesched-examples` | runnable examples, described in its own `README.md`, in two submodules: `java` (plain Java examples, one package per scenario, each with a Testcontainers test using the shared `util.Database`; JSON via bikesched-jackson) and `spring` (the Spring Boot example as a regular Boot application with the Spring Boot Gradle plugin, `bootRun`) |
-| `bikesched-stress-tests` | load and failure tests (database restarts, cut-off nodes, hanging connections, throughput), not published; `build` compiles them, `./gradlew :bikesched-stress-tests:stressTest` runs them before a release, see its `README.md` and ADR 0043 |
-| `bikesched-website` | the project site at `bikesched.org`, generated with Hugo from `README.md` and `docs/` (Hugo module mounts, no content copy) and the Hextra theme (git submodule), described in its own `docs/specs/website-project-site.md` and [ADR 0035](docs/decisions/0035-website-hosted-on-static-app.md); built with `./gradlew :bikesched-website:hugoBuild`, deployed to static.app by `.github/workflows/website.yml` |
-| `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
+| `bikesched-stress-tests` | load and failure tests (database restarts, cut-off nodes, hanging connections, throughput), not published; `build` compiles them, `./gradlew :bikesched-stress-tests:stressTest` runs them before a release, see its `README.md` and ADR 0050 |
+| `bikesched-website` | the project site at `bikesched.org`, generated with Hugo from `README.md` and `docs/` (Hugo module mounts, no content copy) and the Hextra theme (git submodule), described in its own `docs/specs/website-project-site.md` and [ADR 0047](docs/decisions/0047-website-hosted-on-cloudflare-workers.md); built with `./gradlew :bikesched-website:hugoBuild`, deployed to the Cloudflare Worker `bikesched-website` (`bikesched-website/wrangler.jsonc`) by `.github/workflows/website.yml` |
+| `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library`, `bikesched.errorprone` |
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 
@@ -56,18 +67,20 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   records) for the admin UI and custom tooling; summaries never carry payloads or results.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
-  - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `DefaultAdmin`, `Settings`
+  - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `DefaultAdmin`, `Settings` (validated
+    by `BikeschedBuilder`)
   - `internal.json`: `RawJsonMapper` (the default mapper, passes JSON strings through)
   - `internal.node`: `DefaultNode` (the node's name, id and closed state), `NodeHeartbeat`,
     `NodeCleanUp` (releases jobs of dead nodes, removes them)
   - `internal.job`: job builders, `JobProcessor`/`DefaultJob` (execution, steps, compensation,
     event waits via `DefaultEventWait`, sleeps, polls via `DefaultPollBuilder`; `JobSuspended` with
-    its sealed `Suspension` ends an attempt at a wait, sleep or poll; `StepGuard` rejects nested steps), `JobScheduler` (stores
-    built jobs, registers and removes recurring jobs), `JobRegistry` (handlers,
-    recurring jobs and payload types of a node), `JobAttempt` (timeout timer), `HardTimeout` (abandons
-    attempts that ignore their timeout), `JobSlot`, `RecurringJob`, `RecurringJobRepair`,
-    `HistoryCleanUp`, `JobCleanUp`, `DueJobsNotifier` (tells the own poller and, batched, the other
-    nodes about jobs made due), `DueTimes` (the poller's wake-ups, implemented in `claim`)
+    its sealed `Suspension` ends an attempt at a wait, sleep or poll; `StepGuard` rejects nested
+    steps; `CompensationReplay` replays the handler of a job claimed to be compensated),
+    `JobLogContext` (MDC of a job's thread), `JobScheduler` (stores built jobs, registers and
+    removes recurring jobs), `JobRegistry` (handlers, recurring jobs and payload types of a node),
+    `JobAttempt` (timeout timer), `HardTimeout` (abandons attempts that ignore their timeout),
+    `JobSlot`, `RecurringJob`, `RecurringJobRepair`, `HistoryCleanUp`, `JobCleanUp`,
+    `DueJobsNotifier` (tells the own poller and, batched, the other nodes about jobs made due), `DueTimes` (the poller's wake-ups, implemented in `claim`)
   - `internal.job.claim`: `JobPoller` (claiming and running jobs: poller, job slots, job threads,
     timeouts, wake-ups; configured by `JobPollerSettings`), `WakeUpTimer` (one timer, confined to
     the poller thread), `JobNotificationListener` (`LISTEN` connection, reconnects, self-check);
@@ -75,11 +88,11 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   - `internal.event`: `DefaultEventBuilder`, `EventCleanUp`
   - `internal.util`: dependency-free helpers usable from the API and every implementation package
     (`ExecutorUtil`: shutting down executors; `ValidationUtil`: name and key checks matching the
-    schema's length constraints, message
-    truncation)
+    schema's length constraints, positive durations, message truncation)
   - `internal.database` (+ `.schema`): `Database`, `DatabaseAccess`, `Sql`, the stores and the rows
-    they read and write (`NewJob`, `DefaultJobInfo`), `DueJobs` (receives the jobs committed writes
-    made due), `DueJobsListening` (the listening connection)
+    they read and write (`NewJob`, `DefaultJobInfo`; a claimed job's `JobPhase` and `JobOrigin`,
+    `ClaimEnd` with its `FollowUp` for ending it, the `StepKind` and `StepState` enums), `DueJobs`
+    (receives the jobs committed writes made due), `DueJobsListening` (the listening connection)
 - The API packages reach the implementation only through the factories in `internal.Internals`
   (plus the `Settings` record the builder fills, and `internal.util`); public API signatures never mention internal
   types. `ArchitectureTest` (ArchUnit) enforces both rules and the package dependencies above.
@@ -121,11 +134,13 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `job.fail()`), except suspending at an event wait (internal `Error`, see `JobSuspended`).
 - New mechanisms are opt-in: jobs not using them behave exactly as before (no extra state, replay
   or round-trip).
-- Nullness: the exported core packages are `@NullMarked` (JSpecify, ADR 0041). Mark values that
-  may be `null` with `@Nullable` (type-use position: `@Nullable String`, `java.time.@Nullable
-  Duration`); type parameters of user values are `<T extends @Nullable Object>`, with
-  `@Nullable T` where `null` occurs for any `T` (no payload, a `null` step result). Lookups keep
-  returning `Optional`.
+- Nullness: every core package is `@NullMarked` (JSpecify, ADR 0041), checked by NullAway (ADR
+  0048). Mark values that may be `null` with `@Nullable` (type-use position: `@Nullable String`,
+  `java.time.@Nullable Duration`, `JobSuspended.@Nullable Suspension`); type parameters of user
+  values are `<T extends @Nullable Object>`, with `@Nullable T` where `null` occurs for any `T`
+  (no payload, a `null` step result). Lookups keep returning `Optional`. Internal code does not
+  `requireNonNull` what its types exclude; only API entry points check user arguments. Read a
+  nullable field once into a local before testing it, so NullAway can follow it.
 - Breaking API changes are fine while unreleased; rename across code, tests, examples, README and
   `docs/` in one go.
 
@@ -154,7 +169,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - New states go into the table's CHECK constraint. History rows are never deleted on state
   changes; they get a terminal state (`CANCELLED`, `COMPENSATED`) other code paths ignore.
 - A new table also goes into `SchemaMigratorTest` (drop list and expected tables) and the table list
-  in `docs/database.md`.
+  in `docs/operations/database.md`.
 - Changes of jobs and steps are recorded in the job history (optional): a store makes the change
   through `history.change(…)` (a transaction only if the history is enabled) and passes the
   changed rows to `history.record(db, …)` in the same transaction. New state changes do the same.
@@ -223,14 +238,23 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   listed in `docs/decisions/README.md`. Accepted ADRs are not rewritten: a changed decision gets a
   new ADR, and the old one's status becomes "Superseded by ADR NNNN".
 - `README.md` stays minimal: pitch, feature list, quick start, links into `docs/`, examples and
-  build instructions. Details go into `docs/`, one page per concept, linked from `docs/index.md`:
-  `jobs.md` (scheduling, handlers, `Job` method table, failures, cancellation, timeouts), `steps.md`
-  (steps, compensation), `recurring-jobs.md`, `events.md`, `configuration.md` (builder option
-  table, nodes, JSON mapping, logging), `kotlin.md` (extension tables), `database.md` (tables,
-  indexes, migrations), `patterns.md` (one section per problem: a short sketch, why it works, and
-  a link to the runnable example solving it; new examples solving a common problem get a pattern),
-  `changing-handlers.md` (what a job keeps across deploys, safe and unsafe handler changes; update
-  it when replay or what a step stores changes).
+  build instructions. Details go into `docs/`, one page per concept, linked from `docs/index.md`.
+  Pages are grouped into sections, one folder each with a `README.md` landing page (mounted as the
+  section's `_index.md` in `bikesched-website/site/hugo.toml`; a new section needs a mount there)
+  and a `weight` in every page's front matter for the sidebar order:
+  - `getting-started/`: `README.md` (requirements, Gradle and Maven setup, optional modules, a
+    first job), `configuration.md` (builder option table, nodes, JSON mapping, logging)
+  - top level: `patterns.md` (one section per problem: a short sketch, why it works, and a link
+    to the runnable example solving it; new examples solving a common problem get a pattern)
+  - `jobs/`: `README.md` (the Jobs page itself: scheduling, handlers, `Job` method table,
+    failures, cancellation, timeouts), `recurring-jobs.md`, `changing-handlers.md` (what a job
+    keeps across deploys, safe and unsafe handler changes; update it when replay or what a step
+    stores changes)
+  - `multi-step-jobs/`: `steps.md` (steps, sleeping, polling, compensation), `events.md`,
+    `child-jobs.md`
+  - `integrations/`: `spring.md`, `kotlin.md` (extension tables), `annotations.md`, `testing.md`
+  - `operations/`: `admin.md`, `metrics.md`, `database.md` (tables, indexes, migrations)
+  - `decisions/`: the ADRs (below)
 - Keep `docs/` in sync in the same change: samples, the builder option table (defaults checked
   against the code), the Kotlin tables and the database tables. Samples are not compiled, so check
   them against the API; check relative links and anchors after moving sections.

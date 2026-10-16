@@ -76,6 +76,15 @@ final class AdminServer implements AutoCloseable {
         HttpRequest.newBuilder(uri(path)).POST(HttpRequest.BodyPublishers.noBody()), headers);
   }
 
+  /** A POST with a form-encoded body, e.g. {@code name=a&key=b}. */
+  HttpResponse<String> postForm(String path, String form, String... headers) {
+    return send(
+        HttpRequest.newBuilder(uri(path))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .POST(HttpRequest.BodyPublishers.ofString(form)),
+        headers);
+  }
+
   HttpResponse<String> send(HttpRequest.Builder request, String... headers) {
     if (headers.length > 0) {
       request.headers(headers);

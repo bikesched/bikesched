@@ -6,6 +6,7 @@ import {
   Badge,
   IdSearch,
   IdSearchChip,
+  SortedTh,
   dateTime,
   duration,
   isFullId,
@@ -17,10 +18,17 @@ import {
 import { html, useEffect, useState } from './html.js';
 import { DetailHead, Payload } from './jobs.js';
 import { Picker } from './picker.js';
+import { PublishForm, takePublished } from './publish.js';
 
 const PAGE_SIZE = 50;
 
-export function EventsView({ route, navigate, names, reloadKey }) {
+// The route of the publish form is #/events/new; these parameters only prefill it.
+const PUBLISH_PARAMS = ['pubName', 'pubKey', 'from'];
+const listParams = (params) =>
+  Object.fromEntries(Object.entries(params).filter(([name]) => !PUBLISH_PARAMS.includes(name)));
+
+export function EventsView({ route, navigate, names, me, reloadKey, onPublished }) {
+  const canPublish = me?.level === 'OPERATE';
   // An id search (route.params.id) replaces the name and key filters.
   const id = route.params.id || '';
   const name = id ? '' : route.params.name || '';
@@ -31,11 +39,26 @@ export function EventsView({ route, navigate, names, reloadKey }) {
 
   const setParams = (params) => navigate({ ...route, params: { ...route.params, ...params } });
   const search = (text) => navigate({ section: 'events', id: null, params: text ? { id: text } : {} });
+  // Opens the form next to the published list, keeping its filters.
+  const publish = (prefill) =>
+    navigate({ section: 'events', id: 'new', params: { ...listParams(route.params), tab: '', ...prefill } });
+  const nameItems = names.map((entry) => ({
+    name: entry.name,
+    count: entry.count,
+    sub: entry.waiting > 0 ? `${plural(entry.waiting, 'job', 'jobs')} waiting` : undefined,
+  }));
 
   return html`
     <div class="view-head">
       <h1>${id ? `Event id ${id}` : name || 'All events'}</h1>
-      <span class="muted">Unexpired events, newest first</span>
+      <div class="row">
+        ${canPublish &&
+        html`<button type="button" class="button primary" onClick=${() => publish({})}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          Publish event
+        </button>`}
+      </div>
     </div>
     <div class="toolbar">
       <div class="field picker-field">
@@ -44,7 +67,7 @@ export function EventsView({ route, navigate, names, reloadKey }) {
           <span class="muted">${plural(names.length, 'event name', 'event names')}</span>
         </div>
         <${Picker} label="Event name" allLabel="All event names" placeholder="Search event names"
-          items=${names.map((entry) => ({ name: entry.name, count: entry.count }))} selected=${name || null}
+          items=${nameItems} selected=${name || null}
           onSelect=${(next) => navigate({ section: 'events', params: { name: next } })} />
       </div>
       <${IdSearch} kind="event" value=${id} onSearch=${search} />
@@ -74,12 +97,18 @@ export function EventsView({ route, navigate, names, reloadKey }) {
       </button>
     </div>`}
     ${tab === 'waiting'
-      ? html`<${WaitingJobs} name=${name} keyPrefix=${key} reloadKey=${reloadKey} />`
+      ? html`<${WaitingJobs} name=${name} keyPrefix=${key} reloadKey=${reloadKey}
+          onPublish=${canPublish ? (step) => publish({ pubName: step.eventName, pubKey: step.eventKey }) : null} />`
       : html`<${EventList} route=${route} navigate=${navigate} idPrefix=${id} name=${name} keyPrefix=${key}
-          reloadKey=${reloadKey} />`}`;
+          names=${names} me=${me} reloadKey=${reloadKey}
+          onPublishSimilar=${canPublish ? (eventId) => publish({ from: eventId }) : null}
+          onPublished=${(eventId) => {
+            navigate({ section: 'events', id: eventId, params: listParams(route.params) });
+            onPublished();
+          }} />`}`;
 }
 
-function EventList({ route, navigate, idPrefix, name, keyPrefix, reloadKey }) {
+function EventList({ route, navigate, idPrefix, name, keyPrefix, names, me, reloadKey, onPublishSimilar, onPublished }) {
   const [events, setEvents] = useState([]);
   const [next, setNext] = useState(null);
   const [error, setError] = useState(null);
@@ -124,7 +153,7 @@ function EventList({ route, navigate, idPrefix, name, keyPrefix, reloadKey }) {
         <div class="table-scroll">
           <table class="table">
             <thead>
-              <tr><th>Event</th><th>Name</th><th>Key</th><th>Published</th><th>Expires</th><th>Received by</th></tr>
+              <tr><th>Event</th><th>Name</th><th>Key</th><${SortedTh} label="Published" descending=${true} title="Newest first" /><th>Expires</th><th>Received by</th></tr>
             </thead>
             <tbody>
               ${events.map(
@@ -144,16 +173,30 @@ function EventList({ route, navigate, idPrefix, name, keyPrefix, reloadKey }) {
           ${!loading && events.length === 0 && html`<div class="empty">${empty}</div>`}
         </div>
         <div class="panel-foot">
-          <span>${loading ? 'Loading…' : plural(events.length, 'event', 'events') + ' shown'}</span>
+          <span>${loading ? 'Loading…' : plural(events.length, 'unexpired event', 'unexpired events') + ' shown'}</span>
           ${next && html`<button type="button" class="button" onClick=${() => load(next)}>Older events</button>`}
         </div>
       </section>
-      ${route.id &&
-      html`<${EventDetail} key=${route.id} eventId=${route.id} onClose=${() => navigate({ ...route, id: null })} />`}
+      ${route.id === 'new'
+        ? onPublishSimilar
+          ? html`<${PublishForm} key=${PUBLISH_PARAMS.map((p) => route.params[p] || '').join('/')}
+            names=${names} payloadsShown=${me.payloadsShown}
+            prefill=${{ from: route.params.from, name: route.params.pubName, key: route.params.pubKey }}
+            onClose=${() => navigate({ ...route, id: null, params: listParams(route.params) })}
+            onPublished=${onPublished} />`
+          : me &&
+            html`<aside class="panel detail" aria-label="Publish event">
+              <${DetailHead} title="Publish event" plain=${true} onClose=${() => navigate({ ...route, id: null, params: listParams(route.params) })} />
+              <p class="detail-body muted">Only operators can publish events.</p>
+            </aside>`
+        : route.id &&
+          html`<${EventDetail} key=${route.id} eventId=${route.id} onPublishSimilar=${onPublishSimilar}
+            onClose=${() => navigate({ ...route, id: null })} />`}
     </div>`;
 }
 
-function EventDetail({ eventId, onClose }) {
+function EventDetail({ eventId, onClose, onPublishSimilar }) {
+  const [published] = useState(() => takePublished(eventId));
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('jobs');
@@ -196,6 +239,15 @@ function EventDetail({ eventId, onClose }) {
       <dl class="meta">
         ${fields.map(([label, value]) => html`<div><dt>${label}</dt><dd class="mono" title=${value}>${value}</dd></div>`)}
       </dl>
+      ${published &&
+      html`<div class="notice notice-success" role="status">
+        Published <span class="mono strong">${shortId(published.id)}</span>.
+        ${published.received > 0 ? ` ${plural(published.received, 'job', 'jobs')} received it.` : ' No job was waiting for it.'}
+      </div>`}
+      ${onPublishSimilar &&
+      html`<div class="actions">
+        <button type="button" class="button" onClick=${() => onPublishSimilar(event.id)}>Publish similar</button>
+      </div>`}
       <div class="tabs" role="tablist" aria-label="Event detail sections">
         <button type="button" role="tab" class="tab" aria-selected=${tab === 'jobs'} onClick=${() => setTab('jobs')}>Jobs</button>
         <button type="button" role="tab" class="tab" aria-selected=${tab === 'payload'} onClick=${() => setTab('payload')}>Payload</button>
@@ -217,7 +269,7 @@ function EventDetail({ eventId, onClose }) {
     </aside>`;
 }
 
-function WaitingJobs({ name, keyPrefix, reloadKey }) {
+function WaitingJobs({ name, keyPrefix, reloadKey, onPublish }) {
   const [steps, setSteps] = useState(null);
   const [error, setError] = useState(null);
 
@@ -238,7 +290,7 @@ function WaitingJobs({ name, keyPrefix, reloadKey }) {
       <div class="table-scroll">
         <table class="table">
           <thead>
-            <tr><th>Job</th><th>Type</th><th>Step</th><th>Key</th><th>Waiting since</th><th>Timeout</th></tr>
+            <tr><th>Job</th><th>Type</th><th>Step</th><th>Key</th><${SortedTh} label="Waiting since" descending=${false} title="Longest waiting first" /><th>Timeout</th>${onPublish && html`<th><span class="sr-only">Publish</span></th>`}</tr>
           </thead>
           <tbody>
             ${(steps || []).map(
@@ -250,12 +302,17 @@ function WaitingJobs({ name, keyPrefix, reloadKey }) {
                   <td class="mono">${step.eventKey}</td>
                   <td class="mono muted">${dateTime(step.since)}</td>
                   <td class="mono muted">${step.timeoutAt ? dateTime(step.timeoutAt) : 'none'}</td>
+                  ${onPublish &&
+                  html`<td class="cell-action">
+                    <button type="button" class="button small" aria-label=${`Publish ${step.eventName} / ${step.eventKey}`}
+                      onClick=${() => onPublish(step)}>Publish…</button>
+                  </td>`}
                 </tr>`,
             )}
           </tbody>
         </table>
         ${steps && steps.length === 0 && html`<div class="empty">No job is waiting for ${name}.</div>`}
       </div>
-      <div class="panel-foot"><span>${steps ? `${plural(steps.length, 'waiting step', 'waiting steps')}, longest waiting first` : 'Loading…'}</span></div>
+      <div class="panel-foot"><span>${steps ? plural(steps.length, 'waiting step', 'waiting steps') : 'Loading…'}</span></div>
     </section>`;
 }

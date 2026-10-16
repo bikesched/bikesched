@@ -3,7 +3,6 @@ package org.bikesched.internal;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.RetryBackoff;
@@ -12,13 +11,12 @@ import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.node.NodeCleanUp;
-import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.listener.JobListener;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Validated configuration of a {@link DefaultBikesched} node, assembled by {@link
- * BikeschedBuilder}.
+ * Configuration of a node, assembled and validated by {@link BikeschedBuilder}.
  *
  * @param nodeName unique node name
  * @param heartbeatInterval interval between heartbeats
@@ -64,54 +62,25 @@ public record Settings(
     int maxConcurrentJobs,
     boolean autoStartPolling,
     boolean migrateSchema,
-    Duration defaultJobTimeout,
+    @Nullable Duration defaultJobTimeout,
     RetryBackoff retryBackoff,
     int failureHandlerAttempts,
     Duration eventRetention,
-    Duration defaultEventTimeout,
+    @Nullable Duration defaultEventTimeout,
     Duration nodeCleanUpInterval,
     Duration eventCleanUpInterval,
-    Duration jobHistoryRetention,
+    @Nullable Duration jobHistoryRetention,
     Duration jobHistoryCleanUpInterval,
     Duration jobRetention,
     Duration jobCleanUpInterval,
-    Duration statementTimeout,
-    Duration hardTimeoutGrace,
+    @Nullable Duration statementTimeout,
+    @Nullable Duration hardTimeoutGrace,
     JobListener jobListener,
     EventListener eventListener,
     List<RecurrenceParser> recurrenceParsers) {
 
-  /** Validates the settings. */
+  /** Copies the recurrence parsers. */
   public Settings {
-    ValidationUtil.requireName(nodeName, "node name");
-    Objects.requireNonNull(heartbeatInterval, "heartbeatInterval");
-    Objects.requireNonNull(nodeTimeout, "nodeTimeout");
-    Objects.requireNonNull(pollInterval, "pollInterval");
-    Objects.requireNonNull(notifyInterval, "notifyInterval");
-    Objects.requireNonNull(retryBackoff, "retryBackoff");
-    Objects.requireNonNull(jobListener, "jobListener");
-    Objects.requireNonNull(eventListener, "eventListener");
     recurrenceParsers = List.copyOf(recurrenceParsers);
-    Objects.requireNonNull(eventRetention, "eventRetention");
-    Objects.requireNonNull(nodeCleanUpInterval, "nodeCleanUpInterval");
-    Objects.requireNonNull(eventCleanUpInterval, "eventCleanUpInterval");
-    Objects.requireNonNull(jobHistoryCleanUpInterval, "jobHistoryCleanUpInterval");
-    Objects.requireNonNull(jobRetention, "jobRetention");
-    Objects.requireNonNull(jobCleanUpInterval, "jobCleanUpInterval");
-    if (failureHandlerAttempts < 1) {
-      throw new IllegalArgumentException(
-          "failureHandlerAttempts must be >= 1: " + failureHandlerAttempts);
-    }
-    if (maxConcurrentJobs < 1) {
-      throw new IllegalArgumentException("maxConcurrentJobs must be >= 1: " + maxConcurrentJobs);
-    }
-    if (nodeTimeout.compareTo(heartbeatInterval.multipliedBy(2)) < 0) {
-      throw new IllegalArgumentException(
-          "nodeTimeout ("
-              + nodeTimeout
-              + ") must be at least twice the heartbeatInterval ("
-              + heartbeatInterval
-              + ")");
-    }
   }
 }

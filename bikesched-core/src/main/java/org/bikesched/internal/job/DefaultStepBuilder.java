@@ -7,16 +7,17 @@ import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.StepBuilder;
 import org.bikesched.job.StepFailureHandler;
 import org.bikesched.job.StepHandler;
+import org.jspecify.annotations.Nullable;
 
 /** The {@link StepBuilder} implementation, running the step on its {@link DefaultJob}. */
-final class DefaultStepBuilder<T> implements StepBuilder<T> {
+final class DefaultStepBuilder<T extends @Nullable Object> implements StepBuilder<T> {
 
   private final DefaultJob job;
   private final String name;
   private final Class<T> resultType;
-  private CompensationHandler<? super T> compensation;
-  private RetryBackoff retryBackoff;
-  private StepFailureHandler<T> failureHandler;
+  private @Nullable CompensationHandler<? super T> compensation;
+  private @Nullable RetryBackoff retryBackoff;
+  private @Nullable StepFailureHandler<T> failureHandler;
 
   DefaultStepBuilder(DefaultJob job, String name, Class<T> resultType) {
     this.job = job;
@@ -43,7 +44,7 @@ final class DefaultStepBuilder<T> implements StepBuilder<T> {
   }
 
   @Override
-  public T run(StepHandler<T> handler) throws Exception {
+  public @Nullable T run(StepHandler<T> handler) throws Exception {
     return job.step(name, resultType, handler, compensation, retryBackoff, failureHandler);
   }
 }

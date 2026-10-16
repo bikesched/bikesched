@@ -3,7 +3,6 @@ package org.bikesched.internal.job;
 
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -11,10 +10,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.bikesched.BikeschedException;
-import org.bikesched.BikeschedLogContext;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 
 /**
  * The hard timeout of attempts whose handler ignores the interrupt of its timeout (e.g. stuck in
@@ -44,10 +42,10 @@ public final class HardTimeout {
    * @param nodeName its name, for logging
    */
   public HardTimeout(Duration grace, Executor recorder, UUID nodeId, String nodeName) {
-    this.grace = Objects.requireNonNull(grace, "grace");
-    this.recorder = Objects.requireNonNull(recorder, "recorder");
-    this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
+    this.grace = grace;
+    this.recorder = recorder;
+    this.nodeId = nodeId;
+    this.nodeName = nodeName;
   }
 
   /** How long after its timeout an attempt is abandoned. */
@@ -67,9 +65,7 @@ public final class HardTimeout {
   void abandon(
       DefaultJob job, JobAttempt attempt, JobSlot slot, Consumer<Exception> recordFailure) {
     int running = abandonedThreads.incrementAndGet();
-    try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString());
-        var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
-        var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
+    try (var logContext = JobLogContext.open(nodeId, job)) {
       LOG.warn(
           "Job {} of type {} did not stop within {} after its timeout of {} (attempt {} of {}),"
               + " abandoning thread {} on bikesched node {} ({} abandoned thread(s) still"
@@ -95,9 +91,7 @@ public final class HardTimeout {
     try {
       recorder.execute(
           () -> {
-            try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString());
-                var _ = MDC.putCloseable(BikeschedLogContext.JOB_ID, job.id().toString());
-                var _ = MDC.putCloseable(BikeschedLogContext.JOB_TYPE, job.type())) {
+            try (var logContext = JobLogContext.open(nodeId, job)) {
               recordFailure.accept(failure);
             }
           });
@@ -115,7 +109,7 @@ public final class HardTimeout {
    * @param failure the exception the handler ended with, {@code null} if it returned normally
    * @return a description of the outcome, for logging
    */
-  String returned(DefaultJob job, Exception failure) {
+  String returned(DefaultJob job, @Nullable Exception failure) {
     int running = abandonedThreads.decrementAndGet();
     LOG.info(
         "Abandoned attempt {} of job {} of type {} returned after all{}; its outcome is discarded"

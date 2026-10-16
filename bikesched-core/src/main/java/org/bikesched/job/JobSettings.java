@@ -47,6 +47,23 @@ public interface JobSettings<B extends JobSettings<B, P>, P extends @Nullable Ob
   B payload(@Nullable P payload);
 
   /**
+   * Sets the job payload as JSON text (optional, default none), passed on as it is instead of
+   * through the configured {@link JsonMapper}: for JSON that already is text, e.g. a request body
+   * or a payload typed into the admin UI. Replaces an earlier {@link #payload(Object) payload}, and
+   * the other way round.
+   *
+   * <pre>{@code
+   * bikesched.newJob("send-invoice").payloadJson(requestBody).schedule();
+   * }</pre>
+   *
+   * @param json the payload as JSON text, {@code null} for none; not checked here, invalid JSON
+   *     makes scheduling fail
+   * @return this builder
+   * @see Job#payload()
+   */
+  B payloadJson(@Nullable String json);
+
+  /**
    * Sets the priority (optional, default 0). Due jobs with a higher priority are claimed first.
    *
    * @param priority the priority

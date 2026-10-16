@@ -9,14 +9,15 @@ import org.bikesched.JsonMapper;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.StepJobBuilder;
+import org.jspecify.annotations.Nullable;
 
 /** The {@link StepJobBuilder} implementation, starting the child as a step of its parent. */
-final class DefaultStepJobBuilder<P> extends BaseJobBuilder<StepJobBuilder<P>, P>
-    implements StepJobBuilder<P> {
+final class DefaultStepJobBuilder<P extends @Nullable Object>
+    extends BaseJobBuilder<StepJobBuilder<P>, P> implements StepJobBuilder<P> {
 
   private final DefaultJob parent;
-  private String stepName;
-  private CompensationHandler<? super UUID> compensation;
+  private @Nullable String stepName;
+  private @Nullable CompensationHandler<? super UUID> compensation;
 
   DefaultStepJobBuilder(
       DefaultJob parent,

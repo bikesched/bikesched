@@ -24,7 +24,7 @@ final class SimulatedChatPlatform {
    * @param text the reply
    */
   void reply(String channel, String messageId, String text) {
-    replies.computeIfAbsent(messageId, _ -> new AtomicInteger()).incrementAndGet();
+    replies.computeIfAbsent(messageId, ignored -> new AtomicInteger()).incrementAndGet();
     out.printf(
         "%s [chat]     %s, reply to %s: %s%n", ChatExample.timestamp(), channel, messageId, text);
   }

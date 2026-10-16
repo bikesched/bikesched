@@ -72,7 +72,7 @@ public final class OutcomeExample {
                 job.step(
                     "send-receipt",
                     Void.class,
-                    _ -> {
+                    ignored -> {
                       System.out.println(
                           "[mail]     to "
                               + order.email()
@@ -86,7 +86,7 @@ public final class OutcomeExample {
               job.step(
                   "send-decline",
                   Void.class,
-                  _ -> {
+                  ignored -> {
                     System.out.println(
                         "[mail]     to "
                             + order.email()

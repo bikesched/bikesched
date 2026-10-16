@@ -1,0 +1,13 @@
+// Cloudflare Worker serving the built website as static assets, deployed by
+// .github/workflows/website.yml (ADR 0047). No Worker script: Cloudflare serves the files directly.
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "bikesched-website",
+  "compatibility_date": "2026-10-15",
+  "assets": {
+    // Output of ./gradlew :bikesched-website:hugoBuild.
+    "directory": "./build/hugo/publish",
+    // Hugo generates 404.html; serve it with status 404 for unknown paths.
+    "not_found_handling": "404-page"
+  }
+}

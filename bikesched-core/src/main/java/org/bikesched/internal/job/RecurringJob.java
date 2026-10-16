@@ -3,11 +3,12 @@ package org.bikesched.internal.job;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
+import org.bikesched.internal.database.JobOrigin;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.Recurrence;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A recurring job registered on this node (via {@link JobBuilder#schedule(Recurrence)}): its type
@@ -23,17 +24,15 @@ import org.bikesched.job.Recurrence;
 public record RecurringJob(
     String type,
     Recurrence recurrence,
-    String payload,
+    @Nullable String payload,
     int priority,
     int maxAttempts,
-    Duration timeout) {
+    @Nullable Duration timeout) {
 
   /** Upper bound of runs skipped at once, so a misbehaving recurrence cannot loop forever. */
   private static final int MAX_SKIPPED_RUNS = 100_000;
 
   public RecurringJob {
-    Objects.requireNonNull(type, "type");
-    Objects.requireNonNull(recurrence, "recurrence");
     // Also for Recurrence implementations not created via Recurrence.of.
     ValidationUtil.requireName(recurrence.description(), "recurrence description");
   }
@@ -58,9 +57,14 @@ public record RecurringJob(
    */
   Instant nextRun(DefaultJob ended, Instant now) {
     Instant previous =
-        recurrence.isFixedRate() && ended.fixedRateAt() != null
-            ? ended.fixedRateAt()
-            : ended.scheduledAt();
+        switch (ended.origin()) {
+          case JobOrigin.Occurrence(String ignored, Instant fixedRateAt)
+              when recurrence.isFixedRate() && fixedRateAt != null ->
+              fixedRateAt;
+          case JobOrigin.Occurrence ignored -> ended.scheduledAt();
+          case JobOrigin.OneOff ignored -> ended.scheduledAt();
+          case JobOrigin.Child ignored -> ended.scheduledAt();
+        };
     return nextRun(previous, now);
   }
 

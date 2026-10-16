@@ -1,8 +1,8 @@
 # Specification: waking pollers with `LISTEN/NOTIFY`
 
 Status: **implemented** ([ADR 0032](../decisions/0032-batched-notifications-after-commit.md), user
-docs: [Due jobs start right away](../configuration.md#due-jobs-start-right-away)); decisions in §9,
-follow-ups in §10.
+docs: [Due jobs start right away](../getting-started/configuration.md#due-jobs-start-right-away));
+decisions in §9, follow-ups in §10.
 
 ## 1. Goal
 

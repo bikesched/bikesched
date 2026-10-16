@@ -4,7 +4,6 @@ package org.bikesched.internal.job.claim;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -13,6 +12,7 @@ import java.util.function.Supplier;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.internal.database.DueJobsListening;
 import org.bikesched.internal.database.JobStore;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -53,8 +53,8 @@ final class JobNotificationListener {
   private final String nodeName;
   private final UUID nodeId;
   private final CountDownLatch closed = new CountDownLatch(1);
-  private volatile DueJobsListening listening;
-  private volatile Thread thread;
+  private volatile @Nullable DueJobsListening listening;
+  private volatile @Nullable Thread thread;
 
   /**
    * @param store listens and sends the self-check
@@ -73,13 +73,13 @@ final class JobNotificationListener {
       Duration retryDelay,
       String nodeName,
       UUID nodeId) {
-    this.store = Objects.requireNonNull(store, "store");
-    this.types = Objects.requireNonNull(types, "types");
-    this.wakeUp = Objects.requireNonNull(wakeUp, "wakeUp");
-    this.connected = Objects.requireNonNull(connected, "connected");
-    this.retryDelay = Objects.requireNonNull(retryDelay, "retryDelay");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
-    this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
+    this.store = store;
+    this.types = types;
+    this.wakeUp = wakeUp;
+    this.connected = connected;
+    this.retryDelay = retryDelay;
+    this.nodeName = nodeName;
+    this.nodeId = nodeId;
   }
 
   /** Starts listening on the {@code bikesched-listener} thread; returns right away. */
@@ -90,7 +90,7 @@ final class JobNotificationListener {
             .daemon()
             .start(
                 () -> {
-                  try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString())) {
+                  try (var mdc = MDC.putCloseable(BikeschedLogContext.NODE_ID, nodeId.toString())) {
                     run();
                   }
                 });
@@ -124,8 +124,10 @@ final class JobNotificationListener {
   private void run() {
     boolean reconnect = false;
     while (!isClosed()) {
+      DueJobsListening current;
       try {
-        listening = store.listen();
+        current = store.listen();
+        listening = current;
       } catch (UnsupportedOperationException e) {
         LOG.warn(
             "bikesched node {} ({}) cannot listen for due jobs, it polls every {} instead: {}",
@@ -147,7 +149,7 @@ final class JobNotificationListener {
         continue;
       }
       try {
-        receive(reconnect);
+        receive(current, reconnect);
       } catch (RuntimeException e) {
         if (!isClosed()) {
           LOG.warn(
@@ -160,14 +162,14 @@ final class JobNotificationListener {
           awaitRetry();
         }
       } finally {
-        listening.close();
+        current.close();
       }
       reconnect = true;
     }
   }
 
   /** Receives notifications on the current connection until it fails or the listener closes. */
-  private void receive(boolean reconnected) {
+  private void receive(DueJobsListening listening, boolean reconnected) {
     if (isClosed()) {
       return; // close() may have missed the new connection
     }

@@ -84,7 +84,7 @@ public final class PublishExample {
               job.step(
                   "hand-over-to-carrier",
                   String.class,
-                  _ -> {
+                  ignored -> {
                     String id = "TRACK-" + UUID.randomUUID().toString().substring(0, 8);
                     System.out.println(
                         "[shipping] order " + order.orderId() + " handed over: " + id);
@@ -107,7 +107,7 @@ public final class PublishExample {
           job.step(
               "close-order",
               Void.class,
-              _ -> {
+              ignored -> {
                 System.out.println("[shipping] order " + order.orderId() + " closed");
                 return null;
               });
@@ -122,7 +122,7 @@ public final class PublishExample {
           job.step(
               "send-mail",
               Void.class,
-              _ -> {
+              ignored -> {
                 System.out.println(
                     "[mail]     to "
                         + notify.email()

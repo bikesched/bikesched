@@ -37,7 +37,7 @@ class OutcomeRecordingRetryTest extends AbstractBikeschedTest {
                 .build()) {
       failures.failNextJobThreadConnections(1);
       UUID jobId =
-          bikesched.newJob("record-retry-" + UUID.randomUUID()).handler(_ -> {}).schedule();
+          bikesched.newJob("record-retry-" + UUID.randomUUID()).handler(ignored -> {}).schedule();
 
       awaitState(jobId, "SUCCEEDED");
       assertThat(logs.messages())
@@ -66,7 +66,7 @@ class OutcomeRecordingRetryTest extends AbstractBikeschedTest {
           bikesched
               .newJob("record-give-up-" + UUID.randomUUID())
               .maxAttempts(1)
-              .handler(_ -> {})
+              .handler(ignored -> {})
               .schedule();
 
       awaitState(jobId, "SUCCEEDED");

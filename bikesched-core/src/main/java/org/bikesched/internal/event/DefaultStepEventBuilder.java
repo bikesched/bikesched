@@ -6,33 +6,46 @@ import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.StepEventBuilder;
+import org.jspecify.annotations.Nullable;
 
 /** Builder for an event published in a durable job step. */
-public final class DefaultStepEventBuilder<P> implements StepEventBuilder<P> {
+public final class DefaultStepEventBuilder<P extends @Nullable Object>
+    implements StepEventBuilder<P> {
   @FunctionalInterface
   public interface Publisher {
-    UUID publish(String name, String key, String payload, Duration retention, String stepName);
+    UUID publish(
+        String name,
+        String key,
+        @Nullable String payload,
+        @Nullable Duration retention,
+        @Nullable String stepName);
   }
 
   private final String eventName;
   private final String eventKey;
   private final JsonMapper mapper;
   private final Publisher publisher;
-  private String payload;
-  private Duration retention;
-  private String stepName;
+  private @Nullable String payload;
+  private @Nullable Duration retention;
+  private @Nullable String stepName;
 
   public DefaultStepEventBuilder(
       String eventName, String eventKey, JsonMapper mapper, Publisher publisher) {
-    this.eventName = Objects.requireNonNull(eventName, "eventName");
-    this.eventKey = Objects.requireNonNull(eventKey, "eventKey");
-    this.mapper = Objects.requireNonNull(mapper, "mapper");
-    this.publisher = Objects.requireNonNull(publisher, "publisher");
+    this.eventName = eventName;
+    this.eventKey = eventKey;
+    this.mapper = mapper;
+    this.publisher = publisher;
   }
 
   @Override
-  public StepEventBuilder<P> payload(P value) {
+  public StepEventBuilder<P> payload(@Nullable P value) {
     payload = value == null ? null : mapper.toJson(value);
+    return this;
+  }
+
+  @Override
+  public StepEventBuilder<P> payloadJson(@Nullable String json) {
+    payload = json;
     return this;
   }
 

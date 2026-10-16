@@ -51,6 +51,7 @@ import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobType;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -107,7 +108,9 @@ public final class DefaultBikesched implements Bikesched {
     this.settings = settings;
     this.nodeName = settings.nodeName();
     this.node = new DefaultNode(nodeName);
-    this.admin = new DefaultAdmin(database.admin(), settings.nodeTimeout(), this::ensureReady);
+    this.admin =
+        new DefaultAdmin(
+            database.admin(), settings.nodeTimeout(), this::ensureReady, registry.types());
     this.jobScheduler =
         new JobScheduler(
             database,
@@ -270,7 +273,8 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public <T> Bikesched registerJobHandler(JobType<T> type, TypedJobHandler<? super T> handler) {
+  public <T extends @Nullable Object> Bikesched registerJobHandler(
+      JobType<T> type, TypedJobHandler<? super T> handler) {
     Objects.requireNonNull(handler, "handler");
     registry.requirePayloadType(type);
     Class<T> payloadType = type.payloadType();
@@ -290,7 +294,7 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public <T> Bikesched registerJobFailureHandler(
+  public <T extends @Nullable Object> Bikesched registerJobFailureHandler(
       JobType<T> type, TypedJobFailureHandler<? super T> handler) {
     Objects.requireNonNull(handler, "handler");
     registry.requirePayloadType(type);
@@ -304,7 +308,7 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public <T> JobBuilder<T> newJob(JobType<T> type) {
+  public <T extends @Nullable Object> JobBuilder<T> newJob(JobType<T> type) {
     registry.requirePayloadType(type);
     return new DefaultJobBuilder<>(
         type.name(), type.payloadType(), database.jsonMapper(), jobScheduler);
@@ -341,7 +345,8 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public <T> NodeEventBuilder<T> newEvent(EventType<T> eventType, String eventKey) {
+  public <T extends @Nullable Object> NodeEventBuilder<T> newEvent(
+      EventType<T> eventType, String eventKey) {
     Objects.requireNonNull(eventType, "eventType");
     ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultEventBuilder<>(
@@ -368,7 +373,7 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public boolean cancel(UUID jobId, String message) {
+  public boolean cancel(UUID jobId, @Nullable String message) {
     Objects.requireNonNull(jobId, "jobId");
     ensureReady();
     boolean requested = database.jobs().requestCancel(jobId, message);
@@ -398,10 +403,10 @@ public final class DefaultBikesched implements Bikesched {
   private UUID publish(
       String eventName,
       String eventKey,
-      String payload,
-      Duration eventRetention,
-      String idempotencyKey,
-      Connection connection) {
+      @Nullable String payload,
+      @Nullable Duration eventRetention,
+      @Nullable String idempotencyKey,
+      @Nullable Connection connection) {
     ensureReady();
     Duration retention = eventRetention != null ? eventRetention : settings.eventRetention();
     EventStore.Publication publication =
@@ -488,12 +493,13 @@ public final class DefaultBikesched implements Bikesched {
     }
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored") // runs until shutdown, the task logs its failures
   private void scheduleWithFixedDelay(
       ScheduledExecutorService executor, Runnable task, Duration interval) {
     long millis = interval.toMillis();
     executor.scheduleWithFixedDelay(
         () -> {
-          try (var _ =
+          try (var mdc =
               MDC.putCloseable(
                   BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
             task.run();
@@ -522,10 +528,11 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   /** Runs the task once after the delay, with this node's id in the MDC. */
+  @SuppressWarnings("FutureReturnValueIgnored") // the task logs its failures
   private void scheduleOnce(ScheduledExecutorService executor, Runnable task, Duration delay) {
     executor.schedule(
         () -> {
-          try (var _ =
+          try (var mdc =
               MDC.putCloseable(
                   BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
             task.run();

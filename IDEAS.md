@@ -58,7 +58,7 @@ the connection belongs to a Spring-managed transaction.
 
 A first slice is implemented as `bikesched-test` (a test node factory and `JobAwait` wait helpers
 over a real database, see [the spec](docs/specs/bikesched-test.md) and
-[Testing](docs/testing.md)). Still open:
+[Testing](docs/integrations/testing.md)). Still open:
 
 - Unit level, no database: a fake `Job` that runs a handler in the test thread, records steps,
   their results and compensations, returns prepared events for `waitForEvent` and child job results
@@ -77,7 +77,7 @@ over a real database, see [the spec](docs/specs/bikesched-test.md) and
 A first set runs on demand in `bikesched-stress-tests` (database restarts and outages with jobs
 using child jobs, event waits, sleeps and timeouts, hanging connections, the throughput of a
 backlog; see [its README](bikesched-stress-tests/README.md) and
-[ADR 0043](docs/decisions/0043-load-and-failure-tests-on-demand.md)). Still open:
+[ADR 0050](docs/decisions/0050-load-and-failure-tests-on-demand.md)). Still open:
 
 - More failures: a failover to a promoted replica, a database that turns read-only or runs out of
   disk, a pool exhausted by the application's own work.
@@ -105,22 +105,17 @@ takes over its job types. Today the docs ask for the driver's `socketTimeout`
 
 ## API
 
-### Nullness annotations beyond the core API
+### Nullness checks beyond the core module
 
-The exported packages of `bikesched-core` are `@NullMarked` with JSpecify
-([ADR 0041](docs/decisions/0041-jspecify-nullness-annotations.md)); the internal packages, the other
-Java modules (`bikesched-jackson`, `bikesched-annotations`, `bikesched-cron`,
-`bikesched-micrometer`, `bikesched-spring-boot-starter`, `bikesched-admin`, `bikesched-test`) and
-the build are not covered yet.
+All packages of `bikesched-core` are `@NullMarked` and checked with NullAway in the build
+([ADR 0048](docs/decisions/0048-nullaway-in-the-core-build.md)); the other Java modules
+(`bikesched-jackson`, `bikesched-annotations`, `bikesched-cron`, `bikesched-micrometer`,
+`bikesched-spring-boot-starter`, `bikesched-admin`, `bikesched-test`) are not covered yet.
 
-- Mark the internal packages and the other modules' packages with `@NullMarked`, adding
-  `@Nullable` to fields, parameters and returns that may be `null`.
-- Enforce the annotations in the build, so a missing `@Nullable` fails the compile instead of
-  waiting for review. NullAway in JSpecify mode passes on the annotated API packages today.
-- To decide between:
-  - NullAway (Error Prone plugin) on every Java module.
-  - Keep it documentation-only and check with NullAway now and then.
-- Outcome: nullness checked across the code base, not only declared on the API.
+- Mark their packages with `@NullMarked`, adding `@Nullable` where `null` occurs.
+- Apply the `bikesched.errorprone` convention plugin to each, fixing its NullAway and Error Prone
+  findings; drop null checks the types then exclude.
+- Outcome: nullness checked across the code base, not only in core.
 
 ### Fixed-delay recurrences
 
@@ -142,10 +137,10 @@ starts the interval when the previous occurrence ended.
 ### Handler versions
 
 Jobs live across deploys and replay with the handler code deployed by then.
-[Changing handlers](docs/changing-handlers.md) lists the safe and unsafe changes and works around
-the unsafe ones with a version property in the payload, a new job type or two deploys. Nothing in
-the API tells old jobs from new ones, and nothing stops an old node from running a job created for
-new code during a rolling deploy.
+[Changing handlers](docs/jobs/changing-handlers.md) lists the safe and unsafe changes and works
+around the unsafe ones with a version property in the payload, a new job type or two deploys.
+Nothing in the API tells old jobs from new ones, and nothing stops an old node from running a job
+created for new code during a rolling deploy.
 
 - Handler versions: `registerJobHandler(type, version, handler)` stores the version on each new
   job (`handler_version` column), `job.handlerVersion()` lets the handler branch for old jobs, and
@@ -169,7 +164,7 @@ delivery id), so it can be looked up or shown without decoding the payload.
 - Optional `reference(String)` on the job builder (also the transactional one) and the event
   builder; `char_length` CHECK + `ValidationUtil`, like other 200-character names.
 - Column `reference` on `bikesched_jobs` and `bikesched_events`, nullable, not unique (unlike the
-  [idempotency key](docs/jobs.md#idempotency-keys), this is a display/lookup aid, not a dedup
+  [idempotency key](docs/jobs/README.md#idempotency-keys), this is a display/lookup aid, not a dedup
   key) — multiple jobs/events can share one external reference (e.g. several jobs for the same
   order).
 - Needs an index to actually look up by it (e.g. `(type, reference)` on jobs); postponed until
@@ -222,15 +217,3 @@ database access.
 - Backend JSON parsing and validation of the payload (reuses existing `JsonMapper`).
 - Endpoint secured by the existing `AdminAccess` SPI.
 - Outcome: operators can publish events in development and testing without code changes.
-
-## Website
-
-### Custom domain for bikesched.org
-
-`bikesched-website` is generated with Hugo and deployed to static.app on every push to `main`
-touching `docs/**`, `README.md` or `bikesched-website/**` (see
-[spec](docs/specs/website-project-site.md),
-[ADR 0035](docs/decisions/0035-website-hosted-on-static-app.md)). The site currently serves from
-the default `https://bikesched.staticdomains.app` subdomain; the already reserved domain
-`bikesched.org` still needs to be configured on static.app and pointed at it by DNS, with HTTPS
-enforced, before `hugo.toml`'s `baseURL` (already `https://bikesched.org/`) matches reality.

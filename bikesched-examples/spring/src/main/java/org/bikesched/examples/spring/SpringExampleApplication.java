@@ -38,7 +38,7 @@ public class SpringExampleApplication {
   @Bean
   ApplicationRunner run(
       OrderService orders, Bikesched bikesched, ConfigurableApplicationContext context) {
-    return _ -> {
+    return ignored -> {
       UUID bike = orders.placeOrder("alice@example.com", "Bike");
       UUID unicorn = orders.placeOrder("bob@example.com", "Unicorn");
       for (UUID jobId : List.of(bike, unicorn)) {

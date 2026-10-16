@@ -1,0 +1,9 @@
+{{- /* Overrides Hextra's empty footer hook: links the commit the site was built from. The
+  website workflow sets HUGO_PARAMS_COMMIT to the commit SHA (Hugo maps it to
+  site.Params.commit); local builds have none and show nothing. */ -}}
+{{- with site.Params.commit -}}
+  <div class="hx:text-xs hx:pt-6">
+    Built from
+    <a class="hx:underline" href="https://github.com/sbuettner/bikesched/commit/{{ . }}">{{ substr . 0 7 }}</a>
+  </div>
+{{- end -}}

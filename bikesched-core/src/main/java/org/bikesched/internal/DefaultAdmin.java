@@ -2,10 +2,15 @@
 package org.bikesched.internal;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.bikesched.admin.Admin;
 import org.bikesched.admin.EventNameSummary;
@@ -21,6 +26,7 @@ import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.internal.database.AdminStore;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link Admin} of a node: checks that the node is ready, then reads through the {@link
@@ -37,10 +43,15 @@ final class DefaultAdmin implements Admin {
 
   private final Runnable ensureReady;
 
-  DefaultAdmin(AdminStore store, Duration nodeTimeout, Runnable ensureReady) {
-    this.store = Objects.requireNonNull(store, "store");
-    this.nodeTimeout = Objects.requireNonNull(nodeTimeout, "nodeTimeout");
-    this.ensureReady = Objects.requireNonNull(ensureReady, "ensureReady");
+  // The job types with a handler on this node, a live view.
+  private final Set<String> handledTypes;
+
+  DefaultAdmin(
+      AdminStore store, Duration nodeTimeout, Runnable ensureReady, Set<String> handledTypes) {
+    this.store = store;
+    this.nodeTimeout = nodeTimeout;
+    this.ensureReady = ensureReady;
+    this.handledTypes = handledTypes;
   }
 
   @Override
@@ -74,6 +85,14 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
+  public Optional<JobSummary> findJob(String type, String idempotencyKey) {
+    Objects.requireNonNull(type, "type");
+    Objects.requireNonNull(idempotencyKey, "idempotencyKey");
+    ensureReady.run();
+    return store.findJob(type, idempotencyKey);
+  }
+
+  @Override
   public Optional<JobData> findJobData(UUID jobId) {
     Objects.requireNonNull(jobId, "jobId");
     ensureReady.run();
@@ -90,7 +109,17 @@ final class DefaultAdmin implements Admin {
   @Override
   public List<JobTypeSummary> findJobTypes() {
     ensureReady.run();
-    return store.findJobTypes();
+    Set<String> handled = new TreeSet<>(handledTypes);
+    List<JobTypeSummary> types = new ArrayList<>();
+    for (JobTypeSummary type : store.findJobTypes()) {
+      boolean isHandled = handled.remove(type.type());
+      types.add(new JobTypeSummary(type.type(), type.counts(), type.recurrence(), isHandled));
+    }
+    if (!handled.isEmpty()) {
+      handled.forEach(type -> types.add(new JobTypeSummary(type, Map.of(), null, true)));
+      types.sort(Comparator.comparing(JobTypeSummary::type));
+    }
+    return types;
   }
 
   @Override
@@ -136,7 +165,8 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
-  public List<WaitingStep> findWaitingSteps(String eventName, String keyPrefix, int limit) {
+  public List<WaitingStep> findWaitingSteps(
+      String eventName, @Nullable String keyPrefix, int limit) {
     Objects.requireNonNull(eventName, "eventName");
     requireLimit(limit);
     ensureReady.run();
@@ -147,6 +177,13 @@ final class DefaultAdmin implements Admin {
   public List<NodeInfo> findNodes() {
     ensureReady.run();
     return store.findNodes(nodeTimeout);
+  }
+
+  @Override
+  public Optional<NodeInfo> findNode(UUID nodeId) {
+    Objects.requireNonNull(nodeId, "nodeId");
+    ensureReady.run();
+    return store.findNode(nodeId, nodeTimeout);
   }
 
   /**

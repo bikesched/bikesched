@@ -12,10 +12,11 @@ import org.bikesched.job.JobHandler;
 import org.bikesched.job.TransactionalJobBuilder;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
+import org.jspecify.annotations.Nullable;
 
 /** The {@link IdempotentJobBuilder} implementation. */
-final class DefaultIdempotentJobBuilder<P> extends BaseJobBuilder<IdempotentJobBuilder<P>, P>
-    implements IdempotentJobBuilder<P> {
+final class DefaultIdempotentJobBuilder<P extends @Nullable Object>
+    extends BaseJobBuilder<IdempotentJobBuilder<P>, P> implements IdempotentJobBuilder<P> {
 
   DefaultIdempotentJobBuilder(DefaultJobBuilder<P> settings) {
     super(settings);

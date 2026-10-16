@@ -177,7 +177,9 @@ class JobHandlersScanTest {
     MailApi proxy =
         (MailApi)
             java.lang.reflect.Proxy.newProxyInstance(
-                MailApi.class.getClassLoader(), new Class<?>[] {MailApi.class}, (_, _, _) -> null);
+                MailApi.class.getClassLoader(),
+                new Class<?>[] {MailApi.class},
+                (ignored, ignored2, ignored3) -> null);
 
     assertThat(JobHandlers.scan(proxy.getClass())).as("the proxy class").isEmpty();
     assertThat(JobHandlers.scan(MailJobsApi.class))

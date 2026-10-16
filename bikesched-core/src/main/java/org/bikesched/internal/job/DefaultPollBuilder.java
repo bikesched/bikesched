@@ -4,19 +4,21 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.util.Objects;
 import org.bikesched.RetryBackoff;
+import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.PollBuilder;
 import org.bikesched.job.PollHandler;
 import org.bikesched.job.StepFailureHandler;
+import org.jspecify.annotations.Nullable;
 
 /** The {@link PollBuilder} implementation, running the poll on its {@link DefaultJob}. */
-final class DefaultPollBuilder<T> implements PollBuilder<T> {
+final class DefaultPollBuilder<T extends @Nullable Object> implements PollBuilder<T> {
 
   private final DefaultJob job;
   private final String name;
   private final Class<T> resultType;
   private final RetryBackoff interval;
-  private Duration timeout;
-  private StepFailureHandler<T> failureHandler;
+  private @Nullable Duration timeout;
+  private @Nullable StepFailureHandler<T> failureHandler;
 
   DefaultPollBuilder(DefaultJob job, String name, Class<T> resultType, RetryBackoff interval) {
     this.job = job;
@@ -27,7 +29,7 @@ final class DefaultPollBuilder<T> implements PollBuilder<T> {
 
   @Override
   public PollBuilder<T> timeout(Duration timeout) {
-    this.timeout = requirePositive(timeout);
+    this.timeout = ValidationUtil.requirePositive(timeout, "timeout");
     return this;
   }
 
@@ -37,16 +39,8 @@ final class DefaultPollBuilder<T> implements PollBuilder<T> {
     return this;
   }
 
-  private static Duration requirePositive(Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout");
-    if (timeout.isNegative() || timeout.isZero()) {
-      throw new IllegalArgumentException("timeout must be positive: " + timeout);
-    }
-    return timeout;
-  }
-
   @Override
-  public T run(PollHandler<T> handler) throws Exception {
+  public @Nullable T run(PollHandler<T> handler) throws Exception {
     Objects.requireNonNull(handler, "handler");
     return job.poll(name, resultType, interval, timeout, failureHandler, handler);
   }

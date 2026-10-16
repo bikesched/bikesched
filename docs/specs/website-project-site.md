@@ -4,10 +4,11 @@ title: "Project website (bikesched.org)"
 
 # Specification: project website (bikesched.org)
 
-Status: **implemented** — generation (module `bikesched-website`) and deployment to static.app
-(§4.6, [ADR 0035](../decisions/0035-website-hosted-on-static-app.md)) both done. The custom domain
-`bikesched.org` is not yet pointed at static.app; the site serves from
-`https://bikesched.staticdomains.app` until then.
+Status: **implemented** — generation (module `bikesched-website`) and deployment to the Cloudflare
+Worker `bikesched-website` (§4.6,
+[ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md), which superseded static.app
+from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md)) both done, and `bikesched.org`
+serves the site as the Worker's custom domain.
 
 ## 1. Goal
 
@@ -75,8 +76,8 @@ Hugo [module mounts](https://gohugo.io/hugo-modules/configuration/#module-mounts
 outside the module into its `content/` tree at build time, unlike a file copy: `hugo.toml` mounts
 `../../README.md` to `content/_index.md` (the home page) and `../../docs` to `content/docs` (the
 docs section), excluding `docs/specs/**` (internal, per `AGENTS.md`) and remounting
-`docs/index.md` and `docs/decisions/README.md` individually to the `_index.md` name Hugo expects
-for a section's landing page. Nothing under `bikesched-website/` duplicates project content.
+`docs/index.md` and the `README.md` of each docs section (`docs/jobs/`, `docs/decisions/`, …)
+individually to the `_index.md` name Hugo expects for a section's landing page. Nothing under `bikesched-website/` duplicates project content.
 
 ### 4.4 Markdown compatibility
 
@@ -91,8 +92,8 @@ for a section's landing page. Nothing under `bikesched-website/` duplicates proj
   project-level hook needed for alerts.
 - **Front matter**: `docs/*.md` and `README.md` carry a `title` (from each file's first heading,
   added once) so the site's `<title>` tag and navigation labels don't depend on template-side
-  heading parsing, and a `weight` on each top-level docs page matching the reading order in
-  `docs/index.md`'s "Contents" list (the sidebar is alphabetical by default otherwise). Front
+  heading parsing, and a `weight` on each docs page (within its section) matching the reading
+  order in `docs/index.md`'s "Contents" list (the sidebar is alphabetical by default otherwise). Front
   matter is invisible on GitHub.
 
 ### 4.5 Template overrides
@@ -106,29 +107,31 @@ Three small overrides on top of Hextra, kept to the minimum needed:
 - `[[menu.sidebar]]` entry linking back to `/docs/` (Hextra's sidebar only lists a section's
   children, not the section's own landing page).
 
-### 4.6 Deployment: static.app
+### 4.6 Deployment: Cloudflare Workers
 
 Narrowed from the original IDEAS.md entry down to this one remaining piece, then changed from the
 originally planned GitHub Pages to static.app ([ADR 0035](../decisions/0035-website-hosted-on-static-app.md)):
 GitHub Pages with a custom domain and enforced HTTPS needs a paid plan for a private repository, or
-the repository going public first — a billing/visibility decision outside the scope of shipping a
-website.
+the repository going public first. Later moved from static.app to Cloudflare
+([ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md)).
 
-`.github/workflows/website.yml` builds `./gradlew :bikesched-website:hugoBuild`, zips
-`build/hugo/publish/` with its contents at the archive root, and POSTs it to
-`https://api.static.app/v1/sites/zip` for the pre-created site (`pid` `le3rpst1ob`), authenticated
-with the `STATIC_APP_API_KEY` repository secret. It runs on push to `main` touching `docs/**`,
-`README.md` or `bikesched-website/**`, plus `workflow_dispatch` for manual runs; pull requests are
-not deployed. A `purge-cache` call follows every publish (the CDN otherwise caches assets for up to
-4 hours).
+`.github/workflows/website.yml` builds `./gradlew :bikesched-website:hugoBuild` and runs
+`wrangler deploy` in `bikesched-website/` (`cloudflare/wrangler-action`), authenticated with the
+`CLOUDFLARE_API_KEY` repository secret. `bikesched-website/wrangler.jsonc` deploys
+`build/hugo/publish/` as static assets of the Worker `bikesched-website` (no Worker script), with
+Hugo's `404.html` for unknown paths. It runs on push to `main` touching `docs/**`, `README.md` or
+`bikesched-website/**`, plus `workflow_dispatch` for manual runs; pull requests are not deployed.
+The build step sets `HUGO_PARAMS_COMMIT` to the commit SHA, which the footer
+(`layouts/_partials/custom/footer.html`) links as "Built from <short SHA>"; local builds have no
+commit and show no link.
 
-Custom domain: `bikesched.org` is not yet configured on static.app or pointed at it by DNS — the
-site currently serves from the default `https://bikesched.staticdomains.app` subdomain. A one-time
-dashboard/DNS step, not automated by the workflow.
+Custom domain: `bikesched.org` is attached to the Worker in the Cloudflare dashboard (a one-time
+step, not automated by the workflow), matching `hugo.toml`'s `baseURL`.
 
 ## 5. Documentation
 
-- This spec, linked from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md).
+- This spec, linked from [ADR 0035](../decisions/0035-website-hosted-on-static-app.md) and
+  [ADR 0047](../decisions/0047-website-hosted-on-cloudflare-workers.md).
 - No `docs/*.md` page of its own: the website is infrastructure around the existing docs, not a
   feature with its own API or user-facing concept.
 - `AGENTS.md`'s module table has a `bikesched-website` row.
@@ -145,15 +148,15 @@ render hook or a missing theme partial fails the build).
 
 1. ~~Module, Hugo plugin, minimal site, mounts for README.md and docs/~~ (done).
 2. ~~Theme (Hextra), overrides, markdown compatibility, front matter~~ (done).
-3. ~~GitHub Actions workflow building and deploying to static.app~~ (done).
-4. Custom domain: configure `bikesched.org` on static.app, DNS records, enforce HTTPS.
-5. Remove the IDEAS.md entry once the custom domain serves the site.
+3. ~~GitHub Actions workflow building and deploying to static.app~~ (done), later to Cloudflare
+   Workers (done).
+4. ~~Custom domain: attach `bikesched.org` to the Worker~~ (done).
+5. ~~Remove the IDEAS.md entry once the custom domain serves the site~~ (done).
 
 ## 8. Effort
 
-Small: step 4 is dashboard/DNS configuration, no code.
+Small: step 4 was dashboard/DNS configuration, no code.
 
 ## 9. Open questions
 
-1. Who controls the `bikesched.org` DNS zone, and what exact records does static.app ask for to
-   serve a custom domain?
+None left: the `bikesched.org` zone is on Cloudflare and attached to the Worker.

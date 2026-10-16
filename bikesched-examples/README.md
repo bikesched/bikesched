@@ -11,7 +11,8 @@ Runnable examples of [bikesched](../README.md), one package per scenario, in thr
 Each example has a `main` that runs against the PostgreSQL from the repository's `compose.yaml`,
 and a test that runs against PostgreSQL 18 with Testcontainers: in the `java` module, one container
 shared by all example tests, provided by the test class `util.Database`. Payloads, step results
-and events are records, mapped to JSON by [`bikesched-jackson`](../docs/configuration.md#jackson).
+and events are records, mapped to JSON by
+[`bikesched-jackson`](../docs/getting-started/configuration.md#jackson).
 
 ## Running
 
@@ -58,7 +59,7 @@ publishes an event keyed by it, with both ids as payload (`EventPayload(id, jobI
 waits for that event:
 
 ```java
-UUID id = job.step("call-service", UUID.class, _ -> service.process(payload.id(), payload.delay()));
+UUID id = job.step("call-service", UUID.class, step -> service.process(payload.id(), payload.delay()));
 EventPayload event = job.awaitEvent("await-event", EVENT_TYPE, id.toString());
 ```
 
@@ -76,7 +77,7 @@ example.scheduleJob(Duration.ofSeconds(3));   // published 3 seconds later on an
 With a delay, the job is suspended at the wait (`WAITING`, without a thread) and resumed by the
 event: its handler runs again from the start, and step 1 returns the stored id without calling the
 service again. Without one, the event is published before the job starts waiting, so the wait
-receives it right away (see [Events](../docs/events.md)).
+receives it right away (see [Events](../docs/multi-step-jobs/events.md)).
 
 `EventExampleTest` runs both variants and checks that the delayed job waits and then succeeds.
 
@@ -88,7 +89,7 @@ jobs: `notify-customer` waits for `order-shipped` keyed by the order id, and `sh
 parcel over to the carrier and publishes the event:
 
 ```java
-String trackingId = job.step("hand-over-to-carrier", String.class, _ -> carrier.handOver(order));
+String trackingId = job.step("hand-over-to-carrier", String.class, step -> carrier.handOver(order));
 UUID eventId = job.newEvent(ORDER_SHIPPED, order.orderId())
         .payload(new OrderShipped(order.orderId(), trackingId))
         .publish();
@@ -98,7 +99,7 @@ job.sleep("await-pickup", Duration.ofSeconds(1));
 The event and the completed publish step commit in one transaction. After the sleep, the handler
 runs again from the start: the tracking id comes from the stored step result, and `publish()`
 finds its step and returns the same event id without publishing again (see
-[Publishing from jobs](../docs/events.md#publishing-from-jobs)).
+[Publishing from jobs](../docs/multi-step-jobs/events.md#publishing-from-jobs)).
 
 `PublishExampleTest` checks that both jobs succeed, that every run of the shipping handler got the
 same event id, and that `bikesched_events` holds the event once.
@@ -137,9 +138,10 @@ switch (outcome) {
 The outage fails the step, so the job is retried and the card charged on the second call; a decline
 is not retried.
 
-**Concepts shown:** [business outcomes as results](../docs/steps.md#business-outcomes-as-results),
-technical errors left to [retries](../docs/jobs.md#failures-and-retries), and
-[idempotency keys](../docs/steps.md#idempotency-keys) for the provider.
+**Concepts shown:** [business outcomes as
+results](../docs/multi-step-jobs/steps.md#business-outcomes-as-results), technical errors left to
+[retries](../docs/jobs/README.md#failures-and-retries), and [idempotency
+keys](../docs/multi-step-jobs/steps.md#idempotency-keys) for the provider.
 
 `OutcomeExample` charges three orders (charged, declined, outage) and prints what happens;
 `OutcomeExampleTest` checks each card's job state and how often the provider was called.
@@ -150,7 +152,8 @@ Package [`org.bikesched.examples.poll`](java/src/main/java/org/bikesched/example
 a polling fallback. `SimulatedPaymentProvider` settles a payment some time after it was created and
 sends a webhook, which the application's endpoint publishes as the event `payment-settled`, keyed
 by the payment id, with the webhook's delivery id as [idempotency
-key](../docs/events.md#idempotency-keys), so a delivery the provider repeats is published once:
+key](../docs/multi-step-jobs/events.md#idempotency-keys), so a delivery the provider repeats is
+published once:
 
 ```java
 bikesched.newEvent(PAYMENT_SETTLED, delivery.payment().paymentId())
@@ -172,7 +175,7 @@ PaymentSettled settled = webhook != null
         ? webhook
         : job.newPoll("poll-payment", PaymentSettled.class, POLL_INTERVAL)
                 .timeout(Duration.ofSeconds(30))
-                .run(_ -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
+                .run(step -> provider.status(paymentId).map(Poll::ready).orElseGet(Poll::notReady));
 job.step("mark-paid", () -> { … });
 ```
 
@@ -187,7 +190,7 @@ example.pay("order-polled", Duration.ofSeconds(4), Webhook.LOST);               
 
 The last job's wait times out after two seconds; then every check that finds the payment still
 pending suspends the job until the next one, as one step (`poll-payment`) for all checks. See
-[Polling](../docs/steps.md#polling).
+[Polling](../docs/multi-step-jobs/steps.md#polling).
 
 `PollExampleTest` checks that the delivered webhook needs no status call, that a webhook delivered
 twice returns the same event both times and stores one row in `bikesched_events`, and that for
@@ -198,12 +201,13 @@ the lost one the number of status calls equals the poll step's checks, with a si
 
 Package [`org.bikesched.examples.ratelimit`](java/src/main/java/org/bikesched/examples/ratelimit):
 a provider's rate limit with [Bucket4j](https://github.com/bucket4j/bucket4j) and
-[`job.postpone`](../docs/jobs.md#postponing). `SimulatedSmsProvider` accepts at most two messages
-within any second and rejects (and prints) every call over that. The job `send-sms` takes a token
-from a bucket before each call; without one, it postpones the job until the bucket has one again:
+[`job.postpone`](../docs/jobs/README.md#postponing). `SimulatedSmsProvider` accepts at most two
+messages within any second and rejects (and prints) every call over that. The job `send-sms` takes a
+token from a bucket before each call; without one, it postpones the job until the bucket has one
+again:
 
 ```java
-job.step("send", String.class, _ -> {
+job.step("send", String.class, step -> {
     ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
     if (!probe.isConsumed()) {
         job.postpone(Duration.ofNanos(probe.getNanosToWaitForRefill()));   // no attempt used up
@@ -223,9 +227,9 @@ attempt, the provider saw ten calls and rejected none, and the history has `POST
 ## Chat
 
 Package [`org.bikesched.examples.chat`](java/src/main/java/org/bikesched/examples/chat): incoming
-messages deduplicated with an [idempotency key](../docs/jobs.md#idempotency-keys). A chat platform
-delivers each message to the application's webhook at least once; the webhook schedules the job
-`answer-chat-message` with the platform's message id as key, and the job replies in a step:
+messages deduplicated with an [idempotency key](../docs/jobs/README.md#idempotency-keys). A chat
+platform delivers each message to the application's webhook at least once; the webhook schedules the
+job `answer-chat-message` with the platform's message id as key, and the job replies in a step:
 
 ```java
 UUID jobId = bikesched.newJob(ANSWER_MESSAGE)
@@ -244,7 +248,7 @@ example.deliver(message("carol", "hello?"), Delivery.CONCURRENTLY);  // twice at
 ```
 
 Message ids are new on every run: a key stays taken while its job exists (the
-[job retention](../docs/jobs.md#job-retention)).
+[job retention](../docs/jobs/README.md#job-retention)).
 
 `ChatExampleTest` runs each delivery and checks that all deliveries returned the same job id, the
 message got one reply, and `bikesched_jobs` holds one job with the key.
@@ -254,8 +258,8 @@ message got one reply, and `bikesched_jobs` holds one job with the key.
 Package [`org.bikesched.examples.approval`](java/src/main/java/org/bikesched/examples/approval): an
 expense approval with a reminder and an escalation. The job `approve-expense` asks the manager and
 waits for the event `expense-decided`, keyed by the expense id. Each wait has a
-[timeout](../docs/events.md#timeouts) whose failure handler resolves it with `null`, so the job
-continues with the next stage instead of failing:
+[timeout](../docs/multi-step-jobs/events.md#timeouts) whose failure handler resolves it with `null`,
+so the job continues with the next stage instead of failing:
 
 1. `request-approval`, `await-decision` (2 seconds here, days in practice)
 2. without a decision: `send-reminder`, `await-decision-after-reminder` (2 seconds)
@@ -287,8 +291,9 @@ approvers, each after the inbox received the message they react to:
 ## Fan-out
 
 Package [`org.bikesched.examples.fanout`](java/src/main/java/org/bikesched/examples/fanout):
-fan-out/fan-in with [child jobs](../docs/child-jobs.md). The job `import-album` starts one child
-job `resize-photo` per uploaded file, then waits for each child and publishes the album:
+fan-out/fan-in with [child jobs](../docs/multi-step-jobs/child-jobs.md). The job `import-album`
+starts one child job `resize-photo` per uploaded file, then waits for each child and publishes the
+album:
 
 ```java
 List<UUID> children = album.files().stream()
@@ -296,8 +301,8 @@ List<UUID> children = album.files().stream()
         .toList();
 for (int i = 0; i < children.size(); i++) {
     switch (job.waitForJob(children.get(i), Thumbnail.class)) {
-        case JobResult.Succeeded<Thumbnail>(_, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
-        case JobResult.Failed<Thumbnail> _ -> skipped.add(album.files().get(i));
+        case JobResult.Succeeded<Thumbnail>(UUID childId, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
+        case JobResult.Failed<Thumbnail> failed -> skipped.add(album.files().get(i));
         case JobResult<Thumbnail> other -> throw new IllegalStateException("Unexpected outcome: " + other);
     }
 }
@@ -314,12 +319,12 @@ about a second. The parent's result (`ImportedAlbum`) lists the thumbnails and t
 ## Recurring
 
 Package [`org.bikesched.examples.recurring`](java/src/main/java/org/bikesched/examples/recurring):
-periodic work with a [recurring job](../docs/recurring-jobs.md). `main` starts two nodes, and both
-register the recurring job `clean-up-sessions`, as every node does on startup:
+periodic work with a [recurring job](../docs/jobs/recurring-jobs.md). `main` starts two nodes, and
+both register the recurring job `clean-up-sessions`, as every node does on startup:
 
 ```java
 bikesched.newJob(CLEAN_UP_SESSIONS)
-        .handler(_ -> out.printf("%s [%s] run %d: removed expired sessions%n", timestamp(), node, runs.incrementAndGet()))
+        .handler(job -> out.printf("%s [%s] run %d: removed expired sessions%n", timestamp(), node, runs.incrementAndGet()))
         .schedule(Recurrence.every(Duration.ofSeconds(1)));
 ```
 
@@ -382,11 +387,11 @@ payloads need no casts or `Class` arguments.
 | the customer cancels the ride (`Bikesched.cancel`) | the job is cancelled; the request is withdrawn and a payment reservation released |
 | the broker cannot approve the ride | after its retries the job fails; the payment is released and the request withdrawn |
 
-**Concepts shown:** [durable steps](../docs/steps.md#durable-steps),
-[compensation](../docs/steps.md#compensation), [cancellation](../docs/jobs.md#cancellation) from
-inside and outside the handler, and [event waits with timeouts](../docs/events.md#timeouts) resolved
-with a fallback by their failure handler. The
-waits suspend the job without holding a thread; publishing an event resumes it.
+**Concepts shown:** [durable steps](../docs/multi-step-jobs/steps.md#durable-steps),
+[compensation](../docs/multi-step-jobs/steps.md#compensation),
+[cancellation](../docs/jobs/README.md#cancellation) from inside and outside the handler, and [event
+waits with timeouts](../docs/multi-step-jobs/events.md#timeouts) resolved with a fallback by their
+failure handler. The waits suspend the job without holding a thread; publishing an event resumes it.
 
 `TaxiBookingExample` plays three rides (booked, cancelled by the customer, failed approval) and
 prints what happens; `TaxiBookingTest` covers the booked ride, a declined price, no driver, a
@@ -415,10 +420,10 @@ bikesched.newJob(CinemaJobs.TICKET_ORDER).payload(order).schedule();
 2. `charge-payment`: charges the order's total.
 3. `mail-tickets`: mails the tickets to the customer.
 
-**Concepts shown:** [typed job types](../docs/jobs.md#typed-job-types) with a self-describing
+**Concepts shown:** [typed job types](../docs/jobs/README.md#typed-job-types) with a self-describing
 handler class, the job type as a shared constant (`CinemaJobs`) used by the code ordering tickets,
-and [durable steps](../docs/steps.md#durable-steps): a retry skips completed steps and reuses
-their results, so seats aren't reserved or cards charged twice.
+and [durable steps](../docs/multi-step-jobs/steps.md#durable-steps): a retry skips completed steps
+and reuses their results, so seats aren't reserved or cards charged twice.
 
 `CinemaExample` orders tickets for two customers and prints each step; `CinemaTest` checks the
 steps and their output.
@@ -426,10 +431,11 @@ steps and their output.
 ## Admin
 
 Package [`org.bikesched.examples.admin`](java/src/main/java/org/bikesched/examples/admin): the
-[admin UI](../docs/admin.md) served by the JDK's `HttpServer` next to a few demo jobs, so the page
-has something to show: invoices (every fourth one fails), orders that start a parcel as a child job
-and then wait for a payment event (half of them are paid), the parcels, and `sync-inventory`, a
-[recurring job](../docs/recurring-jobs.md) running every 10 seconds with two steps and no waits.
+[admin UI](../docs/operations/admin.md) served by the JDK's `HttpServer` next to a few demo jobs, so
+the page has something to show: invoices (every fourth one fails), orders that start a parcel as a
+child job and then wait for a payment event (half of them are paid), the parcels, and
+`sync-inventory`, a [recurring job](../docs/jobs/recurring-jobs.md) running every 10 seconds with
+two steps and no waits.
 
 ```java
 HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
@@ -437,7 +443,7 @@ server.createContext("/bikesched", BikeschedAdmin.of(bikesched).showPayloads(tru
 server.start();
 ```
 
-The node records the [job history](../docs/jobs.md#job-history) for seven days
+The node records the [job history](../docs/jobs/README.md#job-history) for seven days
 (`BikeschedUtil.builder(…).jobHistory(…)`), so every job detail has a History tab; it is off by
 default. The demo data holds no secrets, so the example shows payloads; they are hidden by default.
 Open http://localhost:8081/bikesched/ (`ADMIN_PORT` changes the port), retry a failed invoice or
@@ -470,12 +476,12 @@ retry, the second ends up `FAILED` through the `onFailure` handler.
 ## Spring Boot
 
 Package [`org.bikesched.examples.spring`](spring/src/main/java/org/bikesched/examples/spring): a Spring
-Boot application wired entirely by [`bikesched-spring-boot-starter`](../docs/spring.md) — no builder
-code, no `BikeschedUtil`; the starter builds the node from the context's `DataSource` and discovers
-the `@JobHandler` and `@JobFailureHandler` methods. The scenario is deliberately **two microservices that share no data**
-(in one JVM here): `OrderService` and `FulfillmentService` talk only through a bikesched job payload
-and a keyed event, each owns its own JPA entity, and `Fulfillment` references the order by a plain
-`UUID` column — no foreign key, no association.
+Boot application wired entirely by [`bikesched-spring-boot-starter`](../docs/integrations/spring.md)
+— no builder code, no `BikeschedUtil`; the starter builds the node from the context's `DataSource`
+and discovers the `@JobHandler` and `@JobFailureHandler` methods. The scenario is deliberately **two
+microservices that share no data** (in one JVM here): `OrderService` and `FulfillmentService` talk
+only through a bikesched job payload and a keyed event, each owns its own JPA entity, and
+`Fulfillment` references the order by a plain `UUID` column — no foreign key, no association.
 
 ```java
 @Service
@@ -491,7 +497,7 @@ public class OrderService {
   @JobHandler(type = "fulfill-order")                                             // found by the starter
   public void fulfill(Job job, FulfillOrder command) throws Exception {
     Order order = orders.findById(command.orderId()).orElseThrow();
-    var fulfillmentId = job.step("fulfill", UUID.class, _ -> fulfillment.fulfill(order.getId(), order.getItem()));
+    var fulfillmentId = job.step("fulfill", UUID.class, step -> fulfillment.fulfill(order.getId(), order.getItem()));
     job.awaitEvent("await-fulfillment", FULFILLMENT_FINISHED, fulfillmentId.toString());
     order.markFulfilled(); // …
   }
@@ -509,11 +515,12 @@ Spring Boot's own, from the `spring.datasource.*` properties in `application.pro
 compose database, honoring `POSTGRES_PORT`). Items out of stock make the `fulfill` step throw;
 once the job's attempts are used up, the `@JobFailureHandler` marks the order failed.
 
-**Concepts shown:** auto-configuration and handler discovery ([Spring Boot](../docs/spring.md)),
-[transactional scheduling and event publishing](../docs/jobs.md#transactional-scheduling) from both
-"services", a [durable step](../docs/steps.md#durable-steps) whose result keys the
-[event wait](../docs/events.md) that suspends the job without a thread, a
-[job failure handler](../docs/jobs.md#failure-handlers) and JPA entities coupled by UUID only.
+**Concepts shown:** auto-configuration and handler discovery ([Spring
+Boot](../docs/integrations/spring.md)), [transactional scheduling and event
+publishing](../docs/jobs/README.md#transactional-scheduling) from both "services", a [durable
+step](../docs/multi-step-jobs/steps.md#durable-steps) whose result keys the [event
+wait](../docs/multi-step-jobs/events.md) that suspends the job without a thread, a [job failure
+handler](../docs/jobs/README.md#failure-handlers) and JPA entities coupled by UUID only.
 
 It lives in its own module (`:bikesched-examples:spring`) with the Spring Boot Gradle plugin, so
 the plain examples stay free of Spring. `SpringExampleApplication` places two orders (a bike and an

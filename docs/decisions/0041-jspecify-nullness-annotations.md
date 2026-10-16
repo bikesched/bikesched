@@ -4,7 +4,8 @@ Date: 2026-10-13
 
 ## Status
 
-Accepted
+Accepted; the unmarked internal packages and the build without a checker are superseded by
+[ADR 0048](0048-nullaway-in-the-core-build.md)
 
 ## Context
 
