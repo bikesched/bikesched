@@ -11,7 +11,8 @@ Runnable examples of [bikesched](../README.md), one package per scenario, in thr
 Each example has a `main` that runs against the PostgreSQL from the repository's `compose.yaml`,
 and a test that runs against PostgreSQL 18 with Testcontainers: in the `java` module, one container
 shared by all example tests, provided by the test class `util.Database`. Payloads, step results
-and events are records, mapped to JSON by [`bikesched-jackson`](../docs/configuration.md#jackson).
+and events are records, mapped to JSON by
+[`bikesched-jackson`](../docs/getting-started/configuration.md#jackson).
 
 ## Running
 

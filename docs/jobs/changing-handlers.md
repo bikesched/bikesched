@@ -48,7 +48,7 @@ directions until the last old node is gone, or be split into two deploys (see
 | change code inside a completed step | not run again; only jobs that have not completed the step run the new code |
 | add a step after the last step any job in flight has reached | runs once, like any new step |
 | reorder steps without changing their names | completed steps return their results wherever they are called; a step moved before the point where a job is waiting runs when it resumes, if it has not run yet |
-| add optional properties to payloads, step results, event payloads and job results | stored JSON still maps, see [Payload design](../configuration.md#payload-design) |
+| add optional properties to payloads, step results, event payloads and job results | stored JSON still maps, see [Payload design](../getting-started/configuration.md#payload-design) |
 | change a sleep's duration, a wait's or poll's timeout | started sleeps, waits and polls keep their stored times; new ones use the new values |
 | change a poll's interval, a step's `retryBackoff`, its `onFailure` or `compensateWith` handler, a job failure handler | applies from the next check, retry or run; a compensation receives the step's stored result |
 | change `priority`, `maxAttempts` or `timeout` on a builder | applies to jobs scheduled afterwards |

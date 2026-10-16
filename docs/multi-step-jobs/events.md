@@ -160,7 +160,7 @@ Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id()
 
 Only the name is stored, so events published with the string-based API reach typed waits and vice
 versa. Like job payloads, event payloads should be objects rather than bare values or collections,
-see [Payload design](../configuration.md#payload-design).
+see [Payload design](../getting-started/configuration.md#payload-design).
 
 ## Timeouts
 

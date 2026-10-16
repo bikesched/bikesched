@@ -56,6 +56,9 @@ theme = "hextra"
     source = "../../docs/index.md"
     target = "content/docs/_index.md"
   [[module.mounts]]
+    source = "../../docs/getting-started/README.md"
+    target = "content/docs/getting-started/_index.md"
+  [[module.mounts]]
     source = "../../docs/jobs/README.md"
     target = "content/docs/jobs/_index.md"
   [[module.mounts]]

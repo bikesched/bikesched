@@ -100,11 +100,11 @@ length: errors (`last_error` of jobs and steps) and cancel messages (`cancel_mes
 ## Connection pool
 
 Every store call borrows its own connection; nothing beyond the listening connection (see [Due jobs
-start right away](../configuration.md#due-jobs-start-right-away)) is held for longer. Size the pool
-at least `maxConcurrentJobs` (jobs) plus a few (poller, heartbeat, clean-ups) plus one more if
-`listenForDueJobs` is on. With `PGSimpleDataSource`, the data source used by the examples and these
-docs, every statement opens a new TCP connection and authenticates; use a pool (e.g.
-[HikariCP](https://github.com/brettwooldridge/HikariCP)) in production.
+start right away](../getting-started/configuration.md#due-jobs-start-right-away)) is held for
+longer. Size the pool at least `maxConcurrentJobs` (jobs) plus a few (poller, heartbeat, clean-ups)
+plus one more if `listenForDueJobs` is on. With `PGSimpleDataSource`, the data source used by the
+examples and these docs, every statement opens a new TCP connection and authenticates; use a pool
+(e.g. [HikariCP](https://github.com/brettwooldridge/HikariCP)) in production.
 
 ## Indexes and locks
 

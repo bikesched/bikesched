@@ -152,7 +152,9 @@ resume on another node after a crash; here it's `job.step(...)` and `job.waitFor
 
 The [documentation](docs/index.md) covers the concepts in detail:
 
-- [Configuration](docs/configuration.md): builder options, nodes, JSON mapping, logging
+- [Getting started](docs/getting-started/README.md): installation with Gradle or Maven, a first
+  job, and the [configuration](docs/getting-started/configuration.md) (builder options, nodes, JSON
+  mapping, logging)
 - [Jobs](docs/jobs/README.md): scheduling, writing handlers, retries, failure handlers,
   cancellation, history, retention, timeouts; [recurring jobs](docs/jobs/recurring-jobs.md) and
   [changing handlers](docs/jobs/changing-handlers.md) safely for jobs in flight

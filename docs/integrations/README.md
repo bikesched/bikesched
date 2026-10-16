@@ -13,6 +13,6 @@ Optional modules on top of `bikesched-core`; pull in only the ones you use.
 - [Testing](testing.md): test nodes and job wait helpers (`bikesched-test`)
 
 Three more modules are described where they are used: JSON mapping with Jackson
-(`bikesched-jackson`) in [Configuration](../configuration.md#jackson), cron expressions
-(`bikesched-cron`) in [Recurring jobs](../jobs/recurring-jobs.md) and the Micrometer meters
-(`bikesched-micrometer`) in [Metrics](../operations/metrics.md).
+(`bikesched-jackson`) in [Configuration](../getting-started/configuration.md#jackson), cron
+expressions (`bikesched-cron`) in [Recurring jobs](../jobs/recurring-jobs.md) and the Micrometer
+meters (`bikesched-micrometer`) in [Metrics](../operations/metrics.md).

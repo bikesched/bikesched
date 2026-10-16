@@ -157,14 +157,15 @@ migration privileges and does not start polling.
 
 ## Properties
 
-Every builder option ([configuration.md](../configuration.md)) has a `bikesched.*` property; unset
-ones keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and friends).
+Every builder option ([configuration.md](../getting-started/configuration.md)) has a `bikesched.*`
+property; unset ones keep the builder default. Relaxed binding applies (`poll-interval: 1500ms` and
+friends).
 
 | Property | Default | Note |
 |---|---|---|
 | `bikesched.node-name` | `<spring.application.name>-<host name>` | unique per live node; the host name keeps replicas apart |
 | `bikesched.data-source` | the single / `@Primary` `DataSource` | the **bean name** of the one to use, never a JDBC URL; with several candidates and neither the property nor a `@Primary`, the context fails listing them |
-| `bikesched.poll-interval` | 10 seconds | safety net while listening, see [Due jobs](../configuration.md#due-jobs-start-right-away) |
+| `bikesched.poll-interval` | 10 seconds | safety net while listening, see [Due jobs](../getting-started/configuration.md#due-jobs-start-right-away) |
 | `bikesched.listen-for-due-jobs` | `true` | holds one pool connection; `false` behind PgBouncer in transaction mode |
 | `bikesched.notify-interval` | 100 ms | |
 | `bikesched.heartbeat-interval` | 5 seconds | |
@@ -197,8 +198,9 @@ entirely (define one in tests if you want to set builder options directly).
 With `bikesched-jackson` on the classpath, the starter registers a `JsonMapper` built from the
 context's Jackson 3 `ObjectMapper` (Boot's `JacksonAutoConfiguration`, or yours) — so job payloads
 are ordinary records, mapped exactly like the rest of the application serializes JSON. Without the
-module, payloads stay JSON strings ([configuration.md](../configuration.md#json-mapping)). A user
-`JsonMapper` bean wins.
+module, payloads stay JSON strings
+([configuration.md](../getting-started/configuration.md#json-mapping)). A user `JsonMapper` bean
+wins.
 
 With `bikesched-micrometer` and a `MeterRegistry` bean (Boot's Actuator/micrometer registry), an
 automatic `MicrometerJobListener` and `MicrometerEventListener` record the meters of

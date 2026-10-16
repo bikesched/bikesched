@@ -36,7 +36,7 @@ JobHandlers.register(bikesched, new MailJobs());
   `(Job, Mail)`, `(Mail)`, `(Job)` and `()` are valid.
 - The payload parameter's class is the payload type: the node's `JsonMapper` maps the payload to
   it, like for a `JobType`. It must be a non-generic class (e.g. a record, not `List<Mail>`) and not
-  a primitive; see [Payload design](../configuration.md#payload-design).
+  a primitive; see [Payload design](../getting-started/configuration.md#payload-design).
 - Exceptions thrown by the method fail the attempt like those of any job handler: they are passed
   on unchanged, so retries and `last_error` see the original exception.
 - Annotated methods of superclasses are found too; each job type may be handled by only one method.

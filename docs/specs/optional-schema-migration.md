@@ -1,7 +1,8 @@
 # Optional schema migration
 
 Status: implemented. [ADR 0039](../decisions/0039-optional-schema-migration.md);
-[configuration](../configuration.md), [database guide](../operations/database.md#migrations).
+[configuration](../getting-started/configuration.md), [database
+guide](../operations/database.md#migrations).
 
 ## Goal and usage
 

@@ -233,8 +233,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   Pages are grouped into sections, one folder each with a `README.md` landing page (mounted as the
   section's `_index.md` in `bikesched-website/site/hugo.toml`; a new section needs a mount there)
   and a `weight` in every page's front matter for the sidebar order:
-  - top level: `configuration.md` (builder option table, nodes, JSON mapping, logging),
-    `patterns.md` (one section per problem: a short sketch, why it works, and a link to the
+  - `getting-started/`: `README.md` (requirements, Gradle and Maven setup, optional modules, a
+    first job), `configuration.md` (builder option table, nodes, JSON mapping, logging)
+  - top level: `patterns.md` (one section per problem: a short sketch, why it works, and a link to the
     runnable example solving it; new examples solving a common problem get a pattern)
   - `jobs/`: `README.md` (the Jobs page itself: scheduling, handlers, `Job` method table,
     failures, cancellation, timeouts), `recurring-jobs.md`, `changing-handlers.md` (what a job

@@ -27,7 +27,8 @@ A builder can be reused: every `schedule…` call stores a new job. `schedule(Re
 `schedule(String)` register a [recurring job](recurring-jobs.md) instead. Handlers can also be
 registered up front with `bikesched.registerJobHandler(type, handler)`. A job scheduled without a time is due
 immediately and starts right away on a node handling its type: the scheduling node notifies the
-others, see [Due jobs start right away](../configuration.md#due-jobs-start-right-away).
+others, see [Due jobs start right
+away](../getting-started/configuration.md#due-jobs-start-right-away).
 
 A payload that already is JSON text, e.g. a request body, goes in with `.payloadJson(body)`
 instead of `.payload(...)`: stored as it is, without the `JsonMapper` (a Jackson mapper would turn
@@ -63,7 +64,7 @@ UUID id = bikesched.newJob(ORDER).payload(order).schedule();                // p
 - A node rejects using one name with two payload classes (`IllegalArgumentException`).
 - The payload class is passed to the `JsonMapper`, so it must be a concrete class like a record;
   wrap generic collections such as `List<Order>` in a record, see
-  [Payload design](../configuration.md#payload-design).
+  [Payload design](../getting-started/configuration.md#payload-design).
 
 ### Transactional scheduling
 
@@ -157,7 +158,8 @@ crashed, so handlers should be idempotent.
 
 A handler that throws fails the attempt. The job is retried while attempts remain (`maxAttempts`,
 default 3), otherwise it ends `FAILED`; the error of the last attempt is stored in `last_error`.
-Retries run as soon as possible unless the node has a [retry backoff](../configuration.md).
+Retries run as soon as possible unless the node has a [retry
+backoff](../getting-started/configuration.md).
 
 To fail an attempt without an exception and with control over the retry, use `fail()`:
 
@@ -244,8 +246,8 @@ no exception: it runs in a claim of its own, possibly on another node.
   only reacts to it. Compensations run first.
 - A handler that throws or times out (the job's timeout applies) runs again after the node's retry
   backoff, up to `failureHandlerAttempts` runs (default 3, see
-  [Configuration](../configuration.md#builder-options)); then the job ends anyway, `last_error`
-  keeps the job's error. It runs at least once, so it must be idempotent.
+  [Configuration](../getting-started/configuration.md#builder-options)); then the job ends anyway,
+  `last_error` keeps the job's error. It runs at least once, so it must be idempotent.
 - What happens when a job ends happens after the handler: the parent of a
   [child job](../multi-step-jobs/child-jobs.md) receives the outcome, the next occurrence of a
   recurring job is scheduled.

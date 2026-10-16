@@ -37,8 +37,10 @@ and without any coordinator besides PostgreSQL.
 
 ## Contents
 
-- [Configuration](configuration.md): builder options, nodes, JSON mapping (`bikesched-jackson`),
-  logging
+- [Getting started](getting-started/README.md): requirements, installation with Gradle or Maven,
+  a first job
+  - [Configuration](getting-started/configuration.md): builder options, nodes, JSON mapping
+    (`bikesched-jackson`), logging
 - [Jobs](jobs/README.md): scheduling, writing handlers, retries, cancellation, job history,
   timeouts
   - [Recurring jobs](jobs/recurring-jobs.md): schedules, cron expressions (`bikesched-cron`) and

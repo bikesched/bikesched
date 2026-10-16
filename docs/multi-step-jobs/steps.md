@@ -48,9 +48,9 @@ job.step("send-confirmation", () -> mailer.send(order, payment));
 
 Steps run at least once: a completed step is not repeated, but a step whose side effect happened
 before its completion was stored runs again, e.g. after a crash right after the side effect, or on
-a node that lost its job (see [Nodes](../configuration.md#nodes)) while another node runs the step
-too. bikesched stores only one result, but cannot undo the side effect. Pass an idempotency key
-derived from the step to external systems, so they recognize a repeated call:
+a node that lost its job (see [Nodes](../getting-started/configuration.md#nodes)) while another node
+runs the step too. bikesched stores only one result, but cannot undo the side effect. Pass an
+idempotency key derived from the step to external systems, so they recognize a repeated call:
 
 ```java
 Payment payment = job.step("charge-card", Payment.class, step ->
@@ -115,7 +115,8 @@ job.sleepUntil("until-check-in", booking.checkIn().minus(Duration.ofDays(1)));
   from `Instant.now()` doesn't move a sleep that already started.
 - `sleepUntil` with a time that has passed returns right away; the step is stored as completed.
 - The node that suspended the job wakes up at the wake-up time; other nodes find it with their
-  next-due query, see [Due jobs start right away](../configuration.md#due-jobs-start-right-away).
+  next-due query, see [Due jobs start right
+  away](../getting-started/configuration.md#due-jobs-start-right-away).
 - Sleeping does not use up an attempt. Cancelling a sleeping job marks the step `CANCELLED` and runs
   the compensations of its completed steps.
 - Sleeping inside a step handler or a compensation is rejected, like nested steps.
@@ -310,7 +311,8 @@ Rate rate = job.newStep("fetch-rate", Rate.class)
 - If the handler throws, or the node dies before the outcome is recorded, the job gets an extra
   attempt that runs the handler again, so it must be idempotent. After the node's
   `failureHandlerAttempts` runs (default 3, see
-  [Configuration](../configuration.md#builder-options)) the step is `FAILED` without it.
+  [Configuration](../getting-started/configuration.md#builder-options)) the step is `FAILED` without
+  it.
 - Steps without a handler just fail.
 
 [Event waits](events.md#timeouts) and [polls](#polling) take the same `onFailure(…)`: it handles
