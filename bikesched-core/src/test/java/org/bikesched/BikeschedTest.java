@@ -40,7 +40,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void nodeTimeoutMustBeLongerThanTheHeartbeatInterval() {
+  void nodeTimeoutMustBeAtLeastTwiceTheHeartbeatInterval() {
     assertThatThrownBy(
             () ->
                 Bikesched.builder()
@@ -50,7 +50,7 @@ class BikeschedTest extends AbstractBikeschedTest {
                     .build())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(
-            "nodeTimeout (PT5S) must be longer than heartbeatInterval (PT5S), otherwise a healthy"
+            "nodeTimeout (PT5S) must be at least twice the heartbeatInterval (PT5S), otherwise a healthy"
                 + " node's jobs are released");
   }
 

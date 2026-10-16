@@ -55,7 +55,8 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
   records) for the admin UI and custom tooling; summaries never carry payloads or results.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
-  - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `DefaultAdmin`, `Settings`
+  - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `DefaultAdmin`, `Settings` (validated
+    by `BikeschedBuilder`)
   - `internal.json`: `RawJsonMapper` (the default mapper, passes JSON strings through)
   - `internal.node`: `DefaultNode` (the node's name, id and closed state), `NodeHeartbeat`,
     `NodeCleanUp` (releases jobs of dead nodes, removes them)
