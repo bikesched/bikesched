@@ -7,6 +7,10 @@ import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.RetryBackoff;
 import org.bikesched.event.listener.EventListener;
+import org.bikesched.internal.event.EventCleanUp;
+import org.bikesched.internal.job.HistoryCleanUp;
+import org.bikesched.internal.job.JobCleanUp;
+import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.listener.JobListener;
 
@@ -32,13 +36,13 @@ import org.bikesched.job.listener.JobListener;
  *     waiting later, unless the event sets its own retention
  * @param defaultEventTimeout maximum wait for an event for waits without a timeout of their own;
  *     {@code null} for none
- * @param nodeCleanUpInterval interval between node clean-ups (releases jobs of dead nodes)
- * @param eventCleanUpInterval interval between event clean-ups (deletes expired events)
+ * @param nodeCleanUpInterval interval between node clean-ups ({@link NodeCleanUp})
+ * @param eventCleanUpInterval interval between event clean-ups ({@link EventCleanUp})
  * @param jobHistoryRetention how long job history entries are kept; {@code null} if the node does
  *     not record job history
- * @param jobHistoryCleanUpInterval interval between job history clean-ups (deletes old entries)
+ * @param jobHistoryCleanUpInterval interval between job history clean-ups ({@link HistoryCleanUp})
  * @param jobRetention how long ended jobs are kept
- * @param jobCleanUpInterval interval between job clean-ups (deletes ended jobs)
+ * @param jobCleanUpInterval interval between job clean-ups ({@link JobCleanUp})
  * @param statementTimeout maximum duration of a database statement; {@code null} to leave it to the
  *     data source
  * @param hardTimeoutGrace how long after its timeout an attempt whose handler ignores the interrupt

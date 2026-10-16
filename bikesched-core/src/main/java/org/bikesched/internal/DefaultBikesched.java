@@ -3,7 +3,6 @@ package org.bikesched.internal;
 
 import java.sql.Connection;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -26,18 +25,21 @@ import org.bikesched.event.listener.EventSource;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.DatabaseInitializer;
 import org.bikesched.internal.database.EventStore;
-import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.event.DefaultEventBuilder;
+import org.bikesched.internal.event.EventCleanUp;
 import org.bikesched.internal.job.DefaultJobBuilder;
 import org.bikesched.internal.job.DueJobsNotifier;
+import org.bikesched.internal.job.HistoryCleanUp;
+import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.job.JobRegistry;
 import org.bikesched.internal.job.JobScheduler;
 import org.bikesched.internal.job.RecurrenceParsers;
-import org.bikesched.internal.job.RecurringJob;
+import org.bikesched.internal.job.RecurringJobRepair;
 import org.bikesched.internal.job.claim.JobPoller;
 import org.bikesched.internal.job.claim.JobPollerSettings;
 import org.bikesched.internal.node.DefaultNode;
 import org.bikesched.internal.node.NodeCleanUp;
+import org.bikesched.internal.node.NodeHeartbeat;
 import org.bikesched.internal.util.ExecutorUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.internal.util.Version;
@@ -59,14 +61,16 @@ import org.slf4j.MDC;
  * <p>Threads:
  *
  * <ul>
- *   <li>{@code bikesched-heartbeat}: single scheduled thread updating this node's heartbeat while
- *       the node polls. A node that does not poll executes no jobs and sends no heartbeats
+ *   <li>{@code bikesched-heartbeat}: single scheduled thread running the {@link NodeHeartbeat}
+ *       while the node polls, updating this node's heartbeat. A node that does not poll executes no
+ *       jobs and sends no heartbeats
  *   <li>{@code bikesched-cleanup}: single scheduled thread running the housekeeping while the node
  *       polls, each on its own interval: the {@link NodeCleanUp} (releases the running jobs of dead
- *       nodes, removes dead nodes), deleting expired events, deleting expired history entries (with
- *       the job history enabled) and deleting ended jobs after the job retention; also retries of
- *       the recurring job repair (recreates missing occurrences of the node's recurring jobs),
- *       which runs once when polling starts
+ *       nodes, removes dead nodes), the {@link EventCleanUp} (deletes expired events) and, with the
+ *       job history enabled, the {@link HistoryCleanUp} (deletes expired history entries) and the
+ *       {@link JobCleanUp} (deletes ended jobs after the job retention); also retries of the {@link
+ *       RecurringJobRepair} (recreates missing occurrences of the node's recurring jobs), which
+ *       runs once when polling starts
  *   <li>the threads of the {@link JobPoller}, which claims and runs jobs while the node polls
  *   <li>{@code bikesched-notifier}: the {@link DueJobsNotifier}, which tells the nodes about the
  *       jobs this node's writes made due
@@ -78,9 +82,6 @@ import org.slf4j.MDC;
 public final class DefaultBikesched implements Bikesched {
 
   private static final Logger LOG = LoggerFactory.getLogger(DefaultBikesched.class);
-
-  /** Ended jobs deleted per statement by the job clean-up. */
-  private static final int JOB_CLEAN_UP_BATCH_SIZE = 1000;
 
   private final Database database;
   private final Settings settings;
@@ -207,6 +208,7 @@ public final class DefaultBikesched implements Bikesched {
             nodeName,
             id);
       }
+      var heartbeat = new NodeHeartbeat(database, id, nodeName);
       var nodeCleanUp =
           new NodeCleanUp(
               database,
@@ -215,46 +217,28 @@ public final class DefaultBikesched implements Bikesched {
               settings.nodeTimeout(),
               settings.nodeCleanUpInterval(),
               jobPoller::withActiveJobIds);
+      var recurringJobRepair = new RecurringJobRepair(database, registry::recurringJobs);
+      var eventCleanUp = new EventCleanUp(database, id, nodeName);
       node.registered(id);
       // Once per node lifetime, before anything is scheduled; retried until it succeeds.
-      repairRecurringJobs();
+      repairRecurringJobs(recurringJobRepair);
       // A polling node claims jobs, so it must heartbeat: otherwise other nodes would consider it
       // dead and release its running jobs.
-      every(heartbeatExecutor, settings.heartbeatInterval(), "Heartbeat", () -> heartbeat(id));
-      every(cleanUpExecutor, settings.nodeCleanUpInterval(), "Node clean-up", nodeCleanUp::run);
-      every(
-          cleanUpExecutor,
-          settings.eventCleanUpInterval(),
-          "Deleting expired events",
-          () -> {
-            int deleted = database.events().deleteExpiredEvents();
-            if (deleted > 0) {
-              LOG.debug("Deleted {} expired event(s)", deleted);
-            }
-          });
+      scheduleWithFixedDelay(heartbeatExecutor, heartbeat::run, settings.heartbeatInterval());
+      scheduleWithFixedDelay(cleanUpExecutor, nodeCleanUp::run, settings.nodeCleanUpInterval());
+      scheduleWithFixedDelay(cleanUpExecutor, eventCleanUp::run, settings.eventCleanUpInterval());
       Duration historyRetention = settings.jobHistoryRetention();
       if (historyRetention != null) {
-        every(
-            cleanUpExecutor,
-            settings.jobHistoryCleanUpInterval(),
-            "Deleting old job history",
-            () -> {
-              int deleted = database.history().deleteHistory(historyRetention);
-              if (deleted > 0) {
-                LOG.debug(
-                    "Deleted {} job history entries older than {}", deleted, historyRetention);
-              }
-            });
+        var historyCleanUp = new HistoryCleanUp(database, id, nodeName, historyRetention);
+        scheduleWithFixedDelay(
+            cleanUpExecutor, historyCleanUp::run, settings.jobHistoryCleanUpInterval());
         LOG.info(
             "bikesched node {} records the job history, keeping entries for {}",
             nodeName,
             historyRetention);
       }
-      every(
-          cleanUpExecutor,
-          settings.jobCleanUpInterval(),
-          "Deleting finished jobs",
-          this::deleteFinishedJobs);
+      var jobCleanUp = new JobCleanUp(database, id, nodeName, settings.jobRetention());
+      scheduleWithFixedDelay(cleanUpExecutor, jobCleanUp::run, settings.jobCleanUpInterval());
       jobPoller.start(id);
       LOG.info(
           "bikesched node {} ({}) registered, {}polling for jobs every {} (running up to {}"
@@ -506,96 +490,51 @@ public final class DefaultBikesched implements Bikesched {
     }
   }
 
-  /**
-   * Runs the task every interval with this node's id in the MDC. A failing run is logged, the next
-   * one runs as usual.
-   *
-   * @param what what the task does, for the warning
-   */
-  private void every(
-      ScheduledExecutorService executor, Duration interval, String what, Runnable task) {
+  private void scheduleWithFixedDelay(
+      ScheduledExecutorService executor, Runnable task, Duration interval) {
     long millis = interval.toMillis();
     executor.scheduleWithFixedDelay(
-        () -> withNodeId(what, task), millis, millis, TimeUnit.MILLISECONDS);
-  }
-
-  private void withNodeId(String what, Runnable task) {
-    UUID id = node.id().orElse(null);
-    try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(id))) {
-      task.run();
-    } catch (RuntimeException e) {
-      LOG.warn("{} failed on bikesched node {} ({})", what, nodeName, id, e);
-    }
-  }
-
-  /** Updates this node's heartbeat, or registers the node again if other nodes removed it. */
-  private void heartbeat(UUID id) {
-    if (database.nodes().heartbeat(id)) {
-      LOG.trace("Heartbeat of bikesched node {} ({})", nodeName, id);
-    } else if (database.nodes().reregisterNode(id, nodeName)) {
-      // Other nodes removed it after missing its heartbeats (e.g. a long pause) and released its
-      // jobs; without registering again, every claim would fail on the missing node.
-      LOG.warn(
-          "bikesched node {} ({}) was removed after missing heartbeats, registered it again",
-          nodeName,
-          id);
-    } else {
-      LOG.warn(
-          "bikesched node {} ({}) is no longer registered and its name is held by another node",
-          nodeName,
-          id);
-    }
-  }
-
-  /** Deletes ended jobs older than the job retention, in batches to keep each statement short. */
-  private void deleteFinishedJobs() {
-    Duration retention = settings.jobRetention();
-    int deleted = 0;
-    int batch;
-    do {
-      batch = database.jobs().deleteFinishedJobs(retention, JOB_CLEAN_UP_BATCH_SIZE);
-      deleted += batch;
-    } while (batch == JOB_CLEAN_UP_BATCH_SIZE && !Thread.currentThread().isInterrupted());
-    if (deleted > 0) {
-      LOG.debug("Deleted {} job(s) finished more than {} ago", deleted, retention);
-    }
+        () -> {
+          try (var _ =
+              MDC.putCloseable(
+                  BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
+            task.run();
+          }
+        },
+        millis,
+        millis,
+        TimeUnit.MILLISECONDS);
   }
 
   /**
-   * Schedules a pending occurrence for every recurring job of this node that has none, e.g. after
-   * its occurrence was deleted by hand. If that fails, it runs again on the clean-up thread after
-   * the node clean-up interval, until it succeeds or the node is closed.
+   * Runs the repair now; if it fails, again on the clean-up thread after the node clean-up
+   * interval, until it succeeds or the node is closed.
    */
-  private void repairRecurringJobs() {
-    boolean succeeded = true;
-    for (RecurringJob recurring : registry.recurringJobs()) {
-      try {
-        Instant now = Instant.now();
-        NewJob occurrence = recurring.occurrence(recurring.nextRun(now, now));
-        if (database.jobs().insertOccurrence(occurrence)) {
-          LOG.info(
-              "Recurring job {} had no pending occurrence, scheduled one at {}",
-              recurring.type(),
-              occurrence.scheduledAt());
-        }
-      } catch (RuntimeException e) {
-        LOG.warn("Checking recurring job {} failed", recurring.type(), e);
-        succeeded = false;
-      }
-    }
-    if (succeeded) {
+  private void repairRecurringJobs(RecurringJobRepair repair) {
+    if (repair.run()) {
       return;
     }
     Duration retryIn = settings.nodeCleanUpInterval();
     LOG.warn("Repairing recurring jobs failed, retrying in {}", retryIn);
     try {
-      cleanUpExecutor.schedule(
-          () -> withNodeId("Repairing recurring jobs", this::repairRecurringJobs),
-          retryIn.toMillis(),
-          TimeUnit.MILLISECONDS);
+      scheduleOnce(cleanUpExecutor, () -> repairRecurringJobs(repair), retryIn);
     } catch (RejectedExecutionException e) {
       LOG.debug("Not retrying the recurring job repair: bikesched node {} is closing", nodeName);
     }
+  }
+
+  /** Runs the task once after the delay, with this node's id in the MDC. */
+  private void scheduleOnce(ScheduledExecutorService executor, Runnable task, Duration delay) {
+    executor.schedule(
+        () -> {
+          try (var _ =
+              MDC.putCloseable(
+                  BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
+            task.run();
+          }
+        },
+        delay.toMillis(),
+        TimeUnit.MILLISECONDS);
   }
 
   private static void requireValidType(String type) {

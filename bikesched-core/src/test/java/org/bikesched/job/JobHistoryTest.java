@@ -12,6 +12,7 @@ import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
 import org.bikesched.LogCapture;
 import org.bikesched.internal.DefaultBikesched;
+import org.bikesched.internal.job.HistoryCleanUp;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -206,7 +207,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
             + "', now() - interval '2 hours', 'SCHEDULED', 0), ('"
             + recentJob
             + "', now(), 'SCHEDULED', 0)");
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(DefaultBikesched.class, HistoryCleanUp.class);
     try (logs;
         var _ =
             testNode("node-history-cleanup")

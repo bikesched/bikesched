@@ -10,7 +10,7 @@ import java.util.UUID;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
 import org.bikesched.LogCapture;
-import org.bikesched.internal.DefaultBikesched;
+import org.bikesched.internal.job.JobCleanUp;
 import org.junit.jupiter.api.Test;
 
 /** The job retention (default 7 days): ended jobs are deleted with their steps. */
@@ -44,7 +44,7 @@ class JobCleanUpTest extends AbstractBikeschedTest {
         "insert into bikesched_steps (job_id, name, state, attempts) values ('"
             + oldJob
             + "', 's', 'SUCCEEDED', 1)");
-    var logs = LogCapture.of(DefaultBikesched.class);
+    var logs = LogCapture.of(JobCleanUp.class);
     try (logs;
         Bikesched bikesched =
             testNode("node-job-cleanup")
