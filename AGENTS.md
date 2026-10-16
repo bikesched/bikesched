@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Guidance for coding agents (and humans) working on bikesched: a PostgreSQL-backed job scheduler
-library for Java 21 and later with a Kotlin companion module. Read `README.md` and `docs/` for what the library
-does; this file covers how to change it.
+library for Java 21 and later with a Kotlin companion module. Read `README.md` and `docs/` for
+what the library does; this file covers how to change it.
 
 ## Build and run
 
@@ -31,11 +31,13 @@ does; this file covers how to change it.
 - Every version (libraries, Gradle plugins, Java, the project version) lives in
   `gradle/libs.versions.toml`; no version literals in `.kts` files. Use the latest stable releases.
 - CI: `.github/workflows/build.yml` runs `./gradlew build` on every pull request and push to
-  `main` (Temurin JDK 26, tests on JDK 21, Docker for Testcontainers), except when only Markdown files and SVG images
-  changed (a `changes` job skips `build`, which still reports success for required checks); a separate job publishes snapshot versions of the
-  library modules to GitHub Packages after successful builds of `main` only (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin
-  `bikesched.publishing` with `maven-publish`). Keep its `java-version` list in sync with `java` and
-  `java-release` in the version catalog.
+  `main` (Temurin JDK 26, tests on JDK 21, Docker for Testcontainers), except when only Markdown
+  files and SVG images changed (a `changes` job skips `build`, which still reports success for
+  required checks); a separate job publishes snapshot versions of the library modules to GitHub
+  Packages after successful builds of `main` only
+  (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin `bikesched.publishing`
+  with `maven-publish`). Keep its `java-version` list in sync with `java` and `java-release` in
+  the version catalog.
 
 ## Layout
 
