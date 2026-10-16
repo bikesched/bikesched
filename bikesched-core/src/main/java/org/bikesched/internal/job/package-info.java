@@ -4,4 +4,7 @@
  * {@code DefaultJob}) with durable steps, compensation and event waits, and recurring jobs. Not
  * exported by the module; not part of the API.
  */
+@NullMarked
 package org.bikesched.internal.job;
+
+import org.jspecify.annotations.NullMarked;

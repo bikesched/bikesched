@@ -14,6 +14,7 @@ import org.bikesched.internal.database.StepStore;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.JobResult;
 import org.bikesched.job.Step;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The step primitives of a {@link DefaultJob} claimed to be compensated: its handler is replayed,
@@ -29,7 +30,7 @@ final class CompensationReplay {
    * @param stepName the step to compensate
    * @param call runs the compensation with the step's stored result
    */
-  record PendingCompensation(String stepName, DefaultJob.StepCall<Void> call) {}
+  record PendingCompensation(String stepName, DefaultJob.StepCall<@Nullable Void> call) {}
 
   private final Database database;
   private final UUID jobId;
@@ -38,8 +39,8 @@ final class CompensationReplay {
   private final Deque<PendingCompensation> compensations = new ConcurrentLinkedDeque<>();
 
   CompensationReplay(Database database, UUID jobId) {
-    this.database = Objects.requireNonNull(database, "database");
-    this.jobId = Objects.requireNonNull(jobId, "jobId");
+    this.database = database;
+    this.jobId = jobId;
   }
 
   /** The compensations registered by the replay, in the order to run them (latest step first). */
@@ -48,15 +49,16 @@ final class CompensationReplay {
   }
 
   /** A regular step: its stored result, registering its compensation if it has one to run. */
-  <T> T step(
-      String name, Function<String, T> fromJson, CompensationHandler<? super T> compensation) {
+  <T extends @Nullable Object> @Nullable T step(
+      String name,
+      Function<@Nullable String, @Nullable T> fromJson,
+      @Nullable CompensationHandler<? super T> compensation) {
     var completed = database.steps().findCompletedStep(jobId, name);
     if (completed.isEmpty()) {
       throw new CompensationReplayEnded(name);
     }
     StepKind.STEP.require(name, jobId, completed.get().kind());
-    String json = completed.get().result();
-    T result = json == null ? null : fromJson.apply(json);
+    @Nullable T result = fromJson.apply(completed.get().result());
     if (compensation != null && completed.get().compensable() && !completed.get().compensated()) {
       var step = new Step(jobId, name, completed.get().attempts());
       register(name, () -> compensation.handle(step, result));
@@ -70,13 +72,14 @@ final class CompensationReplay {
   }
 
   /** A child job started as a step: the started child, registering the step's compensation. */
-  UUID startedChild(String stepName, CompensationHandler<? super UUID> compensation) {
+  UUID startedChild(String stepName, @Nullable CompensationHandler<? super UUID> compensation) {
     var step = database.steps().findChildJobStep(jobId, stepName);
     if (step.isEmpty()) {
       throw new CompensationReplayEnded(stepName);
     }
     StepKind.CHILD_JOB.require(stepName, jobId, step.get().kind());
-    UUID childJobId = step.get().childJobId();
+    UUID childJobId =
+        Objects.requireNonNull(step.get().childJobId(), "child job of a CHILD_JOB step");
     if (compensation != null && step.get().state() != StepState.COMPENSATED) {
       var compensated = new Step(jobId, stepName, step.get().attempts());
       register(stepName, () -> compensation.handle(compensated, childJobId));
@@ -85,7 +88,8 @@ final class CompensationReplay {
   }
 
   /** A wait for a child job: the outcome it received or its timeout. */
-  <T> JobResult<T> childResult(UUID childJobId, Function<String, T> read) {
+  <T extends @Nullable Object> JobResult<T> childResult(
+      UUID childJobId, Function<@Nullable String, @Nullable T> read) {
     var wait = database.steps().findChildWait(jobId, childJobId);
     return switch (wait) {
       case StepStore.ChildWait.ChildEnded ended -> DefaultJob.jobResult(childJobId, ended, read);
@@ -101,12 +105,14 @@ final class CompensationReplay {
   }
 
   /** A poll: its ready value; a poll that failed or timed out ended the job there. */
-  <T> T poll(String name, Function<String, T> read) {
+  <T extends @Nullable Object> @Nullable T poll(
+      String name, Function<@Nullable String, @Nullable T> read) {
     return read.apply(requireSucceeded(name, StepKind.POLL).result());
   }
 
   /** An event wait: the received payload; a wait that timed out ended the job there. */
-  <T> T event(String stepName, Function<String, T> read) {
+  <T extends @Nullable Object> @Nullable T event(
+      String stepName, Function<@Nullable String, @Nullable T> read) {
     return read.apply(requireSucceeded(stepName, StepKind.EVENT_WAIT).result());
   }
 
@@ -115,7 +121,7 @@ final class CompensationReplay {
    *
    * @param kind the expected kind, {@code null} to accept any
    */
-  private StepStore.StoredStep requireSucceeded(String stepName, StepKind kind) {
+  private StepStore.StoredStep requireSucceeded(String stepName, @Nullable StepKind kind) {
     var stored = database.steps().findStep(jobId, stepName);
     if (kind != null) {
       stored.ifPresent(step -> kind.require(stepName, jobId, step.kind()));

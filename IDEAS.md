@@ -80,22 +80,17 @@ over a real database, see [the spec](docs/specs/bikesched-test.md) and
 
 ## API
 
-### Nullness annotations beyond the core API
+### Nullness checks beyond the core module
 
-The exported packages of `bikesched-core` are `@NullMarked` with JSpecify
-([ADR 0041](docs/decisions/0041-jspecify-nullness-annotations.md)); the internal packages, the other
-Java modules (`bikesched-jackson`, `bikesched-annotations`, `bikesched-cron`,
-`bikesched-micrometer`, `bikesched-spring-boot-starter`, `bikesched-admin`, `bikesched-test`) and
-the build are not covered yet.
+All packages of `bikesched-core` are `@NullMarked` and checked with NullAway in the build
+([ADR 0048](docs/decisions/0048-nullaway-in-the-core-build.md)); the other Java modules
+(`bikesched-jackson`, `bikesched-annotations`, `bikesched-cron`, `bikesched-micrometer`,
+`bikesched-spring-boot-starter`, `bikesched-admin`, `bikesched-test`) are not covered yet.
 
-- Mark the internal packages and the other modules' packages with `@NullMarked`, adding
-  `@Nullable` to fields, parameters and returns that may be `null`.
-- Enforce the annotations in the build, so a missing `@Nullable` fails the compile instead of
-  waiting for review. NullAway in JSpecify mode passes on the annotated API packages today.
-- To decide between:
-  - NullAway (Error Prone plugin) on every Java module.
-  - Keep it documentation-only and check with NullAway now and then.
-- Outcome: nullness checked across the code base, not only declared on the API.
+- Mark their packages with `@NullMarked`, adding `@Nullable` where `null` occurs.
+- Apply the `bikesched.errorprone` convention plugin to each, fixing its NullAway and Error Prone
+  findings; drop null checks the types then exclude.
+- Outcome: nullness checked across the code base, not only in core.
 
 ### Fixed-delay recurrences
 

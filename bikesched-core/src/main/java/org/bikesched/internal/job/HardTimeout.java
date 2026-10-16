@@ -3,7 +3,6 @@ package org.bikesched.internal.job;
 
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -11,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.bikesched.BikeschedException;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,10 +42,10 @@ public final class HardTimeout {
    * @param nodeName its name, for logging
    */
   public HardTimeout(Duration grace, Executor recorder, UUID nodeId, String nodeName) {
-    this.grace = Objects.requireNonNull(grace, "grace");
-    this.recorder = Objects.requireNonNull(recorder, "recorder");
-    this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
+    this.grace = grace;
+    this.recorder = recorder;
+    this.nodeId = nodeId;
+    this.nodeName = nodeName;
   }
 
   /** How long after its timeout an attempt is abandoned. */
@@ -109,7 +109,7 @@ public final class HardTimeout {
    * @param failure the exception the handler ended with, {@code null} if it returned normally
    * @return a description of the outcome, for logging
    */
-  String returned(DefaultJob job, Exception failure) {
+  String returned(DefaultJob job, @Nullable Exception failure) {
     int running = abandonedThreads.decrementAndGet();
     LOG.info(
         "Abandoned attempt {} of job {} of type {} returned after all{}; its outcome is discarded"

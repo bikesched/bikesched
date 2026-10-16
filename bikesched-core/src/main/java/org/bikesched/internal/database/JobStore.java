@@ -12,7 +12,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -22,6 +21,7 @@ import org.bikesched.internal.database.ClaimEnd.FollowUp;
 import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@code bikesched_jobs} table: inserting, claiming and finishing jobs, releasing the jobs of
@@ -37,9 +37,9 @@ public final class JobStore {
   private final JsonMapper jsonMapper;
 
   JobStore(DatabaseAccess access, HistoryStore history, JsonMapper jsonMapper) {
-    this.access = Objects.requireNonNull(access, "access");
-    this.history = Objects.requireNonNull(history, "history");
-    this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
+    this.access = access;
+    this.history = history;
+    this.jsonMapper = jsonMapper;
   }
 
   private static final String INSERT_JOB_SQL =
@@ -108,7 +108,7 @@ public final class JobStore {
       """
             update bikesched_jobs set state = 'SCHEDULED', scheduled_at = now(), updated_at = now()
              where id = ? and state = 'WAITING'
-            returning attempts, type""";
+            returning state, attempts, type, scheduled_at""";
 
   // Inserts an occurrence of a recurring job unless one is pending already (partial unique index).
   private static final String INSERT_OCCURRENCE_SQL =
@@ -585,7 +585,7 @@ public final class JobStore {
             Sql.array("uuid", claimed.stream().map(ClaimedJob::id).toArray())));
   }
 
-  private static String claimDetail(ClaimedJob job) {
+  private static @Nullable String claimDetail(ClaimedJob job) {
     return switch (job.phase()) {
       case JobPhase.HandleFailure(_, int run) -> "failure handler run " + run;
       case JobPhase.Compensate(_, int attempt) -> "compensation attempt " + attempt;
@@ -604,7 +604,7 @@ public final class JobStore {
     return completeJob(ClaimEnd.of(jobId, lock), null).isPresent();
   }
 
-  private boolean completeJob(Sql db, ClaimEnd end, String result) throws SQLException {
+  private boolean completeJob(Sql db, ClaimEnd end, @Nullable String result) throws SQLException {
     Optional<Integer> attempts =
         db.one(COMPLETE_JOB_SQL, row -> row.integer(1), result, end.jobId(), end.lock().token());
     if (attempts.isPresent()) {
@@ -628,7 +628,7 @@ public final class JobStore {
    * @param result the job's result as JSON text, {@code null} if none
    * @return the job's new state; empty if the job is not running on this node (anymore)
    */
-  public Optional<EndedJob> completeJob(ClaimEnd end, String result) {
+  public Optional<EndedJob> completeJob(ClaimEnd end, @Nullable String result) {
     if (end.followUp() instanceof FollowUp.None) {
       // One statement: no transaction unless the history is enabled.
       return history.change(
@@ -816,11 +816,7 @@ public final class JobStore {
             "SUCCEEDED",
             null,
             "job " + jobId + " ended " + completed.get().childState()));
-    Optional<ChangedJob> resumed =
-        db.one(
-            RESUME_PARENT_SQL,
-            row -> new ChangedJob(JobState.SCHEDULED, row.integer(1), row.string(2), null),
-            parent);
+    Optional<ChangedJob> resumed = db.one(RESUME_PARENT_SQL, ChangedJob::from, parent);
     if (resumed.isPresent()) {
       db.dueNow(resumed.get().type());
       changes.add(
@@ -841,7 +837,7 @@ public final class JobStore {
    * @param message why the job was cancelled, stored as {@code last_error}; may be {@code null}
    * @return {@code false} if the job is not running on this node (anymore)
    */
-  public boolean cancelJob(UUID jobId, JobLock lock, String message) {
+  public boolean cancelJob(UUID jobId, JobLock lock, @Nullable String message) {
     return cancelJob(ClaimEnd.of(jobId, lock), message, true).isPresent();
   }
 
@@ -857,7 +853,7 @@ public final class JobStore {
    *     right after claiming it), the attempt is not counted
    * @return the job's new state; empty if the job is not running on this node (anymore)
    */
-  public Optional<EndedJob> cancelJob(ClaimEnd end, String message, boolean attemptRan) {
+  public Optional<EndedJob> cancelJob(ClaimEnd end, @Nullable String message, boolean attemptRan) {
     UUID jobId = end.jobId();
     JobLock lock = end.lock();
     return access.inTransaction(
@@ -909,7 +905,7 @@ public final class JobStore {
    * @param message why the job is cancelled, may be {@code null}
    * @return {@code false} if the job does not exist, has ended or is compensating
    */
-  public boolean requestCancel(UUID jobId, String message) {
+  public boolean requestCancel(UUID jobId, @Nullable String message) {
     return history.change(
         db -> {
           Optional<ChangedJob> job =
@@ -1039,7 +1035,8 @@ public final class JobStore {
    * @param retryAfter delay of the next compensation attempt, {@code null} for as soon as possible
    * @return the job after recording the failure; empty if it is not compensating on this node
    */
-  public Optional<FailedJob> failCompensation(ClaimEnd end, String error, Duration retryAfter) {
+  public Optional<FailedJob> failCompensation(
+      ClaimEnd end, String error, @Nullable Duration retryAfter) {
     UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
@@ -1162,7 +1159,11 @@ public final class JobStore {
    *     null} if it was not moved
    */
   public record RecurringRegistration(
-      UUID jobId, Instant scheduledAt, String state, boolean created, String previousRecurrence) {}
+      UUID jobId,
+      Instant scheduledAt,
+      String state,
+      boolean created,
+      @Nullable String previousRecurrence) {}
 
   /** A pending occurrence moved to a changed recurrence. */
   private record Moved(String previousRecurrence, UUID jobId, int attempts) {}
@@ -1206,7 +1207,11 @@ public final class JobStore {
    *     (anymore)
    */
   public Optional<FailedJob> failJob(
-      UUID jobId, JobLock lock, String error, Integer maxAttempts, Duration retryAfter) {
+      UUID jobId,
+      JobLock lock,
+      String error,
+      @Nullable Integer maxAttempts,
+      @Nullable Duration retryAfter) {
     return failJob(ClaimEnd.of(jobId, lock), error, maxAttempts, retryAfter);
   }
 
@@ -1223,7 +1228,7 @@ public final class JobStore {
    *     (anymore)
    */
   public Optional<FailedJob> failJob(
-      ClaimEnd end, String error, Integer maxAttempts, Duration retryAfter) {
+      ClaimEnd end, String error, @Nullable Integer maxAttempts, @Nullable Duration retryAfter) {
     UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
@@ -1267,7 +1272,7 @@ public final class JobStore {
    * @param detail recorded in the job history
    * @return the job's new state; empty if the job is not failing on this node (anymore)
    */
-  public Optional<EndedJob> endFailing(ClaimEnd end, String detail) {
+  public Optional<EndedJob> endFailing(ClaimEnd end, @Nullable String detail) {
     UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
@@ -1297,7 +1302,7 @@ public final class JobStore {
    * @return when the handler runs again; empty if the job is not failing on this node (anymore)
    */
   public Optional<Instant> retryFailureHandler(
-      UUID jobId, JobLock lock, String error, Duration retryAfter) {
+      UUID jobId, JobLock lock, String error, @Nullable Duration retryAfter) {
     return history.change(
         db -> {
           Optional<ChangedJob> failing =
@@ -1598,18 +1603,18 @@ public final class JobStore {
   public record ClaimedJob(
       UUID id,
       String type,
-      String payload,
+      @Nullable String payload,
       int priority,
       Instant scheduledAt,
       int attempts,
       int maxAttempts,
-      Duration timeout,
+      @Nullable Duration timeout,
       JobPhase phase,
       JobOrigin origin,
       boolean cancelRequested,
-      String cancelMessage,
+      @Nullable String cancelMessage,
       JobLock lock,
-      String lastError) {
+      @Nullable String lastError) {
 
     /** Maps a row of {@code CLAIM_JOBS_SQL}. */
     static ClaimedJob from(Sql.Row row) throws SQLException {

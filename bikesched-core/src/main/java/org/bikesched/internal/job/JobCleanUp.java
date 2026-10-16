@@ -2,7 +2,6 @@
 package org.bikesched.internal.job;
 
 import java.time.Duration;
-import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.internal.database.Database;
 import org.slf4j.Logger;
@@ -33,10 +32,10 @@ public final class JobCleanUp {
    * @param retention how long ended jobs are kept
    */
   public JobCleanUp(Database database, UUID nodeId, String nodeName, Duration retention) {
-    this.database = Objects.requireNonNull(database, "database");
-    this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
-    this.retention = Objects.requireNonNull(retention, "retention");
+    this.database = database;
+    this.nodeId = nodeId;
+    this.nodeName = nodeName;
+    this.retention = retention;
   }
 
   /**

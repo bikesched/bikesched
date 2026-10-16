@@ -2,13 +2,13 @@
 package org.bikesched.internal.job;
 
 import java.time.Duration;
-import java.util.Objects;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.bikesched.job.Job;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,10 +36,10 @@ final class JobAttempt {
   private final Thread thread;
   private final ScheduledExecutorService timers;
   private final String nodeId;
-  private final Duration hardTimeoutGrace;
+  private final @Nullable Duration hardTimeoutGrace;
   private final Consumer<JobAttempt> onAbandoned;
-  private Duration timeout;
-  private ScheduledFuture<?> timer;
+  private @Nullable Duration timeout;
+  private @Nullable ScheduledFuture<?> timer;
   private State state = State.RUNNING;
 
   /** Where the attempt is; changes only under the attempt's lock. */
@@ -68,14 +68,14 @@ final class JobAttempt {
       Thread thread,
       ScheduledExecutorService timers,
       String nodeId,
-      Duration hardTimeoutGrace,
+      @Nullable Duration hardTimeoutGrace,
       Consumer<JobAttempt> onAbandoned) {
-    this.job = Objects.requireNonNull(job, "job");
-    this.thread = Objects.requireNonNull(thread, "thread");
-    this.timers = Objects.requireNonNull(timers, "timers");
-    this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
+    this.job = job;
+    this.thread = thread;
+    this.timers = timers;
+    this.nodeId = nodeId;
     this.hardTimeoutGrace = hardTimeoutGrace;
-    this.onAbandoned = Objects.requireNonNull(onAbandoned, "onAbandoned");
+    this.onAbandoned = onAbandoned;
   }
 
   /**
@@ -101,7 +101,7 @@ final class JobAttempt {
   }
 
   /** The timeout currently enforced, or {@code null} if none. */
-  synchronized Duration timeout() {
+  synchronized @Nullable Duration timeout() {
     return timeout;
   }
 
@@ -172,7 +172,7 @@ final class JobAttempt {
     return end;
   }
 
-  private ScheduledFuture<?> schedule(Runnable task, Duration delay) {
+  private @Nullable ScheduledFuture<?> schedule(Runnable task, Duration delay) {
     try {
       return timers.schedule(task, delay.toNanos(), TimeUnit.NANOSECONDS);
     } catch (RejectedExecutionException e) {

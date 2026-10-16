@@ -3,10 +3,10 @@ package org.bikesched.internal.job.claim;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The poller's one timer: wakes it at the earliest due time it knows of. Confined to the poller
@@ -22,17 +22,17 @@ final class WakeUpTimer {
   private final Runnable onFire;
 
   /** The armed timer and its due time; {@code null} while none is armed. */
-  private ScheduledFuture<?> timer;
+  private @Nullable ScheduledFuture<?> timer;
 
-  private Instant dueAt;
+  private @Nullable Instant dueAt;
 
   /**
    * @param pollerExecutor the poller's single thread
    * @param onFire runs on the poller thread when the timer fires
    */
   WakeUpTimer(ScheduledExecutorService pollerExecutor, Runnable onFire) {
-    this.pollerExecutor = Objects.requireNonNull(pollerExecutor, "pollerExecutor");
-    this.onFire = Objects.requireNonNull(onFire, "onFire");
+    this.pollerExecutor = pollerExecutor;
+    this.onFire = onFire;
   }
 
   /**

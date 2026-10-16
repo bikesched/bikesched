@@ -14,6 +14,9 @@ does; this file covers how to change it.
 - Compiler settings fail on warnings: Java `-Xlint:all -Werror`, Kotlin `allWarningsAsErrors` and
   explicit API mode (`public` and return types on every public declaration). Javadoc runs with
   `-Werror` too; also check the build log for warnings, not only failures.
+- `bikesched-core` compiles with Error Prone and NullAway (convention plugin
+  `bikesched.errorprone`, ADR 0048): NullAway findings are errors, Error Prone warnings fail the
+  build through `-Werror`. Test sources are not checked.
 - Local database: `docker compose up -d` (prefix `POSTGRES_PORT=5433` if 5432 is taken), then
   run an example, e.g. `./gradlew :bikesched-examples:java:runSimple`.
 - Source files start with `// SPDX-License-Identifier: Apache-2.0`; Spotless adds it (and
@@ -42,7 +45,7 @@ does; this file covers how to change it.
 | `bikesched-admin` | the admin UI (Java only, package `org.bikesched.admin.web`): `BikeschedAdmin` serves a page and a JSON API through a framework-neutral `handle(AdminRequest)` and a JDK `com.sun.net.httpserver` adapter, `AdminAccess` in the subpackage `access` decides per request (open by default, built-in Basic authentication); the page is static files in `src/main/resources/org/bikesched/admin/web/ui/` (ES modules with Preact and htm, copied from their WebJars by the `vendorUi` task, no build step, CSP without inline scripts or styles); depends on core only (`api`); see `docs/admin.md` |
 | `bikesched-examples` | runnable examples, described in its own `README.md`, in two submodules: `java` (plain Java examples, one package per scenario, each with a Testcontainers test using the shared `util.Database`; JSON via bikesched-jackson) and `spring` (the Spring Boot example as a regular Boot application with the Spring Boot Gradle plugin, `bootRun`) |
 | `bikesched-website` | the project site at `bikesched.org`, generated with Hugo from `README.md` and `docs/` (Hugo module mounts, no content copy) and the Hextra theme (git submodule), described in its own `docs/specs/website-project-site.md` and [ADR 0047](docs/decisions/0047-website-hosted-on-cloudflare-workers.md); built with `./gradlew :bikesched-website:hugoBuild`, deployed to the Cloudflare Worker `bikesched-website` (`bikesched-website/wrangler.jsonc`) by `.github/workflows/website.yml` |
-| `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library` |
+| `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library`, `bikesched.errorprone` |
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 
@@ -122,11 +125,13 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `job.fail()`), except suspending at an event wait (internal `Error`, see `JobSuspended`).
 - New mechanisms are opt-in: jobs not using them behave exactly as before (no extra state, replay
   or round-trip).
-- Nullness: the exported core packages are `@NullMarked` (JSpecify, ADR 0041). Mark values that
-  may be `null` with `@Nullable` (type-use position: `@Nullable String`, `java.time.@Nullable
-  Duration`); type parameters of user values are `<T extends @Nullable Object>`, with
-  `@Nullable T` where `null` occurs for any `T` (no payload, a `null` step result). Lookups keep
-  returning `Optional`.
+- Nullness: every core package is `@NullMarked` (JSpecify, ADR 0041), checked by NullAway (ADR
+  0048). Mark values that may be `null` with `@Nullable` (type-use position: `@Nullable String`,
+  `java.time.@Nullable Duration`, `JobSuspended.@Nullable Suspension`); type parameters of user
+  values are `<T extends @Nullable Object>`, with `@Nullable T` where `null` occurs for any `T`
+  (no payload, a `null` step result). Lookups keep returning `Optional`. Internal code does not
+  `requireNonNull` what its types exclude; only API entry points check user arguments. Read a
+  nullable field once into a local before testing it, so NullAway can follow it.
 - Breaking API changes are fine while unreleased; rename across code, tests, examples, README and
   `docs/` in one go.
 

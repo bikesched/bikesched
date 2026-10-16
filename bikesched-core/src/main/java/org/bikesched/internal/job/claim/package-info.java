@@ -4,4 +4,7 @@
  * {@code org.bikesched.internal.job}, which never depends on this package. Not exported by the
  * module; not part of the API.
  */
+@NullMarked
 package org.bikesched.internal.job.claim;
+
+import org.jspecify.annotations.NullMarked;

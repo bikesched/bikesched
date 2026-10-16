@@ -3,6 +3,7 @@ package org.bikesched.internal.json;
 
 import java.util.Objects;
 import org.bikesched.JsonMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link JsonMapper} used when none is configured (see {@code Internals.create}): supports only
@@ -43,7 +44,7 @@ public final class RawJsonMapper implements JsonMapper {
    * @throws IllegalArgumentException if the type cannot hold a {@link String}
    */
   @Override
-  public <T> T fromJson(String json, Class<T> type) {
+  public <T extends @Nullable Object> T fromJson(String json, Class<T> type) {
     Objects.requireNonNull(json, "json");
     Objects.requireNonNull(type, "type");
     if (type.isAssignableFrom(String.class)) {

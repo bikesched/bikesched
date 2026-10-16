@@ -13,6 +13,7 @@ import org.bikesched.internal.job.JobCleanUp;
 import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.job.RecurrenceParser;
 import org.bikesched.job.listener.JobListener;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Configuration of a node, assembled and validated by {@link BikeschedBuilder}.
@@ -61,19 +62,19 @@ public record Settings(
     int maxConcurrentJobs,
     boolean autoStartPolling,
     boolean migrateSchema,
-    Duration defaultJobTimeout,
+    @Nullable Duration defaultJobTimeout,
     RetryBackoff retryBackoff,
     int failureHandlerAttempts,
     Duration eventRetention,
-    Duration defaultEventTimeout,
+    @Nullable Duration defaultEventTimeout,
     Duration nodeCleanUpInterval,
     Duration eventCleanUpInterval,
-    Duration jobHistoryRetention,
+    @Nullable Duration jobHistoryRetention,
     Duration jobHistoryCleanUpInterval,
     Duration jobRetention,
     Duration jobCleanUpInterval,
-    Duration statementTimeout,
-    Duration hardTimeoutGrace,
+    @Nullable Duration statementTimeout,
+    @Nullable Duration hardTimeoutGrace,
     JobListener jobListener,
     EventListener eventListener,
     List<RecurrenceParser> recurrenceParsers) {

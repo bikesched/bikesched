@@ -6,7 +6,6 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.Executor;
 import org.bikesched.BikeschedException;
 import org.postgresql.PGConnection;
@@ -66,7 +65,6 @@ public final class DueJobsListening implements AutoCloseable {
    * @throws BikeschedException if the connection failed (e.g. it was terminated or closed)
    */
   public List<String> receive(Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout");
     try {
       PGNotification[] received =
           notifications.getNotifications((int) Math.max(1, Math.min(timeout.toMillis(), 60_000)));

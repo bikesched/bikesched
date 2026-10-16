@@ -3,7 +3,6 @@ package org.bikesched.internal.job;
 
 import java.sql.Connection;
 import java.time.Instant;
-import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NewJob;
@@ -12,6 +11,7 @@ import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,12 +43,11 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
       String nodeName,
       RecurrenceParsers recurrenceParsers,
       Runnable beforeDatabaseAccess) {
-    this.database = Objects.requireNonNull(database, "database");
-    this.registry = Objects.requireNonNull(registry, "registry");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
-    this.recurrenceParsers = Objects.requireNonNull(recurrenceParsers, "recurrenceParsers");
-    this.beforeDatabaseAccess =
-        Objects.requireNonNull(beforeDatabaseAccess, "beforeDatabaseAccess");
+    this.database = database;
+    this.registry = registry;
+    this.nodeName = nodeName;
+    this.recurrenceParsers = recurrenceParsers;
+    this.beforeDatabaseAccess = beforeDatabaseAccess;
   }
 
   /**
@@ -59,7 +58,10 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
    */
   @Override
   public UUID schedule(
-      NewJob job, JobHandler handler, JobFailureHandler failureHandler, Connection connection) {
+      NewJob job,
+      @Nullable JobHandler handler,
+      @Nullable JobFailureHandler failureHandler,
+      @Nullable Connection connection) {
     beforeDatabaseAccess.run();
     String type = job.type();
     requireHandler(type, handler);
@@ -107,7 +109,10 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
   /** Registers a recurring job, see {@link JobBuilder#schedule(Recurrence)}. */
   @Override
   public UUID scheduleRecurring(
-      RecurringJob job, JobHandler handler, JobFailureHandler failureHandler, Instant firstRun) {
+      RecurringJob job,
+      @Nullable JobHandler handler,
+      @Nullable JobFailureHandler failureHandler,
+      @Nullable Instant firstRun) {
     beforeDatabaseAccess.run();
     String type = job.type();
     requireHandler(type, handler);
@@ -167,7 +172,7 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
    * @throws IllegalArgumentException if the type has no handler
    */
   @Override
-  public void requireHandler(String type, JobHandler handler) {
+  public void requireHandler(String type, @Nullable JobHandler handler) {
     if (handler != null) {
       if (registry.register(type, handler)) {
         LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);
@@ -179,7 +184,7 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
   }
 
   /** Registers a builder's failure handler, if given, unless the type has one. */
-  private void registerFailureHandler(String type, JobFailureHandler failureHandler) {
+  private void registerFailureHandler(String type, @Nullable JobFailureHandler failureHandler) {
     if (failureHandler == null) {
       return;
     }

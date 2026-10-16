@@ -3,9 +3,9 @@ package org.bikesched.internal.database;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.Recurrence;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The stored attributes of a job to be scheduled, assembled by {@link JobBuilder} (or of an
@@ -26,41 +26,36 @@ import org.bikesched.job.Recurrence;
  */
 public record NewJob(
     String type,
-    String payload,
+    @Nullable String payload,
     Instant scheduledAt,
     int priority,
     int maxAttempts,
-    Duration timeout,
-    String recurrence,
-    Instant fixedRateAt,
-    String idempotencyKey) {
-
-  public NewJob {
-    Objects.requireNonNull(type, "type");
-    Objects.requireNonNull(scheduledAt, "scheduledAt");
-  }
+    @Nullable Duration timeout,
+    @Nullable String recurrence,
+    @Nullable Instant fixedRateAt,
+    @Nullable String idempotencyKey) {
 
   /** A job without idempotency key: a one-off job or an occurrence. */
   public NewJob(
       String type,
-      String payload,
+      @Nullable String payload,
       Instant scheduledAt,
       int priority,
       int maxAttempts,
-      Duration timeout,
-      String recurrence,
-      Instant fixedRateAt) {
+      @Nullable Duration timeout,
+      @Nullable String recurrence,
+      @Nullable Instant fixedRateAt) {
     this(type, payload, scheduledAt, priority, maxAttempts, timeout, recurrence, fixedRateAt, null);
   }
 
   /** A one-off job without idempotency key. */
   public NewJob(
       String type,
-      String payload,
+      @Nullable String payload,
       Instant scheduledAt,
       int priority,
       int maxAttempts,
-      Duration timeout) {
+      @Nullable Duration timeout) {
     this(type, payload, scheduledAt, priority, maxAttempts, timeout, null, null, null);
   }
 }

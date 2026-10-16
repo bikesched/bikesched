@@ -1,5 +1,6 @@
 plugins {
     id("bikesched.java-library")
+    id("bikesched.errorprone")
 }
 
 description = "PostgreSQL-backed job scheduler: jobs, durable steps, recurring jobs and events"

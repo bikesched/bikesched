@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.event.EventWait;
 import org.bikesched.job.Job;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Thrown by {@link EventWait#receive()}, {@link Job#sleep}, {@link Job#waitForJob} and polls to end
@@ -68,7 +69,8 @@ final class JobSuspended extends Error {
    * @param eventKey the event key
    * @param waitUntil the deadline of the wait, {@code null} if none
    */
-  record EventSuspension(String stepName, String eventName, String eventKey, Instant waitUntil)
+  record EventSuspension(
+      String stepName, String eventName, String eventKey, @Nullable Instant waitUntil)
       implements Wait {
 
     /** The event, e.g. {@code event payment-received/42}. */
@@ -103,7 +105,8 @@ final class JobSuspended extends Error {
    * @param childJobId the child
    * @param waitUntil the deadline of the wait, {@code null} if none
    */
-  record JobSuspension(String stepName, UUID childJobId, Instant waitUntil) implements Wait {
+  record JobSuspension(String stepName, UUID childJobId, @Nullable Instant waitUntil)
+      implements Wait {
 
     @Override
     public String toString() {
@@ -136,7 +139,7 @@ final class JobSuspended extends Error {
    * @param stepName the step whose handler postponed the job, {@code null} if none ran
    * @param delay how long from now the job is due again (counted by the database)
    */
-  record PostponeSuspension(String stepName, Duration delay) implements Suspension {
+  record PostponeSuspension(@Nullable String stepName, Duration delay) implements Suspension {
 
     @Override
     public String toString() {

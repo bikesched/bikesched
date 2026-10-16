@@ -3,7 +3,6 @@ package org.bikesched.internal.job;
 
 import java.time.Instant;
 import java.util.Collection;
-import java.util.Objects;
 import java.util.function.Supplier;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NewJob;
@@ -29,8 +28,8 @@ public final class RecurringJobRepair {
    * @param recurringJobs the recurring jobs registered on this node
    */
   public RecurringJobRepair(Database database, Supplier<Collection<RecurringJob>> recurringJobs) {
-    this.database = Objects.requireNonNull(database, "database");
-    this.recurringJobs = Objects.requireNonNull(recurringJobs, "recurringJobs");
+    this.database = database;
+    this.recurringJobs = recurringJobs;
   }
 
   /**

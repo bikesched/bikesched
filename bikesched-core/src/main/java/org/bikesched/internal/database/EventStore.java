@@ -7,11 +7,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.internal.database.HistoryStore.Change;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@code bikesched_events} table and steps waiting for events: waiting for, suspending at and
@@ -25,8 +25,8 @@ public final class EventStore {
   private final HistoryStore history;
 
   EventStore(DatabaseAccess access, HistoryStore history) {
-    this.access = Objects.requireNonNull(access, "access");
-    this.history = Objects.requireNonNull(history, "history");
+    this.access = access;
+    this.history = history;
   }
 
   // ---- Events ----
@@ -127,7 +127,7 @@ public final class EventStore {
      * @param json the received event's payload as stored with the step; JSON text, may be {@code
      *     null}
      */
-    record Received(String json) implements EventWaitResult {}
+    record Received(@Nullable String json) implements EventWaitResult {}
 
     /** The wait timed out ({@code TIMED_OUT}). */
     record TimedOut() implements EventWaitResult {}
@@ -147,7 +147,7 @@ public final class EventStore {
      *
      * @param waitUntil the deadline of the wait, {@code null} if none
      */
-    record Waiting(Instant waitUntil) implements EventWaitResult {}
+    record Waiting(@Nullable Instant waitUntil) implements EventWaitResult {}
   }
 
   /**
@@ -173,7 +173,7 @@ public final class EventStore {
       String stepName,
       String eventName,
       String eventKey,
-      Duration timeout) {
+      @Nullable Duration timeout) {
     return access.inTransaction(
         db -> {
           StepStore.requireJobLock(db, jobId, lock);
@@ -323,9 +323,9 @@ public final class EventStore {
   public Publication publishEvent(
       String eventName,
       String eventKey,
-      String payload,
+      @Nullable String payload,
       Duration retention,
-      String idempotencyKey) {
+      @Nullable String idempotencyKey) {
     return access.inTransaction(
         db -> publish(db, eventName, eventKey, payload, retention, idempotencyKey),
         e ->
@@ -352,9 +352,9 @@ public final class EventStore {
       Connection connection,
       String eventName,
       String eventKey,
-      String payload,
+      @Nullable String payload,
       Duration retention,
-      String idempotencyKey) {
+      @Nullable String idempotencyKey) {
     return access.onCallerConnection(
         connection,
         db -> {
@@ -395,7 +395,7 @@ public final class EventStore {
       String stepName,
       String eventName,
       String eventKey,
-      String payload,
+      @Nullable String payload,
       Duration retention,
       boolean compensating) {
     return access.inTransaction(
@@ -482,11 +482,10 @@ public final class EventStore {
       Sql db,
       String eventName,
       String eventKey,
-      String payload,
+      @Nullable String payload,
       Duration retention,
-      String idempotencyKey)
+      @Nullable String idempotencyKey)
       throws SQLException {
-    Objects.requireNonNull(retention, "retention");
     lockEvent(db, eventName, eventKey);
     if (idempotencyKey != null) {
       Optional<UUID> earlier =
@@ -555,7 +554,7 @@ public final class EventStore {
    * @param publication the publication if this run published the event, {@code null} if an earlier
    *     run did
    */
-  public record StepPublication(UUID eventId, Publication publication) {}
+  public record StepPublication(UUID eventId, @Nullable Publication publication) {}
 
   /**
    * Deletes expired events (their retention has passed).
@@ -573,7 +572,7 @@ public final class EventStore {
   }
 
   /** An event found in {@code bikesched_events}; its payload may be {@code null}. */
-  private record PublishedEvent(UUID id, String payload) {}
+  private record PublishedEvent(UUID id, @Nullable String payload) {}
 
   /** A row of {@code RESUME_WAITING_STEPS_SQL}: a step that received the event. */
   private record Resumption(

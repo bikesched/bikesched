@@ -11,6 +11,7 @@ import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobType;
 import org.bikesched.job.TypedJobFailureHandler;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The job types a node knows: their handlers, its recurring jobs and the payload classes of typed
@@ -60,7 +61,7 @@ public final class JobRegistry {
    * @param type the job type
    * @return the handler, {@code null} if none is registered
    */
-  public JobHandler handler(String type) {
+  public @Nullable JobHandler handler(String type) {
     return handlers.get(type);
   }
 
@@ -84,7 +85,7 @@ public final class JobRegistry {
    * @param <T> the payload type
    * @return the failure handler
    */
-  public static <T> JobFailureHandler typed(
+  public static <T extends @Nullable Object> JobFailureHandler typed(
       TypedJobFailureHandler<? super T> handler, Class<T> payloadType) {
     Objects.requireNonNull(handler, "handler");
     return failed -> handler.handle(failed, failed.payload(payloadType));
@@ -96,7 +97,7 @@ public final class JobRegistry {
    * @param type the job type
    * @return the failure handler, {@code null} if none is registered
    */
-  public JobFailureHandler failureHandler(String type) {
+  public @Nullable JobFailureHandler failureHandler(String type) {
     return failureHandlers.get(type);
   }
 
@@ -172,7 +173,7 @@ public final class JobRegistry {
    * @param type its job type
    * @return the recurring job, {@code null} if this node has none of that type
    */
-  public RecurringJob recurringJob(String type) {
+  public @Nullable RecurringJob recurringJob(String type) {
     return recurringJobs.get(type);
   }
 
