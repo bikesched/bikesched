@@ -6,13 +6,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@code bikesched_steps} table: durable steps of jobs, sleeps, waits for child jobs, polls,
@@ -32,8 +32,8 @@ public final class StepStore {
   private final HistoryStore history;
 
   StepStore(DatabaseAccess access, HistoryStore history) {
-    this.access = Objects.requireNonNull(access, "access");
-    this.history = Objects.requireNonNull(history, "history");
+    this.access = access;
+    this.history = history;
   }
 
   // The fence of every step write: the job is running with the writing attempt's lock token (job
@@ -328,7 +328,11 @@ public final class StepStore {
    * @param attempts the number of attempts it took
    */
   public record CompletedStep(
-      StepKind kind, String result, boolean compensated, boolean compensable, int attempts) {}
+      StepKind kind,
+      @Nullable String result,
+      boolean compensated,
+      boolean compensable,
+      int attempts) {}
 
   /**
    * A step of a job starting a child job.
@@ -338,7 +342,8 @@ public final class StepStore {
    * @param childJobId the child it started, {@code null} unless the step is a {@code CHILD_JOB}
    * @param attempts its number of attempts (starts of a child)
    */
-  public record ChildJobStep(StepKind kind, StepState state, UUID childJobId, int attempts) {}
+  public record ChildJobStep(
+      StepKind kind, StepState state, @Nullable UUID childJobId, int attempts) {}
 
   /**
    * Looks up a step of a job, with the child job it started.
@@ -378,7 +383,8 @@ public final class StepStore {
      * @param result the child's result as JSON text, may be {@code null}
      * @param error the child's error or cancel message, may be {@code null}
      */
-    record ChildEnded(String stepName, JobState childState, String result, String error)
+    record ChildEnded(
+        String stepName, JobState childState, @Nullable String result, @Nullable String error)
         implements ChildWait {}
 
     /** The wait timed out ({@code TIMED_OUT} step). */
@@ -389,7 +395,7 @@ public final class StepStore {
      *
      * @param waitUntil the deadline of the wait, {@code null} if none
      */
-    record ChildWaiting(String stepName, Instant waitUntil) implements ChildWait {}
+    record ChildWaiting(String stepName, @Nullable Instant waitUntil) implements ChildWait {}
 
     /**
      * The step neither waits nor holds an outcome: only met while compensating ({@code CANCELLED},
@@ -434,7 +440,8 @@ public final class StepStore {
    * @throws IllegalArgumentException if the job has no step that started the child
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public ChildWait awaitChildJob(UUID jobId, JobLock lock, UUID childJobId, Duration timeout) {
+  public ChildWait awaitChildJob(
+      UUID jobId, JobLock lock, UUID childJobId, @Nullable Duration timeout) {
     return access.inTransaction(
         db -> {
           requireJobLock(db, jobId, lock);
@@ -607,7 +614,7 @@ public final class StepStore {
    * @param result the result as JSON text, may be {@code null}
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void completeStep(UUID jobId, JobLock lock, String name, String result) {
+  public void completeStep(UUID jobId, JobLock lock, String name, @Nullable String result) {
     completeStep(jobId, lock, name, result, false);
   }
 
@@ -623,12 +630,17 @@ public final class StepStore {
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public void completeStep(
-      UUID jobId, JobLock lock, String name, String result, boolean compensable) {
+      UUID jobId, JobLock lock, String name, @Nullable String result, boolean compensable) {
     complete(jobId, lock, name, result, compensable, null);
   }
 
   private void complete(
-      UUID jobId, JobLock lock, String name, String result, boolean compensable, String detail) {
+      UUID jobId,
+      JobLock lock,
+      String name,
+      @Nullable String result,
+      boolean compensable,
+      @Nullable String detail) {
     history.change(
         db -> {
           int updated =
@@ -803,7 +815,7 @@ public final class StepStore {
    * @param detail recorded in the job history, {@code null} for none
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void failFailingStep(UUID jobId, JobLock lock, String name, String detail) {
+  public void failFailingStep(UUID jobId, JobLock lock, String name, @Nullable String detail) {
     history.change(
         db -> {
           if (db.update(FAIL_FAILING_STEP_SQL, jobId, name, jobId, lock.token()) > 0) {
@@ -868,7 +880,7 @@ public final class StepStore {
    * @param result the result as JSON text, may be {@code null}
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void resolveFailingStep(UUID jobId, JobLock lock, String name, String result) {
+  public void resolveFailingStep(UUID jobId, JobLock lock, String name, @Nullable String result) {
     history.change(
         db -> {
           if (db.update(RESOLVE_FAILING_STEP_SQL, result, jobId, name, jobId, lock.token()) > 0) {
@@ -948,7 +960,8 @@ public final class StepStore {
    * @throws IllegalStateException if the step name belongs to another kind of step
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public Sleep sleep(UUID jobId, JobLock lock, String name, Duration duration, Instant until) {
+  public Sleep sleep(
+      UUID jobId, JobLock lock, String name, @Nullable Duration duration, @Nullable Instant until) {
     return access.inTransaction(
         db -> {
           requireJobLock(db, jobId, lock);
@@ -1035,7 +1048,7 @@ public final class StepStore {
      *
      * @param result the ready value as JSON text, may be {@code null}
      */
-    record Ready(String result) implements PollStep {}
+    record Ready(@Nullable String result) implements PollStep {}
 
     /**
      * Timed out ({@code TIMED_OUT}).
@@ -1066,7 +1079,7 @@ public final class StepStore {
    * @throws IllegalStateException if the step name belongs to another kind of step
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public PollStep startPoll(UUID jobId, JobLock lock, String name, Duration timeout) {
+  public PollStep startPoll(UUID jobId, JobLock lock, String name, @Nullable Duration timeout) {
     return access.inTransaction(
         db -> {
           requireJobLock(db, jobId, lock);
@@ -1138,7 +1151,8 @@ public final class StepStore {
    * @param checks the number of checks it took, for the history
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void completePoll(UUID jobId, JobLock lock, String name, String result, int checks) {
+  public void completePoll(
+      UUID jobId, JobLock lock, String name, @Nullable String result, int checks) {
     complete(jobId, lock, name, result, false, "ready after " + checks(checks));
   }
 
@@ -1238,7 +1252,7 @@ public final class StepStore {
    * @param waitUntil the deadline of an event wait ({@code null} if none) or the wake-up time of a
    *     sleep
    */
-  public record SuspendedJob(boolean waiting, Instant waitUntil) {}
+  public record SuspendedJob(boolean waiting, @Nullable Instant waitUntil) {}
 
   /**
    * Ends a running attempt whose handler suspended at a sleeping step, see {@code SUSPEND_JOB_SQL}.
@@ -1280,7 +1294,12 @@ public final class StepStore {
    * @param waitingFor what the step waits for, for the history; {@code null} to leave it out
    */
   static Optional<SuspendedJob> suspend(
-      Sql db, HistoryStore history, UUID jobId, JobLock lock, String stepName, String waitingFor)
+      Sql db,
+      HistoryStore history,
+      UUID jobId,
+      JobLock lock,
+      String stepName,
+      @Nullable String waitingFor)
       throws SQLException {
     return suspend(db, history, jobId, lock, stepName, waitingFor, true);
   }
@@ -1291,7 +1310,7 @@ public final class StepStore {
       UUID jobId,
       JobLock lock,
       String stepName,
-      String waitingFor,
+      @Nullable String waitingFor,
       boolean recorded)
       throws SQLException {
     Optional<Suspension> suspended =
@@ -1355,7 +1374,7 @@ public final class StepStore {
    * @return the job after postponing; empty if the job is not running on this node (anymore)
    */
   public Optional<PostponedJob> postponeJob(
-      UUID jobId, JobLock lock, String stepName, Duration delay) {
+      UUID jobId, JobLock lock, @Nullable String stepName, Duration delay) {
     return access.inTransaction(
         db -> {
           List<Change> changes = new ArrayList<>();

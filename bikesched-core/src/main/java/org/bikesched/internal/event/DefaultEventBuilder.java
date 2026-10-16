@@ -9,9 +9,10 @@ import org.bikesched.JsonMapper;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.NodeEventBuilder;
 import org.bikesched.internal.util.ValidationUtil;
+import org.jspecify.annotations.Nullable;
 
 /** The {@link EventBuilder} implementation. */
-public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
+public final class DefaultEventBuilder<P extends @Nullable Object> implements NodeEventBuilder<P> {
 
   /** Publishes an event built by an {@link EventBuilder}; implemented by the owning bikesched. */
   @FunctionalInterface
@@ -24,37 +25,37 @@ public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
     UUID publish(
         String eventName,
         String eventKey,
-        String payload,
-        Duration retention,
-        String idempotencyKey,
-        Connection connection);
+        @Nullable String payload,
+        @Nullable Duration retention,
+        @Nullable String idempotencyKey,
+        @Nullable Connection connection);
   }
 
   private final String eventName;
   private final String eventKey;
   private final JsonMapper jsonMapper;
   private final Publisher publisher;
-  private String payload;
-  private Duration retention; // null: the node default
-  private String idempotencyKey;
-  private Connection connection;
+  private @Nullable String payload;
+  private @Nullable Duration retention; // null: the node default
+  private @Nullable String idempotencyKey;
+  private @Nullable Connection connection;
 
   public DefaultEventBuilder(
       String eventName, String eventKey, JsonMapper jsonMapper, Publisher publisher) {
-    this.eventName = Objects.requireNonNull(eventName, "eventName");
-    this.eventKey = Objects.requireNonNull(eventKey, "eventKey");
-    this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
-    this.publisher = Objects.requireNonNull(publisher, "publisher");
+    this.eventName = eventName;
+    this.eventKey = eventKey;
+    this.jsonMapper = jsonMapper;
+    this.publisher = publisher;
   }
 
   @Override
-  public NodeEventBuilder<P> payload(P payload) {
+  public NodeEventBuilder<P> payload(@Nullable P payload) {
     this.payload = payload == null ? null : jsonMapper.toJson(payload);
     return this;
   }
 
   @Override
-  public NodeEventBuilder<P> payloadJson(String json) {
+  public NodeEventBuilder<P> payloadJson(@Nullable String json) {
     this.payload = json;
     return this;
   }
@@ -76,7 +77,7 @@ public final class DefaultEventBuilder<P> implements NodeEventBuilder<P> {
   }
 
   @Override
-  public NodeEventBuilder<P> connection(Connection connection) {
+  public NodeEventBuilder<P> connection(@Nullable Connection connection) {
     this.connection = connection;
     return this;
   }

@@ -9,6 +9,7 @@ dependencies {
     implementation(plugin(libs.plugins.kotlin.jvm))
     implementation(plugin(libs.plugins.kotlin.serialization))
     implementation(plugin(libs.plugins.dokka))
+    implementation(plugin(libs.plugins.errorprone))
 }
 
 // Maps a catalog plugin alias to its plugin marker artifact so it can be used as a dependency.

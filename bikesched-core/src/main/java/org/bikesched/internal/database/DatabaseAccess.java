@@ -4,9 +4,9 @@ package org.bikesched.internal.database;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.util.Objects;
 import java.util.Set;
 import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,14 +43,15 @@ public final class DatabaseAccess {
    * @param statementTimeout the maximum duration of a statement, {@code null} to leave it to the
    *     data source
    */
-  DatabaseAccess(DataSource dataSource, Duration statementTimeout) {
-    this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+  DatabaseAccess(DataSource dataSource, @Nullable Duration statementTimeout) {
+    this.dataSource = dataSource;
     this.queryTimeoutSeconds = statementTimeout == null ? 0 : seconds(statementTimeout);
   }
 
   /** JDBC query timeouts are whole seconds: rounded up, at least 1. */
   private static int seconds(Duration timeout) {
-    long seconds = timeout.toSeconds() + (timeout.getNano() > 0 ? 1 : 0);
+    long seconds = timeout.toSeconds() + (timeout.toNanosPart() > 0 ? 1 : 0);
+
     return (int) Math.min(Integer.MAX_VALUE, Math.max(1, seconds));
   }
 
@@ -69,7 +70,7 @@ public final class DatabaseAccess {
 
   /** Sets where committed work reports the jobs it made due. */
   void dueJobs(DueJobs dueJobs) {
-    this.dueJobs = Objects.requireNonNull(dueJobs, "dueJobs");
+    this.dueJobs = dueJobs;
   }
 
   /** Passes on the jobs the committed work made due; never throws, the work is committed. */
@@ -113,7 +114,8 @@ public final class DatabaseAccess {
    * @param onFailure creates the exception thrown if a statement fails
    * @return the work's result
    */
-  public <T> T withConnection(Sql.Work<T> work, SqlExceptionHandler onFailure) {
+  public <T extends @Nullable Object> T withConnection(
+      Sql.Work<T> work, SqlExceptionHandler onFailure) {
     try (Connection connection = connection()) {
       Sql sql = sql(connection);
       if (connection.getAutoCommit()) {
@@ -144,7 +146,8 @@ public final class DatabaseAccess {
    * @param onFailure creates the exception thrown if a statement fails
    * @return the work's result
    */
-  public <T> T inTransaction(Sql.Work<T> work, SqlExceptionHandler onFailure) {
+  public <T extends @Nullable Object> T inTransaction(
+      Sql.Work<T> work, SqlExceptionHandler onFailure) {
     return inTransaction(false, work, onFailure);
   }
 
@@ -157,7 +160,8 @@ public final class DatabaseAccess {
    * @param onFailure creates the exception thrown if a statement fails
    * @return the work's result
    */
-  public <T> T inReadOnlyTransaction(Sql.Work<T> work, SqlExceptionHandler onFailure) {
+  public <T extends @Nullable Object> T inReadOnlyTransaction(
+      Sql.Work<T> work, SqlExceptionHandler onFailure) {
     return inTransaction(true, work, onFailure);
   }
 
@@ -172,7 +176,7 @@ public final class DatabaseAccess {
    * @param onFailure creates the exception thrown if a statement fails
    * @return the work's result
    */
-  public <T> T onCallerConnection(
+  public <T extends @Nullable Object> T onCallerConnection(
       Connection connection, Sql.Work<T> work, SqlExceptionHandler onFailure) {
     try {
       Sql sql = sql(connection);
@@ -204,7 +208,8 @@ public final class DatabaseAccess {
     }
   }
 
-  private <T> T inTransaction(boolean readOnly, Sql.Work<T> work, SqlExceptionHandler onFailure) {
+  private <T extends @Nullable Object> T inTransaction(
+      boolean readOnly, Sql.Work<T> work, SqlExceptionHandler onFailure) {
     try (Connection connection = connection()) {
       boolean autoCommit = connection.getAutoCommit();
       boolean wasReadOnly = connection.isReadOnly();
@@ -237,7 +242,7 @@ public final class DatabaseAccess {
   }
 
   private static RuntimeException failure(SqlExceptionHandler onFailure, SQLException e) {
-    return Objects.requireNonNull(onFailure.handle(e), "SqlExceptionHandler returned null");
+    return onFailure.handle(e);
   }
 
   private static void rollback(Connection connection, Exception failure) {

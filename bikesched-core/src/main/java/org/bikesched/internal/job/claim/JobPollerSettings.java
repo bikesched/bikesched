@@ -5,6 +5,7 @@ import java.time.Duration;
 import org.bikesched.RetryBackoff;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.job.listener.JobListener;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The node settings the {@link JobPoller} uses.
@@ -29,11 +30,11 @@ public record JobPollerSettings(
     int maxConcurrentJobs,
     Duration pollInterval,
     boolean listenForDueJobs,
-    Duration defaultJobTimeout,
-    Duration defaultEventTimeout,
+    @Nullable Duration defaultJobTimeout,
+    @Nullable Duration defaultEventTimeout,
     Duration eventRetention,
     RetryBackoff retryBackoff,
     int failureHandlerAttempts,
-    Duration hardTimeoutGrace,
+    @Nullable Duration hardTimeoutGrace,
     JobListener jobListener,
     EventListener eventListener) {}

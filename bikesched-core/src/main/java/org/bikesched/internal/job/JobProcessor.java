@@ -3,7 +3,6 @@ package org.bikesched.internal.job;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
@@ -27,13 +26,14 @@ import org.bikesched.job.listener.JobAttemptOutcome;
 import org.bikesched.job.listener.JobAttemptResult;
 import org.bikesched.job.listener.JobClaim;
 import org.bikesched.job.listener.JobListener;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Processes the jobs claimed by a node, one call of {@link #process(DefaultJob)} per job on the
- * job's own thread: runs the {@link JobHandler} registered for the job's type within the job's
- * timeout and records the outcome in the database.
+ * Processes the jobs claimed by a node, one call of {@link #process(DefaultJob, JobSlot)} per job
+ * on the job's own thread: runs the {@link JobHandler} registered for the job's type within the
+ * job's timeout and records the outcome in the database.
  *
  * <p>Outcomes, by precedence when a handler does several things:
  *
@@ -117,10 +117,10 @@ public final class JobProcessor {
   private sealed interface AttemptEnd {
 
     /** The hard timeout abandoned the attempt; its thread returned now, with {@code failure}. */
-    record Abandoned(Exception failure) implements AttemptEnd {}
+    record Abandoned(@Nullable Exception failure, HardTimeout hardTimeout) implements AttemptEnd {}
 
     /** A step write found the job released while the attempt ran: record nothing. */
-    record LockLost(Exception failure) implements AttemptEnd {}
+    record LockLost(@Nullable Exception failure) implements AttemptEnd {}
 
     /**
      * The attempt ended on its own thread: its outcome is to be recorded.
@@ -129,7 +129,8 @@ public final class JobProcessor {
      * @param failure what the body threw, {@code null} if it returned or suspended the job
      * @param attempt the attempt, for the timeout of a timed out one
      */
-    record Ended(JobAttempt.End end, Exception failure, JobAttempt attempt) implements AttemptEnd {}
+    record Ended(JobAttempt.End end, @Nullable Exception failure, JobAttempt attempt)
+        implements AttemptEnd {}
   }
 
   /**
@@ -139,7 +140,7 @@ public final class JobProcessor {
   private sealed interface Verdict {
 
     /** The handler cancelled the job. */
-    record Cancelled(String message) implements Verdict {}
+    record Cancelled(@Nullable String message) implements Verdict {}
 
     /** The handler failed the job explicitly, with its retry settings. */
     record FailedByHandler(DefaultJobFailure failure) implements Verdict {}
@@ -148,7 +149,7 @@ public final class JobProcessor {
     record Suspended(JobSuspended.Suspension suspension) implements Verdict {}
 
     /** The attempt exceeded its timeout; {@code cause} is what the handler threw, if anything. */
-    record TimedOut(Duration timeout, Exception cause) implements Verdict {}
+    record TimedOut(@Nullable Duration timeout, @Nullable Exception cause) implements Verdict {}
 
     /** The handler threw. */
     record Threw(Exception failure) implements Verdict {}
@@ -160,15 +161,15 @@ public final class JobProcessor {
   private final Database database;
   private final UUID nodeId;
   private final String nodeName;
-  private final Function<String, JobHandler> handlers;
-  private final Function<String, JobFailureHandler> failureHandlers;
+  private final Function<String, @Nullable JobHandler> handlers;
+  private final Function<String, @Nullable JobFailureHandler> failureHandlers;
   private final int failureHandlerAttempts;
-  private final Function<String, RecurringJob> recurringJobs;
+  private final Function<String, @Nullable RecurringJob> recurringJobs;
   private final ScheduledExecutorService timeoutExecutor;
-  private final Duration defaultJobTimeout;
-  private final Duration defaultEventTimeout;
+  private final @Nullable Duration defaultJobTimeout;
+  private final @Nullable Duration defaultEventTimeout;
   private final RetryBackoff retryBackoff;
-  private final HardTimeout hardTimeout;
+  private final @Nullable HardTimeout hardTimeout;
   private final JobListener listener;
 
   /**
@@ -193,29 +194,29 @@ public final class JobProcessor {
       Database database,
       UUID nodeId,
       String nodeName,
-      Function<String, JobHandler> handlers,
-      Function<String, JobFailureHandler> failureHandlers,
+      Function<String, @Nullable JobHandler> handlers,
+      Function<String, @Nullable JobFailureHandler> failureHandlers,
       int failureHandlerAttempts,
-      Function<String, RecurringJob> recurringJobs,
+      Function<String, @Nullable RecurringJob> recurringJobs,
       ScheduledExecutorService timeoutExecutor,
-      Duration defaultJobTimeout,
-      Duration defaultEventTimeout,
+      @Nullable Duration defaultJobTimeout,
+      @Nullable Duration defaultEventTimeout,
       RetryBackoff retryBackoff,
-      HardTimeout hardTimeout,
+      @Nullable HardTimeout hardTimeout,
       JobListener listener) {
-    this.database = Objects.requireNonNull(database, "database");
-    this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
-    this.nodeName = Objects.requireNonNull(nodeName, "nodeName");
-    this.handlers = Objects.requireNonNull(handlers, "handlers");
-    this.failureHandlers = Objects.requireNonNull(failureHandlers, "failureHandlers");
+    this.database = database;
+    this.nodeId = nodeId;
+    this.nodeName = nodeName;
+    this.handlers = handlers;
+    this.failureHandlers = failureHandlers;
     this.failureHandlerAttempts = failureHandlerAttempts;
-    this.recurringJobs = Objects.requireNonNull(recurringJobs, "recurringJobs");
-    this.timeoutExecutor = Objects.requireNonNull(timeoutExecutor, "timeoutExecutor");
+    this.recurringJobs = recurringJobs;
+    this.timeoutExecutor = timeoutExecutor;
     this.defaultJobTimeout = defaultJobTimeout;
     this.defaultEventTimeout = defaultEventTimeout;
-    this.retryBackoff = Objects.requireNonNull(retryBackoff, "retryBackoff");
+    this.retryBackoff = retryBackoff;
     this.hardTimeout = hardTimeout;
-    this.listener = Objects.requireNonNull(listener, "listener");
+    this.listener = listener;
   }
 
   /**
@@ -223,16 +224,19 @@ public final class JobProcessor {
    * default, if any) and, with a hard timeout, abandoning it if it ignores the timeout.
    */
   private JobAttempt startAttempt(DefaultJob job, JobSlot slot, Started started) {
+    HardTimeout hard = hardTimeout;
     var attempt =
         new JobAttempt(
             job,
             Thread.currentThread(),
             timeoutExecutor,
             nodeId.toString(),
-            hardTimeout == null ? null : hardTimeout.grace(),
-            abandoned ->
-                hardTimeout.abandon(
-                    job, abandoned, slot, failure -> recordAbandoned(job, failure, started)));
+            hard == null ? null : hard.grace(),
+            hard == null
+                ? _ -> {}
+                : abandoned ->
+                    hard.abandon(
+                        job, abandoned, slot, failure -> recordAbandoned(job, failure, started)));
     Duration timeout = job.timeout().orElse(defaultJobTimeout);
     if (timeout != null) {
       attempt.startTimeout(timeout);
@@ -262,8 +266,9 @@ public final class JobProcessor {
     // Clear a pending interrupt (timeout, shutdown or the handler's own): this thread still has
     // to record the outcome, and blocking I/O of an interrupted virtual thread fails.
     Thread.interrupted();
-    if (end == JobAttempt.End.ABANDONED) {
-      return new AttemptEnd.Abandoned(failure);
+    HardTimeout hard = hardTimeout;
+    if (end == JobAttempt.End.ABANDONED && hard != null) {
+      return new AttemptEnd.Abandoned(failure, hard);
     }
     if (job.isLockLost()) {
       return new AttemptEnd.LockLost(failure);
@@ -296,7 +301,7 @@ public final class JobProcessor {
    * the attempt's claim, see {@link DefaultJob#isLockLost()}): records nothing, the job belongs to
    * whichever claim comes next.
    */
-  private Reported abandon(DefaultJob job, Exception failure) {
+  private Reported abandon(DefaultJob job, @Nullable Exception failure) {
     LOG.warn(
         "Job {} of type {} is no longer running on bikesched node {} ({}): it was released, e.g."
             + " after missed heartbeats, and may run on another node; abandoning attempt {}"
@@ -422,17 +427,17 @@ public final class JobProcessor {
           handler.get().handle(job);
         };
     return switch (runAttempt(job, slot, started, body)) {
-      case AttemptEnd.Abandoned(Exception failure) ->
-          new AbandonedReturned(hardTimeout.returned(job, failure));
-      case AttemptEnd.LockLost(Exception failure) -> abandon(job, failure);
-      case AttemptEnd.Ended(JobAttempt.End end, Exception failure, JobAttempt attempt) ->
+      case AttemptEnd.Abandoned(@Nullable Exception failure, HardTimeout hard) ->
+          new AbandonedReturned(hard.returned(job, failure));
+      case AttemptEnd.LockLost(@Nullable Exception failure) -> abandon(job, failure);
+      case AttemptEnd.Ended(JobAttempt.End end, @Nullable Exception failure, JobAttempt attempt) ->
           recordOutcome(job, verdict(job, failure, end, attempt), failure);
     };
   }
 
   /** What the handler's attempt amounts to, by the precedence documented on the class. */
   private static Verdict verdict(
-      DefaultJob job, Exception thrown, JobAttempt.End end, JobAttempt attempt) {
+      DefaultJob job, @Nullable Exception thrown, JobAttempt.End end, JobAttempt attempt) {
     if (job.isCancelled()) {
       return new Verdict.Cancelled(job.cancelMessage());
     }
@@ -453,18 +458,18 @@ public final class JobProcessor {
    *
    * @param thrown the exception the handler threw, {@code null} if it returned or suspended
    */
-  private Reported recordOutcome(DefaultJob job, Verdict verdict, Exception thrown) {
+  private Reported recordOutcome(DefaultJob job, Verdict verdict, @Nullable Exception thrown) {
     if (thrown != null) {
       warnIfIgnored(job, verdict, thrown);
     }
     return switch (verdict) {
-      case Verdict.Cancelled(String message) -> recordCancellation(job, message, true);
+      case Verdict.Cancelled(@Nullable String message) -> recordCancellation(job, message, true);
       case Verdict.FailedByHandler(DefaultJobFailure failure) ->
           recordExplicitFailure(job, failure);
       case Verdict.Suspended(JobSuspended.Wait wait) -> recordSuspension(job, wait);
       case Verdict.Suspended(JobSuspended.PostponeSuspension postponed) ->
           recordPostponement(job, postponed);
-      case Verdict.TimedOut(Duration timeout, Exception cause) ->
+      case Verdict.TimedOut(@Nullable Duration timeout, @Nullable Exception cause) ->
           recordFailure(job, new BikeschedException("Job timed out after " + timeout, cause));
       case Verdict.Threw(Exception failure) when job.isFailureHandlingPending() ->
           // A step's failure handler has to run again: one more attempt, whatever the maximum.
@@ -541,10 +546,10 @@ public final class JobProcessor {
    * @param recorded describes what was written
    * @param notRunning logs that the job was no longer running in this attempt's claim
    */
-  private <R> Reported recording(
+  private <R extends @Nullable Object> Reported recording(
       DefaultJob job,
       String action,
-      Throwable cause,
+      @Nullable Throwable cause,
       Supplier<Optional<R>> write,
       Function<R, Reported> recorded,
       Runnable notRunning) {
@@ -639,7 +644,7 @@ public final class JobProcessor {
   }
 
   /** What a suspended job waits for. */
-  private static String waitingOutcome(JobSuspended.Wait suspension, Instant waitUntil) {
+  private static String waitingOutcome(JobSuspended.Wait suspension, @Nullable Instant waitUntil) {
     String until = waitUntil == null ? "" : " until " + waitUntil;
     return switch (suspension) {
       case JobSuspended.EventSuspension wait ->
@@ -662,7 +667,7 @@ public final class JobProcessor {
    * Records the cancellation of a job: by its handler ({@code byHandler}), or on request right
    * after claiming it, without running the handler (which does not use up an attempt).
    */
-  private Reported recordCancellation(DefaultJob job, String message, boolean byHandler) {
+  private Reported recordCancellation(DefaultJob job, @Nullable String message, boolean byHandler) {
     ClaimEnd end = end(job);
     return recording(
         job,
@@ -739,10 +744,10 @@ public final class JobProcessor {
           progress.step = null;
         };
     return switch (runAttempt(job, slot, started, body)) {
-      case AttemptEnd.Abandoned(Exception failure) ->
-          new AbandonedReturned(hardTimeout.returned(job, failure));
-      case AttemptEnd.LockLost(Exception failure) -> abandon(job, failure);
-      case AttemptEnd.Ended(JobAttempt.End end, Exception failure, JobAttempt attempt)
+      case AttemptEnd.Abandoned(@Nullable Exception failure, HardTimeout hard) ->
+          new AbandonedReturned(hard.returned(job, failure));
+      case AttemptEnd.LockLost(@Nullable Exception failure) -> abandon(job, failure);
+      case AttemptEnd.Ended(JobAttempt.End end, @Nullable Exception failure, JobAttempt attempt)
           when failure != null ->
           recordCompensationFailure(
               job,
@@ -760,7 +765,7 @@ public final class JobProcessor {
   private static final class CompensationProgress {
 
     /** The compensation running (or failed), {@code null} if none. */
-    private String step;
+    private @Nullable String step;
 
     /** The number of compensations that ran. */
     private int compensated;
@@ -807,7 +812,7 @@ public final class JobProcessor {
 
   /** Records a failed compensation attempt; {@code step} is the failed compensation, if any. */
   private Reported recordCompensationFailure(
-      DefaultJob job, JobPhase.Compensate compensating, String step, Exception failure) {
+      DefaultJob job, JobPhase.Compensate compensating, @Nullable String step, Exception failure) {
     String error =
         step == null ? failure.toString() : "Compensating step '" + step + "' failed: " + failure;
     int attempt = compensating.attempt();
@@ -920,10 +925,10 @@ public final class JobProcessor {
           handler.handle(new DefaultFailedJob(job, failing));
         };
     return switch (runAttempt(job, slot, started, body)) {
-      case AttemptEnd.Abandoned(Exception failure) ->
-          new AbandonedReturned(hardTimeout.returned(job, failure));
-      case AttemptEnd.LockLost(Exception failure) -> abandon(job, failure);
-      case AttemptEnd.Ended(JobAttempt.End end, Exception failure, JobAttempt attempt)
+      case AttemptEnd.Abandoned(@Nullable Exception failure, HardTimeout hard) ->
+          new AbandonedReturned(hard.returned(job, failure));
+      case AttemptEnd.LockLost(@Nullable Exception failure) -> abandon(job, failure);
+      case AttemptEnd.Ended(JobAttempt.End end, @Nullable Exception failure, JobAttempt attempt)
           when end == JobAttempt.End.TIMED_OUT ->
           recordFailureHandlerFailure(
               job,
@@ -1080,7 +1085,7 @@ public final class JobProcessor {
    * The node's backoff delay after the job's current attempt failed; {@code null} to retry as soon
    * as possible. A misbehaving backoff must not prevent recording the failure.
    */
-  private Duration backoffDelay(DefaultJob job) {
+  private @Nullable Duration backoffDelay(DefaultJob job) {
     var stepRetry = job.stepRetry();
     if (stepRetry != null) {
       return backoffDelay(job, stepRetry.backoff(), stepRetry.failedAttempts());
@@ -1088,11 +1093,11 @@ public final class JobProcessor {
     return backoffDelay(job, job.attempts());
   }
 
-  private Duration backoffDelay(Job job, int failedAttempt) {
+  private @Nullable Duration backoffDelay(Job job, int failedAttempt) {
     return backoffDelay(job, retryBackoff, failedAttempt);
   }
 
-  private Duration backoffDelay(Job job, RetryBackoff backoff, int failedAttempt) {
+  private @Nullable Duration backoffDelay(Job job, RetryBackoff backoff, int failedAttempt) {
     try {
       Duration delay = backoff.delay(failedAttempt);
       if (delay == null || delay.isNegative()) {
@@ -1114,7 +1119,11 @@ public final class JobProcessor {
    * number of attempts and the delay of the next attempt if not {@code null}.
    */
   private Reported recordFailure(
-      DefaultJob job, String error, Throwable cause, Integer maxAttempts, Duration retryAfter) {
+      DefaultJob job,
+      String error,
+      @Nullable Throwable cause,
+      @Nullable Integer maxAttempts,
+      @Nullable Duration retryAfter) {
     Duration retryIn = retryAfter == null ? backoffDelay(job) : retryAfter;
     ClaimEnd end = end(job);
     return recording(
@@ -1135,8 +1144,8 @@ public final class JobProcessor {
   private Reported recordedFailure(
       DefaultJob job,
       String error,
-      Throwable cause,
-      Duration retryIn,
+      @Nullable Throwable cause,
+      @Nullable Duration retryIn,
       ClaimEnd end,
       JobStore.FailedJob failed) {
     return switch (failed.state()) {

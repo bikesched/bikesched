@@ -3,6 +3,7 @@ package org.bikesched.internal.util;
 
 import java.time.Duration;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Validates the names and keys stored in {@code text} columns: node names, job types, step names,
@@ -78,14 +79,17 @@ public final class ValidationUtil {
    * (truncated)"} if it was longer.
    *
    * @param message the message, may be {@code null}
+   * @param <S> {@code String} or {@code @Nullable String}: the result is {@code null} only for
+   *     {@code null}
    * @return the message, shortened if needed; {@code null} for {@code null}
    */
-  public static String truncateMessage(String message) {
+  @SuppressWarnings("unchecked") // S can only be String: the shortened message is an S
+  public static <S extends @Nullable String> S truncateMessage(S message) {
     if (message == null || message.codePointCount(0, message.length()) <= MAX_MESSAGE_LENGTH) {
       return message;
     }
     int keep = MAX_MESSAGE_LENGTH - TRUNCATED.length();
-    return message.substring(0, message.offsetByCodePoints(0, keep)) + TRUNCATED;
+    return (S) (message.substring(0, message.offsetByCodePoints(0, keep)) + TRUNCATED);
   }
 
   private static String require(String value, String what, int maxLength) {

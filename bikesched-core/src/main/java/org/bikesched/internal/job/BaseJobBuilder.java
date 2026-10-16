@@ -15,6 +15,7 @@ import org.bikesched.job.JobSettings;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The shared settings of the job builder implementations ({@link DefaultJobBuilder}, {@link
@@ -23,7 +24,8 @@ import org.bikesched.job.TypedJobHandler;
  *
  * @param <B> the builder interface
  */
-public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements JobSettings<B, P> {
+public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nullable Object>
+    implements JobSettings<B, P> {
 
   static final int DEFAULT_PRIORITY = 0;
   static final int DEFAULT_MAX_ATTEMPTS = 3;
@@ -35,43 +37,49 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
      * returns the new job's id, or the existing job's with the job's idempotency key.
      */
     UUID schedule(
-        NewJob job, JobHandler handler, JobFailureHandler failureHandler, Connection connection);
+        NewJob job,
+        @Nullable JobHandler handler,
+        @Nullable JobFailureHandler failureHandler,
+        @Nullable Connection connection);
 
     /** Registers a recurring job; {@code firstRun} is {@code null} for the schedule's next run. */
     UUID scheduleRecurring(
-        RecurringJob job, JobHandler handler, JobFailureHandler failureHandler, Instant firstRun);
+        RecurringJob job,
+        @Nullable JobHandler handler,
+        @Nullable JobFailureHandler failureHandler,
+        @Nullable Instant firstRun);
 
     /** Parses a recurrence expression with the node's recurrence parsers. */
     Recurrence parseRecurrence(String expression);
 
     /** Registers the handler if given and new; throws if the type has no handler then. */
-    void requireHandler(String type, JobHandler handler);
+    void requireHandler(String type, @Nullable JobHandler handler);
   }
 
   final String type;
   final Class<P> payloadType;
   final JsonMapper jsonMapper;
   final Scheduler scheduler;
-  String payload;
+  @Nullable String payload;
 
   /** Set by the builders implementing {@code JobHandlerSettings}, otherwise {@code null}. */
-  JobHandler handler;
+  @Nullable JobHandler handler;
 
   /** Set by the builders implementing {@code JobHandlerSettings}, otherwise {@code null}. */
-  JobFailureHandler failureHandler;
+  @Nullable JobFailureHandler failureHandler;
 
   int priority = DEFAULT_PRIORITY;
   int maxAttempts = DEFAULT_MAX_ATTEMPTS;
-  Duration timeout;
+  @Nullable Duration timeout;
 
   /** Set by the builders of one-off jobs scheduled through bikesched, otherwise {@code null}. */
-  String idempotencyKey;
+  @Nullable String idempotencyKey;
 
   BaseJobBuilder(String type, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
-    this.type = Objects.requireNonNull(type, "type");
-    this.payloadType = Objects.requireNonNull(payloadType, "payloadType");
-    this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
-    this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+    this.type = type;
+    this.payloadType = payloadType;
+    this.jsonMapper = jsonMapper;
+    this.scheduler = scheduler;
   }
 
   /** Continues building with the settings of the given builder. */
@@ -90,13 +98,13 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P> implements 
   abstract B self();
 
   @Override
-  public B payload(P payload) {
+  public B payload(@Nullable P payload) {
     this.payload = payload == null ? null : jsonMapper.toJson(payload);
     return self();
   }
 
   @Override
-  public B payloadJson(String json) {
+  public B payloadJson(@Nullable String json) {
     this.payload = json;
     return self();
   }

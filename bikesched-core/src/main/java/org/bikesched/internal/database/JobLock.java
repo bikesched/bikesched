@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.database;
 
-import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -16,8 +15,5 @@ import java.util.UUID;
 public record JobLock(UUID nodeId, UUID token) {
 
   /** Validates the lock. */
-  public JobLock {
-    Objects.requireNonNull(nodeId, "nodeId");
-    Objects.requireNonNull(token, "token");
-  }
+  public JobLock {}
 }

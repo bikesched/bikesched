@@ -4,7 +4,6 @@ package org.bikesched.internal.database;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
@@ -18,7 +17,7 @@ public final class NodeStore {
   private final DatabaseAccess access;
 
   NodeStore(DatabaseAccess access) {
-    this.access = Objects.requireNonNull(access, "access");
+    this.access = access;
   }
 
   // Inserts the node. If the name is taken by a dead node (stale heartbeat), the restarted node

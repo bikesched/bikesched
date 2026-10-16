@@ -26,6 +26,7 @@ import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.internal.database.AdminStore;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link Admin} of a node: checks that the node is ready, then reads through the {@link
@@ -47,10 +48,10 @@ final class DefaultAdmin implements Admin {
 
   DefaultAdmin(
       AdminStore store, Duration nodeTimeout, Runnable ensureReady, Set<String> handledTypes) {
-    this.store = Objects.requireNonNull(store, "store");
-    this.nodeTimeout = Objects.requireNonNull(nodeTimeout, "nodeTimeout");
-    this.ensureReady = Objects.requireNonNull(ensureReady, "ensureReady");
-    this.handledTypes = Objects.requireNonNull(handledTypes, "handledTypes");
+    this.store = store;
+    this.nodeTimeout = nodeTimeout;
+    this.ensureReady = ensureReady;
+    this.handledTypes = handledTypes;
   }
 
   @Override
@@ -164,7 +165,8 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
-  public List<WaitingStep> findWaitingSteps(String eventName, String keyPrefix, int limit) {
+  public List<WaitingStep> findWaitingSteps(
+      String eventName, @Nullable String keyPrefix, int limit) {
     Objects.requireNonNull(eventName, "eventName");
     requireLimit(limit);
     ensureReady.run();

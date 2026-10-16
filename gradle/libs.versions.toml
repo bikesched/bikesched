@@ -10,6 +10,13 @@ kotlin = "2.4.21"
 dokka = "2.2.0"
 hugo-plugin = "0.13.0"
 shadow = "9.6.1"
+errorprone-plugin = "5.1.1"
+
+# Static analysis: Error Prone with NullAway (bikesched-core)
+errorprone = "2.50.0"
+nullaway = "0.14.2"
+# Annotations of the PostgreSQL driver, read by NullAway at compile time only
+checker-qual = "4.3.1"
 
 # Code formatting
 google-java-format = "1.36.1"
@@ -53,6 +60,9 @@ bucket4j = "8.21.0"
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
+errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
+nullaway = { module = "com.uber.nullaway:nullaway", version.ref = "nullaway" }
+checker-qual = { module = "org.checkerframework:checker-qual", version.ref = "checker-qual" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
@@ -106,5 +116,6 @@ spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
 hugo = { id = "io.github.fstaudt.hugo", version.ref = "hugo-plugin" }
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
