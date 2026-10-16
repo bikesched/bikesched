@@ -235,8 +235,8 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   and a `weight` in every page's front matter for the sidebar order:
   - `getting-started/`: `README.md` (requirements, Gradle and Maven setup, optional modules, a
     first job), `configuration.md` (builder option table, nodes, JSON mapping, logging)
-  - top level: `patterns.md` (one section per problem: a short sketch, why it works, and a link to the
-    runnable example solving it; new examples solving a common problem get a pattern)
+  - top level: `patterns.md` (one section per problem: a short sketch, why it works, and a link
+    to the runnable example solving it; new examples solving a common problem get a pattern)
   - `jobs/`: `README.md` (the Jobs page itself: scheduling, handlers, `Job` method table,
     failures, cancellation, timeouts), `recurring-jobs.md`, `changing-handlers.md` (what a job
     keeps across deploys, safe and unsafe handler changes; update it when replay or what a step
