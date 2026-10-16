@@ -29,13 +29,13 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     String a =
                         job.newStep("a", String.class)
-                            .compensateWith((_, result) -> calls.add("undo " + result))
-                            .run(_ -> "1");
-                    job.step("no-compensation", String.class, _ -> "0");
+                            .compensateWith((ignored, result) -> calls.add("undo " + result))
+                            .run(ignored -> "1");
+                    job.step("no-compensation", String.class, ignored -> "0");
                     String b =
                         job.newStep("b", String.class)
-                            .compensateWith((_, result) -> calls.add("undo " + result))
-                            .run(_ -> "2");
+                            .compensateWith((ignored, result) -> calls.add("undo " + result))
+                            .run(ignored -> "2");
                     calls.add((job.isCompensating() ? "replayed " : "did ") + a + ", " + b);
                     if (!job.isCompensating()) {
                       job.cancel("no longer needed");
@@ -68,8 +68,9 @@ class CompensationTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     runs.incrementAndGet();
-                    job.step("a", String.class, _ -> "1");
-                    job.newStep("b", String.class).run(_ -> "2"); // built, but no compensation
+                    job.step("a", String.class, ignored -> "1");
+                    job.newStep("b", String.class)
+                        .run(ignored -> "2"); // built, but no compensation
                     job.cancel();
                   })
               .schedule();
@@ -98,11 +99,11 @@ class CompensationTest extends AbstractBikeschedTest {
                               compensatedSteps.add(step);
                               compensated.add(result);
                             })
-                        .run(_ -> "42");
+                        .run(ignored -> "42");
                     job.newStep("charge", String.class)
-                        .compensateWith((_, result) -> compensated.add(result))
+                        .compensateWith((ignored, result) -> compensated.add(result))
                         .run(
-                            _ -> {
+                            ignored -> {
                               throw new IllegalStateException("card declined");
                             });
                   })
@@ -135,14 +136,14 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("a", String.class)
                         .compensateWith(
-                            (_, _) -> {
+                            (ignored, ignored2) -> {
                               try {
-                                job.step("undo", String.class, _ -> "\"undo\"");
+                                job.step("undo", String.class, ignored3 -> "\"undo\"");
                               } catch (IllegalStateException e) {
                                 rejected.add(e.getMessage());
                               }
                             })
-                        .run(_ -> "1");
+                        .run(ignored -> "1");
                     job.cancel();
                   })
               .schedule();
@@ -171,12 +172,12 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("a", String.class)
                         .compensateWith(
-                            (_, _) -> {
+                            (ignored, ignored2) -> {
                               if (attempts.incrementAndGet() == 1) {
                                 throw new IllegalStateException("provider down");
                               }
                             })
-                        .run(_ -> "1");
+                        .run(ignored -> "1");
                     job.cancel();
                   })
               .schedule();
@@ -192,10 +193,10 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("a", String.class)
                         .compensateWith(
-                            (_, _) -> {
+                            (ignored, ignored2) -> {
                               throw new IllegalStateException("provider down");
                             })
-                        .run(_ -> "1");
+                        .run(ignored -> "1");
                     job.cancel();
                   })
               .schedule();
@@ -231,12 +232,12 @@ class CompensationTest extends AbstractBikeschedTest {
                   job -> {
                     handlerRuns.incrementAndGet();
                     job.newStep("reserve", String.class)
-                        .compensateWith((_, result) -> compensated.add(result))
-                        .run(_ -> "42");
+                        .compensateWith((ignored, result) -> compensated.add(result))
+                        .run(ignored -> "42");
                     job.waitForEvent(
                             "await-driver", "driver-accepted", job.id().toString(), String.class)
                         .receive();
-                    job.step("never", String.class, _ -> "0");
+                    job.step("never", String.class, ignored -> "0");
                   })
               .schedule();
       awaitState(jobId, "WAITING");
@@ -271,7 +272,7 @@ class CompensationTest extends AbstractBikeschedTest {
       UUID jobId =
           bikesched
               .newJob("cancel-scheduled")
-              .handler(_ -> runs.incrementAndGet())
+              .handler(ignored -> runs.incrementAndGet())
               .schedule(Duration.ofHours(1));
 
       assertThat(bikesched.cancel(jobId)).isTrue();
@@ -294,8 +295,8 @@ class CompensationTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     job.newStep("a", String.class)
-                        .compensateWith((_, result) -> compensated.add(result))
-                        .run(_ -> "1");
+                        .compensateWith((ignored, result) -> compensated.add(result))
+                        .run(ignored -> "1");
                     if (!job.isCompensating()) {
                       started.countDown();
                       proceed.await();

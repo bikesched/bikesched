@@ -117,9 +117,9 @@ public final class FanOutExample {
           List<String> skipped = new ArrayList<>();
           for (int i = 0; i < children.size(); i++) {
             switch (job.waitForJob(children.get(i), Thumbnail.class)) {
-              case JobResult.Succeeded<Thumbnail>(_, Thumbnail thumbnail) ->
+              case JobResult.Succeeded<Thumbnail>(UUID ignored, Thumbnail thumbnail) ->
                   thumbnails.add(thumbnail);
-              case JobResult.Failed<Thumbnail> _ -> skipped.add(album.files().get(i));
+              case JobResult.Failed<Thumbnail> ignored -> skipped.add(album.files().get(i));
               case JobResult<Thumbnail> other ->
                   throw new IllegalStateException("Unexpected outcome: " + other);
             }

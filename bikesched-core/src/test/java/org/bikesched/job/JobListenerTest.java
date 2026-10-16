@@ -59,7 +59,7 @@ class JobListenerTest extends AbstractBikeschedTest {
       UUID jobId =
           bikesched
               .newJob(type)
-              .handler(_ -> {})
+              .handler(ignored -> {})
               .schedule(Instant.now().minus(Duration.ofSeconds(5)));
 
       awaitState(jobId, "SUCCEEDED");
@@ -83,7 +83,7 @@ class JobListenerTest extends AbstractBikeschedTest {
               .newJob(unique("listener-failure"))
               .maxAttempts(2)
               .handler(
-                  _ -> {
+                  ignored -> {
                     throw new IllegalStateException("broken");
                   })
               .schedule();
@@ -108,7 +108,9 @@ class JobListenerTest extends AbstractBikeschedTest {
               .newJob(unique("listener-compensation"))
               .handler(
                   job -> {
-                    job.newStep("a", String.class).compensateWith((_, _) -> {}).run(_ -> "1");
+                    job.newStep("a", String.class)
+                        .compensateWith((ignored, ignored2) -> {})
+                        .run(ignored3 -> "1");
                     if (!job.isCompensating()) {
                       job.cancel("no longer needed");
                     }
@@ -167,7 +169,7 @@ class JobListenerTest extends AbstractBikeschedTest {
               .maxAttempts(1)
               .timeout(Duration.ofMillis(100))
               .handler(
-                  _ -> {
+                  job -> {
                     while (!release.get()) {
                       try {
                         Thread.sleep(10);
@@ -206,7 +208,7 @@ class JobListenerTest extends AbstractBikeschedTest {
         };
     try (logs;
         Bikesched bikesched = testNode("node-listener-broken").jobListener(listener).build()) {
-      UUID jobId = bikesched.newJob(unique("listener-broken")).handler(_ -> {}).schedule();
+      UUID jobId = bikesched.newJob(unique("listener-broken")).handler(ignored -> {}).schedule();
 
       awaitState(jobId, "SUCCEEDED");
       assertThat(logs.messages())

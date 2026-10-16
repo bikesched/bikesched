@@ -28,11 +28,13 @@ class JobRetryTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     job.step(
-                        "reserve", String.class, _ -> "\"r-" + reserved.incrementAndGet() + "\"");
+                        "reserve",
+                        String.class,
+                        ignored -> "\"r-" + reserved.incrementAndGet() + "\"");
                     job.step(
                         "charge",
                         String.class,
-                        _ -> {
+                        ignored -> {
                           charged.incrementAndGet();
                           if (!fixed.get()) {
                             throw new IllegalStateException("card declined");

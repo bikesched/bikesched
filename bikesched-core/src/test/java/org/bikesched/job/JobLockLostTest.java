@@ -35,11 +35,11 @@ class JobLockLostTest extends AbstractBikeschedTest {
               .newJob(type)
               .handler(
                   job -> {
-                    job.step("first", String.class, _ -> "\"1\"");
+                    job.step("first", String.class, ignored -> "\"1\"");
                     firstStepDone.countDown();
                     released.await(10, TimeUnit.SECONDS);
                     try {
-                      job.step("second", String.class, _ -> "\"2\"");
+                      job.step("second", String.class, ignored -> "\"2\"");
                     } catch (RuntimeException e) {
                       secondStepFailure.set(e); // swallowed: the attempt is abandoned anyway
                     }

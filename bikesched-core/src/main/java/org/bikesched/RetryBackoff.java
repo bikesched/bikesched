@@ -37,7 +37,7 @@ public interface RetryBackoff {
    * @return the backoff
    */
   static RetryBackoff none() {
-    return _ -> Duration.ZERO;
+    return ignored -> Duration.ZERO;
   }
 
   /**
@@ -48,7 +48,7 @@ public interface RetryBackoff {
    */
   static RetryBackoff fixed(Duration delay) {
     requireNotNegative(delay, "delay");
-    return _ -> delay;
+    return ignored -> delay;
   }
 
   /**

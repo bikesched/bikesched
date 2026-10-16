@@ -198,7 +198,7 @@ public final class DefaultJob implements Job {
     if (replay != null) {
       replay.requirePublished(stepName);
     }
-    try (var _ = stepContext(stepName)) {
+    try (var stepLogContext = stepContext(stepName)) {
       EventStore.StepPublication published =
           database
               .events()
@@ -316,7 +316,7 @@ public final class DefaultJob implements Job {
   void compensate(CompensationReplay.PendingCompensation compensation) throws Exception {
     String name = compensation.stepName();
     long start = System.nanoTime();
-    try (var _ = stepContext(name)) {
+    try (var stepLogContext = stepContext(name)) {
       LOG.debug("Compensating step {} of job {}", name, id);
       try {
         stepGuard.run("the compensation of step '" + name + "'", compensation.call());
@@ -467,7 +467,7 @@ public final class DefaultJob implements Job {
               + stepName
               + "'; set a unique stepName(…) for each child");
     }
-    try (var _ = stepContext(stepName)) {
+    try (var stepLogContext = stepContext(stepName)) {
       if (replay != null) {
         // Replay only: return the started child, registering the compensation, never start one.
         return replay.startedChild(stepName, compensation);
@@ -516,7 +516,7 @@ public final class DefaultJob implements Job {
       return replay.childResult(childJobId, reader(resultType));
     }
     var wait = fenced(() -> database.steps().awaitChildJob(id, lock, childJobId, timeout));
-    try (var _ = stepContext(wait.stepName())) {
+    try (var stepLogContext = stepContext(wait.stepName())) {
       return switch (wait) {
         case ChildWait.ChildEnded ended -> {
           LOG.debug(
@@ -693,7 +693,7 @@ public final class DefaultJob implements Job {
     if (replay != null) {
       return replay.step(name, fromJson, compensation);
     }
-    try (var _ = stepContext(name)) {
+    try (var stepLogContext = stepContext(name)) {
       var completed = database.steps().findCompletedStep(id, name);
       completed.ifPresent(step -> StepKind.STEP.require(name, id, step.kind()));
       if (completed.isEmpty()) {
@@ -800,7 +800,7 @@ public final class DefaultJob implements Job {
       replay.sleep(stepName);
       return;
     }
-    try (var _ = stepContext(stepName)) {
+    try (var stepLogContext = stepContext(stepName)) {
       var sleep = fenced(() -> database.steps().sleep(id, lock, stepName, duration, until));
       if (sleep.awake()) {
         LOG.debug("Step {} of job {} slept until {}", stepName, id, sleep.wakeUpAt());
@@ -839,7 +839,7 @@ public final class DefaultJob implements Job {
       // Replay only: return what the poll stored, never start a check.
       return replay.poll(name, reader(resultType));
     }
-    try (var _ = stepContext(name)) {
+    try (var stepLogContext = stepContext(name)) {
       var poll = fenced(() -> database.steps().startPoll(id, lock, name, timeout));
       return switch (poll) {
         case StepStore.PollStep.Ready(@Nullable String result) -> {
@@ -1075,7 +1075,7 @@ public final class DefaultJob implements Job {
       // Replay only: return what the wait stored, never start or time out a wait.
       return replay.event(stepName, read);
     }
-    try (var _ = stepContext(stepName)) {
+    try (var stepLogContext = stepContext(stepName)) {
       var wait =
           fenced(
               () -> database.events().awaitEvent(id, lock, stepName, eventName, eventKey, timeout));
@@ -1084,7 +1084,7 @@ public final class DefaultJob implements Job {
           LOG.debug("Step {} of job {} received event {}/{}", stepName, id, eventName, eventKey);
           yield read.apply(json);
         }
-        case EventStore.EventWaitResult.TimedOut _ -> {
+        case EventStore.EventWaitResult.TimedOut ignored -> {
           LOG.debug(
               "Step {} of job {} timed out waiting for event {}/{}",
               stepName,
@@ -1096,7 +1096,7 @@ public final class DefaultJob implements Job {
         case EventStore.EventWaitResult.Failing(String error) ->
             stillFailing(
                 stepName, failureHandler, error, new EventTimeoutException(timeoutMessage));
-        case EventStore.EventWaitResult.Failed _ ->
+        case EventStore.EventWaitResult.Failed ignored ->
             throw failWithoutRetry(new EventTimeoutException(timeoutMessage));
         case EventStore.EventWaitResult.Waiting(Instant waitUntil) -> {
           LOG.debug(
@@ -1200,7 +1200,8 @@ public final class DefaultJob implements Job {
       FailureHandling<T> handling, Exception failure) throws Exception {
     return switch (handling) {
       case FailureHandling.Resolved<T>(T result) -> result;
-      case FailureHandling.Unresolved<T> _, FailureHandling.RunAgain<T> _ -> throw failure;
+      case FailureHandling.Unresolved<T> ignored -> throw failure;
+      case FailureHandling.RunAgain<T> ignored -> throw failure;
     };
   }
 

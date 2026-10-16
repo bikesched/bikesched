@@ -40,7 +40,7 @@ public interface JobHandlerSettings<B extends JobHandlerSettings<B, P>, P extend
    */
   default B handler(Runnable handler) {
     Objects.requireNonNull(handler, "handler");
-    return handler(_ -> handler.run());
+    return handler(ignored -> handler.run());
   }
 
   /**

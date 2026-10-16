@@ -100,7 +100,7 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
             () -> {});
     var logs = LogCapture.of(JobNotificationListener.class);
     try (logs;
-        Bikesched _ = testNode("node-listener-self-check").dataSource(notListening).build()) {
+        Bikesched ignored = testNode("node-listener-self-check").dataSource(notListening).build()) {
       await()
           .atMost(Duration.ofSeconds(3))
           .until(
@@ -115,7 +115,7 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
   void theSelfCheckPassesSilently() throws Exception {
     var logs = LogCapture.of(JobNotificationListener.class);
     try (logs;
-        Bikesched _ = testNode("node-listener-self-check-ok").build()) {
+        Bikesched ignored = testNode("node-listener-self-check-ok").build()) {
       await().until(() -> logs.messages().stream().anyMatch(m -> m.endsWith("its self-check")));
       Thread.sleep(1200);
       assertThat(logs.messages()).noneMatch(m -> m.contains("did not receive"));
@@ -162,8 +162,8 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
         Bikesched client =
             testNode("node-listener-foreign-client").autoStartPolling(false).build()) {
       worker.registerJobHandler("listener-handled", job -> started.put(job.id(), Instant.now()));
-      client.registerJobHandler("listener-foreign", _ -> {});
-      client.registerJobHandler("listener-handled", _ -> {});
+      client.registerJobHandler("listener-foreign", ignored -> {});
+      client.registerJobHandler("listener-handled", ignored -> {});
 
       client.newJob("listener-foreign").schedule();
       await().until(() -> logs.messages().stream().anyMatch(m -> m.endsWith("[listener-foreign]")));
@@ -213,7 +213,7 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
         Proxy.newProxyInstance(
             JobNotificationListenerTest.class.getClassLoader(),
             new Class<?>[] {DataSource.class},
-            (_, method, args) -> {
+            (ignored, method, args) -> {
               if (method.getName().equals("getConnection")) {
                 check.check();
                 return wrapper.apply((Connection) invoke(method, dataSource, args));
@@ -252,7 +252,7 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
         Proxy.newProxyInstance(
             JobNotificationListenerTest.class.getClassLoader(),
             new Class<?>[] {Connection.class},
-            (_, method, args) -> handler.handle(method, args));
+            (ignored, method, args) -> handler.handle(method, args));
   }
 
   private static Object invoke(java.lang.reflect.Method method, Object target, Object[] args)

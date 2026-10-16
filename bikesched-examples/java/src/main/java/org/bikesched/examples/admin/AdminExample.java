@@ -59,7 +59,7 @@ public final class AdminExample {
     bikesched.registerJobHandler(
         SEND_INVOICE,
         (job, invoice) -> {
-          job.step("render-pdf", String.class, _ -> "invoice-" + invoice.number() + ".pdf");
+          job.step("render-pdf", String.class, ignored -> "invoice-" + invoice.number() + ".pdf");
           if (invoice.number() % 4 == 0) {
             job.fail("SMTP timeout while sending invoice " + invoice.number());
           }
@@ -67,7 +67,7 @@ public final class AdminExample {
     bikesched.registerJobHandler(
         FULFIL_ORDER,
         (job, order) -> {
-          job.step("reserve-stock", Boolean.class, _ -> true);
+          job.step("reserve-stock", Boolean.class, ignored -> true);
           var parcel =
               job.newJob(SHIP_PARCEL)
                   .stepName("ship")
@@ -89,8 +89,8 @@ public final class AdminExample {
     bikesched.registerJobHandler(
         SYNC_INVENTORY,
         job -> {
-          int items = job.step("count-stock", Integer.class, _ -> 120);
-          job.step("update-shop", String.class, _ -> items + " items in stock");
+          int items = job.step("count-stock", Integer.class, ignored -> 120);
+          job.step("update-shop", String.class, ignored -> items + " items in stock");
         });
   }
 

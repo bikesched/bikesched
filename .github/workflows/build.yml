@@ -57,13 +57,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Same version as `java` in gradle/libs.versions.toml; Gradle runs on it and uses it as the
-      # toolchain (no auto-provisioning needed).
-      - name: Set up JDK 26
+      # 26: same version as `java` in gradle/libs.versions.toml; Gradle runs on it and uses it as
+      # the toolchain (the last version listed becomes JAVA_HOME). 21: same version as
+      # `java-release`, the language baseline the tests run on (no auto-provisioning needed).
+      - name: Set up JDK 21 and 26
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '26'
+          java-version: |
+            21
+            26
 
       # Writes the Gradle cache only on main; pull requests read it.
       - name: Set up Gradle
@@ -72,8 +75,11 @@ jobs:
       - name: Check Docker for Testcontainers
         run: docker version
 
+      # Compiles with JDK 26 for release 21 and runs the tests on JDK 21 (ADR 0049).
       - name: Build
-        run: ./gradlew build
+        run: >-
+          ./gradlew build -PtestJavaVersion=21
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64
 
       - name: Upload test reports
         if: failure()

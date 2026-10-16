@@ -59,7 +59,7 @@ public final class RecurringExample {
     bikesched
         .newJob(CLEAN_UP_SESSIONS)
         .handler(
-            _ ->
+            ignored ->
                 out.printf(
                     "%s [%s] run %d: removed expired sessions%n",
                     timestamp(), node, runs.incrementAndGet()))

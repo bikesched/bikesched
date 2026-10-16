@@ -282,7 +282,7 @@ public final class JobPoller implements DueTimes {
   }
 
   private void onPollerThread(Runnable task) {
-    try (var _ = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId()))) {
+    try (var mdc = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(nodeId()))) {
       task.run();
     } catch (RuntimeException e) {
       // Must never throw: an exception would cancel the interval polls.
@@ -321,7 +321,7 @@ public final class JobPoller implements DueTimes {
   }
 
   private void trackActiveJob(UUID jobId) {
-    activeJobs.computeIfAbsent(jobId, _ -> new AtomicInteger()).incrementAndGet();
+    activeJobs.computeIfAbsent(jobId, ignored -> new AtomicInteger()).incrementAndGet();
   }
 
   /** A job's slot was released: polls if a wake-up found no free slot. */
@@ -335,7 +335,7 @@ public final class JobPoller implements DueTimes {
   private void untrackActiveJob(UUID jobId) {
     activeJobs.computeIfPresent(
         jobId,
-        (_, count) -> {
+        (ignored, count) -> {
           count.decrementAndGet();
           return count.get() == 0 ? null : count;
         });
@@ -445,7 +445,7 @@ public final class JobPoller implements DueTimes {
     try {
       jobExecutor.execute(
           () -> {
-            try (var _ = JobLogContext.open(started.nodeId(), job)) {
+            try (var logContext = JobLogContext.open(started.nodeId(), job)) {
               started.processor().process(job, slot);
             } finally {
               slot.release();

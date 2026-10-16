@@ -44,7 +44,7 @@ class PollTest extends AbstractBikeschedTest {
                     job.step(
                         "before",
                         Void.class,
-                        _ -> {
+                        ignored -> {
                           calls.add("before");
                           return null;
                         });
@@ -96,7 +96,9 @@ class PollTest extends AbstractBikeschedTest {
                   job -> {
                     values.add(
                         job.newPoll("p", String.class, SHORT)
-                            .run(_ -> Poll.ready("\"value " + checks.incrementAndGet() + "\"")));
+                            .run(
+                                ignored ->
+                                    Poll.ready("\"value " + checks.incrementAndGet() + "\"")));
                     if (job.attempts() == 1) {
                       throw new IllegalStateException("fails once after the poll");
                     }
@@ -117,7 +119,8 @@ class PollTest extends AbstractBikeschedTest {
               .newJob("poll-waiting")
               .handler(
                   job ->
-                      job.newPoll("p", String.class, Duration.ofHours(1)).run(_ -> Poll.notReady()))
+                      job.newPoll("p", String.class, Duration.ofHours(1))
+                          .run(ignored -> Poll.notReady()))
               .schedule();
 
       awaitState(jobId, "WAITING");
@@ -186,7 +189,7 @@ class PollTest extends AbstractBikeschedTest {
               .handler(
                   job ->
                       job.newPoll("p", String.class, SHORT)
-                          .run(_ -> Poll.notReady(Duration.ofHours(2))))
+                          .run(ignored -> Poll.notReady(Duration.ofHours(2))))
               .schedule();
 
       awaitState(jobId, "WAITING");
@@ -207,7 +210,7 @@ class PollTest extends AbstractBikeschedTest {
                       job.newPoll(
                               "p",
                               String.class,
-                              _ -> {
+                              ignored -> {
                                 throw new IllegalStateException("broken");
                               })
                           .run(step -> step.attempts() < 2 ? Poll.notReady() : Poll.ready(null)))
@@ -234,7 +237,7 @@ class PollTest extends AbstractBikeschedTest {
                       job.newPoll("p", String.class, Duration.ofHours(1))
                           .timeout(Duration.ofMillis(300))
                           .run(
-                              _ -> {
+                              ignored -> {
                                 checks.incrementAndGet();
                                 return Poll.notReady();
                               }))
@@ -276,7 +279,7 @@ class PollTest extends AbstractBikeschedTest {
                                 failing ->
                                     failing.resolve(
                                         "\"fallback " + fallbacks.incrementAndGet() + "\""))
-                            .run(_ -> Poll.notReady()));
+                            .run(ignored -> Poll.notReady()));
                     job.sleep("replay", Duration.ofMillis(100));
                   })
               .schedule();
@@ -308,7 +311,7 @@ class PollTest extends AbstractBikeschedTest {
                     job.newPoll("p", String.class, Duration.ofHours(1))
                         .timeout(timeout.get())
                         .run(
-                            _ -> {
+                            ignored -> {
                               checks.incrementAndGet();
                               return Poll.notReady();
                             });
@@ -370,7 +373,7 @@ class PollTest extends AbstractBikeschedTest {
                   job ->
                       job.newPoll("p", String.class, SHORT)
                           .run(
-                              _ -> {
+                              ignored -> {
                                 throw new IllegalStateException("service unavailable");
                               }))
               .schedule();
@@ -396,8 +399,9 @@ class PollTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("book", Void.class)
                         .compensateWith((step, result) -> calls.add("compensate book"))
-                        .run(_ -> null);
-                    job.newPoll("p", String.class, Duration.ofHours(1)).run(_ -> Poll.notReady());
+                        .run(ignored -> null);
+                    job.newPoll("p", String.class, Duration.ofHours(1))
+                        .run(ignored -> Poll.notReady());
                     calls.add("after");
                   })
               .schedule();
@@ -423,11 +427,11 @@ class PollTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("book", Void.class)
                         .compensateWith((step, result) -> calls.add("compensate book"))
-                        .run(_ -> null);
+                        .run(ignored -> null);
                     String ready =
                         job.newPoll("ready", String.class, SHORT)
                             .run(
-                                _ -> {
+                                ignored -> {
                                   calls.add("check ready");
                                   return Poll.ready("\"r\"");
                                 });
@@ -436,14 +440,14 @@ class PollTest extends AbstractBikeschedTest {
                             .timeout(SHORT)
                             .onFailure(failing -> failing.resolve("\"fallback\""))
                             .run(
-                                _ -> {
+                                ignored -> {
                                   calls.add("check timed-out");
                                   return Poll.notReady();
                                 });
                     job.newStep("ship", String.class)
                         .compensateWith((step, result) -> calls.add("compensate ship " + result))
                         .run(
-                            _ ->
+                            ignored ->
                                 "\""
                                     + ready.replace("\"", "")
                                     + "-"
@@ -477,10 +481,10 @@ class PollTest extends AbstractBikeschedTest {
                   job -> {
                     job.newStep("book", Void.class)
                         .compensateWith((step, result) -> calls.add("compensate book"))
-                        .run(_ -> null);
+                        .run(ignored -> null);
                     job.newPoll("p", String.class, Duration.ofHours(1))
                         .run(
-                            _ -> {
+                            ignored -> {
                               calls.add("check");
                               return Poll.notReady();
                             });
@@ -508,7 +512,9 @@ class PollTest extends AbstractBikeschedTest {
                       job.step(
                           "outer",
                           String.class,
-                          _ -> job.newPoll("p", String.class, SHORT).run(_ -> Poll.ready(null))))
+                          ignored ->
+                              job.newPoll("p", String.class, SHORT)
+                                  .run(ignored2 -> Poll.ready(null))))
               .schedule();
 
       awaitState(jobId, "FAILED");
@@ -565,8 +571,8 @@ class PollTest extends AbstractBikeschedTest {
               .maxAttempts(1)
               .handler(
                   job -> {
-                    job.step("same", Void.class, _ -> null);
-                    job.newPoll("same", String.class, SHORT).run(_ -> Poll.ready(null));
+                    job.step("same", Void.class, ignored -> null);
+                    job.newPoll("same", String.class, SHORT).run(ignored -> Poll.ready(null));
                   })
               .schedule();
 

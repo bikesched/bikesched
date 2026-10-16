@@ -36,8 +36,8 @@ class AdminTest extends AbstractBikeschedTest {
   void findsJobsByTypeNewestFirstInPagesWithoutGaps() {
     String type = prefix + "paged";
     try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
-      bikesched.registerJobHandler(type, _ -> {});
-      bikesched.registerJobHandler(prefix + "other", _ -> {});
+      bikesched.registerJobHandler(type, ignored -> {});
+      bikesched.registerJobHandler(prefix + "other", ignored -> {});
       List<UUID> scheduled = new ArrayList<>();
       for (int i = 0; i < 5; i++) {
         scheduled.add(bikesched.newJob(type).schedule(Duration.ofHours(1)));
@@ -121,10 +121,10 @@ class AdminTest extends AbstractBikeschedTest {
     String foreign = prefix + "foreign";
     try (Bikesched other = testNode(prefix + "other").build();
         Bikesched bikesched = testNode(prefix + "node").build()) {
-      other.registerJobHandler(foreign, _ -> {});
+      other.registerJobHandler(foreign, ignored -> {});
       other.newJob(foreign).schedule(Duration.ofHours(1));
-      bikesched.registerJobHandler(handled, _ -> {});
-      bikesched.registerJobHandler(fresh, _ -> {});
+      bikesched.registerJobHandler(handled, ignored -> {});
+      bikesched.registerJobHandler(fresh, ignored -> {});
       UUID keyed =
           bikesched
               .newJob(handled)
@@ -158,7 +158,7 @@ class AdminTest extends AbstractBikeschedTest {
       bikesched.registerJobHandler(
           type,
           job -> {
-            job.step("first", String.class, _ -> "\"one\"");
+            job.step("first", String.class, ignored -> "\"one\"");
             job.waitForEvent("await", event, "key-1", String.class).receive();
             job.complete("{\"done\": true}");
           });
@@ -346,7 +346,7 @@ class AdminTest extends AbstractBikeschedTest {
     String type = prefix + "on-node";
     CountDownLatch release = new CountDownLatch(1);
     try (Bikesched bikesched = testNode(prefix + "runner").build()) {
-      bikesched.registerJobHandler(type, _ -> release.await());
+      bikesched.registerJobHandler(type, ignored -> release.await());
       UUID running = bikesched.newJob(type).schedule();
       UUID scheduled = bikesched.newJob(type).schedule(Duration.ofHours(1));
       UUID nodeId = bikesched.node().id().orElseThrow();
@@ -382,7 +382,7 @@ class AdminTest extends AbstractBikeschedTest {
   void findsJobsAndEventsByTheFirstDigitsOfTheirId() {
     String type = prefix + "by-id";
     try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
-      bikesched.registerJobHandler(type, _ -> {});
+      bikesched.registerJobHandler(type, ignored -> {});
       UUID jobId = bikesched.newJob(type).schedule(Duration.ofHours(1));
       UUID eventId = bikesched.newEvent(prefix + "by-id", "k").publish();
       String jobShort = jobId.toString().substring(0, 8);
@@ -428,7 +428,7 @@ class AdminTest extends AbstractBikeschedTest {
   void findsThePendingAndTheLatestEndedRunsOfARecurringJob() {
     String type = prefix + "recurring";
     try (Bikesched bikesched = testNode(prefix + "node").build()) {
-      bikesched.registerJobHandler(type, _ -> {});
+      bikesched.registerJobHandler(type, ignored -> {});
       UUID oneOff = bikesched.newJob(type).schedule(Duration.ofHours(1));
       bikesched.newJob(type).schedule(Recurrence.every(Duration.ofMillis(200)), Duration.ZERO);
       Admin admin = bikesched.admin();

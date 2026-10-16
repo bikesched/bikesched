@@ -74,7 +74,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
     try (Bikesched worker = worker("node-notify-worker").build();
         Bikesched client = client("node-notify-client").build()) {
       worker.registerJobHandler("notify-now", recordStart());
-      client.registerJobHandler("notify-now", _ -> {});
+      client.registerJobHandler("notify-now", ignored -> {});
 
       Instant scheduled = Instant.now();
       UUID jobId = client.newJob("notify-now").schedule();
@@ -111,7 +111,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
     try (Bikesched worker = worker("node-notify-child").build()) {
       worker.registerJobHandler(
           "notify-child",
-          _ -> {
+          ignored -> {
             sleep(300);
             ended.put("child", Instant.now());
           });
@@ -234,7 +234,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
           .untilAsserted(
               () ->
                   assertThat(runs)
-                      .allSatisfy((_, times) -> assertThat(times).hasSize(2))
+                      .allSatisfy((ignored, times) -> assertThat(times).hasSize(2))
                       .hasSize(4));
       for (String kind : List.of("sleep", "poll", "backoff", "deadline")) {
         List<Instant> times = runs.get(kind);
@@ -250,7 +250,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
   void occurrencesOfARecurringJobStartWhenDue() {
     List<Instant> runs = new CopyOnWriteArrayList<>();
     try (Bikesched worker = worker("node-notify-recurring").build()) {
-      worker.registerJobHandler("notify-recurring", _ -> runs.add(Instant.now()));
+      worker.registerJobHandler("notify-recurring", ignored -> runs.add(Instant.now()));
       worker.newJob("notify-recurring").schedule(Recurrence.every(Duration.ofSeconds(1)));
 
       await().atMost(Duration.ofSeconds(10)).until(() -> runs.size() >= 3);
@@ -268,7 +268,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
             worker("node-notify-elsewhere").pollInterval(Duration.ofSeconds(3)).build();
         Bikesched client = client("node-notify-elsewhere-client").build()) {
       worker.registerJobHandler("notify-elsewhere", recordStart());
-      client.registerJobHandler("notify-elsewhere", _ -> {});
+      client.registerJobHandler("notify-elsewhere", ignored -> {});
 
       Instant dueAt = Instant.now().plusSeconds(1);
       UUID jobId = client.newJob("notify-elsewhere").schedule(dueAt);
@@ -292,7 +292,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
                 .receive();
             received.put(job.id(), Instant.now());
           });
-      client.registerJobHandler("notify-caller", _ -> {});
+      client.registerJobHandler("notify-caller", ignored -> {});
       UUID waiting = worker.newJob("notify-caller-event").schedule();
       awaitState(waiting, "WAITING");
       connection.setAutoCommit(false);
@@ -324,7 +324,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
         Bikesched client = client("node-notify-burst-client").build();
         Connection listener = listen()) {
       worker.registerJobHandler("notify-burst", recordStart());
-      client.registerJobHandler("notify-burst", _ -> {});
+      client.registerJobHandler("notify-burst", ignored -> {});
 
       Instant burstStart = Instant.now();
       for (int i = 0; i < jobs; i++) {
@@ -347,7 +347,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
         Bikesched client =
             client("node-notify-interval-client").notifyInterval(Duration.ofMillis(500)).build()) {
       worker.registerJobHandler("notify-interval", recordStart());
-      client.registerJobHandler("notify-interval", _ -> {});
+      client.registerJobHandler("notify-interval", ignored -> {});
       settle();
 
       Instant scheduled = Instant.now();
@@ -387,7 +387,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
         Bikesched client =
             client("node-notify-failing-client").dataSource(failingNotifier).build()) {
       worker.registerJobHandler("notify-failing", recordStart());
-      client.registerJobHandler("notify-failing", _ -> {});
+      client.registerJobHandler("notify-failing", ignored -> {});
       settle();
 
       UUID lost = client.newJob("notify-failing").schedule();
@@ -441,7 +441,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
   void aHandlerRegisteredAfterStartingRunsItsDueAndDelayedJobsOnTime() {
     try (Bikesched worker = worker("node-notify-late-handler").build();
         Bikesched client = client("node-notify-late-handler-client").build()) {
-      client.registerJobHandler("notify-late-handler", _ -> {});
+      client.registerJobHandler("notify-late-handler", ignored -> {});
       UUID due = client.newJob("notify-late-handler").schedule();
       Instant delayedAt = Instant.now().plusSeconds(2);
       UUID delayed = client.newJob("notify-late-handler").schedule(delayedAt);
@@ -465,7 +465,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
             started.put(job.id(), Instant.now());
             release.await();
           });
-      client.registerJobHandler("notify-busy", _ -> {});
+      client.registerJobHandler("notify-busy", ignored -> {});
       UUID first = client.newJob("notify-busy").schedule();
       await().atMost(Duration.ofSeconds(5)).until(() -> started.containsKey(first));
 
@@ -519,7 +519,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
         Bikesched client = client("node-notify-off-client").listenForDueJobs(false).build();
         Connection listener = listen()) {
       worker.registerJobHandler("notify-off", recordStart());
-      client.registerJobHandler("notify-off", _ -> {});
+      client.registerJobHandler("notify-off", ignored -> {});
       settle();
 
       UUID jobId = client.newJob("notify-off").schedule();
@@ -534,7 +534,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
   }
 
   private static void run(Map<String, List<Instant>> runs, String kind) {
-    runs.computeIfAbsent(kind, _ -> new CopyOnWriteArrayList<>()).add(Instant.now());
+    runs.computeIfAbsent(kind, ignored -> new CopyOnWriteArrayList<>()).add(Instant.now());
   }
 
   /** Runs the action once per job, in a step (handlers replay). */
@@ -542,7 +542,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
     job.step(
         name,
         Void.class,
-        _ -> {
+        ignored -> {
           action.run();
           return null;
         });
@@ -603,7 +603,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
         Proxy.newProxyInstance(
             JobNotificationTest.class.getClassLoader(),
             new Class<?>[] {DataSource.class},
-            (_, method, args) -> {
+            (ignored, method, args) -> {
               if (method.getName().equals("getConnection")) {
                 check.check();
               }

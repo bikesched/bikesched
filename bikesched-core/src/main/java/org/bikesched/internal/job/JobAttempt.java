@@ -127,7 +127,7 @@ final class JobAttempt {
         timer = schedule(this::hardTimeOut, hardTimeoutGrace);
       }
     }
-    try (var _ = JobLogContext.open(nodeId, job)) {
+    try (var logContext = JobLogContext.open(nodeId, job)) {
       LOG.warn(
           "Job {} of type {} exceeded its timeout of {} (attempt {} of {}), interrupting it",
           job.id(),

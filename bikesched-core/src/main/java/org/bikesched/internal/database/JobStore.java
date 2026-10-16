@@ -587,9 +587,9 @@ public final class JobStore {
 
   private static @Nullable String claimDetail(ClaimedJob job) {
     return switch (job.phase()) {
-      case JobPhase.HandleFailure(_, int run) -> "failure handler run " + run;
-      case JobPhase.Compensate(_, int attempt) -> "compensation attempt " + attempt;
-      case JobPhase.Run _ -> job.cancelRequested() ? "cancellation requested" : null;
+      case JobPhase.HandleFailure(JobState ignored, int run) -> "failure handler run " + run;
+      case JobPhase.Compensate(JobState ignored, int attempt) -> "compensation attempt " + attempt;
+      case JobPhase.Run ignored -> job.cancelRequested() ? "cancellation requested" : null;
     };
   }
 
@@ -782,12 +782,12 @@ public final class JobStore {
       return false;
     }
     return switch (end.followUp()) {
-      case FollowUp.NotifyParent _ -> {
+      case FollowUp.NotifyParent ignored -> {
         childEnded(db, end.jobId());
         yield false;
       }
       case FollowUp.ScheduleNext(var next) -> insertOccurrence(db, next);
-      case FollowUp.None _ -> false;
+      case FollowUp.None ignored -> false;
     };
   }
 

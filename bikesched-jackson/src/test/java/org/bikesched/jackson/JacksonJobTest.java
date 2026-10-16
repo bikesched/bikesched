@@ -59,7 +59,7 @@ class JacksonJobTest {
                 job.step(
                     "create-receipt",
                     Receipt.class,
-                    _ -> new Receipt(order.id(), payment.reference()));
+                    ignored -> new Receipt(order.id(), payment.reference()));
             receipt.complete(stored);
           });
 

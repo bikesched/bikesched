@@ -29,8 +29,8 @@ class JobHistoryTest extends AbstractBikeschedTest {
               .newJob(unique("history-steps"))
               .handler(
                   job -> {
-                    job.step("reserve", String.class, _ -> "\"r-1\"");
-                    job.step("charge", String.class, _ -> "\"p-1\"");
+                    job.step("reserve", String.class, ignored -> "\"r-1\"");
+                    job.step("charge", String.class, ignored -> "\"p-1\"");
                   })
               .schedule();
       awaitState(jobId, "SUCCEEDED");
@@ -66,7 +66,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
               .newJob(unique("history-retry"))
               .maxAttempts(2)
               .handler(
-                  _ -> {
+                  ignored -> {
                     if (calls.incrementAndGet() == 1) {
                       throw new IllegalStateException("broker unavailable");
                     }
@@ -157,8 +157,8 @@ class JobHistoryTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     job.newStep("reserve", String.class)
-                        .compensateWith((_, _) -> {})
-                        .run(_ -> "\"r-1\"");
+                        .compensateWith((ignored, ignored2) -> {})
+                        .run(ignored -> "\"r-1\"");
                     throw new IllegalStateException("payment declined");
                   })
               .schedule();
@@ -188,7 +188,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
       UUID jobId =
           bikesched
               .newJob(unique("history-off"))
-              .handler(job -> job.step("step", String.class, _ -> "\"x\""))
+              .handler(job -> job.step("step", String.class, ignored -> "\"x\""))
               .schedule();
       awaitState(jobId, "SUCCEEDED");
 
@@ -209,7 +209,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
             + "', now(), 'SCHEDULED', 0)");
     var logs = LogCapture.of(DefaultBikesched.class, HistoryCleanUp.class);
     try (logs;
-        var _ =
+        var ignored =
             testNode("node-history-cleanup")
                 .jobHistory(Duration.ofHours(1))
                 .jobHistoryCleanUpInterval(Duration.ofMillis(100))

@@ -316,7 +316,7 @@ class EventTest extends AbstractBikeschedTest {
                           .onFailure(
                               failing -> {
                                 try {
-                                  job.step("fetch-payment", String.class, _ -> "\"fetched\"");
+                                  job.step("fetch-payment", String.class, ignored -> "\"fetched\"");
                                 } catch (IllegalStateException e) {
                                   rejected.add(e.getMessage());
                                 }

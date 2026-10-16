@@ -10,7 +10,7 @@ covers the builder options, nodes, JSON mapping and logging after that.
 
 ## Requirements
 
-- Java 26 or later. Every job runs on its own virtual thread.
+- Java 21 or later. Every job runs on its own virtual thread.
 - PostgreSQL. bikesched's own tests run against PostgreSQL 18. bikesched creates and migrates its
   tables (`bikesched_*`) on first use, so the database user needs the right to create tables in
   the data source's default schema, unless migrations run as a separate deploy step (see
