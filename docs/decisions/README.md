@@ -60,3 +60,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0047](0047-website-hosted-on-cloudflare-workers.md) | Website hosted on Cloudflare Workers instead of static.app | Accepted |
 | [0048](0048-nullaway-in-the-core-build.md) | Nullness checked with NullAway in the core build | Accepted |
 | [0049](0049-java-21-baseline.md) | Java 21 as the language baseline, built with JDK 26 | Accepted |
+| [0050](0050-load-and-failure-tests-on-demand.md) | Load and failure tests in their own module, run on demand | Accepted |
