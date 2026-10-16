@@ -27,7 +27,8 @@ A builder can be reused: every `schedule…` call stores a new job. `schedule(Re
 `schedule(String)` register a [recurring job](recurring-jobs.md) instead. Handlers can also be
 registered up front with `bikesched.registerJobHandler(type, handler)`. A job scheduled without a time is due
 immediately and starts right away on a node handling its type: the scheduling node notifies the
-others, see [Due jobs start right away](configuration.md#due-jobs-start-right-away).
+others, see [Due jobs start right
+away](../getting-started/configuration.md#due-jobs-start-right-away).
 
 A payload that already is JSON text, e.g. a request body, goes in with `.payloadJson(body)`
 instead of `.payload(...)`: stored as it is, without the `JsonMapper` (a Jackson mapper would turn
@@ -63,7 +64,7 @@ UUID id = bikesched.newJob(ORDER).payload(order).schedule();                // p
 - A node rejects using one name with two payload classes (`IllegalArgumentException`).
 - The payload class is passed to the `JsonMapper`, so it must be a concrete class like a record;
   wrap generic collections such as `List<Order>` in a record, see
-  [Payload design](configuration.md#payload-design).
+  [Payload design](../getting-started/configuration.md#payload-design).
 
 ### Transactional scheduling
 
@@ -91,7 +92,7 @@ call, retried on failure up to its maximum attempts. Since a job can run more th
 idempotency key derived from the order.
 
 Events can be published the same way, with `.connection(connection)`, see
-[Waiting and publishing](events.md#waiting-and-publishing).
+[Waiting and publishing](../multi-step-jobs/events.md#waiting-and-publishing).
 
 ### Idempotency keys
 
@@ -121,9 +122,9 @@ UUID id = bikesched.newJob("process-payment")
   records nothing.
 - The key guards scheduling, not the job's own calls: a handler calling a provider derives that
   provider's idempotency key from the job (job id and step name), see
-  [Idempotency keys](steps.md#idempotency-keys), not from the caller's key.
+  [Idempotency keys](../multi-step-jobs/steps.md#idempotency-keys), not from the caller's key.
 
-Events have the same option, see [Idempotency keys](events.md#idempotency-keys).
+Events have the same option, see [Idempotency keys](../multi-step-jobs/events.md#idempotency-keys).
 
 ## Writing handlers
 
@@ -134,16 +135,16 @@ A handler receives the `Job` being executed:
 | `id()`, `type()` | identity, e.g. for idempotency keys and logging |
 | `attempts()`, `maxAttempts()` | the current attempt (starting at 1) and the limit |
 | `payload()`, `payload(Class)` | the payload as raw JSON or mapped by the `JsonMapper` |
-| `step(name, Class, handler)` | run a durable step, see [Durable steps](steps.md#durable-steps) |
-| `newStep(name, Class)` | build a step with a compensation, see [Compensation](steps.md#compensation) |
-| `newEvent(name, key)`, `newEvent(eventType, key)` | publish once as a durable step, see [Publishing from jobs](events.md#publishing-from-jobs) |
-| `waitForEvent(step, name, key, Class)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](events.md) |
-| `awaitEvent(step, eventType, key)` | wait for an event and return its typed payload, see [Typed events](events.md#typed-events) |
-| `sleep(step, Duration)`, `sleepUntil(step, Instant)` | pause the job without holding a thread, see [Sleeping](steps.md#sleeping) |
-| `newPoll(step, Class, interval)…run(handler)` | check an external service until a result is ready, see [Polling](steps.md#polling) |
-| `newJob(type)`, `newJob(jobType)` | start a child job once as a durable step, see [Child jobs](child-jobs.md) |
-| `waitForJob(childId, Class)`, `waitForJob(childId, Class, timeout)` | wait for a child job without holding a thread and return its `JobResult`, see [Waiting for children](child-jobs.md#waiting-for-children) |
-| `complete(result)` | set the job's result, stored when it succeeds, see [Job results](child-jobs.md#job-results) |
+| `step(name, Class, handler)` | run a durable step, see [Durable steps](../multi-step-jobs/steps.md#durable-steps) |
+| `newStep(name, Class)` | build a step with a compensation, see [Compensation](../multi-step-jobs/steps.md#compensation) |
+| `newEvent(name, key)`, `newEvent(eventType, key)` | publish once as a durable step, see [Publishing from jobs](../multi-step-jobs/events.md#publishing-from-jobs) |
+| `waitForEvent(step, name, key, Class)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](../multi-step-jobs/events.md) |
+| `awaitEvent(step, eventType, key)` | wait for an event and return its typed payload, see [Typed events](../multi-step-jobs/events.md#typed-events) |
+| `sleep(step, Duration)`, `sleepUntil(step, Instant)` | pause the job without holding a thread, see [Sleeping](../multi-step-jobs/steps.md#sleeping) |
+| `newPoll(step, Class, interval)…run(handler)` | check an external service until a result is ready, see [Polling](../multi-step-jobs/steps.md#polling) |
+| `newJob(type)`, `newJob(jobType)` | start a child job once as a durable step, see [Child jobs](../multi-step-jobs/child-jobs.md) |
+| `waitForJob(childId, Class)`, `waitForJob(childId, Class, timeout)` | wait for a child job without holding a thread and return its `JobResult`, see [Waiting for children](../multi-step-jobs/child-jobs.md#waiting-for-children) |
+| `complete(result)` | set the job's result, stored when it succeeds, see [Job results](../multi-step-jobs/child-jobs.md#job-results) |
 | `cancel()`, `cancel(message)` | cancel the job, see [Cancellation](#cancellation) |
 | `fail()`, `fail(message)` | fail the attempt without throwing, see [Failures and retries](#failures-and-retries) |
 | `postpone(Duration)` | run the job again later without using up an attempt, see [Postponing](#postponing) |
@@ -157,7 +158,8 @@ crashed, so handlers should be idempotent.
 
 A handler that throws fails the attempt. The job is retried while attempts remain (`maxAttempts`,
 default 3), otherwise it ends `FAILED`; the error of the last attempt is stored in `last_error`.
-Retries run as soon as possible unless the node has a [retry backoff](configuration.md).
+Retries run as soon as possible unless the node has a [retry
+backoff](../getting-started/configuration.md).
 
 To fail an attempt without an exception and with control over the retry, use `fail()`:
 
@@ -181,16 +183,16 @@ bikesched.retry(jobId);   // false if the job does not exist or has not failed
 It is scheduled right away with all its attempts again and continues where it failed: completed
 steps return their stored results (compensated steps run again). The job history records the
 retry. Occurrences of recurring jobs can't be retried (`IllegalArgumentException`); the next
-occurrence runs anyway. Neither can [child jobs](child-jobs.md): their parent may have the outcome
-already, so the parent starts a new child instead.
+occurrence runs anyway. Neither can [child jobs](../multi-step-jobs/child-jobs.md): their parent may
+have the outcome already, so the parent starts a new child instead.
 
 ## Postponing
 
 `job.postpone(delay)` ends the attempt and runs the job again once the delay has passed, without
 using up an attempt and without recording a failure (`last_error` stays as it is). It is meant for
 "not now" answers that are no failure: a rate limit, a provider asking to come back later, a
-concurrency limit of a library like Resilience4j's `Bulkhead`. Like a [sleep](steps.md#sleeping),
-it does not return.
+concurrency limit of a library like Resilience4j's `Bulkhead`. Like a
+[sleep](../multi-step-jobs/steps.md#sleeping), it does not return.
 
 Called in a step's handler, the step keeps no result and gives its attempt back: the next attempt
 skips the steps completed before it and runs it again with the same `step.attempts()`. Put the
@@ -208,7 +210,7 @@ String messageId = job.step("send", String.class, step -> {
 ```
 
 A bucket in Bucket4j's PostgreSQL (or any other distributed) backend holds the limit across nodes;
-the [rate-limit example](../bikesched-examples/README.md#rate-limit) runs one.
+the [rate-limit example](../../bikesched-examples/README.md#rate-limit) runs one.
 
 - The job is `SCHEDULED` while postponed, like a retry; a step postponed from inside is
   `POSTPONED`. The node postponing it runs it again on time; other nodes pick it up with their next
@@ -218,8 +220,8 @@ the [rate-limit example](../bikesched-examples/README.md#rate-limit) runs one.
 - A job whose cancellation was requested meanwhile is due right away and cancelled.
 - It is rejected (`IllegalStateException`) in a compensation, a step's failure handler and a poll's
   check (which has `Poll.notReady()` for "not yet"). While the handler replays to
-  [compensate](steps.md#compensation), it does nothing.
-- [Job listeners](metrics.md) see the attempt with the outcome `POSTPONED`.
+  [compensate](../multi-step-jobs/steps.md#compensation), it does nothing.
+- [Job listeners](../operations/metrics.md) see the attempt with the outcome `POSTPONED`.
 
 ## Failure handlers
 
@@ -244,11 +246,11 @@ no exception: it runs in a claim of its own, possibly on another node.
   only reacts to it. Compensations run first.
 - A handler that throws or times out (the job's timeout applies) runs again after the node's retry
   backoff, up to `failureHandlerAttempts` runs (default 3, see
-  [Configuration](configuration.md#builder-options)); then the job ends anyway, `last_error` keeps
-  the job's error. It runs at least once, so it must be idempotent.
+  [Configuration](../getting-started/configuration.md#builder-options)); then the job ends anyway,
+  `last_error` keeps the job's error. It runs at least once, so it must be idempotent.
 - What happens when a job ends happens after the handler: the parent of a
-  [child job](child-jobs.md) receives the outcome, the next occurrence of a recurring job is
-  scheduled.
+  [child job](../multi-step-jobs/child-jobs.md) receives the outcome, the next occurrence of a
+  recurring job is scheduled.
 - Register it on every node handling the type, like the job handler: the node failing a job decides
   by its own registration. A node claiming a `FAILING` job without one ends the job and logs a
   warning. Registering a second one for a type throws.
@@ -283,7 +285,7 @@ The next node claiming the job cancels it instead of running its handler: right 
 scheduled or waiting for an event, after its current attempt if it is running (unless that attempt
 completes it). Its unfinished steps, e.g. a wait for an event, become `CANCELLED` and no longer
 receive events; completed steps are kept. Steps with a compensation are undone first, see
-[Compensation](steps.md#compensation).
+[Compensation](../multi-step-jobs/steps.md#compensation).
 
 ## Job history
 
@@ -329,8 +331,8 @@ A job that waited for an event and was retried once could show:
   it, and its next run has no `step attempt` detail, since it got its attempt back.
 - `nodeId` is the node that made the change; it is empty for changes made by the application:
   scheduling, cancel requests and publishing events.
-- A [poll](steps.md#polling) records its first wait and its outcome, not every check: its
-  further claims and suspensions are left out.
+- A [poll](../multi-step-jobs/steps.md#polling) records its first wait and its outcome, not every
+  check: its further claims and suspensions are left out.
 - Also recorded: cancellations, compensation (`COMPENSATING`, compensation attempts,
   `COMPENSATED` steps), failure handlers (`FAILING`, their runs and failures, steps resolved by
   their failure handler), jobs released by a stopping node or from a dead node, occurrences moved to
@@ -393,4 +395,5 @@ Bikesched bikesched = Bikesched.builder().dataSource(dataSource)
 - It is off by default: an abandoned attempt and its retry can run at the same time, repeating
   side effects outside the database, and abandoned threads keep the resources they hold (e.g.
   database connections). If you use timeouts and your handlers are idempotent (see
-  [Idempotency keys](steps.md#idempotency-keys)), set it, e.g. to 30 seconds to a few minutes.
+  [Idempotency keys](../multi-step-jobs/steps.md#idempotency-keys)), set it, e.g. to 30 seconds to a
+  few minutes.

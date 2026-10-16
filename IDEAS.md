@@ -58,7 +58,7 @@ the connection belongs to a Spring-managed transaction.
 
 A first slice is implemented as `bikesched-test` (a test node factory and `JobAwait` wait helpers
 over a real database, see [the spec](docs/specs/bikesched-test.md) and
-[Testing](docs/testing.md)). Still open:
+[Testing](docs/integrations/testing.md)). Still open:
 
 - Unit level, no database: a fake `Job` that runs a handler in the test thread, records steps,
   their results and compensations, returns prepared events for `waitForEvent` and child job results
@@ -112,10 +112,10 @@ starts the interval when the previous occurrence ended.
 ### Handler versions
 
 Jobs live across deploys and replay with the handler code deployed by then.
-[Changing handlers](docs/changing-handlers.md) lists the safe and unsafe changes and works around
-the unsafe ones with a version property in the payload, a new job type or two deploys. Nothing in
-the API tells old jobs from new ones, and nothing stops an old node from running a job created for
-new code during a rolling deploy.
+[Changing handlers](docs/jobs/changing-handlers.md) lists the safe and unsafe changes and works
+around the unsafe ones with a version property in the payload, a new job type or two deploys.
+Nothing in the API tells old jobs from new ones, and nothing stops an old node from running a job
+created for new code during a rolling deploy.
 
 - Handler versions: `registerJobHandler(type, version, handler)` stores the version on each new
   job (`handler_version` column), `job.handlerVersion()` lets the handler branch for old jobs, and
@@ -139,7 +139,7 @@ delivery id), so it can be looked up or shown without decoding the payload.
 - Optional `reference(String)` on the job builder (also the transactional one) and the event
   builder; `char_length` CHECK + `ValidationUtil`, like other 200-character names.
 - Column `reference` on `bikesched_jobs` and `bikesched_events`, nullable, not unique (unlike the
-  [idempotency key](docs/jobs.md#idempotency-keys), this is a display/lookup aid, not a dedup
+  [idempotency key](docs/jobs/README.md#idempotency-keys), this is a display/lookup aid, not a dedup
   key) — multiple jobs/events can share one external reference (e.g. several jobs for the same
   order).
 - Needs an index to actually look up by it (e.g. `(type, reference)` on jobs); postponed until

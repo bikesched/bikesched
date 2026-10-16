@@ -2,7 +2,7 @@
 
 A small admin page and JSON API for a bikesched database, embedded in the application that runs
 bikesched: no separate service, no build step, no dependencies beyond `bikesched-core`. User
-documentation: [Admin UI](../docs/admin.md). Design: [spec](../docs/specs/admin-ui.md),
+documentation: [Admin UI](../docs/operations/admin.md). Design: [spec](../docs/specs/admin-ui.md),
 [publishing events](../docs/specs/admin-publish-events.md), [nodes](../docs/specs/admin-nodes.md),
 [scheduling jobs](../docs/specs/admin-schedule-jobs.md).
 

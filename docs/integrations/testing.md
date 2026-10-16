@@ -1,6 +1,6 @@
 ---
 title: "Testing"
-weight: 15
+weight: 4
 ---
 
 # Testing
@@ -21,7 +21,7 @@ try (Bikesched bikesched = BikeschedTest.testNode(dataSource).jsonMapper(new Jac
 
 The module never starts, resets or migrates a database itself: the caller supplies the
 `DataSource`, e.g. a Testcontainers PostgreSQL shared across a test class, exactly as the
-[examples](../bikesched-examples/README.md) do.
+[examples](../../bikesched-examples/README.md) do.
 
 ## Test nodes
 

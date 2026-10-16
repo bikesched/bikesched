@@ -1,6 +1,6 @@
 ---
 title: "Child jobs and job results"
-weight: 6
+weight: 3
 ---
 
 # Child jobs and job results
@@ -47,7 +47,7 @@ bikesched.registerJobHandler("fulfil-order", job -> {
   after its compensations has no result.
 - `bikesched.findJob(id)` returns it: `JobInfo.result(Class)` is empty unless the job `SUCCEEDED`
   with a result.
-- The [job history](jobs.md#job-history) records "succeeded with result", never the result
+- The [job history](../jobs/README.md#job-history) records "succeeded with result", never the result
   itself (it may be large or sensitive).
 
 ## Starting children

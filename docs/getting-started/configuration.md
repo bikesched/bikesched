@@ -24,7 +24,7 @@ afterwards (see `autoStartPolling` below).
 | `dataSource(DataSource)` | required | PostgreSQL data source; tables are created in its default schema |
 | `nodeName(String)` | host name | unique node name; a dead node's name is taken over |
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
-| `migrateSchema(boolean)` | `true` | automatically migrate on first database use; `false` only validates migration history without DDL. Explicit `migrate()` still migrates. See [Migrations](database.md#migrations) |
+| `migrateSchema(boolean)` | `true` | automatically migrate on first database use; `false` only validates migration history without DDL. Explicit `migrate()` still migrates. See [Migrations](../operations/database.md#migrations) |
 | `autoStartPolling(boolean)` | `true` | with `false`, call `start()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated (or validated with `migrateSchema(false)`) on first use (`start()`, scheduling a job, publishing an event), and retried on the next one if that fails |
 | `pollInterval(Duration)` | 10 seconds | delay between two polls for due jobs. While nodes [listen for due jobs](#due-jobs-start-right-away), it is the safety net for missed notifications and bounds how late a delayed job scheduled by another node starts; without listening, every job made due by another node starts within one interval, so lower it (e.g. 5 seconds or less) |
 | `listenForDueJobs(boolean)` | `true` | with `false`, the node neither listens for due jobs nor notifies other nodes, and holds no extra connection; set it the same on all nodes, see [Due jobs start right away](#due-jobs-start-right-away) |
@@ -33,21 +33,21 @@ afterwards (see `autoStartPolling` below).
 | `nodeTimeout(Duration)` | 30 seconds | time without heartbeat after which other nodes consider the node dead and release its jobs; the builder rejects a value shorter than twice the `heartbeatInterval` |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.fixed(Duration.ofSeconds(30))` or `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))` (doubling, each delay randomly shortened by up to half); a handler's `job.fail().retryAfter(…)` takes precedence |
-| `failureHandlerAttempts(int)` | 3 | how often a [job's](jobs.md#failure-handlers) or [step's](steps.md#failure-handler-per-step) failure handler runs before it is given up; a run counts once it started, so a run that crashes the node counts too |
+| `failureHandlerAttempts(int)` | 3 | how often a [job's](../jobs/README.md#failure-handlers) or [step's](../multi-step-jobs/steps.md#failure-handler-per-step) failure handler runs before it is given up; a run counts once it started, so a run that crashes the node counts too |
 | `jsonMapper(JsonMapper)` | JSON strings only | maps payloads, step results and event payloads to and from JSON, see [JSON mapping](#json-mapping) |
-| `eventRetention(Duration)` | 7 days | how long events published through this node are kept for steps that start waiting later, unless an event sets its own `retention(...)`, see [Retention](events.md#retention) |
+| `eventRetention(Duration)` | 7 days | how long events published through this node are kept for steps that start waiting later, unless an event sets its own `retention(...)`, see [Retention](../multi-step-jobs/events.md#retention) |
 | `eventCleanUpInterval(Duration)` | 1 hour | how often the node deletes expired events |
 | `nodeCleanUpInterval(Duration)` | 15 seconds | how often the node releases the running jobs of dead nodes and removes dead nodes; also the retry delay of the one-time check for missing occurrences of its recurring jobs |
 | `defaultEventTimeout(Duration)` | none | maximum wait for events without a `.timeout(...)` of their own; afterwards the job fails with an `EventTimeoutException`, unless the wait's `onFailure(…)` resolves it |
-| `jobHistory(Duration retention)` | off | records every change of jobs and their steps in `bikesched_job_history` and keeps it for the retention, see [Job history](jobs.md#job-history); enable it on all nodes |
+| `jobHistory(Duration retention)` | off | records every change of jobs and their steps in `bikesched_job_history` and keeps it for the retention, see [Job history](../jobs/README.md#job-history); enable it on all nodes |
 | `jobHistoryCleanUpInterval(Duration)` | 1 hour | how often a node with the job history deletes entries older than the retention |
-| `jobRetention(Duration)` | 7 days | deletes ended jobs (`SUCCEEDED`, `FAILED`, `CANCELLED`) with their steps once they finished longer ago, see [Job retention](jobs.md#job-retention) |
+| `jobRetention(Duration)` | 7 days | deletes ended jobs (`SUCCEEDED`, `FAILED`, `CANCELLED`) with their steps once they finished longer ago, see [Job retention](../jobs/README.md#job-retention) |
 | `jobCleanUpInterval(Duration)` | 1 hour | how often the node deletes ended jobs older than the retention |
 | `statementTimeout(Duration)` | data source | maximum duration of each database statement of the node, applied as JDBC query timeout (whole seconds, rounded up); a statement running longer is cancelled and fails like any other database error, see [Statement timeout](#statement-timeout) |
-| `recurrenceParsers(RecurrenceParser...)` | `RecurrenceParser.isoDuration()` | parse the expressions of `schedule(String)` and `@JobHandler(schedule = …)`; replaces the default, see [Recurrence expressions](recurring-jobs.md#recurrence-expressions) |
-| `jobListener(JobListener)` | none | observes claims and attempt outcomes, e.g. for [Metrics](metrics.md) |
-| `eventListener(EventListener)` | none | observes published events (not those in the caller's transaction), e.g. for [Metrics](metrics.md) |
-| `hardTimeoutGrace(Duration)` | off | abandons attempts whose handler ignores the interrupt of its timeout this long after the timeout, see [Timeouts](jobs.md#timeouts) |
+| `recurrenceParsers(RecurrenceParser...)` | `RecurrenceParser.isoDuration()` | parse the expressions of `schedule(String)` and `@JobHandler(schedule = …)`; replaces the default, see [Recurrence expressions](../jobs/recurring-jobs.md#recurrence-expressions) |
+| `jobListener(JobListener)` | none | observes claims and attempt outcomes, e.g. for [Metrics](../operations/metrics.md) |
+| `eventListener(EventListener)` | none | observes published events (not those in the caller's transaction), e.g. for [Metrics](../operations/metrics.md) |
+| `hardTimeoutGrace(Duration)` | off | abandons attempts whose handler ignores the interrupt of its timeout this long after the timeout, see [Timeouts](../jobs/README.md#timeouts) |
 
 ## Nodes
 
@@ -95,9 +95,9 @@ types that become due before its next interval poll, e.g. delayed jobs scheduled
   none. A lost notification (the node dies right after its commit) only delays the job until the
   next interval poll.
 - **Caller's transaction.** Jobs scheduled and events published on the caller's connection
-  ([transactional scheduling](jobs.md#transactional-scheduling)) notify inside the caller's
-  transaction: the notification is sent on commit and not on rollback. That commit takes the lock
-  mentioned above, so it is one notifying commit per transaction.
+  ([transactional scheduling](../jobs/README.md#transactional-scheduling)) notify inside the
+  caller's transaction: the notification is sent on commit and not on rollback. That commit takes
+  the lock mentioned above, so it is one notifying commit per transaction.
 - **Connection pool.** A listening node holds one connection of its data source for its lifetime:
   size the pool one connection larger, and expect pool leak detectors to report it. The node
   borrows it on a thread of its own; if that fails, it warns and retries after the poll interval.
@@ -123,7 +123,7 @@ indefinitely. Set it a good deal above your slowest expected statement (e.g. 30 
 configure the equivalent in the data source or pool (the PostgreSQL driver's `socketTimeout`, or
 `options=-c statement_timeout=30s` in the JDBC URL). The node applies it per statement as JDBC
 query timeout, so no session setting is left on pooled connections; it also covers statements of
-[transactional scheduling](jobs.md#transactional-scheduling) on the caller's connection.
+[transactional scheduling](../jobs/README.md#transactional-scheduling) on the caller's connection.
 
 ## JSON mapping
 

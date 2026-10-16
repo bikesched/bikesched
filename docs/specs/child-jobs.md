@@ -1,7 +1,7 @@
 # Specification: child jobs and job results (`job.newJob`, `job.waitForJob`)
 
 Status: **implemented** (decisions in §9, deviations in §10); user documentation in
-[docs/child-jobs.md](../child-jobs.md), decision in
+[docs/child-jobs.md](../multi-step-jobs/child-jobs.md), decision in
 [ADR 0029](../decisions/0029-child-jobs-as-steps.md).
 
 ## 1. Goal

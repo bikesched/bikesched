@@ -1,6 +1,6 @@
 ---
 title: "Patterns"
-weight: 7
+weight: 4
 ---
 
 # Patterns
@@ -37,7 +37,7 @@ transaction {
 - The job runs at least once, so its calls need idempotency keys (next patterns).
 
 Example: [Kotlin shop](../bikesched-examples/README.md#kotlin-shop). Details:
-[Transactional scheduling](jobs.md#transactional-scheduling).
+[Transactional scheduling](jobs/README.md#transactional-scheduling).
 
 ## Deduplicating incoming messages
 
@@ -56,7 +56,7 @@ UUID jobId = bikesched.newJob(ANSWER_MESSAGE)
   tenant to keys from several tenants.
 
 Example: [Chat](../bikesched-examples/README.md#chat). Details:
-[Idempotency keys](jobs.md#idempotency-keys).
+[Idempotency keys](jobs/README.md#idempotency-keys).
 
 ## Calling an unreliable API
 
@@ -78,8 +78,8 @@ ChargeOutcome outcome = job.step("charge-card", ChargeOutcome.class, step -> {
 - A completed step is never repeated, also when a later step fails.
 
 Example: [Outcome](../bikesched-examples/README.md#outcome). Details:
-[Business outcomes as results](steps.md#business-outcomes-as-results),
-[Failures and retries](jobs.md#failures-and-retries).
+[Business outcomes as results](multi-step-jobs/steps.md#business-outcomes-as-results),
+[Failures and retries](jobs/README.md#failures-and-retries).
 
 ## Staying within a rate limit
 
@@ -100,7 +100,7 @@ job.step("send", String.class, _ -> {
 - A bucket in the database holds the limit across all nodes.
 
 Example: [Rate limit](../bikesched-examples/README.md#rate-limit). Details:
-[Postponing](jobs.md#postponing).
+[Postponing](jobs/README.md#postponing).
 
 ## Waiting for a webhook
 
@@ -131,8 +131,8 @@ bikesched.newEvent(PAYMENT_SETTLED, payment.paymentId())
   receives it right away.
 - The payment id is a stored step result, so every resume waits for the same payment.
 
-Example: [Poll](../bikesched-examples/README.md#poll). Details: [Events](events.md),
-[Polling](steps.md#polling).
+Example: [Poll](../bikesched-examples/README.md#poll). Details: [Events](multi-step-jobs/events.md),
+[Polling](multi-step-jobs/steps.md#polling).
 
 ## Approval with reminder and escalation
 
@@ -163,7 +163,7 @@ if (decision == null) {
 - The job holds no thread or slot during the days it waits.
 
 Example: [Approval](../bikesched-examples/README.md#approval). Details:
-[Timeouts](events.md#timeouts).
+[Timeouts](multi-step-jobs/events.md#timeouts).
 
 ## Fan-out/fan-in
 
@@ -186,7 +186,8 @@ for (UUID child : children) {
 - The parent waits without a thread. A failed child doesn't fail the parent; it decides from the
   outcome.
 
-Example: [Fan-out](../bikesched-examples/README.md#fan-out). Details: [Child jobs](child-jobs.md).
+Example: [Fan-out](../bikesched-examples/README.md#fan-out). Details: [Child
+jobs](multi-step-jobs/child-jobs.md).
 
 ## Periodic work
 
@@ -205,7 +206,7 @@ bikesched.newJob("clean-up-sessions")
   it into steps.
 
 Example: [Recurring](../bikesched-examples/README.md#recurring). Details:
-[Recurring jobs](recurring-jobs.md).
+[Recurring jobs](jobs/recurring-jobs.md).
 
 ## Saga
 
@@ -227,4 +228,4 @@ job.step("approve-ride", RideApproval.class, _ -> broker.approveRide(ride.rideId
 - Compensations run at least once, so they must be idempotent.
 
 Example: [Taxi booking](../bikesched-examples/README.md#taxi-booking). Details:
-[Compensation](steps.md#compensation).
+[Compensation](multi-step-jobs/steps.md#compensation).
