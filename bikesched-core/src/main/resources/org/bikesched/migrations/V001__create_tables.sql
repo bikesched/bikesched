@@ -8,13 +8,13 @@
 
 -- Every application instance (node) registers itself here and heartbeats periodically.
 -- Nodes whose heartbeat is too old are considered dead; their RUNNING jobs can be rescheduled.
--- The name (configured or the host name) identifies a node: only one node per name.
+-- The name (configured or the host name) is for people only: it need not be unique, so an instance
+-- restarted after a crash registers next to the stale row of its previous run. The id identifies it.
 create table bikesched_nodes (
     id                uuid        primary key,
     name              text        not null,
     started_at        timestamptz not null default now(),
     last_heartbeat_at timestamptz not null default now(),
-    constraint bikesched_nodes_name_key unique (name),
     constraint bikesched_nodes_name_check check (char_length(name) between 1 and 200)
 );
 

@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <pre>{@code
  * bikesched:
- *   node-name: orders-1            # unique per instance; defaults to <spring.application.name>-<host name>
+ *   node-name: orders-1            # defaults to <spring.application.name>-<host name>
  *   poll-interval: 1s
  *   max-concurrent-jobs: 20
  *   retry-backoff:
@@ -24,7 +24,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     enabled: false               # e.g. a web instance that only schedules jobs
  * }</pre>
  *
- * @param nodeName unique name of the node in the cluster; see {@link NodeNames}
+ * @param nodeName name of the node in logs and the admin UI; see {@link NodeNames}
  * @param dataSource name of the {@code DataSource} bean to use if the context has several
  * @param migrateSchema whether first database use migrates the schema or only validates migration
  *     history; defaults to {@code true}

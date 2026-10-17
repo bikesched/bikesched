@@ -381,8 +381,10 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * BikeschedBuilder#autoStartPolling(boolean) autoStartPolling(false)}; calling it while already
    * polling has no effect and returns the same node.
    *
-   * <p>A node taking over the name of a dead node takes over its id and releases the jobs that node
-   * left running.
+   * <p>The node registers under a new id. Its name need not be unique: an instance restarted after
+   * a crash registers next to the stale entry of its previous run, whose jobs the node clean-up
+   * releases once that entry missed its heartbeats for the {@link BikeschedBuilder#nodeTimeout(
+   * java.time.Duration) node timeout}.
    *
    * <p>Migrates the schema first, or validates its migration history with {@link
    * BikeschedBuilder#migrateSchema(boolean) migrateSchema(false)}, unless initialization already
@@ -390,8 +392,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    *
    * @return the node, with its {@link Node#id() id}
    * @throws IllegalStateException if this instance is closed
-   * @throws BikeschedException if migration or validation fails, e.g. the database is not
-   *     available, or a live node with the same name is registered
+   * @throws BikeschedException if migration or validation fails, e.g. the database is not available
    */
   Node start();
 

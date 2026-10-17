@@ -31,6 +31,7 @@ final class AdminJson {
         .put("parentJobType", job.parentJobType())
         .put("recurrence", job.recurrence())
         .put("idempotencyKey", job.idempotencyKey())
+        .put("nodeId", job.nodeId())
         .put("nodeName", job.nodeName());
   }
 

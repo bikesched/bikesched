@@ -120,8 +120,7 @@ public final class NodeCleanUp {
   /**
    * Removes nodes without heartbeat for twice the node timeout. Runs after {@link
    * #releaseJobsOfDeadNodes()}, so their jobs are free by then. The grace period beyond the timeout
-   * keeps the row (and id) around for a crashed node that restarts under the same name shortly
-   * after.
+   * keeps a dead node visible as offline for a while.
    */
   private void deleteDeadNodes() {
     try {

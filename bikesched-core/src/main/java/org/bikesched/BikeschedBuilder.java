@@ -411,10 +411,10 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Time without heartbeat after which a node is considered dead: its running jobs are released and
-   * its name may be taken over. Must be at least twice the {@link #heartbeatInterval(Duration)}
-   * (tolerate the interval plus a missed heartbeat, e.g. several intervals for nodes with long GC
-   * pauses); defaults to 30 seconds.
+   * Time without heartbeat after which a node is considered dead: its running jobs are released.
+   * Must be at least twice the {@link #heartbeatInterval(Duration)} (tolerate the interval plus a
+   * missed heartbeat, e.g. several intervals for nodes with long GC pauses); defaults to 30
+   * seconds.
    *
    * @param nodeTimeout the timeout, positive and at least twice the heartbeat interval
    * @return this builder
@@ -484,7 +484,7 @@ public final class BikeschedBuilder {
    * @return the new instance
    * @throws IllegalStateException if no data source was set
    * @throws BikeschedException if polling is enabled and migration, validation or node registration
-   *     fails, e.g. because a live node with the same name is already registered
+   *     fails, e.g. because the database is not available
    */
   public Bikesched build() {
     if (dataSource == null) {

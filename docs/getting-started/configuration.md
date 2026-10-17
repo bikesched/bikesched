@@ -22,7 +22,7 @@ afterwards (see `autoStartPolling` below).
 | Builder option | Default | Description |
 |---|---|---|
 | `dataSource(DataSource)` | required | PostgreSQL data source; tables are created in its default schema |
-| `nodeName(String)` | host name | unique node name; a dead node's name is taken over |
+| `nodeName(String)` | host name | node name in logs and the admin UI; need not be unique, see [Nodes](#nodes) |
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
 | `migrateSchema(boolean)` | `true` | automatically migrate on first database use; `false` only validates migration history without DDL. Explicit `migrate()` still migrates. See [Migrations](../operations/database.md#migrations) |
 | `autoStartPolling(boolean)` | `true` | with `false`, call `start()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated (or validated with `migrateSchema(false)`) on first use (`start()`, scheduling a job, publishing an event), and retried on the next one if that fails |
@@ -64,7 +64,12 @@ it with a warning (work outside steps is not covered).
 
 A node that was considered dead while it was still running, e.g. after a pause longer than twice
 the `nodeTimeout`, finds itself removed with its next heartbeat and registers again under its id
-and name (unless another node took the name in the meantime, which it logs as a warning).
+and name.
+
+Every node registers under a new id; its name only labels it in logs and the admin UI and need not
+be unique. An instance restarted right after a crash therefore starts next to the stale entry of
+its previous run: that entry turns dead after the `nodeTimeout`, and the node clean-up releases its
+jobs and removes it like any other dead node.
 
 `bikesched.node()` describes the node (`name()`, `id()`, `isPolling()`). `close()` stops polling and
 the heartbeat, waits up to 10 seconds for running jobs, returns still-running jobs to `SCHEDULED` for
