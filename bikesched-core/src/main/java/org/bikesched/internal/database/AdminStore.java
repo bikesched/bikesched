@@ -46,7 +46,8 @@ public final class AdminStore {
       """
             select j.id, j.type, j.state, j.attempts, j.max_attempts, j.priority,
                    nullif(j.scheduled_at, 'infinity'), j.created_at, j.updated_at, j.finished_at,
-                   j.last_error, j.parent_job_id, p.type, j.recurrence, j.idempotency_key, n.name
+                   j.last_error, j.parent_job_id, p.type, j.recurrence, j.idempotency_key, n.id,
+                   n.name
               from %s j
               left join bikesched_jobs p on p.id = j.parent_job_id
               left join bikesched_nodes n on n.id = j.locked_by""";
@@ -446,7 +447,8 @@ public final class AdminStore {
         row.string(13),
         row.string(14),
         row.string(15),
-        row.string(16));
+        row.uuid(16),
+        row.string(17));
   }
 
   private static EventSummary eventSummary(Sql.Row row) throws SQLException {

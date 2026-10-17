@@ -26,7 +26,8 @@ import org.jspecify.annotations.Nullable;
  * @param recurrence the description of the recurrence of a recurring job's occurrence; {@code null}
  *     for other jobs
  * @param idempotencyKey the key the job was scheduled with; may be {@code null}
- * @param nodeName the node running the job; {@code null} unless it is running
+ * @param nodeId the node running the job; {@code null} unless it is running
+ * @param nodeName that node's name; {@code null} unless it is running
  */
 public record JobSummary(
     UUID id,
@@ -44,4 +45,5 @@ public record JobSummary(
     @Nullable String parentJobType,
     @Nullable String recurrence,
     @Nullable String idempotencyKey,
+    @Nullable UUID nodeId,
     @Nullable String nodeName) {}

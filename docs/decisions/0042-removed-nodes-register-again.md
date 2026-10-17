@@ -9,7 +9,7 @@ Date: 2026-10-13
 
 ## Status
 
-Accepted
+Accepted; the name conflict it handles no longer exists since [ADR 0051](0051-node-names-are-not-unique.md)
 
 ## Context
 

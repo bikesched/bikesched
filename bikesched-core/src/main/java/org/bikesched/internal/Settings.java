@@ -18,10 +18,10 @@ import org.jspecify.annotations.Nullable;
 /**
  * Configuration of a node, assembled and validated by {@link BikeschedBuilder}.
  *
- * @param nodeName unique node name
+ * @param nodeName node name
  * @param heartbeatInterval interval between heartbeats
  * @param nodeTimeout a node without heartbeat for this long is considered dead: its running jobs
- *     are released and its name may be taken over
+ *     are released
  * @param pollInterval interval between job polls
  * @param listenForDueJobs whether the node listens for due jobs and notifies the other nodes
  * @param notifyInterval how long the node collects due job types before notifying them

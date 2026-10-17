@@ -2,7 +2,6 @@
 package org.bikesched;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import java.sql.SQLException;
@@ -15,7 +14,8 @@ import org.bikesched.internal.node.NodeHeartbeat;
 import org.junit.jupiter.api.Test;
 
 /**
- * Node registration: heartbeats, unique names, taking over stale nodes and cleaning up dead nodes.
+ * Node registration: heartbeats, shared names, restarts next to stale nodes and cleaning up dead
+ * nodes.
  */
 class NodeTest extends AbstractBikeschedTest {
 
@@ -57,11 +57,9 @@ class NodeTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void removedNodeDoesNotTakeBackItsNameFromAnotherNode() throws Exception {
-    var logs = LogCapture.of(NodeHeartbeat.class);
+  void removedNodeRegistersAgainNextToAnotherNodeWithItsName() throws Exception {
     UUID other = UUID.randomUUID();
-    try (logs;
-        Bikesched bikesched = testNode("node-name-taken", Duration.ofMillis(50)).build()) {
+    try (Bikesched bikesched = testNode("node-name-shared", Duration.ofMillis(50)).build()) {
       UUID id = bikesched.node().id().orElseThrow();
 
       execute(
@@ -69,17 +67,10 @@ class NodeTest extends AbstractBikeschedTest {
               + id
               + "'; insert into bikesched_nodes (id, name) values ('"
               + other
-              + "', 'node-name-taken'); commit");
+              + "', 'node-name-shared'); commit");
 
-      await()
-          .untilAsserted(
-              () ->
-                  assertThat(logs.messages())
-                      .contains(
-                          "bikesched node node-name-taken ("
-                              + id
-                              + ") is no longer registered and its name is held by another node"));
-      assertThat(nodeName(id)).isNull();
+      await().untilAsserted(() -> assertThat(nodeName(id)).isEqualTo("node-name-shared"));
+      assertThat(nodeName(other)).isEqualTo("node-name-shared");
     }
     execute("delete from bikesched_nodes where id = '" + other + "'");
   }
@@ -135,57 +126,31 @@ class NodeTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void startFailsIfALiveNodeHasTheName() {
-    try (Bikesched polling =
-            Bikesched.builder().dataSource(dataSource).nodeName("node-taken").build();
-        Bikesched idle =
-            Bikesched.builder()
-                .dataSource(dataSource)
-                .nodeName("node-taken")
-                .autoStartPolling(false)
-                .build()) {
-      assertThatThrownBy(idle::start)
-          .isInstanceOf(BikeschedException.class)
-          .hasMessage(
-              "A live bikesched node named 'node-taken' is already registered; node names must"
-                  + " be unique");
-      assertThat(idle.node().isPolling()).isFalse();
-      assertThat(idle.node().id()).isEmpty();
-      assertThat(polling.node().isPolling()).isTrue();
+  void liveNodesMayShareAName() throws SQLException {
+    try (Bikesched first = Bikesched.builder().dataSource(dataSource).nodeName("node-dup").build();
+        Bikesched second =
+            Bikesched.builder().dataSource(dataSource).nodeName("node-dup").build()) {
+      UUID firstId = first.node().id().orElseThrow();
+      UUID secondId = second.node().id().orElseThrow();
+
+      assertThat(firstId).isNotEqualTo(secondId);
+      assertThat(nodeName(firstId)).isEqualTo("node-dup");
+      assertThat(nodeName(secondId)).isEqualTo("node-dup");
     }
   }
 
   @Test
-  void rejectsSecondLiveNodeWithSameName() {
-    try (Bikesched first =
-        Bikesched.builder().dataSource(dataSource).nodeName("node-dup").build()) {
-      assertThatThrownBy(
-              () -> Bikesched.builder().dataSource(dataSource).nodeName("node-dup").build())
-          .isInstanceOf(BikeschedException.class)
-          .hasMessageContaining("live bikesched node named 'node-dup' is already registered");
-      assertThat(first.node().name()).isEqualTo("node-dup");
-    }
-  }
-
-  @Test
-  void takesOverStaleNodeWithSameName() throws SQLException {
+  void restartedNodeRegistersNextToItsStaleEntryAndReleasesItsJobs() throws SQLException {
     Bikesched.builder()
         .dataSource(dataSource)
         .nodeName("bootstrap")
         .build()
         .close(); // ensure schema
     UUID staleId = UUID.randomUUID();
-    try (var connection = dataSource.getConnection();
-        var insert =
-            connection.prepareStatement(
-                """
-                        insert into bikesched_nodes (id, name, last_heartbeat_at)
-                        values (?, 'node-restarted', now() - interval '1 hour')""")) {
-      insert.setObject(1, staleId);
-      insert.executeUpdate();
-    }
-    // A job the crashed previous instance was still running (scheduled in the future so the
-    // new instance's poller doesn't immediately execute it after the release).
+    // The previous instance crashed a moment ago: its heartbeat is recent, so its row still counts
+    // as live, and it was still running a job (scheduled in the future so the new instance's
+    // poller does not execute it right after the release).
+    execute("insert into bikesched_nodes (id, name) values ('" + staleId + "', 'node-restarted')");
     execute(
         "insert into bikesched_jobs (id, type, state, locked_by, lock_token, scheduled_at)"
             + " values (gen_random_uuid(), 'orphan-restart', 'RUNNING', '"
@@ -193,11 +158,21 @@ class NodeTest extends AbstractBikeschedTest {
             + "', gen_random_uuid(), now() + interval '1 hour')");
 
     try (Bikesched bikesched =
-        Bikesched.builder().dataSource(dataSource).nodeName("node-restarted").build()) {
-      assertThat(bikesched.node().id().orElseThrow()).isEqualTo(staleId);
-      assertThat(count("type = 'orphan-restart' and state = 'SCHEDULED' and locked_by is null"))
-          .as("jobs left running by the previous instance are released on startup")
-          .isEqualTo(1);
+        testNode("node-restarted", Duration.ofMillis(50))
+            .nodeTimeout(Duration.ofSeconds(1))
+            .nodeCleanUpInterval(Duration.ofMillis(50))
+            .build()) {
+      assertThat(bikesched.node().id().orElseThrow()).isNotEqualTo(staleId);
+      await()
+          .untilAsserted(
+              () -> {
+                assertThat(
+                        count(
+                            "type = 'orphan-restart' and state = 'SCHEDULED' and locked_by is null"))
+                    .as("released by the node clean-up once the stale entry timed out")
+                    .isEqualTo(1);
+                assertThat(nodeName(staleId)).isNull();
+              });
     }
     execute("delete from bikesched_jobs where type = 'orphan-restart'");
   }

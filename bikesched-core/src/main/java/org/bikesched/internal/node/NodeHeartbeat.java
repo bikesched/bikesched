@@ -47,16 +47,12 @@ public final class NodeHeartbeat {
     try {
       if (database.nodes().heartbeat(nodeId)) {
         LOG.trace("Heartbeat of bikesched node {} ({})", nodeName, nodeId);
-      } else if (database.nodes().reregisterNode(nodeId, nodeName)) {
+      } else {
         // Other nodes removed it after missing its heartbeats (e.g. a long pause) and released its
         // jobs; without registering again, every claim would fail on the missing node.
+        database.nodes().reregisterNode(nodeId, nodeName);
         LOG.warn(
             "bikesched node {} ({}) was removed after missing heartbeats, registered it again",
-            nodeName,
-            nodeId);
-      } else {
-        LOG.warn(
-            "bikesched node {} ({}) is no longer registered and its name is held by another node",
             nodeName,
             nodeId);
       }

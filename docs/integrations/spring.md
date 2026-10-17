@@ -124,8 +124,8 @@ another node takes over.
 - `bikesched.auto-start.enabled=false` builds a node that schedules only: it registers with no
   database, executes nothing and sends no heartbeats. Call `start()` yourself later if such
   an instance should also work.
-- Node names must be unique among live nodes; a second context with the same name fails to start
-  (the intended guard). Several nodes in one JVM therefore need distinct `bikesched.node-name`s.
+- Node names need not be unique: a second context with the same name starts as a node of its own.
+  Distinct `bikesched.node-name`s keep several nodes in one JVM apart in logs and the admin UI.
 
 ### Schema migration
 
@@ -163,7 +163,7 @@ friends).
 
 | Property | Default | Note |
 |---|---|---|
-| `bikesched.node-name` | `<spring.application.name>-<host name>` | unique per live node; the host name keeps replicas apart |
+| `bikesched.node-name` | `<spring.application.name>-<host name>` | node name in logs and the admin UI; the host name keeps replicas apart |
 | `bikesched.data-source` | the single / `@Primary` `DataSource` | the **bean name** of the one to use, never a JDBC URL; with several candidates and neither the property nor a `@Primary`, the context fails listing them |
 | `bikesched.poll-interval` | 10 seconds | safety net while listening, see [Due jobs](../getting-started/configuration.md#due-jobs-start-right-away) |
 | `bikesched.listen-for-due-jobs` | `true` | holds one pool connection; `false` behind PgBouncer in transaction mode |

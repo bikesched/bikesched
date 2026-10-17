@@ -12,15 +12,15 @@ import java.util.UUID;
 public interface Node {
 
   /**
-   * Returns the node's name, unique among the live nodes once it polls.
+   * Returns the node's name. It is for logs and the admin UI and need not be unique; the {@link
+   * #id() id} identifies the node.
    *
    * @return the node name
    */
   String name();
 
   /**
-   * Returns the node's id once it polls for jobs. A node restarted under the name of a dead node
-   * takes over that node's id.
+   * Returns the node's id once it polls for jobs, new for every instance.
    *
    * @return the node id, empty until {@link Bikesched#start()} was called
    */

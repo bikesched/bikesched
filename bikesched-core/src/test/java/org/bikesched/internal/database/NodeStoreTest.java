@@ -13,35 +13,27 @@ import org.junit.jupiter.api.Test;
 class NodeStoreTest extends AbstractStoreTest {
 
   @Test
-  void registersNewNodeWithGivenId() {
-    UUID id = UUID.randomUUID();
+  void registersNodesWithTheSameName() {
+    UUID first = registerNode("node-1");
+    UUID second = registerNode("node-1");
 
-    assertThat(database.nodes().registerNode(id, "node-1", DEAD_AFTER)).contains(id);
+    assertThat(database.nodes().heartbeat(first)).isTrue();
+    assertThat(database.nodes().heartbeat(second)).isTrue();
   }
 
   @Test
-  void refusesNameHeldByLiveNode() {
-    UUID first = UUID.randomUUID();
-    database.nodes().registerNode(first, "node-1", DEAD_AFTER);
+  void reregisteringARegisteredNodeKeepsIt() {
+    UUID id = registerNode("node-1");
 
-    assertThat(database.nodes().registerNode(UUID.randomUUID(), "node-1", DEAD_AFTER)).isEmpty();
-  }
+    database.nodes().reregisterNode(id, "node-1");
 
-  @Test
-  void takesOverNameHeldByDeadNode() throws SQLException {
-    UUID dead = UUID.randomUUID();
-    database.nodes().registerNode(dead, "node-1", DEAD_AFTER);
-    execute("update bikesched_nodes set last_heartbeat_at = now() - interval '1 minute'");
-
-    assertThat(database.nodes().registerNode(UUID.randomUUID(), "node-1", DEAD_AFTER))
-        .contains(dead);
-    assertThat(lastHeartbeat(dead)).isAfter(OffsetDateTime.now().minusSeconds(10));
+    assertThat(database.nodes().heartbeat(id)).isTrue();
   }
 
   @Test
   void heartbeatUpdatesRegisteredNode() throws SQLException {
     UUID id = UUID.randomUUID();
-    database.nodes().registerNode(id, "node-1", DEAD_AFTER);
+    database.nodes().registerNode(id, "node-1");
     execute("update bikesched_nodes set last_heartbeat_at = now() - interval '1 minute'");
 
     assertThat(database.nodes().heartbeat(id)).isTrue();
@@ -56,7 +48,7 @@ class NodeStoreTest extends AbstractStoreTest {
   @Test
   void deregisterRemovesNode() {
     UUID id = UUID.randomUUID();
-    database.nodes().registerNode(id, "node-1", DEAD_AFTER);
+    database.nodes().registerNode(id, "node-1");
 
     assertThat(database.nodes().deregisterNode(id)).isTrue();
     assertThat(database.nodes().heartbeat(id)).isFalse();

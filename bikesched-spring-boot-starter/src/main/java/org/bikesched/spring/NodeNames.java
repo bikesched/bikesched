@@ -6,10 +6,10 @@ import java.net.UnknownHostException;
 import org.springframework.core.env.Environment;
 
 /**
- * Resolves the name of the node the starter creates. It must be unique per running instance, so the
- * {@code spring.application.name} alone is not enough (several replicas share it, and the second
- * instance of a live name fails to start): the default is {@code <spring.application.name>-<host
- * name>}, which is unique per host or pod, and {@code bikesched.node-name} overrides it.
+ * Resolves the name of the node the starter creates. Names need not be unique, but they tell nodes
+ * apart in logs and the admin UI, so the {@code spring.application.name} alone is not the default
+ * (several replicas share it): the default is {@code <spring.application.name>-<host name>}, and
+ * {@code bikesched.node-name} overrides it.
  */
 final class NodeNames {
 

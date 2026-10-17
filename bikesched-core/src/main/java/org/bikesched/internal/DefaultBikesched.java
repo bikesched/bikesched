@@ -189,26 +189,8 @@ public final class DefaultBikesched implements Bikesched {
       if (node.id().isPresent()) {
         return node;
       }
-      UUID id =
-          database
-              .nodes()
-              .registerNode(UUID.randomUUID(), nodeName, settings.nodeTimeout())
-              .orElseThrow(
-                  () ->
-                      new BikeschedException(
-                          "A live bikesched node named '"
-                              + nodeName
-                              + "' is already registered; node names must be unique"));
-      // This node runs nothing yet: jobs still RUNNING under this id belong to a previous
-      // (crashed) instance with the same name whose row was taken over.
-      int orphaned = database.jobs().releaseJobs(id);
-      if (orphaned > 0) {
-        LOG.warn(
-            "Released {} job(s) left running by a previous instance of bikesched node {} ({})",
-            orphaned,
-            nodeName,
-            id);
-      }
+      UUID id = UUID.randomUUID();
+      database.nodes().registerNode(id, nodeName);
       var heartbeat = new NodeHeartbeat(database, id, nodeName);
       var nodeCleanUp =
           new NodeCleanUp(
@@ -488,7 +470,7 @@ public final class DefaultBikesched implements Bikesched {
       database.nodes().deregisterNode(id);
       LOG.info("bikesched node {} ({}) deregistered", nodeName, id);
     } catch (BikeschedException e) {
-      // The row goes stale and can be taken over by a node with the same name later.
+      // The row goes stale; the other nodes release its jobs and remove it.
       LOG.warn("Could not deregister bikesched node {} ({})", nodeName, id, e);
     }
   }
