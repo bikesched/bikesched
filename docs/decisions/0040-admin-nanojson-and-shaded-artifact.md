@@ -1,3 +1,8 @@
+---
+title: "40. Nanojson for admin JSON with an optional shaded artifact"
+weight: 40
+---
+
 # 40. Nanojson for admin JSON with an optional shaded artifact
 
 ## Status

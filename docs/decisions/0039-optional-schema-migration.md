@@ -1,4 +1,9 @@
-# 0039. Optional automatic schema migration with history validation
+---
+title: "39. Optional automatic schema migration with history validation"
+weight: 39
+---
+
+# 39. Optional automatic schema migration with history validation
 
 ## Status
 

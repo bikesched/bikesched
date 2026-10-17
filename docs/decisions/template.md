@@ -1,4 +1,9 @@
-# NNNN. Title of the decision
+---
+title: "N. Title of the decision"
+weight: N
+---
+
+# N. Title of the decision
 
 Date: YYYY-MM-DD
 
