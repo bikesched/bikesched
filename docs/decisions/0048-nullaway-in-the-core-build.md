@@ -1,4 +1,9 @@
-# 0048. Nullness checked with NullAway in the core build
+---
+title: "48. Nullness checked with NullAway in the core build"
+weight: 48
+---
+
+# 48. Nullness checked with NullAway in the core build
 
 Date: 2026-10-16
 

@@ -1,4 +1,9 @@
-# 0041. Nullness of the public API with JSpecify annotations
+---
+title: "41. Nullness of the public API with JSpecify annotations"
+weight: 41
+---
+
+# 41. Nullness of the public API with JSpecify annotations
 
 Date: 2026-10-13
 

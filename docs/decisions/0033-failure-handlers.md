@@ -1,4 +1,9 @@
-# 0033. Failure handlers for jobs and steps
+---
+title: "33. Failure handlers for jobs and steps"
+weight: 33
+---
+
+# 33. Failure handlers for jobs and steps
 
 Date: 2026-10-10
 

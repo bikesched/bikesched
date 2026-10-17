@@ -1,3 +1,8 @@
+---
+title: "38. Admin UI as static files on a framework-neutral handler"
+weight: 38
+---
+
 # 38. Admin UI as static files on a framework-neutral handler
 
 Date: 2026-10-11
