@@ -1,4 +1,9 @@
-# 0049. Java 21 as the language baseline, built with JDK 26
+---
+title: "49. Java 21 as the language baseline, built with JDK 26"
+weight: 49
+---
+
+# 49. Java 21 as the language baseline, built with JDK 26
 
 Date: 2026-10-16
 
