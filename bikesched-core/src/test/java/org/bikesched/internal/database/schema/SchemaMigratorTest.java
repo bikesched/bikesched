@@ -191,16 +191,13 @@ class SchemaMigratorTest {
   }
 
   @Test
-  void nodeNamesAreUnique() throws SQLException {
+  void nodesMayShareAName() throws SQLException {
     new SchemaMigrator(dataSource).migrate();
-    execute("insert into bikesched_nodes (id, name) values (gen_random_uuid(), 'same')");
 
-    assertThatThrownBy(
-            () ->
-                execute(
-                    "insert into bikesched_nodes (id, name) values (gen_random_uuid(), 'same')"))
-        .isInstanceOf(SQLException.class)
-        .hasMessageContaining("bikesched_nodes_name_key");
+    // A restarted instance registers next to the stale row of its previous run (ADR 0051).
+    execute(
+        "insert into bikesched_nodes (id, name) values (gen_random_uuid(), 'same'),"
+            + " (gen_random_uuid(), 'same')");
   }
 
   @Test

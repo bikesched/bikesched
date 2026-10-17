@@ -4,7 +4,6 @@ package org.bikesched.internal.database;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 
@@ -20,19 +19,14 @@ public final class NodeStore {
     this.access = access;
   }
 
-  // Inserts the node. If the name is taken by a dead node (stale heartbeat), the restarted node
-  // takes over that row and keeps its id; if it is taken by a live node, no row is returned.
+  // Names need not be unique: a restarted instance registers next to the stale row of its
+  // previous run, which the node clean-up releases and removes like any dead node.
   private static final String REGISTER_NODE_SQL =
-      """
-            insert into bikesched_nodes (id, name) values (?, ?)
-            on conflict (name) do update
-               set started_at = now(), last_heartbeat_at = now()
-             where bikesched_nodes.last_heartbeat_at < now() - make_interval(secs => ?)
-            returning id""";
+      "insert into bikesched_nodes (id, name) values (?, ?)";
 
-  // Registers a removed node again under its own id; nothing if another node holds the name.
+  // Registers a removed node again under its own id.
   private static final String REREGISTER_NODE_SQL =
-      "insert into bikesched_nodes (id, name) values (?, ?) on conflict do nothing";
+      "insert into bikesched_nodes (id, name) values (?, ?) on conflict (id) do nothing";
 
   private static final String HEARTBEAT_SQL =
       "update bikesched_nodes set last_heartbeat_at = now() where id = ?";
@@ -61,18 +55,14 @@ public final class NodeStore {
   public record DeletedNode(UUID nodeId, String nodeName, Instant lastHeartbeatAt) {}
 
   /**
-   * Registers a node under a unique name.
+   * Registers a node.
    *
-   * @param newNodeId id to use if the name is free
-   * @param name the unique node name
-   * @param deadAfter heartbeat age after which an existing node with this name counts as dead
-   * @return the node id: {@code newNodeId}, or the id of the dead node that was taken over; empty
-   *     if a live node already holds the name
+   * @param nodeId the new node's id
+   * @param name the node name, not necessarily unique
    */
-  public Optional<UUID> registerNode(UUID newNodeId, String name, Duration deadAfter) {
-    return access.withConnection(
-        db ->
-            db.one(REGISTER_NODE_SQL, row -> row.uuid(1), newNodeId, name, Sql.seconds(deadAfter)),
+  public void registerNode(UUID nodeId, String name) {
+    access.withConnection(
+        db -> db.update(REGISTER_NODE_SQL, nodeId, name),
         e -> new BikeschedException("Registering bikesched node '" + name + "' failed", e));
   }
 
@@ -95,13 +85,11 @@ public final class NodeStore {
    *
    * @param nodeId the node's id
    * @param name the node's name
-   * @return {@code false} if the name is held by another node in the meantime
    */
-  public boolean reregisterNode(UUID nodeId, String name) {
-    return access.withConnection(
-            db -> db.update(REREGISTER_NODE_SQL, nodeId, name),
-            e -> new BikeschedException("Registering bikesched node '" + name + "' failed", e))
-        > 0;
+  public void reregisterNode(UUID nodeId, String name) {
+    access.withConnection(
+        db -> db.update(REREGISTER_NODE_SQL, nodeId, name),
+        e -> new BikeschedException("Registering bikesched node '" + name + "' failed", e));
   }
 
   /**

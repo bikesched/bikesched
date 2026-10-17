@@ -336,7 +336,7 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose, onSc
     ['Updated', dateTime(job.updatedAt)],
     ['Finished', dateTime(job.finishedAt)],
   ];
-  const node = job.nodeName && nodes.find((candidate) => candidate.name === job.nodeName);
+  const node = job.nodeId && nodes.find((candidate) => candidate.id === job.nodeId);
   if (job.nodeName) {
     fields.push(['Node', node ? html`<a href=${toHash({ section: 'nodes', id: node.id })}>${job.nodeName}</a>` : job.nodeName, job.nodeName]);
   }

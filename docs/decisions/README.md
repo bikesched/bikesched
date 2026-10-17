@@ -52,7 +52,7 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0039](0039-optional-schema-migration.md) | Optional automatic schema migration with history validation | Accepted |
 | [0040](0040-admin-nanojson-and-shaded-artifact.md) | Nanojson for admin JSON with an optional shaded artifact | Accepted |
 | [0041](0041-jspecify-nullness-annotations.md) | Nullness of the public API with JSpecify annotations | Accepted, partly superseded by [0048](0048-nullaway-in-the-core-build.md) |
-| [0042](0042-removed-nodes-register-again.md) | Removed nodes register again under their id | Accepted |
+| [0042](0042-removed-nodes-register-again.md) | Removed nodes register again under their id | Accepted, amended by [0051](0051-node-names-are-not-unique.md) |
 | [0043](0043-sealed-types-for-internal-job-state.md) | Sealed types for the internal job state | Accepted |
 | [0044](0044-publishing-events-from-the-admin-ui.md) | Publishing events from the admin UI | Accepted |
 | [0045](0045-nodes-in-the-admin-ui.md) | Nodes in the admin UI | Accepted |
@@ -61,3 +61,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0048](0048-nullaway-in-the-core-build.md) | Nullness checked with NullAway in the core build | Accepted |
 | [0049](0049-java-21-baseline.md) | Java 21 as the language baseline, built with JDK 26 | Accepted |
 | [0050](0050-load-and-failure-tests-on-demand.md) | Load and failure tests in their own module, run on demand | Accepted |
+| [0051](0051-node-names-are-not-unique.md) | Node names are not unique | Accepted |

@@ -41,6 +41,7 @@ class AdminJsonTest {
             "parent",
             "every PT1H",
             "dedup",
+            ID,
             "worker");
     assertContract(
         AdminJson.job(job),
@@ -49,7 +50,8 @@ class AdminJsonTest {
          "attempts":2,"maxAttempts":5,"priority":7,"scheduledAt":null,
          "createdAt":"2026-10-11T12:00:00.123456Z","updatedAt":"2026-10-11T12:00:00.123456Z",
          "finishedAt":null,"lastError":"failed","parentJobId":"7f0c2a1e-0000-4000-8000-000000000001",
-         "parentJobType":"parent","recurrence":"every PT1H","idempotencyKey":"dedup","nodeName":"worker"}
+         "parentJobType":"parent","recurrence":"every PT1H","idempotencyKey":"dedup",
+         "nodeId":"7f0c2a1e-0000-4000-8000-000000000001","nodeName":"worker"}
         """);
   }
 

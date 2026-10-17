@@ -4,7 +4,6 @@ package org.bikesched.internal.database;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.SQLException;
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,8 +20,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 abstract class AbstractStoreTest {
 
   static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
-
-  static final Duration DEAD_AFTER = Duration.ofSeconds(15);
 
   /**
    * Passes JSON text through, like bikesched's default mapper (which lives in {@code internal}).
@@ -116,7 +113,9 @@ abstract class AbstractStoreTest {
   }
 
   static UUID registerNode(String name) {
-    return database.nodes().registerNode(UUID.randomUUID(), name, DEAD_AFTER).orElseThrow();
+    UUID id = UUID.randomUUID();
+    database.nodes().registerNode(id, name);
+    return id;
   }
 
   static void insertJobs(int count, int priority, String scheduledAt) throws SQLException {
