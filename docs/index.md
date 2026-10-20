@@ -3,7 +3,7 @@ title: "Docs"
 ---
 
 <p align="center">
-  <img src="logo.svg" alt="bikesched logo: a bicycle with a clock as the front wheel and a shed on top of it" width="200" height="200">
+  <img src="logo.svg" alt="bikesched logo: a bicycle shaped like a B, with a subtle clock hand and motion streaks" width="200" height="200">
 </p>
 
 # Docs
