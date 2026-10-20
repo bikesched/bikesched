@@ -100,7 +100,7 @@ class BikeschedAdminTest {
               "vendor/hooks.module.js",
               "vendor/htm.module.js");
       assertThat(server.get("/vendor/preact-license.txt").statusCode()).isEqualTo(200);
-      assertThat(server.get("/logo.svg").body()).contains("<title>bikesched</title>");
+      assertThat(server.get("/logo.svg").body()).contains("<title id=\"title\">bikesched icon</title>");
       assertThat(server.get("/missing.js").statusCode()).isEqualTo(404);
       assertThat(server.get("/../BikeschedAdmin.class").statusCode()).isEqualTo(404);
     }
