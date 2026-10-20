@@ -53,7 +53,7 @@ jackson = "3.2.3"
 
 # bikesched-examples:kotlin
 ktor = "3.6.0"
-exposed = "1.5.1"
+exposed = "1.6.0"
 kotlinx-serialization = "1.11.0"
 moneta = "1.4.5"
 # bikesched-examples:java (rate-limit example)
