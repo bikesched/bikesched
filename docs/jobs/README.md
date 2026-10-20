@@ -353,8 +353,9 @@ Bikesched bikesched = Bikesched.builder().dataSource(dataSource).jobRetention(Du
 - Scheduled, running, waiting and compensating jobs are never deleted, nor are jobs ending in
   `COMPENSATION_FAILED`, which need attention. Neither are the pending occurrences of recurring
   jobs, only their ended ones.
-- The clean-up deletes in batches of 1000 jobs, each in a short transaction, so a large backlog
-  does not lock the table for long. Several nodes share the work.
+- The clean-up deletes in batches of 1000 jobs, oldest first, each in a short transaction, so a
+  large backlog does not lock the table for long. Several nodes share the work. The clean-ups of
+  the job history and of expired events work the same way.
 - `findJob` returns empty for a deleted job. The [job history](#job-history) has its own retention
   and keeps entries of deleted jobs until then.
 

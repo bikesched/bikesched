@@ -102,9 +102,22 @@ public final class EventStore {
             select r.job_id, r.name, x.id is not null, coalesce(x.attempts, 0), x.type
               from received r left join resumed x on x.id = r.job_id""";
 
+  // A batch of expired events, oldest expiry first from the given expires_at on (see
+  // DeletedBatch). Skips locked rows, so concurrent clean-ups on several nodes delete different
+  // events.
   private static final String DELETE_EVENTS_SQL =
       """
-            delete from bikesched_events where expires_at <= now()""";
+            with cutoff as (select coalesce(?, now()) as at),
+            batch as (
+                select id from bikesched_events
+                 where expires_at >= coalesce(?, '-infinity'::timestamptz)
+                   and expires_at <= (select at from cutoff)
+                 order by expires_at
+                 limit ? for update skip locked),
+            deleted as (
+                delete from bikesched_events e using batch b where e.id = b.id
+                returning e.expires_at)
+            select count(*), max(expires_at), (select at from cutoff) from deleted""";
 
   // A publishing step records the published event (name, key and id), so that later runs return
   // the same id and can check that they publish the same event.
@@ -557,13 +570,24 @@ public final class EventStore {
   public record StepPublication(UUID eventId, @Nullable Publication publication) {}
 
   /**
-   * Deletes expired events (their retention has passed).
+   * Deletes up to {@code limit} expired events (their retention has passed), oldest expiry first.
    *
-   * @return the number of deleted events
+   * @param after only events expired at or after this time, {@code null} for all
+   * @param cutoff only events expired at or before this time, {@code null} for now
+   * @param limit the maximum number of events to delete
+   * @return the deleted batch
    */
-  public int deleteExpiredEvents() {
+  public DeletedBatch deleteExpiredEvents(
+      @Nullable Instant after, @Nullable Instant cutoff, int limit) {
     return access.withConnection(
-        db -> db.update(DELETE_EVENTS_SQL),
+        db ->
+            db.one(
+                    DELETE_EVENTS_SQL,
+                    DeletedBatch.MAPPER,
+                    Sql.timestamp(cutoff),
+                    Sql.timestamp(after),
+                    limit)
+                .orElseThrow(),
         e -> new BikeschedException("Deleting old bikesched events failed", e));
   }
 
