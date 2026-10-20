@@ -5,6 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.SQLException;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class JobCleanUpStoreTest extends AbstractStoreTest {
@@ -17,31 +22,84 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     }
     insertJob("SCHEDULED", "null", "pending");
     insertJob("COMPENSATING", "null", "compensating");
+    insertJob("COMPENSATION_FAILED", "now() - interval '2 hours'", "compensation-failed");
     execute(
         "insert into bikesched_steps (job_id, name, state, attempts) select id, 's', 'SUCCEEDED', 1"
             + " from bikesched_jobs");
 
-    assertThat(database.jobs().deleteFinishedJobs(Duration.ofHours(1), 1000)).isEqualTo(3);
+    assertThat(database.jobs().deleteFinishedJobs(null, Duration.ofHours(1), 1000).count())
+        .isEqualTo(3);
 
     assertThat(count("type like 'old-%'")).isZero();
-    assertThat(count("true")).isEqualTo(5);
-    assertThat(countSteps("true")).as("steps deleted with their jobs").isEqualTo(5);
+    assertThat(count("true")).as("COMPENSATION_FAILED jobs are kept").isEqualTo(6);
+    assertThat(countSteps("true")).as("steps deleted with their jobs").isEqualTo(6);
   }
 
   @Test
-  void deletesAtMostTheLimit() throws SQLException {
-    for (int i = 0; i < 5; i++) {
-      insertJob("SUCCEEDED", "now() - interval '2 hours'", "old");
+  void deletesAtMostTheLimitOldestFirst() throws SQLException {
+    for (int i = 1; i <= 5; i++) {
+      insertJob("SUCCEEDED", "now() - interval '" + (i + 1) + " hours'", "old-" + i);
     }
+    Instant secondOldest = finishedAt("old-4");
 
-    assertThat(database.jobs().deleteFinishedJobs(Duration.ofHours(1), 2)).isEqualTo(2);
-    assertThat(database.jobs().deleteFinishedJobs(Duration.ofHours(1), 2)).isEqualTo(2);
-    assertThat(database.jobs().deleteFinishedJobs(Duration.ofHours(1), 2)).isEqualTo(1);
+    DeletedBatch first = database.jobs().deleteFinishedJobs(null, Duration.ofHours(1), 2);
+
+    assertThat(first.count()).isEqualTo(2);
+    assertThat(count("type in ('old-5', 'old-4')")).as("the oldest two").isZero();
+    assertThat(first.last()).isEqualTo(secondOldest);
+  }
+
+  @Test
+  void deletesOnlyJobsFinishedAtOrAfterTheGivenTime() throws SQLException {
+    insertJob("SUCCEEDED", "now() - interval '3 hours'", "older");
+    insertJob("SUCCEEDED", "now() - interval '2 hours'", "newer");
+    Instant older = finishedAt("older");
+
+    DeletedBatch batch =
+        database.jobs().deleteFinishedJobs(finishedAt("newer"), Duration.ofHours(1), 10);
+
+    assertThat(batch.count()).isOne();
+    assertThat(count("type = 'older'")).isOne();
+    assertThat(database.jobs().deleteFinishedJobs(null, Duration.ofHours(1), 10))
+        .isEqualTo(new DeletedBatch(1, older));
+  }
+
+  @Test
+  void deleteAllContinuesUntilABatchIsNotFull() throws SQLException {
+    for (int i = 1; i <= 5; i++) {
+      insertJob("SUCCEEDED", "now() - interval '" + (i + 1) + " hours'", "old-" + i);
+    }
+    List<@Nullable Instant> afters = new ArrayList<>();
+
+    int deleted =
+        DeletedBatch.deleteAll(
+            2,
+            after -> {
+              afters.add(after);
+              return database.jobs().deleteFinishedJobs(after, Duration.ofHours(1), 2);
+            });
+
+    assertThat(deleted).isEqualTo(5);
     assertThat(count("true")).isZero();
+    assertThat(afters).hasSize(3).first().isNull();
+    assertThat(afters.get(1)).as("resumes where the last batch ended").isNotNull();
+  }
+
+  private static Instant finishedAt(String type) throws SQLException {
+    try (var connection = dataSource.getConnection();
+        var query =
+            connection.prepareStatement("select finished_at from bikesched_jobs where type = ?")) {
+      query.setString(1, type);
+      try (var rs = query.executeQuery()) {
+        rs.next();
+        return rs.getObject(1, OffsetDateTime.class).toInstant();
+      }
+    }
   }
 
   private static void insertJob(String state, String finishedAt, String type) throws SQLException {
-    String compensated = state.equals("COMPENSATING") ? "'CANCELLED'" : "null";
+    String compensated =
+        state.startsWith("COMPENSATION") || state.equals("COMPENSATING") ? "'CANCELLED'" : "null";
     execute(
         "insert into bikesched_jobs (id, type, state, compensated_state, finished_at) values"
             + " (gen_random_uuid(), '"

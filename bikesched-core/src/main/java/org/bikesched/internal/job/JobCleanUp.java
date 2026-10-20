@@ -4,14 +4,15 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.internal.database.Database;
+import org.bikesched.internal.database.DeletedBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Deletes ended jobs (with their steps) that finished longer than the job retention ago, run by the
  * clean-up thread of every polling node, every job clean-up interval. Deletes in batches, each in
- * its own short transaction, so a large backlog does not hold locks for long. Safe to run
- * concurrently on several nodes.
+ * its own short transaction, so a large backlog does not hold locks for long (see {@link
+ * DeletedBatch}). Safe to run concurrently on several nodes.
  */
 public final class JobCleanUp {
 
@@ -45,14 +46,10 @@ public final class JobCleanUp {
   public void run() {
     int deleted = 0;
     try {
-      int batch;
-      do {
-        if (Thread.currentThread().isInterrupted()) {
-          break;
-        }
-        batch = database.jobs().deleteFinishedJobs(retention, BATCH_SIZE);
-        deleted += batch;
-      } while (batch == BATCH_SIZE);
+      deleted =
+          DeletedBatch.deleteAll(
+              BATCH_SIZE,
+              after -> database.jobs().deleteFinishedJobs(after, retention, BATCH_SIZE));
     } catch (RuntimeException e) {
       LOG.warn("Deleting finished jobs failed on node {} ({})", nodeName, nodeId, e);
     }

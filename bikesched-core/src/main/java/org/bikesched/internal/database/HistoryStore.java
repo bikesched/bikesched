@@ -3,6 +3,7 @@ package org.bikesched.internal.database;
 
 import java.sql.SQLException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
@@ -50,9 +51,22 @@ public final class HistoryStore {
             select created_at, step_name, state, attempt, node_id, detail
               from bikesched_job_history where job_id = ? order by seq""";
 
+  // A batch of entries past the retention, oldest first from the given created_at on (see
+  // DeletedBatch). Skips locked rows, so concurrent clean-ups on several nodes delete different
+  // entries.
   private static final String DELETE_HISTORY_SQL =
       """
-            delete from bikesched_job_history where created_at < now() - make_interval(secs => ?)""";
+            with batch as (
+                select job_id, seq from bikesched_job_history
+                 where created_at >= coalesce(?, '-infinity'::timestamptz)
+                   and created_at < now() - make_interval(secs => ?)
+                 order by created_at
+                 limit ? for update skip locked),
+            deleted as (
+                delete from bikesched_job_history h using batch b
+                 where h.job_id = b.job_id and h.seq = b.seq
+                returning h.created_at)
+            select count(*), max(created_at) from deleted""";
 
   /**
    * A change of a job or of one of its steps, to be recorded.
@@ -173,14 +187,23 @@ public final class HistoryStore {
   }
 
   /**
-   * Deletes entries older than the retention period.
+   * Deletes up to {@code limit} entries older than the retention period, oldest first.
    *
+   * @param after only entries created at or after this time, {@code null} for all
    * @param retention how long entries are kept
-   * @return the number of deleted entries
+   * @param limit the maximum number of entries to delete
+   * @return the deleted batch
    */
-  public int deleteHistory(Duration retention) {
+  public DeletedBatch deleteHistory(@Nullable Instant after, Duration retention, int limit) {
     return access.withConnection(
-        db -> db.update(DELETE_HISTORY_SQL, Sql.seconds(retention)),
+        db ->
+            db.one(
+                    DELETE_HISTORY_SQL,
+                    DeletedBatch.MAPPER,
+                    Sql.timestamp(after),
+                    Sql.seconds(retention),
+                    limit)
+                .orElseThrow(),
         e -> new BikeschedException("Deleting old bikesched job history failed", e));
   }
 }

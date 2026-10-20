@@ -1557,28 +1557,43 @@ public final class JobStore {
         CHANNEL, e -> new BikeschedException("Listening for due bikesched jobs failed", e));
   }
 
-  // A batch of ended jobs past the retention; their steps go with them (on delete cascade). Skips
-  // locked rows, so concurrent clean-ups on several nodes delete different jobs.
+  // A batch of ended jobs past the retention, oldest first from the given finished_at on (see
+  // DeletedBatch); their steps go with them (on delete cascade). Skips locked rows, so concurrent
+  // clean-ups on several nodes delete different jobs.
   private static final String DELETE_FINISHED_JOBS_SQL =
       """
-            delete from bikesched_jobs
-             where id in (select id from bikesched_jobs
-                           where finished_at < now() - make_interval(secs => ?)
-                             and state in ('SUCCEEDED', 'FAILED', 'CANCELLED')
-                           limit ? for update skip locked)""";
+            with batch as (
+                select id from bikesched_jobs
+                 where finished_at >= coalesce(?, '-infinity'::timestamptz)
+                   and finished_at < now() - make_interval(secs => ?)
+                   and state in ('SUCCEEDED', 'FAILED', 'CANCELLED')
+                 order by finished_at
+                 limit ? for update skip locked),
+            deleted as (
+                delete from bikesched_jobs j using batch b where j.id = b.id
+                returning j.finished_at)
+            select count(*), max(finished_at) from deleted""";
 
   /**
    * Deletes up to {@code limit} ended jobs ({@code SUCCEEDED}, {@code FAILED}, {@code CANCELLED})
-   * that finished longer than {@code retention} ago, with their steps. The job history is kept, it
-   * has its own retention.
+   * that finished longer than {@code retention} ago, with their steps, oldest first. The job
+   * history is kept, it has its own retention.
    *
+   * @param after only jobs finished at or after this time, {@code null} for all
    * @param retention how long ended jobs are kept
    * @param limit the maximum number of jobs to delete
-   * @return the number of deleted jobs
+   * @return the deleted batch
    */
-  public int deleteFinishedJobs(Duration retention, int limit) {
+  public DeletedBatch deleteFinishedJobs(@Nullable Instant after, Duration retention, int limit) {
     return access.withConnection(
-        db -> db.update(DELETE_FINISHED_JOBS_SQL, Sql.seconds(retention), limit),
+        db ->
+            db.one(
+                    DELETE_FINISHED_JOBS_SQL,
+                    DeletedBatch.MAPPER,
+                    Sql.timestamp(after),
+                    Sql.seconds(retention),
+                    limit)
+                .orElseThrow(),
         e -> new BikeschedException("Deleting finished bikesched jobs failed", e));
   }
 

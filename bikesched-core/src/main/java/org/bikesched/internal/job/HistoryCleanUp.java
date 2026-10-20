@@ -4,17 +4,22 @@ package org.bikesched.internal.job;
 import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.internal.database.Database;
+import org.bikesched.internal.database.DeletedBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Deletes job history entries older than the job history retention, run by the clean-up thread of a
- * polling node with the job history enabled, every job history clean-up interval. Safe to run
- * concurrently on several nodes.
+ * polling node with the job history enabled, every job history clean-up interval. Deletes in
+ * batches, each in its own short transaction, so a large backlog does not hold locks for long (see
+ * {@link DeletedBatch}). Safe to run concurrently on several nodes.
  */
 public final class HistoryCleanUp {
 
   private static final Logger LOG = LoggerFactory.getLogger(HistoryCleanUp.class);
+
+  /** Entries deleted per statement. */
+  static final int BATCH_SIZE = 1000;
 
   private final Database database;
   private final UUID nodeId;
@@ -35,12 +40,14 @@ public final class HistoryCleanUp {
   }
 
   /**
-   * Runs one clean-up. Never throws: an exception would silently cancel all future clean-ups of the
-   * scheduled executor.
+   * Runs one clean-up: deletes batches until a batch is not full. Never throws: an exception would
+   * silently cancel all future clean-ups of the scheduled executor.
    */
   public void run() {
     try {
-      int deleted = database.history().deleteHistory(retention);
+      int deleted =
+          DeletedBatch.deleteAll(
+              BATCH_SIZE, after -> database.history().deleteHistory(after, retention, BATCH_SIZE));
       if (deleted > 0) {
         LOG.debug("Deleted {} job history entries older than {}", deleted, retention);
       }

@@ -107,7 +107,8 @@ class HistoryStoreTest extends AbstractStoreTest {
             + jobId
             + "', now(), 'RUNNING', 1)");
 
-    assertThat(database.history().deleteHistory(Duration.ofDays(1))).isEqualTo(1);
+    assertThat(database.history().deleteHistory(null, Duration.ofDays(1), 1000).count())
+        .isEqualTo(1);
 
     assertThat(database.history().findHistory(jobId))
         .extracting(JobHistoryEntry::state)

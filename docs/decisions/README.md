@@ -62,3 +62,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0049](0049-java-21-baseline.md) | Java 21 as the language baseline, built with JDK 26 | Accepted |
 | [0050](0050-load-and-failure-tests-on-demand.md) | Load and failure tests in their own module, run on demand | Accepted |
 | [0051](0051-node-names-are-not-unique.md) | Node names are not unique | Accepted |
+| [0052](0052-clean-ups-delete-in-resuming-batches.md) | Clean-ups delete in resuming batches | Accepted |
