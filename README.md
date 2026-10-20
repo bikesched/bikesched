@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="bikesched logo: a pelican riding a bicycle with clock wheels, carrying a bag of jobs" width="200" height="200">
+  <img src="docs/logo.svg" alt="bikesched logo: a bicycle with a clock as the front wheel and a shed on top of it" width="200" height="200">
 </p>
 
 # bikesched
@@ -16,12 +16,12 @@ minimal dependencies and no extra infrastructure**
 > [pelican riding a bicycle](https://simonwillison.net/2024/Oct/25/pelicans-on-a-bicycle/) LLM
 > benchmark.
 
-*[Simon](https://github.com/sbuettner), the original author*: I was looking for a
-PostgreSQL-backed job scheduler with bikesched's properties and capabilities for a small app of
-mine, and didn't find one that fit. So this is a bit of a pun on its own name: instead of
-["bikeshedding"](https://en.wiktionary.org/wiki/bikeshed), endlessly debating what such a library
-should look like, I decided to try building it myself, with AI doing much of the implementation,
-around the needs I'd actually run into.
+*[Simon](https://github.com/sbuettner), the creator of the bikesched project*: I was working on a
+project and looking for an open source library that does job scheduling with durable execution,
+has minimal dependencies and is PostgreSQL-focused, but didn't find one that fit. So instead of
+continuing that project, I started ["bikeshedding"](https://en.wiktionary.org/wiki/bikeshed) on a
+library with these properties, with AI doing much of the implementation, around the needs I'd
+actually run into.
 
 bikesched stores jobs in PostgreSQL and lets every connected application instance (*node*) work on
 them. Nodes claim due jobs with `SELECT … FOR UPDATE SKIP LOCKED`, so many nodes can share one
@@ -227,8 +227,8 @@ dependencies {
 ## License
 
 bikesched is licensed under the [Apache License 2.0](LICENSE): you may use, modify and embed it,
-also in commercial and closed-source products. *[Simon](https://github.com/sbuettner), the
-original author*: it's permissive on purpose, so that anyone who runs into the same need I did can
-drop it into their own project, open or closed source, without license-review friction. The name
-and logo are trademarks, see the
+also in commercial and closed-source products. *[Simon](https://github.com/sbuettner), the creator
+of the bikesched project*: it's permissive on purpose, so that anyone who runs into the same need I
+did can drop it into their own project, open or closed source, without license-review friction. The
+name and logo are trademarks, see the
 [trademark policy](TRADEMARKS.md) for how to refer to bikesched and how to name forks.
