@@ -106,6 +106,25 @@ plus one more if `listenForDueJobs` is on. With `PGSimpleDataSource`, the data s
 examples and these docs, every statement opens a new TCP connection and authenticates; use a pool
 (e.g. [HikariCP](https://github.com/brettwooldridge/HikariCP)) in production.
 
+## Clean-ups
+
+Every polling node deletes ended jobs with their steps (`jobRetention`), job history entries
+(`jobHistory`) and expired events (`eventRetention`) on its own interval. Each clean-up deletes
+in batches of 1000 rows, oldest first, each batch in its own short transaction, and skips rows
+another node is deleting, so a backlog neither holds locks nor holds back vacuum for long, and
+stays below a `statementTimeout`. A batch starts where the previous one ended instead of at the
+oldest index entry, so it does not read past the rows deleted before vacuum removed them (see
+[ADR 0052](../decisions/0052-clean-ups-delete-in-resuming-batches.md)).
+
+Deleted rows take space until autovacuum reclaims them. With high job volumes, let autovacuum run
+more often on the busy tables, for example:
+
+```sql
+alter table bikesched_jobs set (autovacuum_vacuum_scale_factor = 0.01);
+alter table bikesched_steps set (autovacuum_vacuum_scale_factor = 0.01);
+alter table bikesched_job_history set (autovacuum_vacuum_scale_factor = 0.01);
+```
+
 ## Indexes and locks
 
 Besides primary keys, the indexes cover job history cleanup, the cleanup of ended jobs (`finished_at`), polling (due `SCHEDULED`/`WAITING`/`COMPENSATING`/`FAILING` jobs in

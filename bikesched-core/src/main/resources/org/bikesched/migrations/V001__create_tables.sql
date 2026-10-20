@@ -112,9 +112,11 @@ create unique index bikesched_jobs_recurring_idx on bikesched_jobs (type)
 create unique index bikesched_jobs_idempotency_key_idx on bikesched_jobs (type, idempotency_key)
     where idempotency_key is not null;
 
--- Deleting finished jobs after the job retention (only ended jobs have finished_at).
+-- Deleting ended jobs after the job retention, oldest first. Only the states that are deleted:
+-- COMPENSATION_FAILED jobs also have finished_at but are kept, so they would stay at the front of
+-- the index forever and every clean-up would read past them.
 create index bikesched_jobs_finished_at_idx on bikesched_jobs (finished_at)
-    where finished_at is not null;
+    where state in ('SUCCEEDED', 'FAILED', 'CANCELLED');
 
 -- Finding/releasing jobs of a (dead) node; also backs the foreign key.
 create index bikesched_jobs_locked_by_idx on bikesched_jobs (locked_by);
