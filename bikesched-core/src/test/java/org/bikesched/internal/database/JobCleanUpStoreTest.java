@@ -27,7 +27,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
         "insert into bikesched_steps (job_id, name, state, attempts) select id, 's', 'SUCCEEDED', 1"
             + " from bikesched_jobs");
 
-    assertThat(database.jobs().deleteFinishedJobs(null, Duration.ofHours(1), 1000).count())
+    assertThat(database.jobs().deleteFinishedJobs(null, null, Duration.ofHours(1), 1000).count())
         .isEqualTo(3);
 
     assertThat(count("type like 'old-%'")).isZero();
@@ -42,7 +42,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     }
     Instant secondOldest = finishedAt("old-4");
 
-    DeletedBatch first = database.jobs().deleteFinishedJobs(null, Duration.ofHours(1), 2);
+    DeletedBatch first = database.jobs().deleteFinishedJobs(null, null, Duration.ofHours(1), 2);
 
     assertThat(first.count()).isEqualTo(2);
     assertThat(count("type in ('old-5', 'old-4')")).as("the oldest two").isZero();
@@ -56,12 +56,12 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     Instant older = finishedAt("older");
 
     DeletedBatch batch =
-        database.jobs().deleteFinishedJobs(finishedAt("newer"), Duration.ofHours(1), 10);
+        database.jobs().deleteFinishedJobs(finishedAt("newer"), null, Duration.ofHours(1), 10);
 
     assertThat(batch.count()).isOne();
     assertThat(count("type = 'older'")).isOne();
-    assertThat(database.jobs().deleteFinishedJobs(null, Duration.ofHours(1), 10))
-        .isEqualTo(new DeletedBatch(1, older));
+    assertThat(database.jobs().deleteFinishedJobs(null, null, Duration.ofHours(1), 10).last())
+        .isEqualTo(older);
   }
 
   @Test
@@ -70,19 +70,36 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
       insertJob("SUCCEEDED", "now() - interval '" + (i + 1) + " hours'", "old-" + i);
     }
     List<@Nullable Instant> afters = new ArrayList<>();
+    List<@Nullable Instant> cutoffs = new ArrayList<>();
 
     int deleted =
         DeletedBatch.deleteAll(
             2,
-            after -> {
+            (after, cutoff) -> {
               afters.add(after);
-              return database.jobs().deleteFinishedJobs(after, Duration.ofHours(1), 2);
+              cutoffs.add(cutoff);
+              return database.jobs().deleteFinishedJobs(after, cutoff, Duration.ofHours(1), 2);
             });
 
     assertThat(deleted).isEqualTo(5);
     assertThat(count("true")).isZero();
     assertThat(afters).hasSize(3).first().isNull();
     assertThat(afters.get(1)).as("resumes where the last batch ended").isNotNull();
+    assertThat(cutoffs.get(0)).isNull();
+    assertThat(cutoffs.get(1)).as("the first batch's cutoff").isNotNull().isEqualTo(cutoffs.get(2));
+  }
+
+  @Test
+  void aGivenCutoffReplacesTheRetention() throws SQLException {
+    insertJob("SUCCEEDED", "now() - interval '3 hours'", "older");
+    insertJob("SUCCEEDED", "now() - interval '2 hours'", "newer");
+    Instant newer = finishedAt("newer");
+
+    DeletedBatch batch = database.jobs().deleteFinishedJobs(null, newer, Duration.ofHours(1), 10);
+
+    assertThat(batch.count()).isOne();
+    assertThat(batch.cutoff()).isEqualTo(newer);
+    assertThat(count("type = 'newer'")).as("finished at the cutoff: kept").isOne();
   }
 
   private static Instant finishedAt(String type) throws SQLException {

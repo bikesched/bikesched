@@ -245,7 +245,7 @@ class EventStoreTest extends AbstractStoreTest {
         .as("an expired event is not received, even before it is deleted")
         .isInstanceOf(EventStore.EventWaitResult.Waiting.class);
 
-    assertThat(database.events().deleteExpiredEvents(null, 1000).count()).isOne();
+    assertThat(database.events().deleteExpiredEvents(null, null, 1000).count()).isOne();
     assertThat(countRows("bikesched_events", "key = 'retention-1'")).isZero();
     assertThat(countRows("bikesched_events", "key = 'retention-2'")).isOne();
   }
@@ -271,7 +271,7 @@ class EventStoreTest extends AbstractStoreTest {
                 .events()
                 .awaitEvent(later.id(), lock(later.id()), "wait", "ping", "zero-1", null))
         .isInstanceOf(EventStore.EventWaitResult.Waiting.class);
-    assertThat(database.events().deleteExpiredEvents(null, 1000).count()).isOne();
+    assertThat(database.events().deleteExpiredEvents(null, null, 1000).count()).isOne();
 
     assertThat(
             database
@@ -295,7 +295,7 @@ class EventStoreTest extends AbstractStoreTest {
                     + "' and state = 'SUCCEEDED' and result = '{\"amount\": 7}'::jsonb"
                     + " and finished_at is not null"))
         .isOne();
-    assertThat(database.events().deleteExpiredEvents(null, 1000).count()).isOne();
+    assertThat(database.events().deleteExpiredEvents(null, null, 1000).count()).isOne();
 
     claim(job.id());
     assertThat(
@@ -363,12 +363,12 @@ class EventStoreTest extends AbstractStoreTest {
   void publishingStepRemembersItsEventAfterTheEventIsDeleted() {
     JobStore.ClaimedJob publisher = claimNewJob("deleted-publisher");
     UUID published = publishAsStep(publisher, "publish", "ping", "deleted-1", null, Duration.ZERO);
-    assertThat(database.events().deleteExpiredEvents(null, 1000).count()).isOne();
+    assertThat(database.events().deleteExpiredEvents(null, null, 1000).count()).isOne();
 
     assertThat(publishAsStep(publisher, "publish", "ping", "deleted-1", null, Duration.ZERO))
         .as("no foreign key: the step keeps the id of the purged event, nothing is published")
         .isEqualTo(published);
-    assertThat(database.events().deleteExpiredEvents(null, 1000).count()).isZero();
+    assertThat(database.events().deleteExpiredEvents(null, null, 1000).count()).isZero();
   }
 
   @Test

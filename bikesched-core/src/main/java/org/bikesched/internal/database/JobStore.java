@@ -1562,17 +1562,18 @@ public final class JobStore {
   // clean-ups on several nodes delete different jobs.
   private static final String DELETE_FINISHED_JOBS_SQL =
       """
-            with batch as (
+            with cutoff as (select coalesce(?, now() - make_interval(secs => ?)) as at),
+            batch as (
                 select id from bikesched_jobs
                  where finished_at >= coalesce(?, '-infinity'::timestamptz)
-                   and finished_at < now() - make_interval(secs => ?)
+                   and finished_at < (select at from cutoff)
                    and state in ('SUCCEEDED', 'FAILED', 'CANCELLED')
                  order by finished_at
                  limit ? for update skip locked),
             deleted as (
                 delete from bikesched_jobs j using batch b where j.id = b.id
                 returning j.finished_at)
-            select count(*), max(finished_at) from deleted""";
+            select count(*), max(finished_at), (select at from cutoff) from deleted""";
 
   /**
    * Deletes up to {@code limit} ended jobs ({@code SUCCEEDED}, {@code FAILED}, {@code CANCELLED})
@@ -1580,18 +1581,21 @@ public final class JobStore {
    * history is kept, it has its own retention.
    *
    * @param after only jobs finished at or after this time, {@code null} for all
+   * @param cutoff only jobs finished before this time, {@code null} for {@code retention} ago
    * @param retention how long ended jobs are kept
    * @param limit the maximum number of jobs to delete
    * @return the deleted batch
    */
-  public DeletedBatch deleteFinishedJobs(@Nullable Instant after, Duration retention, int limit) {
+  public DeletedBatch deleteFinishedJobs(
+      @Nullable Instant after, @Nullable Instant cutoff, Duration retention, int limit) {
     return access.withConnection(
         db ->
             db.one(
                     DELETE_FINISHED_JOBS_SQL,
                     DeletedBatch.MAPPER,
-                    Sql.timestamp(after),
+                    Sql.timestamp(cutoff),
                     Sql.seconds(retention),
+                    Sql.timestamp(after),
                     limit)
                 .orElseThrow(),
         e -> new BikeschedException("Deleting finished bikesched jobs failed", e));

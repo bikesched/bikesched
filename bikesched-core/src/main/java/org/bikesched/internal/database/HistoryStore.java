@@ -56,17 +56,18 @@ public final class HistoryStore {
   // entries.
   private static final String DELETE_HISTORY_SQL =
       """
-            with batch as (
+            with cutoff as (select coalesce(?, now() - make_interval(secs => ?)) as at),
+            batch as (
                 select job_id, seq from bikesched_job_history
                  where created_at >= coalesce(?, '-infinity'::timestamptz)
-                   and created_at < now() - make_interval(secs => ?)
+                   and created_at < (select at from cutoff)
                  order by created_at
                  limit ? for update skip locked),
             deleted as (
                 delete from bikesched_job_history h using batch b
                  where h.job_id = b.job_id and h.seq = b.seq
                 returning h.created_at)
-            select count(*), max(created_at) from deleted""";
+            select count(*), max(created_at), (select at from cutoff) from deleted""";
 
   /**
    * A change of a job or of one of its steps, to be recorded.
@@ -190,18 +191,21 @@ public final class HistoryStore {
    * Deletes up to {@code limit} entries older than the retention period, oldest first.
    *
    * @param after only entries created at or after this time, {@code null} for all
+   * @param cutoff only entries created before this time, {@code null} for {@code retention} ago
    * @param retention how long entries are kept
    * @param limit the maximum number of entries to delete
    * @return the deleted batch
    */
-  public DeletedBatch deleteHistory(@Nullable Instant after, Duration retention, int limit) {
+  public DeletedBatch deleteHistory(
+      @Nullable Instant after, @Nullable Instant cutoff, Duration retention, int limit) {
     return access.withConnection(
         db ->
             db.one(
                     DELETE_HISTORY_SQL,
                     DeletedBatch.MAPPER,
-                    Sql.timestamp(after),
+                    Sql.timestamp(cutoff),
                     Sql.seconds(retention),
+                    Sql.timestamp(after),
                     limit)
                 .orElseThrow(),
         e -> new BikeschedException("Deleting old bikesched job history failed", e));

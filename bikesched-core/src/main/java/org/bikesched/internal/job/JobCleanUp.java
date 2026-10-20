@@ -49,7 +49,8 @@ public final class JobCleanUp {
       deleted =
           DeletedBatch.deleteAll(
               BATCH_SIZE,
-              after -> database.jobs().deleteFinishedJobs(after, retention, BATCH_SIZE));
+              (after, cutoff) ->
+                  database.jobs().deleteFinishedJobs(after, cutoff, retention, BATCH_SIZE));
     } catch (RuntimeException e) {
       LOG.warn("Deleting finished jobs failed on node {} ({})", nodeName, nodeId, e);
     }

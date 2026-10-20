@@ -47,7 +47,9 @@ public final class HistoryCleanUp {
     try {
       int deleted =
           DeletedBatch.deleteAll(
-              BATCH_SIZE, after -> database.history().deleteHistory(after, retention, BATCH_SIZE));
+              BATCH_SIZE,
+              (after, cutoff) ->
+                  database.history().deleteHistory(after, cutoff, retention, BATCH_SIZE));
       if (deleted > 0) {
         LOG.debug("Deleted {} job history entries older than {}", deleted, retention);
       }

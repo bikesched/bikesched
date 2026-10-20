@@ -44,7 +44,8 @@ public final class EventCleanUp {
     try {
       int deleted =
           DeletedBatch.deleteAll(
-              BATCH_SIZE, after -> database.events().deleteExpiredEvents(after, BATCH_SIZE));
+              BATCH_SIZE,
+              (after, cutoff) -> database.events().deleteExpiredEvents(after, cutoff, BATCH_SIZE));
       if (deleted > 0) {
         LOG.debug("Deleted {} expired event(s)", deleted);
       }
