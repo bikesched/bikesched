@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
 <title id="title">bikesched icon</title>
-<desc id="desc">Blue bicycle shaped like a B, with circular wheels, a subtle clock hand and motion streaks.</desc>
+<desc id="desc">Blue bicycle shaped like a B, with a subtle clock hand and motion streaks.</desc>
 <g fill="none" stroke-linecap="round" stroke-linejoin="round">
 <!-- motion -->
 <path d="M255 235H440 M180 315H370 M250 395H300" stroke="#91A8FF" stroke-width="54"/>
