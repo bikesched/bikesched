@@ -1,0 +1,270 @@
+# Cuts a release (RELEASING.md, ADR 0053). Started by hand from the Actions tab: "Use workflow from"
+# picks the branch (default main), the inputs pick the release type and a dry run.
+#
+# - main: major or minor. Tags the release, creates its maintenance branch release/X.Y.x and moves
+#   main on to the next minor snapshot.
+# - release/X.Y.x: patch. Tags the release and moves the branch on to the next patch snapshot.
+#
+# The version is never typed: the catalog holds the branch's next version as a snapshot, and
+# `./gradlew releaseVersions` derives the release from it. The release is built with
+# -PreleaseVersion (no release commit), published to GitHub Packages, tagged, and JReleaser
+# (Gradle plugin, configured in bikesched.release) creates the GitHub Release with the changelog. The version bumps afterwards are
+# pushed by this workflow directly to the branches (GITHUB_TOKEN pushes trigger no workflows, so
+# it starts the build of the new snapshots itself).
+#
+# The `release` job runs in the `release` environment: configure required reviewers there to
+# approve each release after looking at the changelog the `prepare` job shows.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'Release type: major or minor from main, patch from a release/X.Y.x branch'
+        type: choice
+        options: [minor, major, patch]
+        default: minor
+      dry-run:
+        description: 'Dry run: only show the version and the changelog, release nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One release at a time, never cancelled halfway.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      current: ${{ steps.versions.outputs.current }}
+      version: ${{ steps.versions.outputs.version }}
+      next-snapshot: ${{ steps.versions.outputs.nextSnapshot }}
+      release-branch: ${{ steps.versions.outputs.releaseBranch }}
+      release-branch-snapshot: ${{ steps.versions.outputs.releaseBranchSnapshot }}
+      previous-tag: ${{ steps.previous.outputs.tag }}
+
+    steps:
+      - name: Check branch and release type
+        env:
+          BRANCH: ${{ github.ref_name }}
+          TYPE: ${{ inputs.type }}
+        run: |
+          case "$GITHUB_REF_TYPE:$BRANCH:$TYPE" in
+            branch:main:major | branch:main:minor | branch:release/*:patch) ;;
+            branch:main:patch)
+              echo "::error::Patches are released from their release/X.Y.x branch, not from main"
+              exit 1 ;;
+            branch:release/*:*)
+              echo "::error::Release branches only release patches; major and minor come from main"
+              exit 1 ;;
+            *)
+              echo "::error::Releases are cut from main or a release/X.Y.x branch, not $BRANCH"
+              exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # all tags and history: previous tag, changelog
+
+      # Same version as `java` in gradle/libs.versions.toml (build.yml also sets up 21 for tests).
+      - name: Set up JDK 26
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '26'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Compute versions
+        id: versions
+        env:
+          TYPE: ${{ inputs.type }}
+        run: ./gradlew -q releaseVersions -PreleaseType="$TYPE" | tee -a "$GITHUB_OUTPUT"
+
+      # The latest release of this line: on main the last major or minor (patches live on their
+      # release branches), on a release branch the last release of that branch.
+      - name: Find previous release
+        id: previous
+        run: |
+          tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD 2>/dev/null || true)
+          echo "tag=$tag" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Check release
+        env:
+          BRANCH: ${{ github.ref_name }}
+          VERSION: ${{ steps.versions.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+            echo "::error::Tag v$VERSION exists already"
+            exit 1
+          fi
+          case "$BRANCH" in
+            release/*)
+              if [ "$BRANCH" != "release/${VERSION%.*}.x" ]; then
+                echo "::error::$BRANCH cannot release $VERSION (wrong version in the catalog?)"
+                exit 1
+              fi ;;
+          esac
+
+      - name: Generate changelog
+        env:
+          VERSION: ${{ steps.versions.outputs.version }}
+          PREVIOUS_TAG: ${{ steps.previous.outputs.tag }}
+          JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          ./gradlew jreleaserChangelog -PreleaseVersion="$VERSION"
+          -PpreviousTag="$PREVIOUS_TAG" -PreleaseBranch="$GITHUB_REF_NAME"
+
+      - name: Show release
+        env:
+          TYPE: ${{ inputs.type }}
+          VERSION: ${{ steps.versions.outputs.version }}
+          PREVIOUS: ${{ steps.previous.outputs.tag }}
+        run: |
+          {
+            echo "# bikesched $VERSION ($TYPE release from ${GITHUB_REF_NAME})"
+            echo
+            echo "Previous release: ${PREVIOUS:-none}"
+            echo
+            cat build/jreleaser/release/CHANGELOG.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: prepare
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: release
+    permissions:
+      contents: write # tag, GitHub Release, version bumps
+      packages: write # GitHub Packages
+      actions: write # starting the build of the new snapshots
+
+    env:
+      CURRENT: ${{ needs.prepare.outputs.current }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      NEXT_SNAPSHOT: ${{ needs.prepare.outputs.next-snapshot }}
+      RELEASE_BRANCH: ${{ needs.prepare.outputs.release-branch }}
+      RELEASE_BRANCH_SNAPSHOT: ${{ needs.prepare.outputs.release-branch-snapshot }}
+      PREVIOUS_TAG: ${{ needs.prepare.outputs.previous-tag }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }} # exactly the commit `prepare` looked at
+          fetch-depth: 0
+
+      # As in build.yml: 26 builds (`java`), 21 runs the tests (`java-release`).
+      - name: Set up JDK 21 and 26
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: |
+            21
+            26
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build
+        run: >-
+          ./gradlew build -PreleaseVersion="$VERSION" -PtestJavaVersion=21
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64
+
+      # GitHub Packages rejects a version that exists already, so a failed release cannot replace
+      # published artifacts.
+      - name: Publish to GitHub Packages
+        run: ./gradlew publishAllPublicationsToGitHubPackagesRepository -PreleaseVersion="$VERSION"
+        env:
+          ORG_GRADLE_PROJECT_GitHubPackagesUsername: ${{ github.actor }}
+          ORG_GRADLE_PROJECT_GitHubPackagesPassword: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Tag
+        run: |
+          git tag -a "v$VERSION" -m "bikesched $VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        env:
+          JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          ./gradlew jreleaserRelease -PreleaseVersion="$VERSION"
+          -PpreviousTag="$PREVIOUS_TAG" -PreleaseBranch="$GITHUB_REF_NAME"
+
+      # A major or minor release starts its maintenance branch at the tag: the docs show the
+      # release, the catalog the first patch snapshot.
+      - name: Create release branch
+        if: env.RELEASE_BRANCH != ''
+        run: |
+          git switch -c "$RELEASE_BRANCH"
+          ./gradlew -q setVersion -PnewVersion="$RELEASE_BRANCH_SNAPSHOT" \
+            -PdocsFrom="$CURRENT" -PdocsTo="$VERSION"
+          ./gradlew -q prependChangelog -PreleaseVersion="$VERSION"
+          git commit -qam "chore(release): start $RELEASE_BRANCH with $RELEASE_BRANCH_SNAPSHOT"
+          git push origin "$RELEASE_BRANCH"
+
+      # A patch moves its release branch on to the next patch snapshot; the docs show the release.
+      - name: Update release branch
+        if: env.RELEASE_BRANCH == ''
+        run: |
+          git switch -C "$GITHUB_REF_NAME"
+          ./gradlew -q setVersion -PnewVersion="$NEXT_SNAPSHOT" \
+            -PdocsFrom="${PREVIOUS_TAG#v}" -PdocsTo="$VERSION"
+          ./gradlew -q prependChangelog -PreleaseVersion="$VERSION"
+          git commit -qam "chore(release): continue $GITHUB_REF_NAME with $NEXT_SNAPSHOT"
+          git push origin "$GITHUB_REF_NAME"
+
+      # main gets the changelog of every release; after a major or minor it also moves on to the
+      # next minor snapshot (its docs show the snapshot, the website renders them under /next/).
+      # Retried on top of commits pushed to main meanwhile.
+      - name: Update main
+        run: |
+          for attempt in 1 2 3; do
+            git fetch -q origin main
+            git switch -qC main origin/main
+            if [ -n "$RELEASE_BRANCH" ]; then
+              ./gradlew -q setVersion -PnewVersion="$NEXT_SNAPSHOT" \
+                -PdocsFrom="$CURRENT" -PdocsTo="$NEXT_SNAPSHOT"
+                  message="chore(release): $VERSION released, continue with $NEXT_SNAPSHOT"
+            else
+              message="chore(release): add the changelog of $VERSION"
+            fi
+            ./gradlew -q prependChangelog -PreleaseVersion="$VERSION"
+            git commit -qam "$message"
+            if git push origin main; then exit 0; fi
+            echo "main moved, retrying ($attempt)"
+          done
+          echo "::error::Could not push the version bump to main"
+          exit 1
+
+      # Pushes with GITHUB_TOKEN start no workflows: build and publish the new snapshots.
+      - name: Build new snapshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run build.yml --ref main
+          gh workflow run build.yml --ref "${RELEASE_BRANCH:-$GITHUB_REF_NAME}"
+          gh workflow run website.yml --ref main
+
+      - name: Upload JReleaser output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jreleaser
+          path: |
+            build/jreleaser/trace.log
+            build/jreleaser/output.properties
+          retention-days: 7

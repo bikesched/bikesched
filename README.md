@@ -200,14 +200,15 @@ docker compose up -d                      # POSTGRES_PORT=5433 docker compose up
 
 All dependency and tool versions are managed in `gradle/libs.versions.toml`.
 
-## Snapshots
+## Releases and snapshots
 
-Every successful build of `main` publishes the current snapshot (`org.bikesched:bikesched-core`,
-`bikesched-jackson`, `bikesched-kotlin`, `bikesched-annotations`, `bikesched-cron`,
-`bikesched-micrometer`, `bikesched-spring-boot-starter`, `bikesched-admin`,
-`bikesched-admin-shaded`, `bikesched-test`, version `0.1.0-SNAPSHOT`) to GitHub
-Packages. Reading from GitHub Packages requires a GitHub token with the `read:packages` scope, even for public
-packages:
+Releases (see the [changelog](CHANGELOG.md)) and the snapshots of `main` and the release branches
+are published to GitHub Packages: `org.bikesched:bikesched-core`, `bikesched-jackson`,
+`bikesched-kotlin`, `bikesched-annotations`, `bikesched-cron`, `bikesched-micrometer`,
+`bikesched-spring-boot-starter`, `bikesched-admin`, `bikesched-admin-shaded` and `bikesched-test`,
+all with the same version (`0.1.0-SNAPSHOT` on this branch). Reading from GitHub Packages requires a
+GitHub token with the `read:packages` scope, even for public packages. How releases are cut:
+[RELEASING.md](RELEASING.md).
 
 ```kotlin
 repositories {

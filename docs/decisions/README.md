@@ -63,3 +63,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0050](0050-load-and-failure-tests-on-demand.md) | Load and failure tests in their own module, run on demand | Accepted |
 | [0051](0051-node-names-are-not-unique.md) | Node names are not unique | Accepted |
 | [0052](0052-clean-ups-delete-in-resuming-batches.md) | Clean-ups delete in resuming batches | Accepted |
+| [0053](0053-releases-from-tags-with-release-branches.md) | Releases cut from tags, one release branch per minor | Accepted |

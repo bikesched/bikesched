@@ -26,6 +26,13 @@ publishing {
                         distribution = "repo"
                     }
                 }
+                developers {
+                    developer {
+                        id = "sbuettner"
+                        name = "sbuettner"
+                        email = "mail@bikesched.org"
+                    }
+                }
                 scm {
                     url = "https://github.com/sbuettner/bikesched"
                     connection = "scm:git:https://github.com/sbuettner/bikesched.git"

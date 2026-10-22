@@ -30,14 +30,21 @@ what the library does; this file covers how to change it.
   and logo are covered by `TRADEMARKS.md` (ADR 0021).
 - Every version (libraries, Gradle plugins, Java, the project version) lives in
   `gradle/libs.versions.toml`; no version literals in `.kts` files. Use the latest stable releases.
-- CI: `.github/workflows/build.yml` runs `./gradlew build` on every pull request and push to
-  `main` (Temurin JDK 26, tests on JDK 21, Docker for Testcontainers), except when only Markdown
-  files and SVG images changed (a `changes` job skips `build`, which still reports success for
-  required checks); a separate job publishes snapshot versions of the library modules to GitHub
-  Packages after successful builds of `main` only
-  (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin `bikesched.publishing`
-  with `maven-publish`). Keep its `java-version` list in sync with `java` and `java-release` in
-  the version catalog.
+- CI: `.github/workflows/build.yml` runs `./gradlew build` on every pull request and push to `main`
+  and `release/**` (Temurin JDK 26, tests on JDK 21, Docker for Testcontainers), except when only
+  Markdown files and SVG images changed (a `changes` job skips `build`, which still reports success
+  for required checks); a separate job publishes snapshot versions of the library modules to GitHub
+  Packages after successful builds of `main` and the release branches
+  (`publishAllPublicationsToGitHubPackagesRepository`, convention plugin `bikesched.publishing` with
+  `maven-publish`). Keep its `java-version` list (and `release.yml`'s) in sync with `java` and
+  `java-release` in the version catalog.
+- Releases: `.github/workflows/release.yml` (manual) cuts them, see `RELEASING.md` and ADR 0053:
+  major/minor from `main`, patches from `release/X.Y.x`, version derived from the catalog snapshot
+  (`./gradlew releaseVersions`, convention plugin `bikesched.release`), changelog and GitHub Release
+  by JReleaser's Gradle plugin (configured in `bikesched.release`; JGit is excluded from Spotless,
+  which then uses fixed LF line endings, because JReleaser needs JGit 5).
+  `.github/workflows/pr-title.yml` checks pull request titles are Conventional Commits. Never edit
+  `CHANGELOG.md` sections or the version in the catalog by hand.
 
 ## Layout
 
@@ -54,7 +61,7 @@ what the library does; this file covers how to change it.
 | `bikesched-examples` | runnable examples, described in its own `README.md`, in two submodules: `java` (plain Java examples, one package per scenario, each with a Testcontainers test using the shared `util.Database`; JSON via bikesched-jackson) and `spring` (the Spring Boot example as a regular Boot application with the Spring Boot Gradle plugin, `bootRun`) |
 | `bikesched-stress-tests` | load and failure tests (database restarts, cut-off nodes, hanging connections, throughput), not published; `build` compiles them, `./gradlew :bikesched-stress-tests:stressTest` runs them before a release, see its `README.md` and ADR 0050 |
 | `bikesched-website` | the project site at `bikesched.org`, generated with Hugo from `README.md` and `docs/` (Hugo module mounts, no content copy) and the Hextra theme (git submodule), described in its own `docs/specs/website-project-site.md` and [ADR 0047](docs/decisions/0047-website-hosted-on-cloudflare-workers.md); built with `./gradlew :bikesched-website:hugoBuild`, deployed to the Cloudflare Worker `bikesched-website` (`bikesched-website/wrangler.jsonc`) by `.github/workflows/website.yml` |
-| `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library`, `bikesched.errorprone` |
+| `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library`, `bikesched.errorprone`, `bikesched.release` (root only: `releaseVersions`, `setVersion`, `prependChangelog`, see `RELEASING.md`) |
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 
@@ -141,8 +148,8 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   (no payload, a `null` step result). Lookups keep returning `Optional`. Internal code does not
   `requireNonNull` what its types exclude; only API entry points check user arguments. Read a
   nullable field once into a local before testing it, so NullAway can follow it.
-- Breaking API changes are fine while unreleased; rename across code, tests, examples, README and
-  `docs/` in one go.
+- Breaking API changes are fine on `main` while at 0.x (never in a patch release); rename across
+  code, tests, examples, README and `docs/` in one go, with a `!` in the commit type.
 
 ### Kotlin module (`org.bikesched.kotlin`)
 
@@ -161,8 +168,10 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 - All tables are prefixed `bikesched_`. Migrations are plain SQL in
   `bikesched-core/src/main/resources/org/bikesched/migrations`, applied by the own `SchemaMigrator`
-  (no Flyway/Liquibase). While unreleased, schema changes go **into `V001` in place**; local
-  databases then need `docker compose down -v` (checksum mismatch).
+  (no Flyway/Liquibase). Until the first release (0.1.0), schema changes go **into `V001` in
+  place**; local databases then need `docker compose down -v` (checksum mismatch). From the first
+  release on, changes only go into new migrations (`V002__…`), also in a breaking 0.x minor
+  (ADR 0053).
 - Name and key columns are `text` with a `char_length` CHECK matching `ValidationUtil` (200 for
   names, 500 for event keys); new ones get both. Message columns (`last_error`, `cancel_message`)
   have no CHECK: the stores pass them through `ValidationUtil.truncateMessage`.
