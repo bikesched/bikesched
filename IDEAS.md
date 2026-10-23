@@ -56,8 +56,8 @@ the connection belongs to a Spring-managed transaction.
 
 ### Test support
 
-A first slice is implemented as `bikesched-test` (a test node factory and `JobAwait` wait helpers
-over a real database, see [the spec](docs/specs/bikesched-test.md) and
+A first slice is implemented as `bikesched-test` (a test node factory, `JobAwait` wait helpers and
+time skipping over a real database, see [the spec](docs/specs/bikesched-test.md) and
 [Testing](docs/integrations/testing.md)). Still open:
 
 - Unit level, no database: a fake `Job` that runs a handler in the test thread, records steps,
@@ -65,9 +65,8 @@ over a real database, see [the spec](docs/specs/bikesched-test.md) and
   for `waitForJob`, and skips sleeps and polls; asserts the outcome (completed, failed, cancelled,
   suspended at step …).
 - A JUnit 5 extension managing the database (Testcontainers, schema reset between tests) and the
-  node's lifecycle, a manual poll entry point (`runUntilIdle()`, next to `autoStartPolling`) instead
-  of the real poller, and `fastForward(jobId)` to make a sleeping or polling job due now (the
-  database decides with `now()`, so a `Clock` alone cannot skip time).
+  node's lifecycle, and a manual poll entry point (`runUntilIdle()`, next to `autoStartPolling`)
+  instead of the real poller.
 - Open: whether the unit-level fake is worth its drift from the real `Job` (it reimplements the
   replay semantics), or whether a fast integration level is enough.
 - Outcome: handler tests that run in milliseconds and read like the handler's flow.

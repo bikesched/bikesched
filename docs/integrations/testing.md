@@ -56,6 +56,39 @@ Awaitility itself is never part of this module's API; a test that needs its full
 condition) adds the `awaitility` dependency itself, like the examples already do for anything
 `JobAwait` does not cover.
 
+## Skipping time
+
+Postgres decides with `now()` when a job or a waiting step is due, so a test cannot skip a sleep, a
+retry backoff or a recurring job's interval with a fake `Clock`. Instead, `bikesched-test` moves
+the stored times of pending jobs back, which has the same effect for those jobs:
+
+```java
+bikesched.registerJobHandler("onboarding", job -> {
+    job.sleep("wait-a-day", Duration.ofDays(1));
+    job.step("send-reminder", () -> mailer.sendReminder(job.payload()));
+});
+UUID jobId = bikesched.newJob("onboarding").payload(user).schedule();
+BikeschedTest.awaitJob(bikesched, jobId).untilState(JobState.WAITING);
+
+BikeschedTest.fastForward(dataSource, jobId); // the day is over
+
+BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
+```
+
+| Method | Effect | Returns |
+|---|---|---|
+| `fastForward(DataSource, UUID jobId)` | skips the job ahead to its next due time, so it runs now: a sleep ends, a poll checks again, a retry or a delayed job starts, a recurring occurrence runs, and a wait whose timeout is that due time times out (a poll checks once more first) | `false` if the job is running, has ended, does not exist, or waits without a timeout |
+| `advanceTime(DataSource, Duration, String type, String... moreTypes)` | advances the pending jobs of the given types by the duration: whatever was due within it runs now, the rest keeps waiting, closer by the duration | the number of jobs moved |
+| `advanceTime(DataSource, Duration, JobType<?> type, JobType<?>... moreTypes)` | the same for typed job types | the number of jobs moved |
+
+Both move a job's `scheduled_at` (and the planned run of a fixed-rate occurrence) and the wake-up
+times and poll deadlines of its waiting steps back by the same amount, so a job's later deadlines
+keep their distance. They then notify the listening nodes, so the jobs now due are claimed at once.
+Only pending jobs are moved: running and ended jobs, events (and their retention) and the clean-up
+of old rows are not affected, and time never moves backward. A recurring job's next occurrence is
+computed from the real time again once a moved occurrence ran. Scoping by job id or job type keeps
+tests running in parallel on one database apart.
+
 ## Non-goals
 
 `bikesched-test` does not own a database (no Testcontainers dependency), does not manage the

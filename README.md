@@ -61,7 +61,7 @@ similar tools.
 | [`bikesched-micrometer`](bikesched-micrometer) | Micrometer meters for claims, attempts and published events, see [Metrics](docs/operations/metrics.md) |
 | [`bikesched-spring-boot-starter`](bikesched-spring-boot-starter) | Spring Boot auto-configuration: the node from the context, `@JobHandler` beans found automatically, see [Spring Boot](docs/integrations/spring.md) |
 | [`bikesched-admin`](bikesched-admin) | a small admin page and JSON API: jobs, steps, events and nodes, with retry and cancel, served by the JDK's HTTP server or any framework, see [Admin UI](docs/operations/admin.md) |
-| [`bikesched-test`](bikesched-test) | testing support: a test node factory and `JobAwait` wait helpers (Awaitility internally), see [Testing](docs/integrations/testing.md) |
+| [`bikesched-test`](bikesched-test) | testing support: a test node factory, `JobAwait` wait helpers (Awaitility internally) and time skipping, see [Testing](docs/integrations/testing.md) |
 
 ## Features
 
