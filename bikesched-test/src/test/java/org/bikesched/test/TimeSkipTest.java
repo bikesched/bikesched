@@ -8,6 +8,7 @@ import static org.awaitility.Awaitility.await;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.Bikesched;
 import org.bikesched.job.JobState;
@@ -86,6 +87,35 @@ class TimeSkipTest extends AbstractTestModuleTest {
 
       BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
       assertThat(timedOut).hasValue(1);
+    }
+  }
+
+  @Test
+  void fastForwardRetriesWhileAWaitingStepIsLocked() throws Exception {
+    try (Bikesched bikesched = buildNode("time-skip")) {
+      String type = uniqueType("sleeps");
+      bikesched.registerJobHandler(type, job -> job.sleep("nap", DAY));
+      UUID jobId = bikesched.newJob(type).schedule();
+      BikeschedTest.awaitJob(bikesched, jobId).untilState(JobState.WAITING);
+
+      CompletableFuture<Boolean> fastForward;
+      try (var connection = DATA_SOURCE.getConnection()) {
+        connection.setAutoCommit(false);
+        try (var lock =
+            connection.prepareStatement(
+                "select 1 from bikesched_steps where job_id = ? for update")) {
+          lock.setObject(1, jobId);
+          lock.executeQuery().close();
+        }
+        fastForward =
+            CompletableFuture.supplyAsync(() -> BikeschedTest.fastForward(DATA_SOURCE, jobId));
+        Thread.sleep(300);
+        assertThat(fastForward).isNotDone();
+        connection.commit();
+      }
+
+      assertThat(fastForward.get()).isTrue();
+      BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
     }
   }
 

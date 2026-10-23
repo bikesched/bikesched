@@ -140,8 +140,10 @@ public static int advanceTime(DataSource dataSource, Duration duration, JobType<
 - One transaction per call (package-private `TimeSkip`) finds the pending jobs (`SCHEDULED`,
   `WAITING`, `COMPENSATING`, `FAILING`: no node holds them), locks their `WAITING` steps, subtracts
   Δ from `scheduled_at` and `planned_run_at` of the jobs still pending, then from `wake_at` and
-  `deadline_at` of their waiting steps. Steps are locked before their jobs, the order in which
-  publishing an event or ending a child job resumes a waiting job, so the two cannot deadlock. Δ is
+  `deadline_at` of their waiting steps. All locks are taken with `nowait`, and a transaction that
+  finds a row locked is rolled back and retried after 20 ms (up to 100 times): publishing an event
+  locks the waiting steps of several jobs in no particular order, then their jobs, so any fixed
+  lock order could still deadlock with it, while a transaction that never waits cannot. Δ is
   the given duration for `advanceTime`, and `scheduled_at - now()` (at least zero) for
   `fastForward`, so the job lands exactly on its next due time and later deadlines (a poll's) keep
   their distance. A job waiting without a deadline (`scheduled_at = 'infinity'`) is not
@@ -199,7 +201,7 @@ modules):
 4. `timeout(...)` overrides the default.
 5. Time skipping (`TimeSkipTest`): `fastForward` ends a sleep, runs a poll's next check before its
    deadline, times out an event wait, runs a delayed job, and returns `false` for an ended job, an
-   unknown id and a wait without a deadline; `advanceTime` runs only what is due within the
+   unknown id and a wait without a deadline, and retries while a waiting step is locked; `advanceTime` runs only what is due within the
    duration and moves the rest closer, leaves other types alone (typed overload), runs a recurring
    job's next occurrence, and rejects a negative duration.
 
