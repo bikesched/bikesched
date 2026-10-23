@@ -120,7 +120,7 @@ publishing.publications.create<MavenPublication>("shaded") {
     pom {
         name = "bikesched-admin-shaded"
         description = "Admin UI and JSON API for bikesched with relocated nanojson"
-        url = "https://github.com/sbuettner/bikesched"
+        url = "https://github.com/bikesched/bikesched"
         licenses {
             license {
                 name = "Apache-2.0"
@@ -129,8 +129,8 @@ publishing.publications.create<MavenPublication>("shaded") {
             }
         }
         scm {
-            url = "https://github.com/sbuettner/bikesched"
-            connection = "scm:git:https://github.com/sbuettner/bikesched.git"
+            url = "https://github.com/bikesched/bikesched"
+            connection = "scm:git:https://github.com/bikesched/bikesched.git"
         }
     }
 }

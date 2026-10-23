@@ -73,7 +73,7 @@ jreleaser {
     }
     release {
         github {
-            repoOwner = "sbuettner"
+            repoOwner = "bikesched"
             name = "bikesched"
             tagName = "v{{projectVersion}}"
             releaseName = "{{tagName}}"

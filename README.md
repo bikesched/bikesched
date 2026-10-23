@@ -213,7 +213,7 @@ GitHub token with the `read:packages` scope, even for public packages. How relea
 ```kotlin
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/sbuettner/bikesched")
+        url = uri("https://maven.pkg.github.com/bikesched/bikesched")
         credentials {
             username = providers.gradleProperty("gpr.user").get()
             password = providers.gradleProperty("gpr.token").get()   // token with read:packages

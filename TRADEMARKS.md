@@ -36,5 +36,5 @@ bikesched.
 
 ## Questions
 
-Unsure whether your use is fine? Open an issue at <https://github.com/sbuettner/bikesched/issues>
+Unsure whether your use is fine? Open an issue at <https://github.com/bikesched/bikesched/issues>
 or ask the maintainer.
