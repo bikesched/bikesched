@@ -2,6 +2,7 @@
 package org.bikesched.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -54,10 +55,15 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
               node.registerJobHandler(type, ignored -> {});
               UUID jobId = node.newJob(type).schedule();
               BikeschedTest.awaitJob(node, jobId).untilEnded();
-              assertThat(first.claimed.get()).isOne();
-              assertThat(first.ended.get()).isOne();
-              assertThat(second.claimed.get()).isOne();
-              assertThat(second.ended.get()).isOne();
+              // Listeners hear of the attempt's end after its outcome is stored.
+              await()
+                  .untilAsserted(
+                      () -> {
+                        assertThat(first.claimed.get()).isOne();
+                        assertThat(first.ended.get()).isOne();
+                        assertThat(second.claimed.get()).isOne();
+                        assertThat(second.ended.get()).isOne();
+                      });
             });
   }
 
@@ -94,15 +100,15 @@ class ListenersAndMetricsTest extends AbstractSpringTest {
               node.registerJobHandler(type, ignored -> {});
               UUID jobId = node.newJob(type).schedule();
               BikeschedTest.awaitJob(node, jobId).untilEnded();
-              assertThat(registry.find("bikesched.job.attempts").tags("node", nodeName).timer())
-                  .isNotNull();
-              assertThat(
-                      registry
-                          .find("bikesched.job.attempts")
-                          .tags("node", nodeName)
-                          .timer()
-                          .count())
-                  .isOne();
+              // The listener records the attempt after its outcome is stored.
+              await()
+                  .untilAsserted(
+                      () -> {
+                        var attempts =
+                            registry.find("bikesched.job.attempts").tags("node", nodeName).timer();
+                        assertThat(attempts).isNotNull();
+                        assertThat(attempts.count()).isOne();
+                      });
               String eventName = unique("metrics-event");
               node.newEvent(eventName, "k").publish();
               assertThat(
