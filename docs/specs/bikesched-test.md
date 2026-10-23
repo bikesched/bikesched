@@ -137,13 +137,15 @@ public static int advanceTime(DataSource dataSource, Duration duration, String t
 public static int advanceTime(DataSource dataSource, Duration duration, JobType<?> type, JobType<?>... moreTypes) { ... }
 ```
 
-- One statement per call (package-private `TimeSkip`) selects the pending jobs (`SCHEDULED`,
-  `WAITING`, `COMPENSATING`, `FAILING`: no node holds them) `for update`, subtracts Δ from their
-  `scheduled_at` and `planned_run_at` and from `wake_at` and `deadline_at` of their `WAITING` steps,
-  and returns their types. Δ is the given duration for `advanceTime`, and `scheduled_at - now()`
-  (at least zero) for `fastForward`, so the job lands exactly on its next due time and later
-  deadlines (a poll's) keep their distance. A job waiting without a deadline (`scheduled_at =
-  'infinity'`) is not fast-forwarded.
+- One transaction per call (package-private `TimeSkip`) finds the pending jobs (`SCHEDULED`,
+  `WAITING`, `COMPENSATING`, `FAILING`: no node holds them), locks their `WAITING` steps, subtracts
+  Δ from `scheduled_at` and `planned_run_at` of the jobs still pending, then from `wake_at` and
+  `deadline_at` of their waiting steps. Steps are locked before their jobs, the order in which
+  publishing an event or ending a child job resumes a waiting job, so the two cannot deadlock. Δ is
+  the given duration for `advanceTime`, and `scheduled_at - now()` (at least zero) for
+  `fastForward`, so the job lands exactly on its next due time and later deadlines (a poll's) keep
+  their distance. A job waiting without a deadline (`scheduled_at = 'infinity'`) is not
+  fast-forwarded.
 - Then `pg_notify('bikesched_jobs', type)` per moved type, so listening nodes poll at once instead
   of on their next poll or wake-up timer. The channel name is repeated in `TimeSkip`, as this
   module only uses the exported API.
