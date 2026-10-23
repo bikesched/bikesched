@@ -18,7 +18,7 @@ publishing {
             pom {
                 name = project.name
                 description = provider { project.description }
-                url = "https://github.com/sbuettner/bikesched"
+                url = "https://github.com/bikesched/bikesched"
                 licenses {
                     license {
                         name = "Apache-2.0"
@@ -26,9 +26,16 @@ publishing {
                         distribution = "repo"
                     }
                 }
+                developers {
+                    developer {
+                        id = "sbuettner"
+                        name = "Simon Büttner"
+                        email = "mail@bikesched.org"
+                    }
+                }
                 scm {
-                    url = "https://github.com/sbuettner/bikesched"
-                    connection = "scm:git:https://github.com/sbuettner/bikesched.git"
+                    url = "https://github.com/bikesched/bikesched"
+                    connection = "scm:git:https://github.com/bikesched/bikesched.git"
                 }
             }
         }
@@ -36,7 +43,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/sbuettner/bikesched")
+            url = uri("https://maven.pkg.github.com/bikesched/bikesched")
             credentials(PasswordCredentials::class)
         }
     }

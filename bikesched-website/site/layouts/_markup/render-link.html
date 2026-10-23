@@ -19,7 +19,7 @@
     {{- else -}}
       {{- $external = true -}}
       {{- $repoPath := path.Clean (path.Join $.Page.File.Dir .) | strings.TrimPrefix "/" -}}
-      {{- $href = printf "https://github.com/sbuettner/bikesched/tree/main/%s" $repoPath -}}
+      {{- $href = printf "https://github.com/bikesched/bikesched/tree/main/%s" $repoPath -}}
     {{- end -}}
     {{- with $u.Fragment }}{{ $href = printf "%s#%s" $href . }}{{ end -}}
   {{- else -}}

@@ -16,7 +16,7 @@ theme = "hextra"
 
 [[menu.main]]
   name = "GitHub"
-  url = "https://github.com/sbuettner/bikesched"
+  url = "https://github.com/bikesched/bikesched"
   weight = 20
   [menu.main.params]
     icon = "github"
