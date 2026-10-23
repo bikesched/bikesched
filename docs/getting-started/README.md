@@ -24,9 +24,10 @@ All modules share the group `org.bikesched` and one version. `bikesched-core` is
 brings the PostgreSQL JDBC driver and `slf4j-api` along.
 
 > [!NOTE]
-> bikesched has no release yet. Snapshots of `main` (`0.1.0-SNAPSHOT`) are published to GitHub
-> Packages, which needs a GitHub token with the `read:packages` scope even for public packages.
-> The repository blocks below are only needed for these snapshots.
+> These docs are for version `0.1.0-SNAPSHOT`; the
+> [GitHub Releases](https://github.com/bikesched/bikesched/releases) list the releases.
+> Releases and snapshots are published to GitHub Packages, which needs a GitHub token with the
+> `read:packages` scope even for public packages, hence the repository blocks below.
 
 Gradle (Kotlin DSL), with the token in the Gradle properties `gpr.user` and `gpr.token` (e.g. in
 `~/.gradle/gradle.properties`):
@@ -35,7 +36,7 @@ Gradle (Kotlin DSL), with the token in the Gradle properties `gpr.user` and `gpr
 repositories {
     mavenCentral()
     maven {
-        url = uri("https://maven.pkg.github.com/sbuettner/bikesched")
+        url = uri("https://maven.pkg.github.com/bikesched/bikesched")
         credentials {
             username = providers.gradleProperty("gpr.user").get()
             password = providers.gradleProperty("gpr.token").get()   // token with read:packages
@@ -54,7 +55,7 @@ Maven, with the token in a `<server>` entry with the id `github` in `~/.m2/setti
 <repositories>
     <repository>
         <id>github</id>
-        <url>https://maven.pkg.github.com/sbuettner/bikesched</url>
+        <url>https://maven.pkg.github.com/bikesched/bikesched</url>
         <snapshots><enabled>true</enabled></snapshots>
     </repository>
 </repositories>

@@ -14,12 +14,16 @@ dokka = "2.2.0"
 hugo-plugin = "0.13.0"
 shadow = "9.6.1"
 errorprone-plugin = "5.1.1"
+jreleaser = "1.26.0"
 
 # Static analysis: Error Prone with NullAway (bikesched-core)
 errorprone = "2.50.0"
 nullaway = "0.14.2"
 # Annotations of the PostgreSQL driver, read by NullAway at compile time only
 checker-qual = "4.3.1"
+
+# Release tooling (build-logic): next release and snapshot versions
+jsemver = "0.10.2"
 
 # Code formatting
 google-java-format = "1.36.1"
@@ -60,6 +64,7 @@ moneta = "1.4.5"
 bucket4j = "8.21.0"
 
 [libraries]
+jsemver = { module = "com.github.zafarkhaja:java-semver", version.ref = "jsemver" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
@@ -122,3 +127,4 @@ dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
 hugo = { id = "io.github.fstaudt.hugo", version.ref = "hugo-plugin" }
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+jreleaser = { id = "org.jreleaser", version.ref = "jreleaser" }

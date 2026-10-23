@@ -35,6 +35,9 @@ tasks.withType<JavaCompile>().configureEach {
 // Every source file starts with the SPDX license header; Spotless skips package-info.java and
 // module-info.java, which carry it by hand.
 spotless {
+    // Fixed line endings instead of reading .gitattributes, which needs JGit (excluded from the
+    // Spotless plugin in build-logic/build.gradle.kts, it clashes with JReleaser's).
+    lineEndings = com.diffplug.spotless.LineEnding.UNIX
     java {
         googleJavaFormat(libs.findVersion("google-java-format").get().requiredVersion)
         formatAnnotations()
