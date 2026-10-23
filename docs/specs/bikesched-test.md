@@ -122,7 +122,50 @@ public final class JobAwait {
 - `untilState`/`untilSucceeded`/`untilEnded` return the `JobInfo` read when the condition passed, so
   a caller that also wants the result does not read the job a second time.
 
-### 4.3 Rejected alternatives
+### 4.3 Skipping time
+
+Added on 2026-10-23. Postgres decides with `now()` when a job or a waiting step is due (claims,
+sleeps, polls, deadlines, retries), so a fake `Clock` on the node cannot skip time. Moving the
+stored times of a job back by Δ has the same effect for that job as moving `now()` forward by Δ:
+
+```java
+/** Skips a pending job ahead to its next due time; false if it is running, ended or waits without one. */
+public static boolean fastForward(DataSource dataSource, UUID jobId) { ... }
+
+/** Advances the pending jobs of the types by duration; returns the number of jobs moved. */
+public static int advanceTime(DataSource dataSource, Duration duration, String type, String... moreTypes) { ... }
+public static int advanceTime(DataSource dataSource, Duration duration, JobType<?> type, JobType<?>... moreTypes) { ... }
+```
+
+- One transaction per call (package-private `TimeSkip`) finds the pending jobs (`SCHEDULED`,
+  `WAITING`, `COMPENSATING`, `FAILING`: no node holds them), locks their `WAITING` steps, subtracts
+  Δ from `scheduled_at` and `planned_run_at` of the jobs still pending, then from `wake_at` and
+  `deadline_at` of their waiting steps. All locks are taken with `nowait`, and a transaction that
+  finds a row locked is rolled back and retried after 20 ms (up to 100 times): publishing an event
+  locks the waiting steps of several jobs in no particular order, then their jobs, so any fixed
+  lock order could still deadlock with it, while a transaction that never waits cannot. Δ is
+  the given duration for `advanceTime`, and `scheduled_at - now()` (at least zero) for
+  `fastForward`, so the job lands exactly on its next due time and later deadlines (a poll's) keep
+  their distance. A job waiting without a deadline (`scheduled_at = 'infinity'`) is not
+  fast-forwarded.
+- Then `pg_notify('bikesched_jobs', type)` per moved type, so listening nodes poll at once instead
+  of on their next poll or wake-up timer. The channel name is repeated in `TimeSkip`, as this
+  module only uses the exported API.
+- Scoped by job id or job types (at least one, enforced by the signature), so tests running in
+  parallel on one database stay apart. Forward only: a negative duration throws
+  `IllegalArgumentException`.
+- The `DataSource` is a parameter, like for `testNode`: `Bikesched` does not expose its own.
+- Not moved: running and ended jobs, events and their `expires_at`, history and clean-up
+  timestamps. A recurring job's next occurrence is computed from the real clock after a moved
+  occurrence ran.
+
+Rejected: a `Clock` option on the node (every statement would bind the node's time instead of
+`now()`, and leases would depend on node clocks), and a database-side time offset (a `now()`
+replacement reading an offset: global for every test sharing the database, and a production schema
+change for a test concern). Simulating a dead node by expiring its heartbeat is not offered: a node
+that is still running refreshes its heartbeat and races the other nodes' clean-up.
+
+### 4.4 Rejected alternatives
 
 - **A generic `await(Supplier<T>, Predicate<T>)` escape hatch.** Collapses to Awaitility's own
   `until(Callable, Matcher)` with extra indirection; a caller who needs something `JobAwait` does not
@@ -156,6 +199,11 @@ modules):
 3. `untilSucceededSteps(...)`: a job with steps that succeed one by one is waited on until the given
    names match; mismatched or missing steps keep the wait going until the timeout.
 4. `timeout(...)` overrides the default.
+5. Time skipping (`TimeSkipTest`): `fastForward` ends a sleep, runs a poll's next check before its
+   deadline, times out an event wait, runs a delayed job, and returns `false` for an ended job, an
+   unknown id and a wait without a deadline, and retries while a waiting step is locked; `advanceTime` runs only what is due within the
+   duration and moves the rest closer, leaves other types alone (typed overload), runs a recurring
+   job's next occurrence, and rejects a negative duration.
 
 ## 7. Implementation steps
 
