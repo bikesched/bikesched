@@ -64,7 +64,7 @@ and without any coordinator besides PostgreSQL.
   - [Kotlin](integrations/kotlin.md): the `bikesched-kotlin` extensions
   - [Annotations](integrations/annotations.md): job handlers as `@JobHandler` methods
     (`bikesched-annotations`)
-  - [Testing](integrations/testing.md): test nodes and job wait helpers (`bikesched-test`)
+  - [Testing](integrations/testing.md): test nodes, job wait helpers and time skipping (`bikesched-test`)
 - [Operations](operations/README.md): running bikesched in production
   - [Admin UI](operations/admin.md): a page for jobs, steps, events and nodes with retry and
     cancel (`bikesched-admin`), and the lookups behind it
