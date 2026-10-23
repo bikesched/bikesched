@@ -14,6 +14,10 @@
 #
 # The `release` job runs in the `release` environment: configure required reviewers there to
 # approve each release after looking at the changelog the `prepare` job shows.
+#
+# A failed release is finished with "Re-run failed jobs": `prepare` keeps its outputs, and the
+# `release` job skips what an earlier attempt completed (published and tagged, GitHub Release,
+# pushed branches).
 
 name: Release
 
@@ -103,7 +107,7 @@ jobs:
           VERSION: ${{ steps.versions.outputs.version }}
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
-            echo "::error::Tag v$VERSION exists already"
+            echo "::error::Tag v$VERSION exists already (finish a failed release with \"Re-run failed jobs\")"
             exit 1
           fi
           case "$BRANCH" in
@@ -174,14 +178,38 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      # On a re-run: what an earlier attempt of this job completed. The tag is pushed only after
+      # publishing succeeded, and each branch gets the release's changelog section in the same
+      # push as its version bump.
+      - name: Find completed steps
+        id: done
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tagged=$(git ls-remote --tags origin "refs/tags/v$VERSION^{}" | cut -f1)
+          if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "::error::Tag v$VERSION points to $tagged, not to $GITHUB_SHA"
+            exit 1
+          fi
+          released() { git show "origin/$1:CHANGELOG.md" 2>/dev/null | grep -qF "## $VERSION ("; }
+          {
+            echo "tagged=$([ -n "$tagged" ] && echo true || echo false)"
+            echo "github-release=$(gh release view "v$VERSION" > /dev/null 2>&1 && echo true || echo false)"
+            echo "branch=$(released "${RELEASE_BRANCH:-$GITHUB_REF_NAME}" && echo true || echo false)"
+            echo "main=$(released main && echo true || echo false)"
+          } | tee -a "$GITHUB_OUTPUT"
+
       - name: Build
+        if: steps.done.outputs.tagged != 'true'
         run: >-
           ./gradlew build -PreleaseVersion="$VERSION" -PtestJavaVersion=21
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64
 
       # GitHub Packages rejects a version that exists already, so a failed release cannot replace
-      # published artifacts.
+      # published artifacts. If publishing fails halfway, delete the versions it uploaded (repository
+      # Packages) before re-running.
       - name: Publish to GitHub Packages
+        if: steps.done.outputs.tagged != 'true'
         run: ./gradlew publishAllPublicationsToGitHubPackagesRepository -PreleaseVersion="$VERSION"
         env:
           ORG_GRADLE_PROJECT_GitHubPackagesUsername: ${{ github.actor }}
@@ -193,11 +221,13 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
       - name: Tag
+        if: steps.done.outputs.tagged != 'true'
         run: |
           git tag -a "v$VERSION" -m "bikesched $VERSION"
           git push origin "v$VERSION"
 
       - name: Create GitHub Release
+        if: steps.done.outputs.github-release != 'true'
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
@@ -207,7 +237,7 @@ jobs:
       # A major or minor release starts its maintenance branch at the tag: the docs show the
       # release, the catalog the first patch snapshot.
       - name: Create release branch
-        if: env.RELEASE_BRANCH != ''
+        if: env.RELEASE_BRANCH != '' && steps.done.outputs.branch != 'true'
         run: |
           git switch -c "$RELEASE_BRANCH"
           ./gradlew -q setVersion -PnewVersion="$RELEASE_BRANCH_SNAPSHOT" \
@@ -218,7 +248,7 @@ jobs:
 
       # A patch moves its release branch on to the next patch snapshot; the docs show the release.
       - name: Update release branch
-        if: env.RELEASE_BRANCH == ''
+        if: env.RELEASE_BRANCH == '' && steps.done.outputs.branch != 'true'
         run: |
           git switch -C "$GITHUB_REF_NAME"
           ./gradlew -q setVersion -PnewVersion="$NEXT_SNAPSHOT" \
@@ -231,6 +261,7 @@ jobs:
       # next minor snapshot (its docs show the snapshot, the website renders them under /next/).
       # Retried on top of commits pushed to main meanwhile.
       - name: Update main
+        if: steps.done.outputs.main != 'true'
         run: |
           for attempt in 1 2 3; do
             git fetch -q origin main

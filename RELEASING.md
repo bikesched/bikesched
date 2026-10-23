@@ -47,6 +47,16 @@ would produce:
 ./gradlew -q releaseVersions -PreleaseType=minor
 ```
 
+## When a release fails
+
+Use "Re-run failed jobs" on the failed run (a new run would stop at the existing tag). The
+`release` job keeps the versions `prepare` computed, builds the same commit and skips what the
+failed attempt completed: publishing and tagging (done once the tag exists), the GitHub Release,
+and each branch update (done once that branch's `CHANGELOG.md` has the release).
+
+If publishing failed halfway, delete the package versions it uploaded (repository, Packages)
+before re-running: GitHub Packages rejects a version that exists already.
+
 ## Changelog
 
 The changelog lists the [Conventional Commits](https://www.conventionalcommits.org) between the
