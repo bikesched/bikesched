@@ -15,3 +15,9 @@ allprojects {
     group = "org.bikesched"
     version = bikeschedVersion
 }
+
+// The release tooling's own tests (version calculation, docs version replacement) run with the
+// build.
+tasks.named("check") {
+    dependsOn(gradle.includedBuild("build-logic").task(":check"))
+}

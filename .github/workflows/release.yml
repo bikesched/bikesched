@@ -253,14 +253,21 @@ jobs:
           git push origin "$RELEASE_BRANCH"
 
       # A patch moves its release branch on to the next patch snapshot; the docs show the release.
+      # Retried on top of fixes pushed to the branch meanwhile.
       - name: Update release branch
         if: env.RELEASE_BRANCH == '' && steps.done.outputs.branch != 'true'
         run: |
-          git switch -C "$GITHUB_REF_NAME"
-          ./gradlew -q setVersion -PnewVersion="$NEXT_SNAPSHOT" \
-            -PdocsFrom="${PREVIOUS_TAG#v}" -PdocsTo="$VERSION"
-          git commit -qam "chore(release): continue $GITHUB_REF_NAME with $NEXT_SNAPSHOT"
-          git push origin "$GITHUB_REF_NAME"
+          for attempt in 1 2 3; do
+            git fetch -q origin "$GITHUB_REF_NAME"
+            git switch -qC "$GITHUB_REF_NAME" "origin/$GITHUB_REF_NAME"
+            ./gradlew -q setVersion -PnewVersion="$NEXT_SNAPSHOT" \
+              -PdocsFrom="${PREVIOUS_TAG#v}" -PdocsTo="$VERSION"
+            git commit -qam "chore(release): continue $GITHUB_REF_NAME with $NEXT_SNAPSHOT"
+            if git push origin "$GITHUB_REF_NAME"; then exit 0; fi
+            echo "$GITHUB_REF_NAME moved, retrying ($attempt)"
+          done
+          echo "::error::Could not push the version bump to $GITHUB_REF_NAME"
+          exit 1
 
       # After a major or minor, main moves on to the next minor snapshot (its docs show the
       # snapshot, the website renders them under /next/). Retried on top of commits pushed to main

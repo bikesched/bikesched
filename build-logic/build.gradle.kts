@@ -17,6 +17,15 @@ dependencies {
 
     // Release versions (bikesched.release).
     implementation(libs.jsemver)
+
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 // Maps a catalog plugin alias to its plugin marker artifact so it can be used as a dependency.
