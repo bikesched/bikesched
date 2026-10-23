@@ -25,7 +25,7 @@ brings the PostgreSQL JDBC driver and `slf4j-api` along.
 
 > [!NOTE]
 > These docs are for version `0.1.0-SNAPSHOT`; the
-> [changelog](https://github.com/bikesched/bikesched/blob/main/CHANGELOG.md) lists the releases.
+> [GitHub Releases](https://github.com/bikesched/bikesched/releases) list the releases.
 > Releases and snapshots are published to GitHub Packages, which needs a GitHub token with the
 > `read:packages` scope even for public packages, hence the repository blocks below.
 

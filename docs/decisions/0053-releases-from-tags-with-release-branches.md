@@ -40,8 +40,8 @@ or commit and tag themselves.
 - JReleaser (Gradle plugin, configured in `bikesched.release`) creates the GitHub Release with a
   changelog generated from the Conventional Commits since the previous release of the line,
   breaking changes first; build, CI, test, chore, refactoring and style commits are left out. The
-  same section goes into `CHANGELOG.md` on `main` and the release branch. A pull request title
-  check keeps squash-merged commits conventional.
+  GitHub Releases are the only changelog: no `CHANGELOG.md` in the repository, so a patch needs no
+  commit on `main`. A pull request title check keeps squash-merged commits conventional.
 - After a release the workflow commits the version bumps directly: dependency snippets in
   `README.md` and `docs/` show the version of their branch (the release on `release/X.Y.x`, the
   snapshot on `main`), so the website can show the latest release and the snapshot under `/next/`.

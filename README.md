@@ -202,7 +202,7 @@ All dependency and tool versions are managed in `gradle/libs.versions.toml`.
 
 ## Releases and snapshots
 
-Releases (see the [changelog](CHANGELOG.md)) and the snapshots of `main` and the release branches
+Releases (see the [GitHub Releases](https://github.com/bikesched/bikesched/releases)) and the snapshots of `main` and the release branches
 are published to GitHub Packages: `org.bikesched:bikesched-core`, `bikesched-jackson`,
 `bikesched-kotlin`, `bikesched-annotations`, `bikesched-cron`, `bikesched-micrometer`,
 `bikesched-spring-boot-starter`, `bikesched-admin`, `bikesched-admin-shaded` and `bikesched-test`,

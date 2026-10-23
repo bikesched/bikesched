@@ -8,9 +8,10 @@
 # The version is never typed: the catalog holds the branch's next version as a snapshot, and
 # `./gradlew releaseVersions` derives the release from it. The release is built with
 # -PreleaseVersion (no release commit), published to GitHub Packages, tagged, and JReleaser
-# (Gradle plugin, configured in bikesched.release) creates the GitHub Release with the changelog. The version bumps afterwards are
-# pushed by this workflow directly to the branches (GITHUB_TOKEN pushes trigger no workflows, so
-# it starts the build of the new snapshots itself).
+# (Gradle plugin, configured in bikesched.release) creates the GitHub Release with the changelog,
+# the only place it is kept. The version bumps afterwards are pushed by this workflow directly to
+# the branches (GITHUB_TOKEN pushes trigger no workflows, so it starts the build of the new
+# snapshots itself).
 #
 # The `release` job runs in the `release` environment: configure required reviewers there to
 # approve each release after looking at the changelog the `prepare` job shows.
@@ -179,8 +180,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       # On a re-run: what an earlier attempt of this job completed. The tag is pushed only after
-      # publishing succeeded, and each branch gets the release's changelog section in the same
-      # push as its version bump.
+      # publishing succeeded; a branch is done once its catalog has the snapshot it moves on to.
       - name: Find completed steps
         id: done
         env:
@@ -191,12 +191,19 @@ jobs:
             echo "::error::Tag v$VERSION points to $tagged, not to $GITHUB_SHA"
             exit 1
           fi
-          released() { git show "origin/$1:CHANGELOG.md" 2>/dev/null | grep -qF "## $VERSION ("; }
+          bumped() {
+            git show "origin/$1:gradle/libs.versions.toml" 2>/dev/null | grep -qx "bikesched = \"$2\""
+          }
+          yes() { "$@" > /dev/null 2>&1 && echo true || echo false; }
           {
-            echo "tagged=$([ -n "$tagged" ] && echo true || echo false)"
-            echo "github-release=$(gh release view "v$VERSION" > /dev/null 2>&1 && echo true || echo false)"
-            echo "branch=$(released "${RELEASE_BRANCH:-$GITHUB_REF_NAME}" && echo true || echo false)"
-            echo "main=$(released main && echo true || echo false)"
+            echo "tagged=$(yes test -n "$tagged")"
+            echo "github-release=$(yes gh release view "v$VERSION")"
+            if [ -n "$RELEASE_BRANCH" ]; then
+              echo "branch=$(yes bumped "$RELEASE_BRANCH" "$RELEASE_BRANCH_SNAPSHOT")"
+            else
+              echo "branch=$(yes bumped "$GITHUB_REF_NAME" "$NEXT_SNAPSHOT")"
+            fi
+            echo "main=$(yes bumped main "$NEXT_SNAPSHOT")"
           } | tee -a "$GITHUB_OUTPUT"
 
       - name: Build
@@ -242,7 +249,6 @@ jobs:
           git switch -c "$RELEASE_BRANCH"
           ./gradlew -q setVersion -PnewVersion="$RELEASE_BRANCH_SNAPSHOT" \
             -PdocsFrom="$CURRENT" -PdocsTo="$VERSION"
-          ./gradlew -q prependChangelog -PreleaseVersion="$VERSION"
           git commit -qam "chore(release): start $RELEASE_BRANCH with $RELEASE_BRANCH_SNAPSHOT"
           git push origin "$RELEASE_BRANCH"
 
@@ -253,28 +259,21 @@ jobs:
           git switch -C "$GITHUB_REF_NAME"
           ./gradlew -q setVersion -PnewVersion="$NEXT_SNAPSHOT" \
             -PdocsFrom="${PREVIOUS_TAG#v}" -PdocsTo="$VERSION"
-          ./gradlew -q prependChangelog -PreleaseVersion="$VERSION"
           git commit -qam "chore(release): continue $GITHUB_REF_NAME with $NEXT_SNAPSHOT"
           git push origin "$GITHUB_REF_NAME"
 
-      # main gets the changelog of every release; after a major or minor it also moves on to the
-      # next minor snapshot (its docs show the snapshot, the website renders them under /next/).
-      # Retried on top of commits pushed to main meanwhile.
+      # After a major or minor, main moves on to the next minor snapshot (its docs show the
+      # snapshot, the website renders them under /next/). Retried on top of commits pushed to main
+      # meanwhile.
       - name: Update main
-        if: steps.done.outputs.main != 'true'
+        if: env.RELEASE_BRANCH != '' && steps.done.outputs.main != 'true'
         run: |
           for attempt in 1 2 3; do
             git fetch -q origin main
             git switch -qC main origin/main
-            if [ -n "$RELEASE_BRANCH" ]; then
-              ./gradlew -q setVersion -PnewVersion="$NEXT_SNAPSHOT" \
-                -PdocsFrom="$CURRENT" -PdocsTo="$NEXT_SNAPSHOT"
-                  message="chore(release): $VERSION released, continue with $NEXT_SNAPSHOT"
-            else
-              message="chore(release): add the changelog of $VERSION"
-            fi
-            ./gradlew -q prependChangelog -PreleaseVersion="$VERSION"
-            git commit -qam "$message"
+            ./gradlew -q setVersion -PnewVersion="$NEXT_SNAPSHOT" \
+              -PdocsFrom="$CURRENT" -PdocsTo="$NEXT_SNAPSHOT"
+            git commit -qam "chore(release): $VERSION released, continue with $NEXT_SNAPSHOT"
             if git push origin main; then exit 0; fi
             echo "main moved, retrying ($attempt)"
           done
@@ -286,7 +285,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run build.yml --ref main
+          if [ -n "$RELEASE_BRANCH" ]; then gh workflow run build.yml --ref main; fi
           gh workflow run build.yml --ref "${RELEASE_BRANCH:-$GITHUB_REF_NAME}"
           gh workflow run website.yml --ref main
 

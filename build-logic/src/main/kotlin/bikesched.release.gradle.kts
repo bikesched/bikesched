@@ -6,10 +6,9 @@
 // - `jreleaserChangelog` / `jreleaserRelease` (with `-PreleaseVersion=…`, `-PpreviousTag=…`,
 //   `-PreleaseBranch=…`) generate the changelog and create the GitHub Release for the tag the
 //   workflow pushed
-// - `setVersion -PnewVersion=… [-PdocsFrom=… -PdocsTo=…]` and `prependChangelog` write the version
-//   bumps and the changelog back after the release
+// - `setVersion -PnewVersion=… [-PdocsFrom=… -PdocsTo=…]` writes the version bumps back after the
+//   release
 
-import org.bikesched.gradle.PrependChangelogTask
 import org.bikesched.gradle.ReleaseVersionsTask
 import org.bikesched.gradle.SetVersionTask
 import org.jreleaser.model.Active
@@ -45,14 +44,6 @@ tasks.register<SetVersionTask>("setVersion") {
             exclude("decisions/**", "specs/**")
         },
     )
-}
-
-tasks.register<PrependChangelogTask>("prependChangelog") {
-    group = "release"
-    description = "Adds the changelog JReleaser generated for this release to CHANGELOG.md."
-    version = project.version.toString()
-    section = layout.buildDirectory.file("jreleaser/release/CHANGELOG.md")
-    changelog = layout.projectDirectory.file("CHANGELOG.md")
 }
 
 // The changelog lists the Conventional Commits (AGENTS.md, section Commits) since the previous
@@ -91,7 +82,6 @@ jreleaser {
                 skipMergeCommits = true
                 links = true
                 format = "- {{commitShortHash}} {{commitTitle}}"
-                // Below the `## X.Y.Z` heading in CHANGELOG.md.
                 categoryTitleFormat = "### {{categoryTitle}}"
                 content =
                     "{{changelogChanges}}{{#previousTagName}}**Full changelog**: " +

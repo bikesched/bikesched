@@ -43,8 +43,9 @@ what the library does; this file covers how to change it.
   (`./gradlew releaseVersions`, convention plugin `bikesched.release`), changelog and GitHub Release
   by JReleaser's Gradle plugin (configured in `bikesched.release`; JGit is excluded from Spotless,
   which then uses fixed LF line endings, because JReleaser needs JGit 5).
-  `.github/workflows/pr-title.yml` checks pull request titles are Conventional Commits. Never edit
-  `CHANGELOG.md` sections or the version in the catalog by hand.
+  The GitHub Releases are the changelog (no `CHANGELOG.md`). `.github/workflows/pr-title.yml`
+  checks pull request titles are Conventional Commits. Never edit the version in the catalog by
+  hand.
 
 ## Layout
 
@@ -61,7 +62,7 @@ what the library does; this file covers how to change it.
 | `bikesched-examples` | runnable examples, described in its own `README.md`, in two submodules: `java` (plain Java examples, one package per scenario, each with a Testcontainers test using the shared `util.Database`; JSON via bikesched-jackson) and `spring` (the Spring Boot example as a regular Boot application with the Spring Boot Gradle plugin, `bootRun`) |
 | `bikesched-stress-tests` | load and failure tests (database restarts, cut-off nodes, hanging connections, throughput), not published; `build` compiles them, `./gradlew :bikesched-stress-tests:stressTest` runs them before a release, see its `README.md` and ADR 0050 |
 | `bikesched-website` | the project site at `bikesched.org`, generated with Hugo from `README.md` and `docs/` (Hugo module mounts, no content copy) and the Hextra theme (git submodule), described in its own `docs/specs/website-project-site.md` and [ADR 0047](docs/decisions/0047-website-hosted-on-cloudflare-workers.md); built with `./gradlew :bikesched-website:hugoBuild`, deployed to the Cloudflare Worker `bikesched-website` (`bikesched-website/wrangler.jsonc`) by `.github/workflows/website.yml` |
-| `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library`, `bikesched.errorprone`, `bikesched.release` (root only: `releaseVersions`, `setVersion`, `prependChangelog`, see `RELEASING.md`) |
+| `build-logic` | convention plugins: `bikesched.java-conventions`, `bikesched.java-library`, `bikesched.kotlin-library`, `bikesched.errorprone`, `bikesched.release` (root only: `releaseVersions`, `setVersion`, see `RELEASING.md`) |
 
 Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 

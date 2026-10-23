@@ -36,8 +36,7 @@ The workflow then
 3. for a major or minor: creates `release/X.Y.x` (catalog `X.Y.1-SNAPSHOT`, docs showing
    `X.Y.Z`) and moves `main` on to the next minor snapshot; for a patch: moves the release branch
    on to the next patch snapshot,
-4. adds the changelog to `CHANGELOG.md` on `main` and on the release branch,
-5. starts the builds publishing the new snapshots and the website deploy.
+4. starts the builds publishing the new snapshots and the website deploy.
 
 The version is derived, never typed: minor and patch release the catalog version without
 `-SNAPSHOT`, major releases the next major (this is how 1.0.0 gets cut). To see what a release
@@ -52,19 +51,19 @@ would produce:
 Use "Re-run failed jobs" on the failed run (a new run would stop at the existing tag). The
 `release` job keeps the versions `prepare` computed, builds the same commit and skips what the
 failed attempt completed: publishing and tagging (done once the tag exists), the GitHub Release,
-and each branch update (done once that branch's `CHANGELOG.md` has the release).
+and each branch update (done once that branch's catalog has its next snapshot).
 
 If publishing failed halfway, delete the package versions it uploaded (repository, Packages)
 before re-running: GitHub Packages rejects a version that exists already.
 
 ## Changelog
 
-The changelog lists the [Conventional Commits](https://www.conventionalcommits.org) between the
-previous release of the line and the new tag (commits pushed directly to `main` included):
-breaking changes (`!` or a `BREAKING CHANGE:` footer) first, then features, fixes, performance
-and documentation. Build, CI, test and chore commits, refactorings and style changes are left out;
-the compare link at the end covers them. Pull request titles are checked, since squash merges use
-them as the commit message.
+The changelog is kept on the GitHub Release only. It lists the
+[Conventional Commits](https://www.conventionalcommits.org) between the previous release of the
+line and the new tag (commits pushed directly to `main` included): breaking changes (`!` or a
+`BREAKING CHANGE:` footer) first, then features, fixes, performance and documentation. Build, CI,
+test and chore commits, refactorings and style changes are left out; the compare link at the end
+covers them. Pull request titles are checked, since squash merges use them as the commit message.
 
 ## Patches
 
