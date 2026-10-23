@@ -110,7 +110,7 @@ job.sleepUntil("until-check-in", booking.checkIn().minus(Duration.ofDays(1)));
 
 - The step name identifies the sleep across runs, like any step name; it must be unique within the
   job.
-- The first run stores the wake-up time with the step (`wait_until`, computed by the database for
+- The first run stores the wake-up time with the step (`wake_at`, computed by the database for
   `sleep`). Later runs ignore the argument, so a duration changed in a deploy or a time computed
   from `Instant.now()` doesn't move a sleep that already started.
 - `sleepUntil` with a time that has passed returns right away; the step is stored as completed.

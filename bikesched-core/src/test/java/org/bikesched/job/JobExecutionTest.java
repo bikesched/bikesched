@@ -129,7 +129,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
               count(
                   "id = '"
                       + jobId
-                      + "' and state = 'FAILED' and attempts = 3 and locked_by is null "
+                      + "' and state = 'FAILED' and attempts = 3 and locked_by_node_id is null "
                       + "and last_error = 'java.io.IOException: attempt 3 exploded'"))
           .isEqualTo(1);
       assertThat(calls).hasValue(3);
@@ -166,7 +166,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
               count(
                   "id = '"
                       + jobId
-                      + "' and state = 'CANCELLED' and attempts = 2 and locked_by is null "
+                      + "' and state = 'CANCELLED' and attempts = 2 and locked_by_node_id is null "
                       + "and locked_at is null and finished_at is not null and last_error = 'customer deleted'"))
           .isEqualTo(1);
     }

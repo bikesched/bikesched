@@ -35,7 +35,7 @@ import org.jspecify.annotations.Nullable;
 final class DefaultAdmin implements Admin {
 
   // The digits of the short id the admin UI shows.
-  private static final int MIN_ID_PREFIX = 8;
+  private static final int MIN_ID_SUFFIX = 8;
 
   private final AdminStore store;
 
@@ -62,11 +62,11 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
-  public List<JobSummary> findJobsByIdPrefix(String idPrefix, int limit) {
-    UUID[] range = idRange(idPrefix);
+  public List<JobSummary> findJobsByIdSuffix(String idSuffix, int limit) {
+    String suffix = idSuffix(idSuffix);
     requireLimit(limit);
     ensureReady.run();
-    return store.findJobsByIdRange(range[0], range[1], limit);
+    return store.findJobsByIdSuffix(suffix, limit);
   }
 
   @Override
@@ -130,11 +130,11 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
-  public List<EventSummary> findEventsByIdPrefix(String idPrefix, int limit) {
-    UUID[] range = idRange(idPrefix);
+  public List<EventSummary> findEventsByIdSuffix(String idSuffix, int limit) {
+    String suffix = idSuffix(idSuffix);
     requireLimit(limit);
     ensureReady.run();
-    return store.findEventsByIdRange(range[0], range[1], limit);
+    return store.findEventsByIdSuffix(suffix, limit);
   }
 
   @Override
@@ -186,27 +186,15 @@ final class DefaultAdmin implements Admin {
     return store.findNode(nodeId, nodeTimeout);
   }
 
-  /**
-   * The ids starting with the hex digits of the prefix: the prefix padded with {@code 0} and with
-   * {@code f}. PostgreSQL orders {@code uuid} values by their bytes, the order of their hex digits,
-   * so the range is read along the primary key.
-   */
-  private static UUID[] idRange(String idPrefix) {
-    Objects.requireNonNull(idPrefix, "idPrefix");
-    String hex = idPrefix.strip().replace("-", "").toLowerCase(Locale.ROOT);
-    if (hex.length() < MIN_ID_PREFIX || hex.length() > 32 || !hex.matches("[0-9a-f]+")) {
+  // The hex digits of an id suffix, lower case and without hyphens.
+  private static String idSuffix(String idSuffix) {
+    Objects.requireNonNull(idSuffix, "idSuffix");
+    String hex = idSuffix.strip().replace("-", "").toLowerCase(Locale.ROOT);
+    if (hex.length() < MIN_ID_SUFFIX || hex.length() > 32 || !hex.matches("[0-9a-f]+")) {
       throw new IllegalArgumentException(
-          "an id prefix must have between " + MIN_ID_PREFIX + " and 32 hex digits: " + idPrefix);
+          "an id suffix must have between " + MIN_ID_SUFFIX + " and 32 hex digits: " + idSuffix);
     }
-    return new UUID[] {
-      uuid(hex + "0".repeat(32 - hex.length())), uuid(hex + "f".repeat(32 - hex.length()))
-    };
-  }
-
-  private static UUID uuid(String hex) {
-    return new UUID(
-        Long.parseUnsignedLong(hex.substring(0, 16), 16),
-        Long.parseUnsignedLong(hex.substring(16), 16));
+    return hex;
   }
 
   private static void requireLimit(int limit) {

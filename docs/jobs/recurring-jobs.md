@@ -33,7 +33,7 @@ returns the id of the pending occurrence.
   `Recurrence.of(description, previous -> next)`.
 - The next run is computed from the previous occurrence's scheduled time. Recurrences whose
   `isFixedRate()` returns `true` (by default only `every`) also store each occurrence's planned
-  time (`fixed_rate_at`) and compute from that instead, so retries and event waits don't shift a
+  time (`planned_run_at`) and compute from that instead, so retries and event waits don't shift a
   fixed rate.
 - Each occurrence stores the recurrence's description. Registering a recurrence with a different
   description (e.g. after a deploy) moves the pending occurrence to the new recurrence.

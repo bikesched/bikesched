@@ -48,7 +48,7 @@ class JobLockLostTest extends AbstractBikeschedTest {
       assertThat(firstStepDone.await(10, TimeUnit.SECONDS)).isTrue();
       // Released, as by the node clean-up of another node, and not due again during the test.
       execute(
-          "update bikesched_jobs set state = 'SCHEDULED', locked_by = null, lock_token = null,"
+          "update bikesched_jobs set state = 'SCHEDULED', locked_by_node_id = null, lock_token = null,"
               + " locked_at = null,"
               + " scheduled_at = now() + interval '1 day' where id = '"
               + jobId

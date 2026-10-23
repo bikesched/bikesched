@@ -99,7 +99,7 @@ export function EventsView({ route, navigate, names, me, reloadKey, onPublished 
     ${tab === 'waiting'
       ? html`<${WaitingJobs} name=${name} keyPrefix=${key} reloadKey=${reloadKey}
           onPublish=${canPublish ? (step) => publish({ pubName: step.eventName, pubKey: step.eventKey }) : null} />`
-      : html`<${EventList} route=${route} navigate=${navigate} idPrefix=${id} name=${name} keyPrefix=${key}
+      : html`<${EventList} route=${route} navigate=${navigate} idSuffix=${id} name=${name} keyPrefix=${key}
           names=${names} me=${me} reloadKey=${reloadKey}
           onPublishSimilar=${canPublish ? (eventId) => publish({ from: eventId }) : null}
           onPublished=${(eventId) => {
@@ -108,7 +108,7 @@ export function EventsView({ route, navigate, names, me, reloadKey, onPublished 
           }} />`}`;
 }
 
-function EventList({ route, navigate, idPrefix, name, keyPrefix, names, me, reloadKey, onPublishSimilar, onPublished }) {
+function EventList({ route, navigate, idSuffix, name, keyPrefix, names, me, reloadKey, onPublishSimilar, onPublished }) {
   const [events, setEvents] = useState([]);
   const [next, setNext] = useState(null);
   const [error, setError] = useState(null);
@@ -117,14 +117,14 @@ function EventList({ route, navigate, idPrefix, name, keyPrefix, names, me, relo
   const load = async (before) => {
     setLoading(true);
     try {
-      const params = idPrefix
-        ? { id: idPrefix, limit: PAGE_SIZE }
+      const params = idSuffix
+        ? { id: idSuffix, limit: PAGE_SIZE }
         : { name, key: keyPrefix, before, limit: PAGE_SIZE };
       const body = await getBody(`api/events${query(params)}`);
       setEvents((previous) => (before ? [...previous, ...body.events] : body.events));
       setNext(body.next);
       setError(null);
-      if (idPrefix && body.events.length === 1 && !route.id) {
+      if (idSuffix && body.events.length === 1 && !route.id) {
         navigate({ ...route, id: body.events[0].id });
       }
     } catch (e) {
@@ -138,14 +138,14 @@ function EventList({ route, navigate, idPrefix, name, keyPrefix, names, me, relo
     setEvents([]);
     setNext(null);
     load();
-  }, [idPrefix, name, keyPrefix, reloadKey]);
+  }, [idSuffix, name, keyPrefix, reloadKey]);
 
   const href = (id) => toHash({ ...route, id });
-  const empty = !idPrefix
+  const empty = !idSuffix
     ? 'No unexpired events match these filters.'
-    : isFullId(idPrefix)
-      ? `No unexpired event has the id ${idPrefix}.`
-      : `No event id starts with ${idPrefix}.`;
+    : isFullId(idSuffix)
+      ? `No unexpired event has the id ${idSuffix}.`
+      : `No event id ends with ${idSuffix}.`;
   return html`
     ${error && html`<div class="banner banner-error" role="alert">${error}</div>`}
     <div class="split">

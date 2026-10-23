@@ -99,7 +99,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
     ? 'No jobs match these filters.'
     : isFullId(id)
       ? `No job has the id ${id} (anymore).`
-      : `No job id starts with ${id}.`;
+      : `No job id ends with ${id}.`;
   // The open job's live updates replace only its own row; the rest of the list stays as loaded.
   const updateRow = (job) => setJobs((list) => list.map((row) => (row.id === job.id ? job : row)));
   // Opens the form next to the list, keeping its filters.

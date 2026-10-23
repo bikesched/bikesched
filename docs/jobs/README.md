@@ -112,7 +112,8 @@ UUID id = bikesched.newJob("process-payment")
 - While a job of the type has the key, `schedule` returns that job's id and stores nothing; the
   duplicate's payload, due time and other settings are ignored. `findJob(id)` tells its state. A
   duplicate while the job runs returns its id right away.
-- Keys have 1 to 500 characters. They are scoped to the job type only, so keys taken from clients
+- Keys have 1 to 500 characters and at most 1500 bytes in UTF-8 (only characters of 4 bytes, like
+  emoji, count more than 3). They are scoped to the job type only, so keys taken from clients
   need the tenant or user in the key if several of them share a type.
 - `.connection(connection)` works before or after `idempotencyKey`. A duplicate in a concurrent
   transaction waits until the first transaction ends; if it rolls back, the key is free again.

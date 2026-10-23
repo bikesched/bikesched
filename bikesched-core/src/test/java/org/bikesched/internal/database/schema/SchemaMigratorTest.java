@@ -178,7 +178,7 @@ class SchemaMigratorTest {
     execute(
         "insert into "
             + SchemaMigrator.HISTORY_TABLE
-            + " (version, description, checksum, execution_time_ms) values (99, 'from the future', 'x', 0)");
+            + " (version, description, checksum, execution_time_millis) values (99, 'from the future', 'x', 0)");
     logs.clear();
 
     assertThat(new SchemaMigrator(dataSource).migrate()).isEmpty();
@@ -219,7 +219,7 @@ class SchemaMigratorTest {
     String claim =
         """
                 update bikesched_jobs
-                   set state = 'RUNNING', locked_by = ?, lock_token = gen_random_uuid(), locked_at = now(), attempts = attempts + 1, updated_at = now()
+                   set state = 'RUNNING', locked_by_node_id = ?, lock_token = gen_random_uuid(), locked_at = now(), attempts = attempts + 1, updated_at = now()
                  where id in (select id from bikesched_jobs
                                where state = 'SCHEDULED' and scheduled_at <= now()
                                order by priority desc, scheduled_at

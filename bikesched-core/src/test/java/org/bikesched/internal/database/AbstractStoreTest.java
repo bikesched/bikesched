@@ -76,7 +76,7 @@ abstract class AbstractStoreTest {
 
   static void insertRunningJobs(UUID node, int count) throws SQLException {
     execute(
-        "insert into bikesched_jobs (id, type, state, locked_by, lock_token, locked_at) select"
+        "insert into bikesched_jobs (id, type, state, locked_by_node_id, lock_token, locked_at) select"
             + " gen_random_uuid(), 'test', 'RUNNING', '"
             + node
             + "', gen_random_uuid(), now() from generate_series(1, "
@@ -93,7 +93,7 @@ abstract class AbstractStoreTest {
     try (var connection = dataSource.getConnection();
         var select =
             connection.prepareStatement(
-                "select locked_by, lock_token from bikesched_jobs"
+                "select locked_by_node_id, lock_token from bikesched_jobs"
                     + " where id = ? and state = 'RUNNING'")) {
       select.setObject(1, jobId);
       try (var rs = select.executeQuery()) {

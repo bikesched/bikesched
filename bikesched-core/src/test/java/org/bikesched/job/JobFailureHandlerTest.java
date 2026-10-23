@@ -47,7 +47,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
                 count(
                         "id = '"
                             + failed.id()
-                            + "' and state = 'RUNNING' and failing_state = 'FAILED'")
+                            + "' and state = 'RUNNING' and failure_end_state = 'FAILED'")
                     + "");
             handled.add(failed.type() + " " + failed.payload() + " " + describe(failed));
           });
@@ -71,7 +71,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               count(
                   "id = '"
                       + jobId
-                      + "' and attempts = 2 and failure_attempts = 1 and failing_state is null"
+                      + "' and attempts = 2 and failure_attempts = 1 and failure_end_state is null"
                       + " and finished_at is not null"
                       + " and last_error = 'java.lang.IllegalStateException: boom'"))
           .isOne();
@@ -242,7 +242,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               count(
                   "id = '"
                       + compensationFailedId
-                      + "' and compensated_state = 'FAILED' and failing_state is null"))
+                      + "' and compensation_end_state = 'FAILED' and failure_end_state is null"))
           .isOne();
     }
   }
@@ -308,7 +308,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
     String type = unique("failure-handler-removed");
     UUID jobId = UUID.randomUUID();
     execute(
-        "insert into bikesched_jobs (id, type, state, failing_state, attempts, last_error) values ('"
+        "insert into bikesched_jobs (id, type, state, failure_end_state, attempts, last_error) values ('"
             + jobId
             + "', '"
             + type

@@ -41,9 +41,9 @@ class JobCleanUpTest extends AbstractBikeschedTest {
             + pendingJob
             + "'");
     execute(
-        "insert into bikesched_steps (job_id, name, state, attempts) values ('"
+        "insert into bikesched_steps (job_id, name, state, attempts, finished_at) values ('"
             + oldJob
-            + "', 's', 'SUCCEEDED', 1)");
+            + "', 's', 'SUCCEEDED', 1, now())");
     var logs = LogCapture.of(JobCleanUp.class);
     try (logs;
         Bikesched bikesched =
