@@ -204,16 +204,3 @@ Kotlin examples.
 - Open: which tool call to model (something with a visible external effect, e.g. a notification
   or a fake payment, to make the durability payoff obvious) and whether Koog's own tool-calling
   abstraction needs any adapter, or jobs are just scheduled from a plain Kotlin tool function.
-
-## Admin UI
-
-### Publish events from the admin UI
-
-The admin UI currently shows jobs and events but is read-only. It should support publishing new
-events to test and manually trigger handlers that wait for events, without needing code or direct
-database access.
-
-- Admin UI form to pick an event name/type, enter a key and optional JSON payload, and publish it.
-- Backend JSON parsing and validation of the payload (reuses existing `JsonMapper`).
-- Endpoint secured by the existing `AdminAccess` SPI.
-- Outcome: operators can publish events in development and testing without code changes.
