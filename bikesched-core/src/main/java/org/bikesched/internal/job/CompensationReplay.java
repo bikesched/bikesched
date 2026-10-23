@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.StepKind;
+import org.bikesched.internal.database.StepRef;
 import org.bikesched.internal.database.StepState;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.job.CompensationHandler;
@@ -27,10 +28,16 @@ final class CompensationReplay {
   /**
    * A compensation registered while replaying the handler for compensation.
    *
-   * @param stepName the step to compensate
+   * @param step the step to compensate
    * @param call runs the compensation with the step's stored result
    */
-  record PendingCompensation(String stepName, DefaultJob.StepCall<@Nullable Void> call) {}
+  record PendingCompensation(StepRef step, DefaultJob.StepCall<@Nullable Void> call) {
+
+    /** The name of the step to compensate. */
+    String stepName() {
+      return step.name();
+    }
+  }
 
   private final Database database;
   private final UUID jobId;
@@ -61,7 +68,7 @@ final class CompensationReplay {
     @Nullable T result = fromJson.apply(completed.get().result());
     if (compensation != null && completed.get().compensable() && !completed.get().compensated()) {
       var step = new Step(jobId, name, completed.get().attempts());
-      register(name, () -> compensation.handle(step, result));
+      register(completed.get().step(), () -> compensation.handle(step, result));
     }
     return result;
   }
@@ -82,7 +89,7 @@ final class CompensationReplay {
         Objects.requireNonNull(step.get().childJobId(), "child job of a CHILD_JOB step");
     if (compensation != null && step.get().state() != StepState.COMPENSATED) {
       var compensated = new Step(jobId, stepName, step.get().attempts());
-      register(stepName, () -> compensation.handle(compensated, childJobId));
+      register(step.get().step(), () -> compensation.handle(compensated, childJobId));
     }
     return childJobId;
   }
@@ -95,9 +102,9 @@ final class CompensationReplay {
       case StepStore.ChildWait.ChildEnded ended -> DefaultJob.jobResult(childJobId, ended, read);
       case StepStore.ChildWait.ChildTimedOut ignored -> new JobResult.TimedOut<>(childJobId);
       case StepStore.ChildWait.ChildWaiting ignored ->
-          throw new CompensationReplayEnded(wait.stepName());
+          throw new CompensationReplayEnded(wait.step().name());
       case StepStore.ChildWait.NotWaiting ignored ->
-          throw new CompensationReplayEnded(wait.stepName());
+          throw new CompensationReplayEnded(wait.step().name());
     };
   }
 
@@ -138,10 +145,10 @@ final class CompensationReplay {
     void run() throws Exception;
   }
 
-  private void register(String stepName, Compensation compensation) {
+  private void register(StepRef step, Compensation compensation) {
     compensations.push(
         new PendingCompensation(
-            stepName,
+            step,
             () -> {
               compensation.run();
               return null;

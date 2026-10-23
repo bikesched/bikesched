@@ -722,7 +722,8 @@ class PollTest extends AbstractBikeschedTest {
     String finishedAt = state.equals("WAITING") ? "null" : "now()";
     execute(
         "insert into bikesched_steps"
-            + " (job_id, name, kind, state, wake_at, deadline_at, finished_at) values ('"
+            + " (id, job_id, name, kind, state, wake_at, deadline_at, finished_at)"
+            + " values (gen_random_uuid(), '"
             + jobId
             + "', '"
             + name

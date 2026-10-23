@@ -176,7 +176,11 @@ create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
 -- job to be RUNNING with the lock_token of the attempt making the write, so an attempt whose job
 -- was released (e.g. after missed heartbeats) can no longer change its steps, even if the same
 -- node has claimed the job again since.
+-- A step is identified by its id (a UUIDv7 created by the library when the step first starts, kept
+-- across its attempts), which every write to a single step uses, and by its name within its job,
+-- which the handler's replay looks it up by.
 create table bikesched_steps (
+    id                uuid        not null,
     job_id            uuid        not null,
     locked_by_node_id uuid,                           -- the node running the step (no FK: may outlive a dead node)
     event_id          uuid,                           -- the event received or published (no FK: see above)
@@ -197,7 +201,8 @@ create table bikesched_steps (
     event_key         text,
     result            jsonb,
     last_error        text,
-    constraint bikesched_steps_pkey primary key (job_id, name),
+    constraint bikesched_steps_pkey primary key (id),
+    constraint bikesched_steps_job_id_name_key unique (job_id, name),
     constraint bikesched_steps_job_id_fkey
         foreign key (job_id) references bikesched_jobs (id) on delete cascade,
     constraint bikesched_steps_attempts_check

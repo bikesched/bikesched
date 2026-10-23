@@ -30,6 +30,7 @@ import org.bikesched.internal.database.JobPhase;
 import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.database.StepKind;
+import org.bikesched.internal.database.StepRef;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.database.StepStore.ChildWait;
 import org.bikesched.internal.event.DefaultStepEventBuilder;
@@ -113,7 +114,7 @@ public final class DefaultJob implements Job {
   private volatile boolean lockLost;
 
   /** The step whose handler runs right now (not its failure handler), {@code null} if none. */
-  private volatile @Nullable String runningStep;
+  private volatile @Nullable StepRef runningStep;
 
   /**
    * A job claimed by this node, accessing its steps and events through the database.
@@ -328,13 +329,14 @@ public final class DefaultJob implements Job {
             millisSince(start),
             e.toString());
         try {
-          fenced(() -> database.steps().failCompensation(id, lock, name, e.toString()));
+          fenced(
+              () -> database.steps().failCompensation(id, lock, compensation.step(), e.toString()));
         } catch (RuntimeException recording) {
           e.addSuppressed(recording);
         }
         throw e;
       }
-      fenced(() -> database.steps().compensateStep(id, lock, name));
+      fenced(() -> database.steps().compensateStep(id, lock, compensation.step()));
       LOG.debug("Step {} of job {} COMPENSATED in {} ms", name, id, millisSince(start));
     }
   }
@@ -380,7 +382,7 @@ public final class DefaultJob implements Job {
   @Override
   public void postpone(Duration delay) {
     ValidationUtil.requirePositive(delay, "delay");
-    String step = runningStep;
+    StepRef step = runningStep;
     if (step == null) {
       stepGuard.requireNoneRunning("postpone");
     }
@@ -391,7 +393,11 @@ public final class DefaultJob implements Job {
     }
     var postponed = new JobSuspended.PostponeSuspension(step, delay);
     suspension = postponed;
-    LOG.debug("Job {} postponed by {}{}", id, delay, step == null ? "" : " in step '" + step + "'");
+    LOG.debug(
+        "Job {} postponed by {}{}",
+        id,
+        delay,
+        step == null ? "" : " in step '" + step.name() + "'");
     throw new JobSuspended(postponed);
   }
 
@@ -516,12 +522,12 @@ public final class DefaultJob implements Job {
       return replay.childResult(childJobId, reader(resultType));
     }
     var wait = fenced(() -> database.steps().awaitChildJob(id, lock, childJobId, timeout));
-    try (var stepLogContext = stepContext(wait.stepName())) {
+    try (var stepLogContext = stepContext(wait.step().name())) {
       return switch (wait) {
         case ChildWait.ChildEnded ended -> {
           LOG.debug(
               "Step {} of job {} received the outcome of job {}: {}",
-              ended.stepName(),
+              ended.step().name(),
               id,
               childJobId,
               ended.childState());
@@ -530,24 +536,24 @@ public final class DefaultJob implements Job {
         case ChildWait.ChildTimedOut timedOut -> {
           LOG.debug(
               "Step {} of job {} timed out waiting for job {}",
-              timedOut.stepName(),
+              timedOut.step().name(),
               id,
               childJobId);
           yield new JobResult.TimedOut<>(childJobId);
         }
-        case ChildWait.ChildWaiting(String stepName, Instant waitUntil) -> {
+        case ChildWait.ChildWaiting(StepRef step, Instant waitUntil) -> {
           LOG.debug(
               "Step {} of job {} waiting for job {}{}, suspending the job",
-              stepName,
+              step.name(),
               id,
               childJobId,
               waitUntil == null ? "" : " until " + waitUntil);
-          throw suspend(new JobSuspended.JobSuspension(stepName, childJobId, waitUntil));
+          throw suspend(new JobSuspended.JobSuspension(step, childJobId, waitUntil));
         }
-        case ChildWait.NotWaiting(String stepName, var state) ->
+        case ChildWait.NotWaiting(StepRef step, var state) ->
             throw new IllegalStateException(
                 "Step '"
-                    + stepName
+                    + step.name()
                     + "' of job "
                     + id
                     + " starting job "
@@ -698,20 +704,24 @@ public final class DefaultJob implements Job {
       completed.ifPresent(step -> StepKind.STEP.require(name, id, step.kind()));
       if (completed.isEmpty()) {
         if (failureHandler != null) {
-          var failingError = database.steps().findFailingError(id, name, StepKind.STEP);
-          if (failingError.isPresent()) {
+          var failing = database.steps().findFailingStep(id, name, StepKind.STEP);
+          if (failing.isPresent()) {
             // The handler threw or was lost in an earlier attempt: run it again, then fail the job
             // (unless it resolves the step).
-            var failure =
-                new BikeschedException("Step '" + name + "' failed: " + failingError.get());
+            String error = failing.get().error();
+            var failure = new BikeschedException("Step '" + name + "' failed: " + error);
             return resolvedOrThrow(
-                handleFailingStep(name, failureHandler, failingError.get(), failure), failure);
+                handleFailingStep(failing.get().step(), failureHandler, error, failure), failure);
           }
         }
         var stepAttempt = fenced(() -> database.steps().startStep(id, lock, name));
         if (stepAttempt.isPresent()) {
           return executeStep(
-              name, stepAttempt.get(), handler, compensation != null, failureHandler);
+              stepAttempt.get().step(),
+              stepAttempt.get().attempt(),
+              handler,
+              compensation != null,
+              failureHandler);
         }
         // Completed in the meantime, or a step of another kind (e.g. still waiting for an event).
         database
@@ -811,7 +821,7 @@ public final class DefaultJob implements Job {
           stepName,
           id,
           sleep.wakeUpAt());
-      throw suspend(new JobSuspended.SleepSuspension(stepName, sleep.wakeUpAt()));
+      throw suspend(new JobSuspended.SleepSuspension(sleep.step(), sleep.wakeUpAt()));
     }
   }
 
@@ -842,41 +852,42 @@ public final class DefaultJob implements Job {
     try (var stepLogContext = stepContext(name)) {
       var poll = fenced(() -> database.steps().startPoll(id, lock, name, timeout));
       return switch (poll) {
-        case StepStore.PollStep.Ready(@Nullable String result) -> {
+        case StepStore.PollStep.Ready(var step, @Nullable String result) -> {
           LOG.debug("Step {} of job {} already completed, reusing its result", name, id);
           yield reader(resultType).apply(result);
         }
-        case StepStore.PollStep.PollTimedOut(int checks) ->
-            timedOut(name, failureHandler, pollTimeout(name, checks, timeout));
-        case StepStore.PollStep.PollFailing(String error) ->
+        case StepStore.PollStep.PollTimedOut(StepRef step, int checks) ->
+            timedOut(step, failureHandler, pollTimeout(name, checks, timeout));
+        case StepStore.PollStep.PollFailing(StepRef step, String error) ->
             stillFailing(
-                name,
+                step,
                 failureHandler,
                 error,
                 new BikeschedException("Poll '" + name + "' failed: " + error));
-        case StepStore.PollStep.NotDue(int checks, Instant waitUntil) -> {
+        case StepStore.PollStep.NotDue(StepRef step, int checks, Instant waitUntil) -> {
           LOG.debug(
               "Step {} of job {}: next check not due until {}, suspending the job",
               name,
               id,
               waitUntil);
-          throw suspend(new JobSuspended.PollSuspension(name, checks, waitUntil, true));
+          throw suspend(new JobSuspended.PollSuspension(step, checks, waitUntil, true));
         }
         case StepStore.PollStep.CheckStarted started ->
-            check(name, interval, timeout, failureHandler, handler, started);
+            check(started.step(), interval, timeout, failureHandler, handler, started);
       };
     }
   }
 
   /** Runs one check of a poll, see {@link #poll}. */
   private <T extends @Nullable Object> @Nullable T check(
-      String name,
+      StepRef stepRef,
       RetryBackoff interval,
       @Nullable Duration timeout,
       @Nullable StepFailureHandler<T> failureHandler,
       PollHandler<T> handler,
       StepStore.PollStep.CheckStarted poll)
       throws Exception {
+    String name = stepRef.name();
     int check = poll.checks();
     LOG.debug("Checking poll {} of job {} (check {})", name, id, check);
     long start = System.nanoTime();
@@ -894,7 +905,7 @@ public final class DefaultJob implements Job {
         case Poll.Ready<T> ready -> {
           T value = ready.value();
           String json = toJson(value);
-          fenced(() -> database.steps().completePoll(id, lock, name, json, check));
+          fenced(() -> database.steps().completePoll(id, lock, stepRef, json, check));
           LOG.debug(
               "Step {} of job {} ready after check {} in {} ms",
               name,
@@ -907,7 +918,7 @@ public final class DefaultJob implements Job {
       }
     } catch (Exception e) {
       if (failureHandler != null && attempts >= maxAttempts) {
-        return resolvedOrThrow(failStepWithHandler(name, check, failureHandler, e, start), e);
+        return resolvedOrThrow(failStepWithHandler(stepRef, check, failureHandler, e, start), e);
       }
       LOG.debug(
           "Step {} of job {} (check {}) FAILED in {} ms: {}",
@@ -917,7 +928,7 @@ public final class DefaultJob implements Job {
           millisSince(start),
           e.toString());
       try {
-        fenced(() -> database.steps().failPoll(id, lock, name, e.toString(), check));
+        fenced(() -> database.steps().failPoll(id, lock, stepRef, e.toString(), check));
       } catch (RuntimeException recording) {
         e.addSuppressed(recording);
       }
@@ -925,10 +936,10 @@ public final class DefaultJob implements Job {
     }
     Duration delay =
         notReady.retryAfter() != null ? notReady.retryAfter() : nextCheckIn(name, interval, check);
-    var wait = fenced(() -> database.steps().waitPoll(id, lock, name, delay));
+    var wait = fenced(() -> database.steps().waitPoll(id, lock, stepRef, delay));
     if (wait.timedOut()) {
       LOG.debug("Step {} of job {} timed out after check {}", name, id, check);
-      return timedOut(name, failureHandler, pollTimeout(name, wait.checks(), timeout));
+      return timedOut(stepRef, failureHandler, pollTimeout(name, wait.checks(), timeout));
     }
     LOG.debug(
         "Step {} of job {}: check {} not ready, checking again at {}, suspending the job",
@@ -936,7 +947,8 @@ public final class DefaultJob implements Job {
         id,
         check,
         wait.waitUntil());
-    throw suspend(new JobSuspended.PollSuspension(name, check, wait.waitUntil(), poll.resumed()));
+    throw suspend(
+        new JobSuspended.PollSuspension(stepRef, check, wait.waitUntil(), poll.resumed()));
   }
 
   /** The time until the next check: the interval's delay, or zero if it fails. */
@@ -983,12 +995,12 @@ public final class DefaultJob implements Job {
    * @return the result the step was resolved with
    */
   private <T extends @Nullable Object> T timedOut(
-      String name, @Nullable StepFailureHandler<T> handler, BikeschedException timeout) {
+      StepRef step, @Nullable StepFailureHandler<T> handler, BikeschedException timeout) {
     if (handler != null) {
       String error = ValidationUtil.truncateMessage(timeout.toString());
-      LOG.debug("Step {} of job {} is FAILING: {}", name, id, timeout.getMessage());
-      fenced(() -> database.steps().markTimedOutStepFailing(id, lock, name, error));
-      if (handleFailingStep(name, handler, error, timeout)
+      LOG.debug("Step {} of job {} is FAILING: {}", step.name(), id, timeout.getMessage());
+      fenced(() -> database.steps().markTimedOutStepFailing(id, lock, step, error));
+      if (handleFailingStep(step, handler, error, timeout)
           instanceof FailureHandling.Resolved<T>(T result)) {
         return result;
       }
@@ -1003,12 +1015,12 @@ public final class DefaultJob implements Job {
    * @return the result the step was resolved with
    */
   private <T extends @Nullable Object> T stillFailing(
-      String name,
+      StepRef step,
       @Nullable StepFailureHandler<T> handler,
       String error,
       BikeschedException failure) {
     if (handler != null
-        && handleFailingStep(name, handler, error, failure)
+        && handleFailingStep(step, handler, error, failure)
             instanceof FailureHandling.Resolved<T>(T result)) {
       return result;
     }
@@ -1084,21 +1096,20 @@ public final class DefaultJob implements Job {
           LOG.debug("Step {} of job {} received event {}/{}", stepName, id, eventName, eventKey);
           yield read.apply(json);
         }
-        case EventStore.EventWaitResult.TimedOut ignored -> {
+        case EventStore.EventWaitResult.TimedOut(StepRef step) -> {
           LOG.debug(
               "Step {} of job {} timed out waiting for event {}/{}",
               stepName,
               id,
               eventName,
               eventKey);
-          yield timedOut(stepName, failureHandler, new EventTimeoutException(timeoutMessage));
+          yield timedOut(step, failureHandler, new EventTimeoutException(timeoutMessage));
         }
-        case EventStore.EventWaitResult.Failing(String error) ->
-            stillFailing(
-                stepName, failureHandler, error, new EventTimeoutException(timeoutMessage));
+        case EventStore.EventWaitResult.Failing(StepRef step, String error) ->
+            stillFailing(step, failureHandler, error, new EventTimeoutException(timeoutMessage));
         case EventStore.EventWaitResult.Failed ignored ->
             throw failWithoutRetry(new EventTimeoutException(timeoutMessage));
-        case EventStore.EventWaitResult.Waiting(Instant waitUntil) -> {
+        case EventStore.EventWaitResult.Waiting(StepRef step, Instant waitUntil) -> {
           LOG.debug(
               "Step {} of job {} waiting for event {}/{}{}, suspending the job",
               stepName,
@@ -1106,7 +1117,7 @@ public final class DefaultJob implements Job {
               eventName,
               eventKey,
               waitUntil == null ? "" : " until " + waitUntil);
-          throw suspend(new JobSuspended.EventSuspension(stepName, eventName, eventKey, waitUntil));
+          throw suspend(new JobSuspended.EventSuspension(step, eventName, eventKey, waitUntil));
         }
       };
     }
@@ -1123,12 +1134,13 @@ public final class DefaultJob implements Job {
   }
 
   private <T extends @Nullable Object> @Nullable T executeStep(
-      String name,
+      StepRef stepRef,
       int stepAttempt,
       StepHandler<T> handler,
       boolean compensable,
       @Nullable StepFailureHandler<T> failureHandler)
       throws Exception {
+    String name = stepRef.name();
     LOG.debug("Executing step {} of job {} (attempt {})", name, id, stepAttempt);
     long start = System.nanoTime();
     T result;
@@ -1138,7 +1150,7 @@ public final class DefaultJob implements Job {
           stepGuard.run(
               "step '" + name + "'",
               () -> {
-                runningStep = name;
+                runningStep = stepRef;
                 try {
                   return handler.handle(step);
                 } finally {
@@ -1146,17 +1158,18 @@ public final class DefaultJob implements Job {
                 }
               });
       if (suspension instanceof JobSuspended.PostponeSuspension postponed
-          && name.equals(postponed.stepName())) {
+          && stepRef.equals(postponed.step())) {
         // The handler caught the postponement and returned: the step still keeps no result.
         throw new JobSuspended(postponed);
       }
       String json = toJson(result);
-      fenced(() -> database.steps().completeStep(id, lock, name, json, compensable));
+      fenced(() -> database.steps().completeStep(id, lock, stepRef, json, compensable));
     } catch (Exception e) {
       if (failureHandler != null && attempts >= maxAttempts) {
-        return resolvedOrThrow(failStepWithHandler(name, stepAttempt, failureHandler, e, start), e);
+        return resolvedOrThrow(
+            failStepWithHandler(stepRef, stepAttempt, failureHandler, e, start), e);
       }
-      recordStepFailure(name, stepAttempt, e, start);
+      recordStepFailure(stepRef, stepAttempt, e, start);
       throw e;
     }
     LOG.debug(
@@ -1210,22 +1223,22 @@ public final class DefaultJob implements Job {
    * and only then marks it {@code FAILED}, or {@code SUCCEEDED} if the handler resolved it.
    */
   private <T extends @Nullable Object> FailureHandling<T> failStepWithHandler(
-      String name, int stepAttempt, StepFailureHandler<T> handler, Exception failure, long start) {
+      StepRef step, int stepAttempt, StepFailureHandler<T> handler, Exception failure, long start) {
     LOG.debug(
         "Step {} of job {} (attempt {}) is FAILING after {} ms, attempts used up: {}",
-        name,
+        step.name(),
         id,
         stepAttempt,
         millisSince(start),
         failure.toString());
     String error = ValidationUtil.truncateMessage(failure.toString());
     try {
-      fenced(() -> database.steps().markStepFailing(id, lock, name, error));
+      fenced(() -> database.steps().markStepFailing(id, lock, step, error));
     } catch (RuntimeException e) {
       failure.addSuppressed(e);
       return new FailureHandling.Unresolved<>();
     }
-    return handleFailingStep(name, handler, error, failure);
+    return handleFailingStep(step, handler, error, failure);
   }
 
   /**
@@ -1239,15 +1252,16 @@ public final class DefaultJob implements Job {
    *     handler's exceptions
    */
   private <T extends @Nullable Object> FailureHandling<T> handleFailingStep(
-      String name, StepFailureHandler<T> handler, String error, Exception failure) {
+      StepRef step, StepFailureHandler<T> handler, String error, Exception failure) {
+    String name = step.name();
     try {
-      var run = fenced(() -> database.steps().startFailureHandler(id, lock, name));
+      var run = fenced(() -> database.steps().startFailureHandler(id, lock, step));
       if (run.isEmpty()) {
         return new FailureHandling.Unresolved<>(); // no longer FAILING: nothing to handle
       }
       if (run.get() > failureHandlerAttempts) {
         // An earlier run was lost (e.g. its node died): the runs are used up.
-        return giveUpFailureHandler(name, run.get() - 1, null);
+        return giveUpFailureHandler(step, run.get() - 1, null);
       }
       var failing = new DefaultFailingStep<T>(id, name, error);
       Exception handlerFailure = null;
@@ -1272,19 +1286,19 @@ public final class DefaultJob implements Job {
         }
         T result = failing.result();
         String json = toJson(result);
-        fenced(() -> database.steps().resolveFailingStep(id, lock, name, json));
+        fenced(() -> database.steps().resolveFailingStep(id, lock, step, json));
         stepRetry = null;
         LOG.debug("Step {} of job {} SUCCEEDED, resolved by its failure handler", name, id);
         return new FailureHandling.Resolved<>(result);
       }
       if (handlerFailure == null) {
-        fenced(() -> database.steps().failFailingStep(id, lock, name, null));
+        fenced(() -> database.steps().failFailingStep(id, lock, step, null));
         LOG.debug("Step {} of job {} FAILED after its failure handler ran", name, id);
         return new FailureHandling.Unresolved<>();
       }
       failure.addSuppressed(handlerFailure);
       if (run.get() >= failureHandlerAttempts) {
-        return giveUpFailureHandler(name, run.get(), handlerFailure);
+        return giveUpFailureHandler(step, run.get(), handlerFailure);
       }
       LOG.warn(
           "Failure handler of step {} of job {} failed (run {} of {}), it runs again in the next"
@@ -1314,10 +1328,10 @@ public final class DefaultJob implements Job {
 
   /** The failure handler of a step ran {@code runs} times without success: the step fails. */
   private <T extends @Nullable Object> FailureHandling<T> giveUpFailureHandler(
-      String name, int runs, @Nullable Exception lastFailure) {
+      StepRef step, int runs, @Nullable Exception lastFailure) {
     LOG.error(
         "Failure handler of step {} of job {} gave up after {} run(s), the step FAILED",
-        name,
+        step.name(),
         id,
         runs,
         lastFailure);
@@ -1326,20 +1340,20 @@ public final class DefaultJob implements Job {
             database
                 .steps()
                 .failFailingStep(
-                    id, lock, name, "failure handler gave up after " + runs + " run(s)"));
+                    id, lock, step, "failure handler gave up after " + runs + " run(s)"));
     return new FailureHandling.Unresolved<>();
   }
 
-  private void recordStepFailure(String name, int stepAttempt, Exception failure, long start) {
+  private void recordStepFailure(StepRef step, int stepAttempt, Exception failure, long start) {
     LOG.debug(
         "Step {} of job {} (attempt {}) FAILED in {} ms: {}",
-        name,
+        step.name(),
         id,
         stepAttempt,
         millisSince(start),
         failure.toString());
     try {
-      fenced(() -> database.steps().failStep(id, lock, name, failure.toString()));
+      fenced(() -> database.steps().failStep(id, lock, step, failure.toString()));
     } catch (RuntimeException e) {
       failure.addSuppressed(e);
     }

@@ -13,6 +13,7 @@ import {
   jobHref,
   plural,
   shortId,
+  stepHref,
   toHash,
 } from './format.js';
 import { html, useEffect, useState } from './html.js';
@@ -228,7 +229,7 @@ function EventDetail({ eventId, onClose, onPublishSimilar }) {
     <li class="row">
       <a class="mono" href=${jobHref(step.jobId)}>${step.jobType} ${shortId(step.jobId)}</a>
       <${Badge} state=${step.jobState} />
-      <span class="muted small">step <span class="mono">${step.stepName}</span></span>
+      <span class="muted small">step <a class="mono" href=${stepHref(step.jobId, step.stepId)}>${step.stepName}</a></span>
     </li>`;
 
   return html`
@@ -295,10 +296,10 @@ function WaitingJobs({ name, keyPrefix, reloadKey, onPublish }) {
           <tbody>
             ${(steps || []).map(
               (step) => html`
-                <tr key=${`${step.jobId}/${step.stepName}`}>
+                <tr key=${step.stepId}>
                   <td><a class="mono" href=${jobHref(step.jobId)}>${shortId(step.jobId)}</a></td>
                   <td class="mono">${step.jobType}</td>
-                  <td class="mono">${step.stepName}</td>
+                  <td class="mono"><a href=${stepHref(step.jobId, step.stepId)}>${step.stepName}</a></td>
                   <td class="mono">${step.eventKey}</td>
                   <td class="mono muted">${dateTime(step.since)}</td>
                   <td class="mono muted">${step.timeoutAt ? dateTime(step.timeoutAt) : 'none'}</td>

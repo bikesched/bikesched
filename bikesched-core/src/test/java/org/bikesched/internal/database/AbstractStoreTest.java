@@ -107,6 +107,11 @@ abstract class AbstractStoreTest {
     }
   }
 
+  /** The id and name of a stored step, as the store's writes address it. */
+  static StepRef step(UUID jobId, String name) {
+    return database.steps().findStep(jobId, name).orElseThrow().step();
+  }
+
   /** A lock of the node that does not match any claim, e.g. of a claim that was released. */
   static JobLock staleLock(UUID nodeId) {
     return new JobLock(nodeId, UUID.randomUUID());

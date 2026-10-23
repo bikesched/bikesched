@@ -67,15 +67,15 @@ public final class JobStore {
   // The step of a job starting a child job.
   private static final String FIND_CHILD_JOB_STEP_SQL =
       """
-            select kind, state, child_job_id, child_job_type
+            select id, kind, state, child_job_id, child_job_type
               from bikesched_steps
              where job_id = ? and name = ?
                for update""";
 
   private static final String INSERT_CHILD_JOB_STEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, kind, state, attempts, child_job_id, child_job_type, compensable)
-            values (?, ?, 'CHILD_JOB', 'WAITING', 1, ?, ?, ?)""";
+            insert into bikesched_steps (id, job_id, name, kind, state, attempts, child_job_id, child_job_type, compensable)
+            values (?, ?, ?, 'CHILD_JOB', 'WAITING', 1, ?, ?, ?)""";
 
   // A compensated child job step runs again when its job is retried: it starts a new child of the
   // same type.
@@ -84,7 +84,7 @@ public final class JobStore {
             update bikesched_steps
                set state = 'WAITING', child_job_id = ?, child_end_state = null, result = null, last_error = null,
                    wake_at = null, compensable = ?, attempts = attempts + 1, started_at = now(), finished_at = null
-             where job_id = ? and name = ? and kind = 'CHILD_JOB' and state = 'COMPENSATED'""";
+             where id = ? and kind = 'CHILD_JOB' and state = 'COMPENSATED'""";
 
   // A child job ended: its outcome completes the parent's step waiting for it, in the child's
   // transaction and without the parent's lock (like publishing an event completes other jobs'
@@ -685,10 +685,11 @@ public final class JobStore {
                   FIND_CHILD_JOB_STEP_SQL,
                   row ->
                       new ChildJobStep(
-                          row.enumValue(1, StepKind.class),
-                          row.enumValue(2, StepState.class),
-                          row.uuid(3),
-                          row.string(4)),
+                          row.uuid(1),
+                          row.enumValue(2, StepKind.class),
+                          row.enumValue(3, StepState.class),
+                          row.uuid(4),
+                          row.string(5)),
                   parentJobId,
                   stepName);
           if (step.isPresent()) {
@@ -725,10 +726,11 @@ public final class JobStore {
               parentJobId);
           db.due(child.type(), child.scheduledAt());
           if (step.isPresent()) {
-            db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, parentJobId, stepName);
+            db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, step.get().id());
           } else {
             db.update(
                 INSERT_CHILD_JOB_STEP_SQL,
+                UuidUtil.timeOrdered(),
                 parentJobId,
                 stepName,
                 childJobId,
@@ -778,7 +780,8 @@ public final class JobStore {
   public record ChildJob(UUID id, boolean started) {}
 
   /** A row of {@code FIND_CHILD_JOB_STEP_SQL}; {@code childType} is null for other kinds. */
-  private record ChildJobStep(StepKind kind, StepState state, UUID childJobId, String childType) {}
+  private record ChildJobStep(
+      UUID id, StepKind kind, StepState state, UUID childJobId, String childType) {}
 
   /**
    * After a job's state changed in the caller's transaction: once it ended, runs the claim's {@link

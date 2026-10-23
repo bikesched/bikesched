@@ -59,12 +59,19 @@ class AdminJsonTest {
   void stepHasChildStateByEnumNameAndNullableTimestamps() throws Exception {
     var step =
         new StepInfo(
+            ID,
+            ID,
             "child",
             "CHILD_JOB",
             "WAITING",
             3,
+            0,
+            true,
             null,
             AT,
+            null,
+            null,
+            null,
             null,
             null,
             null,
@@ -76,9 +83,11 @@ class AdminJsonTest {
     assertContract(
         AdminJson.step(step),
         """
-        {"name":"child","kind":"CHILD_JOB","state":"WAITING","attempts":3,"lastError":null,
-         "startedAt":"2026-10-11T12:00:00.123456Z","finishedAt":null,"waitUntil":null,
-         "eventName":null,"eventKey":null,"childJobId":"7f0c2a1e-0000-4000-8000-000000000001",
+        {"id":"7f0c2a1e-0000-4000-8000-000000000001","jobId":"7f0c2a1e-0000-4000-8000-000000000001",
+         "name":"child","kind":"CHILD_JOB","state":"WAITING","attempts":3,"failureAttempts":0,
+         "compensable":true,"lastError":null,"startedAt":"2026-10-11T12:00:00.123456Z",
+         "finishedAt":null,"waitUntil":null,"deadline":null,"nodeId":null,"eventName":null,
+         "eventKey":null,"eventId":null,"childJobId":"7f0c2a1e-0000-4000-8000-000000000001",
          "childJobType":"mail","childJobState":"RUNNING","childJobExists":true}
         """);
   }
@@ -108,15 +117,15 @@ class AdminJsonTest {
   void eventStepRenamesPublisherAndIncludesJobState() throws Exception {
     assertContract(
         AdminJson.eventStep(
-            new EventStep(ID, "mail", JobState.SUCCEEDED, "publish", "EVENT_PUBLISH")),
+            new EventStep(ID, ID, "mail", JobState.SUCCEEDED, "publish", "EVENT_PUBLISH")),
         """
-        {"jobId":"7f0c2a1e-0000-4000-8000-000000000001","jobType":"mail","jobState":"SUCCEEDED",
+        {"stepId":"7f0c2a1e-0000-4000-8000-000000000001","jobId":"7f0c2a1e-0000-4000-8000-000000000001","jobType":"mail","jobState":"SUCCEEDED",
          "stepName":"publish","kind":"EVENT_PUBLISH","publisher":true}
         """);
     assertContract(
-        AdminJson.eventStep(new EventStep(ID, "mail", JobState.WAITING, "await", "EVENT_WAIT")),
+        AdminJson.eventStep(new EventStep(ID, ID, "mail", JobState.WAITING, "await", "EVENT_WAIT")),
         """
-        {"jobId":"7f0c2a1e-0000-4000-8000-000000000001","jobType":"mail","jobState":"WAITING",
+        {"stepId":"7f0c2a1e-0000-4000-8000-000000000001","jobId":"7f0c2a1e-0000-4000-8000-000000000001","jobType":"mail","jobState":"WAITING",
          "stepName":"await","kind":"EVENT_WAIT","publisher":false}
         """);
   }
@@ -124,9 +133,9 @@ class AdminJsonTest {
   @Test
   void waitingStepKeepsNullTimeout() throws Exception {
     assertContract(
-        AdminJson.waitingStep(new WaitingStep(ID, "mail", "await", "paid", "order", AT, null)),
+        AdminJson.waitingStep(new WaitingStep(ID, ID, "mail", "await", "paid", "order", AT, null)),
         """
-        {"jobId":"7f0c2a1e-0000-4000-8000-000000000001","jobType":"mail","stepName":"await",
+        {"stepId":"7f0c2a1e-0000-4000-8000-000000000001","jobId":"7f0c2a1e-0000-4000-8000-000000000001","jobType":"mail","stepName":"await",
          "eventName":"paid","eventKey":"order","since":"2026-10-11T12:00:00.123456Z","timeoutAt":null}
         """);
   }

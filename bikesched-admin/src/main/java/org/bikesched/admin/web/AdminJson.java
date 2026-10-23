@@ -37,16 +37,23 @@ final class AdminJson {
 
   static Json.Obj step(StepInfo step) {
     return Json.object()
+        .put("id", step.id())
+        .put("jobId", step.jobId())
         .put("name", step.name())
         .put("kind", step.kind())
         .put("state", step.state())
         .put("attempts", step.attempts())
+        .put("failureAttempts", step.failureAttempts())
+        .put("compensable", step.compensable())
         .put("lastError", step.lastError())
         .put("startedAt", step.startedAt())
         .put("finishedAt", step.finishedAt())
         .put("waitUntil", step.waitUntil())
+        .put("deadline", step.deadline())
+        .put("nodeId", step.nodeId())
         .put("eventName", step.eventName())
         .put("eventKey", step.eventKey())
+        .put("eventId", step.eventId())
         .put("childJobId", step.childJobId())
         .put("childJobType", step.childJobType())
         .put("childJobState", step.childJobState())
@@ -77,6 +84,7 @@ final class AdminJson {
 
   static Json.Obj eventStep(EventStep step) {
     return Json.object()
+        .put("stepId", step.stepId())
         .put("jobId", step.jobId())
         .put("jobType", step.jobType())
         .put("jobState", step.jobState())
@@ -87,6 +95,7 @@ final class AdminJson {
 
   static Json.Obj waitingStep(WaitingStep step) {
     return Json.object()
+        .put("stepId", step.stepId())
         .put("jobId", step.jobId())
         .put("jobType", step.jobType())
         .put("stepName", step.stepName())
