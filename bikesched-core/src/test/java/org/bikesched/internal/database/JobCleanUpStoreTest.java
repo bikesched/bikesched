@@ -24,8 +24,8 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     insertJob("COMPENSATING", "null", "compensating");
     insertJob("COMPENSATION_FAILED", "now() - interval '2 hours'", "compensation-failed");
     execute(
-        "insert into bikesched_steps (job_id, name, state, attempts) select id, 's', 'SUCCEEDED', 1"
-            + " from bikesched_jobs");
+        "insert into bikesched_steps (job_id, name, state, attempts, finished_at)"
+            + " select id, 's', 'SUCCEEDED', 1, now() from bikesched_jobs");
 
     assertThat(database.jobs().deleteFinishedJobs(null, null, Duration.ofHours(1), 1000).count())
         .isEqualTo(3);
@@ -118,7 +118,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     String compensated =
         state.startsWith("COMPENSATION") || state.equals("COMPENSATING") ? "'CANCELLED'" : "null";
     execute(
-        "insert into bikesched_jobs (id, type, state, compensated_state, finished_at) values"
+        "insert into bikesched_jobs (id, type, state, compensation_end_state, finished_at) values"
             + " (gen_random_uuid(), '"
             + type
             + "', '"

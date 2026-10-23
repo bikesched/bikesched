@@ -9,7 +9,7 @@ Date: 2026-10-05
 
 ## Status
 
-Accepted
+Accepted, extended by [ADR 0055](0055-byte-limits-for-names-and-keys.md)
 
 ## Context
 

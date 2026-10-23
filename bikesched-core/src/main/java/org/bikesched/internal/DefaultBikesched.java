@@ -41,6 +41,7 @@ import org.bikesched.internal.node.DefaultNode;
 import org.bikesched.internal.node.NodeCleanUp;
 import org.bikesched.internal.node.NodeHeartbeat;
 import org.bikesched.internal.util.ExecutorUtil;
+import org.bikesched.internal.util.UuidUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.internal.util.Version;
 import org.bikesched.job.JobBuilder;
@@ -189,7 +190,7 @@ public final class DefaultBikesched implements Bikesched {
       if (node.id().isPresent()) {
         return node;
       }
-      UUID id = UUID.randomUUID();
+      UUID id = UuidUtil.timeOrdered();
       database.nodes().registerNode(id, nodeName);
       var heartbeat = new NodeHeartbeat(database, id, nodeName);
       var nodeCleanUp =

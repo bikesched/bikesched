@@ -127,14 +127,14 @@ class PollTest extends AbstractBikeschedTest {
       assertThat(
               countSteps(
                   jobId,
-                  "name = 'p' and state = 'WAITING' and locked_by is null and attempts = 1"
-                      + " and wait_until > now() + interval '50 minutes' and timeout_at is null"))
+                  "name = 'p' and state = 'WAITING' and locked_by_node_id is null and attempts = 1"
+                      + " and wake_at > now() + interval '50 minutes' and deadline_at is null"))
           .isEqualTo(1);
       assertThat(
               count(
                   "id = '"
                       + jobId
-                      + "' and attempts = 0 and scheduled_at = (select wait_until from"
+                      + "' and attempts = 0 and scheduled_at = (select wake_at from"
                       + " bikesched_steps where job_id = '"
                       + jobId
                       + "' and name = 'p')"))
@@ -193,7 +193,7 @@ class PollTest extends AbstractBikeschedTest {
               .schedule();
 
       awaitState(jobId, "WAITING");
-      assertThat(countSteps(jobId, "wait_until > now() + interval '110 minutes'")).isEqualTo(1);
+      assertThat(countSteps(jobId, "wake_at > now() + interval '110 minutes'")).isEqualTo(1);
     }
   }
 
@@ -256,8 +256,8 @@ class PollTest extends AbstractBikeschedTest {
       assertThat(
               countSteps(
                   jobId,
-                  "name = 'p' and state = 'TIMED_OUT' and wait_until = timeout_at"
-                      + " and finished_at >= timeout_at"))
+                  "name = 'p' and state = 'TIMED_OUT' and wake_at = deadline_at"
+                      + " and finished_at >= deadline_at"))
           .isEqualTo(1);
     }
   }
@@ -330,8 +330,8 @@ class PollTest extends AbstractBikeschedTest {
               countSteps(
                   jobId,
                   "name = 'p' and state = 'WAITING' and attempts = 1"
-                      + " and timeout_at > now() + interval '50 minutes'"
-                      + " and wait_until > now() + interval '50 minutes'"))
+                      + " and deadline_at > now() + interval '50 minutes'"
+                      + " and wake_at > now() + interval '50 minutes'"))
           .isEqualTo(1);
     }
   }
@@ -382,7 +382,7 @@ class PollTest extends AbstractBikeschedTest {
       assertThat(
               countSteps(
                   jobId,
-                  "name = 'p' and state = 'FAILED' and locked_by is null"
+                  "name = 'p' and state = 'FAILED' and locked_by_node_id is null"
                       + " and last_error = 'java.lang.IllegalStateException: service unavailable'"))
           .isEqualTo(1);
     }
@@ -717,10 +717,12 @@ class PollTest extends AbstractBikeschedTest {
   }
 
   private static void insertStep(
-      UUID jobId, String name, String kind, String state, String waitUntil, String timeoutAt)
+      UUID jobId, String name, String kind, String state, String wakeAt, String deadlineAt)
       throws SQLException {
+    String finishedAt = state.equals("WAITING") ? "null" : "now()";
     execute(
-        "insert into bikesched_steps (job_id, name, kind, state, wait_until, timeout_at) values ('"
+        "insert into bikesched_steps"
+            + " (job_id, name, kind, state, wake_at, deadline_at, finished_at) values ('"
             + jobId
             + "', '"
             + name
@@ -729,9 +731,11 @@ class PollTest extends AbstractBikeschedTest {
             + "', '"
             + state
             + "', "
-            + waitUntil
+            + wakeAt
             + ", "
-            + timeoutAt
+            + deadlineAt
+            + ", "
+            + finishedAt
             + ")");
   }
 

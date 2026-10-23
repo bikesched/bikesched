@@ -124,7 +124,7 @@ public final class SchemaMigrator {
                     description       text        not null,
                     checksum          text        not null,
                     installed_at      timestamptz not null default now(),
-                    execution_time_ms bigint      not null
+                    execution_time_millis bigint      not null
                 )"""
             .formatted(HISTORY_TABLE));
 
@@ -209,7 +209,7 @@ public final class SchemaMigrator {
           connection.prepareStatement(
               "insert into "
                   + HISTORY_TABLE
-                  + " (version, description, checksum, execution_time_ms) values (?, ?, ?, ?)")) {
+                  + " (version, description, checksum, execution_time_millis) values (?, ?, ?, ?)")) {
         insert.setInt(1, migration.version());
         insert.setString(2, migration.description());
         insert.setString(3, migration.checksum());

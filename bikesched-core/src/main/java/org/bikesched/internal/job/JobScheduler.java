@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NewJob;
+import org.bikesched.internal.util.UuidUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
@@ -66,7 +67,7 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
     String type = job.type();
     requireHandler(type, handler);
     registerFailureHandler(type, failureHandler);
-    UUID jobId = UUID.randomUUID();
+    UUID jobId = UuidUtil.timeOrdered();
     UUID stored =
         connection == null
             ? database.jobs().insertJob(jobId, job)

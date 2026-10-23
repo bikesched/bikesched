@@ -366,6 +366,8 @@ List<EventSummary> findEventsByIdPrefix(String prefix, int limit);
   (32 bits), a prefix matches about one job in 4 billion, so a page is almost always one row.
   Time-ordered ids (UUIDv7) would put every job of the same minute behind the same 8 digits;
   a switch to them needs a longer minimum or a search on the random part.
+  (Changed since: ids are UUIDv7 and the search uses the last 8 digits, see
+  [ADR 0054](../decisions/0054-time-ordered-ids.md).)
 - JSON API: `GET api/jobs?id=` and `GET api/events?id=` take a prefix or a full id and return the
   usual list shape with `next` always `null`; `id` together with another filter answers `400`.
 

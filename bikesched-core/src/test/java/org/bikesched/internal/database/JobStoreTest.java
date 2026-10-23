@@ -32,7 +32,7 @@ class JobStoreTest extends AbstractStoreTest {
             count(
                 "id = '"
                     + jobId
-                    + "' and state = 'SCHEDULED' and attempts = 0 and locked_by is null "
+                    + "' and state = 'SCHEDULED' and attempts = 0 and locked_by_node_id is null "
                     + "and timeout_millis = 90000"))
         .isEqualTo(1);
     assertThat(claimJobs(node, 10))
@@ -82,7 +82,7 @@ class JobStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-failing");
     UUID jobId = UUID.randomUUID();
     execute(
-        "insert into bikesched_jobs (id, type, state, failing_state, failure_attempts, locked_by,"
+        "insert into bikesched_jobs (id, type, state, failure_end_state, failure_attempts, locked_by_node_id,"
             + " lock_token, locked_at) values ('"
             + jobId
             + "', 'test', 'RUNNING', 'FAILED', 1, '"
@@ -95,7 +95,7 @@ class JobStoreTest extends AbstractStoreTest {
             count(
                 "id = '"
                     + jobId
-                    + "' and state = 'FAILING' and failing_state = 'FAILED' and locked_by is null"))
+                    + "' and state = 'FAILING' and failure_end_state = 'FAILED' and locked_by_node_id is null"))
         .isOne();
     assertThat(database.jobs().claimJobs(node, Set.of("test"), 10))
         .singleElement()
@@ -114,7 +114,7 @@ class JobStoreTest extends AbstractStoreTest {
     UUID succeeded = UUID.randomUUID();
     execute(
         "insert into bikesched_jobs (id, type, state, attempts, last_error, finished_at,"
-            + " compensated_state, compensation_attempts, cancel_requested_at, recurrence) values"
+            + " compensation_end_state, compensation_attempts, cancel_requested_at, recurrence) values"
             + " ('"
             + failed
             + "', 'test', 'FAILED', 3, 'boom', now(), null, 0, now(), null),"
@@ -149,7 +149,7 @@ class JobStoreTest extends AbstractStoreTest {
                     + compensated
                     + "')"
                     + " and state = 'SCHEDULED' and attempts = 0 and scheduled_at <= now()"
-                    + " and finished_at is null and compensated_state is null"
+                    + " and finished_at is null and compensation_end_state is null"
                     + " and compensation_attempts = 0 and cancel_requested_at is null"
                     + " and last_error = 'boom'"))
         .isEqualTo(2);
@@ -170,10 +170,10 @@ class JobStoreTest extends AbstractStoreTest {
     insertJobs(12, 0, "now() - interval '1 minute'");
     insertJobs(1, 0, "now() + interval '1 hour'"); // not due yet
     execute(
-        "insert into bikesched_jobs (id, type, state, locked_by, lock_token) values "
-            + "(gen_random_uuid(), 'test', 'RUNNING', '"
+        "insert into bikesched_jobs (id, type, state, locked_by_node_id, lock_token, locked_at)"
+            + " values (gen_random_uuid(), 'test', 'RUNNING', '"
             + node
-            + "', gen_random_uuid())"); // already running
+            + "', gen_random_uuid(), now())"); // already running
 
     List<JobStore.ClaimedJob> first = claimJobs(node, 10);
     List<JobStore.ClaimedJob> second = claimJobs(node, 10);
@@ -188,7 +188,7 @@ class JobStoreTest extends AbstractStoreTest {
               assertThat(job.attempts()).isEqualTo(1);
               assertThat(job.maxAttempts()).isEqualTo(3);
             });
-    assertThat(count("state = 'RUNNING' and locked_by = '" + node + "'")).isEqualTo(13);
+    assertThat(count("state = 'RUNNING' and locked_by_node_id = '" + node + "'")).isEqualTo(13);
     assertThat(count("state = 'SCHEDULED'")).isEqualTo(1);
   }
 
@@ -214,7 +214,8 @@ class JobStoreTest extends AbstractStoreTest {
     assertThat(database.jobs().completeJob(job.id(), staleLock(otherNode))).isFalse();
     assertThat(database.jobs().completeJob(job.id(), job.lock())).isTrue();
     assertThat(database.jobs().completeJob(job.id(), job.lock())).isFalse();
-    assertThat(count("state = 'SUCCEEDED' and locked_by is null and finished_at is not null"))
+    assertThat(
+            count("state = 'SUCCEEDED' and locked_by_node_id is null and finished_at is not null"))
         .isEqualTo(1);
   }
 
@@ -233,7 +234,7 @@ class JobStoreTest extends AbstractStoreTest {
 
     assertThat(
             count(
-                "state = 'CANCELLED' and locked_by is null and finished_at is not null "
+                "state = 'CANCELLED' and locked_by_node_id is null and finished_at is not null "
                     + "and last_error = 'no longer needed'"))
         .isEqualTo(1);
     assertThat(count("state = 'CANCELLED' and last_error is null")).isEqualTo(1);
@@ -316,7 +317,7 @@ class JobStoreTest extends AbstractStoreTest {
 
     assertThat(
             count(
-                "state = 'FAILED' and attempts = 3 and last_error = 'boom 3' and locked_by is null "
+                "state = 'FAILED' and attempts = 3 and last_error = 'boom 3' and locked_by_node_id is null "
                     + "and finished_at is not null"))
         .isEqualTo(1);
     assertThat(claimJobs(node, 10)).isEmpty();
@@ -331,8 +332,8 @@ class JobStoreTest extends AbstractStoreTest {
     claimJobs(otherNode, 1);
 
     assertThat(database.jobs().releaseJobs(node)).isEqualTo(3);
-    assertThat(count("state = 'SCHEDULED' and locked_by is null")).isEqualTo(4);
-    assertThat(count("state = 'RUNNING' and locked_by = '" + otherNode + "'")).isEqualTo(1);
+    assertThat(count("state = 'SCHEDULED' and locked_by_node_id is null")).isEqualTo(4);
+    assertThat(count("state = 'RUNNING' and locked_by_node_id = '" + otherNode + "'")).isEqualTo(1);
     assertThat(database.nodes().deregisterNode(node)).isTrue();
   }
 
@@ -353,11 +354,24 @@ class JobStoreTest extends AbstractStoreTest {
 
     assertThat(database.jobs().releaseInactiveJobs(node, Duration.ofSeconds(1), Set.of(active)))
         .isOne();
-    assertThat(count("id = '" + stale + "' and state = 'SCHEDULED' and locked_by is null")).isOne();
-    assertThat(count("id = '" + active + "' and state = 'RUNNING' and locked_by = '" + node + "'"))
+    assertThat(count("id = '" + stale + "' and state = 'SCHEDULED' and locked_by_node_id is null"))
+        .isOne();
+    assertThat(
+            count(
+                "id = '"
+                    + active
+                    + "' and state = 'RUNNING' and locked_by_node_id = '"
+                    + node
+                    + "'"))
         .as("active attempts are never released")
         .isOne();
-    assertThat(count("id = '" + recent + "' and state = 'RUNNING' and locked_by = '" + node + "'"))
+    assertThat(
+            count(
+                "id = '"
+                    + recent
+                    + "' and state = 'RUNNING' and locked_by_node_id = '"
+                    + node
+                    + "'"))
         .as("fresh claims get their grace period")
         .isOne();
   }
@@ -383,9 +397,9 @@ class JobStoreTest extends AbstractStoreTest {
     assertThat(database.jobs().releaseJobsOfDeadNodes(caller, Duration.ofSeconds(30)))
         .containsExactly(new JobStore.DeadNodeJobs(dead, "dead", 3));
 
-    assertThat(count("state = 'SCHEDULED' and locked_by is null")).isEqualTo(3);
-    assertThat(count("state = 'RUNNING' and locked_by = '" + alive + "'")).isEqualTo(2);
-    assertThat(count("state = 'RUNNING' and locked_by = '" + caller + "'"))
+    assertThat(count("state = 'SCHEDULED' and locked_by_node_id is null")).isEqualTo(3);
+    assertThat(count("state = 'RUNNING' and locked_by_node_id = '" + alive + "'")).isEqualTo(2);
+    assertThat(count("state = 'RUNNING' and locked_by_node_id = '" + caller + "'"))
         .as("the calling node never releases its own jobs")
         .isEqualTo(1);
     assertThat(database.jobs().releaseJobsOfDeadNodes(caller, Duration.ofSeconds(30))).isEmpty();

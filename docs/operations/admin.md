@@ -131,7 +131,8 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   by type and by one or more states; "Older jobs" loads the next page. A child job names its
   parent below its type; a run of a recurring job has the repeat icon and its recurrence there.
 - **Search by id**: the job list and the event list each have an id field. It takes a full id or
-  its first 8 characters (the short id the lists show), with or without hyphens, and finds only
+  its last 8 characters (the short id the lists show: ids are time-ordered UUIDv7, so their start
+  is their creation time and their end is random), with or without hyphens, and finds only
   jobs in the job list and only events in the event list. A single match opens its detail; the
   other filters are off while the search is active.
 - **Job detail**: all fields, the idempotency key, the last error, retry and cancel, the steps
@@ -208,11 +209,11 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | Method | Path | Returns |
 |---|---|---|
 | GET | `api/jobs?type=&state=&node=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
-| GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id starts with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
+| GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id ends with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
 | GET | `api/types` | `{"types": [{"type", "total", "counts", "recurrence", "handled"}]}`: `handled` if the serving node has a handler for the type (handled types without jobs are listed too) |
 | GET | `api/events?name=&key=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix |
-| GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id starts with `id`, as for jobs |
+| GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `id`, as for jobs |
 | GET | `api/events/{id}` | `{"event", "steps", "payloadsShown"}`, plus `payload` with `showPayloads(true)` |
 | GET | `api/event-names` | `{"names": [{"name", "count", "waiting"}]}`: unexpired events and waiting steps per name |
 | GET | `api/recurring-runs?type=&limit=` | `{"type", "pending", "previous": [...]}`: the pending run of a recurring job (`null` if none) and its latest ended runs, newest first |
@@ -245,7 +246,7 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | Method | Returns |
 |---|---|
 | `findJobs(JobQuery)` | jobs by type, states and the node running them, newest first, in pages (`after(lastJob)`) |
-| `findJobsByIdPrefix(prefix, limit)` | jobs whose id starts with at least 8 hex digits (or a full id), newest first |
+| `findJobsByIdSuffix(suffix, limit)` | jobs whose id ends with at least 8 hex digits (or a full id), newest first |
 | `findJob(id)` | one job's summary: state, attempts, times, last error, parent, recurrence, idempotency key, node |
 | `findJob(type, idempotencyKey)` | the job of a type with an idempotency key, the one scheduling with that key returns |
 | `findJobData(id)` | the payload and result as JSON text |
@@ -253,7 +254,7 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findJobTypes()` | every job type with its number of jobs per state and whether this node handles it (handled types without jobs too) |
 | `findRecurringJobRuns(type, limit)` | a recurring job's pending run and its latest ended runs, newest first |
 | `findEvents(EventQuery)` | unexpired events by name and key prefix, newest first, in pages |
-| `findEventsByIdPrefix(prefix, limit)` | unexpired events whose id starts with at least 8 hex digits |
+| `findEventsByIdSuffix(suffix, limit)` | unexpired events whose id ends with at least 8 hex digits |
 | `findEvent(id)`, `findEventPayload(id)` | one event, its payload as JSON text |
 | `findEventNames()` | every event name with its number of unexpired events |
 | `findEventSteps(id)` | the steps that published or received the event |

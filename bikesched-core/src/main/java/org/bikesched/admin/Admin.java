@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
 public interface Admin {
 
   /**
-   * Finds jobs matching the query, newest first (by creation time, then id).
+   * Finds jobs matching the query, newest first (by id: job ids are time-ordered).
    *
    * @param query the filters, the page size and the position after the previous page
    * @return at most {@link JobQuery#limit()} jobs
@@ -32,17 +32,17 @@ public interface Admin {
   List<JobSummary> findJobs(JobQuery query);
 
   /**
-   * Finds the jobs whose id starts with the given hex digits, newest first, e.g. to look up the
-   * short id a log line or an alert shows.
+   * Finds the jobs whose id ends with the given hex digits, newest first, e.g. to look up the short
+   * id the admin UI shows: the last 8 hex digits, the random part of the time-ordered id.
    *
-   * @param idPrefix at least 8 and at most 32 hex digits of the id; case, hyphens and surrounding
-   *     whitespace are ignored, so a full id matches too
+   * @param idSuffix at least 8 and at most 32 hex digits at the end of the id; case, hyphens and
+   *     surrounding whitespace are ignored, so a full id matches too
    * @param limit the maximum number of jobs, between 1 and {@link JobQuery#MAX_LIMIT}
    * @return the matching jobs
-   * @throws IllegalArgumentException if the prefix has fewer than 8 or more than 32 hex digits or
+   * @throws IllegalArgumentException if the suffix has fewer than 8 or more than 32 hex digits or
    *     other characters
    */
-  List<JobSummary> findJobsByIdPrefix(String idPrefix, int limit);
+  List<JobSummary> findJobsByIdSuffix(String idSuffix, int limit);
 
   /**
    * Looks up one job.
@@ -106,16 +106,17 @@ public interface Admin {
   List<EventSummary> findEvents(EventQuery query);
 
   /**
-   * Finds the unexpired events whose id starts with the given hex digits, newest first.
+   * Finds the unexpired events whose id ends with the given hex digits, newest first, e.g. the
+   * short id the admin UI shows (the last 8 hex digits).
    *
-   * @param idPrefix at least 8 and at most 32 hex digits of the id; case, hyphens and surrounding
-   *     whitespace are ignored, so a full id matches too
+   * @param idSuffix at least 8 and at most 32 hex digits at the end of the id; case, hyphens and
+   *     surrounding whitespace are ignored, so a full id matches too
    * @param limit the maximum number of events, between 1 and {@link JobQuery#MAX_LIMIT}
    * @return the matching events
-   * @throws IllegalArgumentException if the prefix has fewer than 8 or more than 32 hex digits or
+   * @throws IllegalArgumentException if the suffix has fewer than 8 or more than 32 hex digits or
    *     other characters
    */
-  List<EventSummary> findEventsByIdPrefix(String idPrefix, int limit);
+  List<EventSummary> findEventsByIdSuffix(String idSuffix, int limit);
 
   /**
    * Looks up one event, also an expired one that was not deleted yet.

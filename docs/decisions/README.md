@@ -64,3 +64,6 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0051](0051-node-names-are-not-unique.md) | Node names are not unique | Accepted |
 | [0052](0052-clean-ups-delete-in-resuming-batches.md) | Clean-ups delete in resuming batches | Accepted |
 | [0053](0053-releases-from-tags-with-release-branches.md) | Releases cut from tags, one release branch per minor | Accepted |
+| [0054](0054-time-ordered-ids.md) | Time-ordered ids (UUIDv7) | Accepted |
+| [0055](0055-byte-limits-for-names-and-keys.md) | Byte limits for names and keys | Accepted |
+| [0056](0056-schema-naming-column-order-and-invariants.md) | Schema naming, column order and invariants | Accepted |

@@ -23,8 +23,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Every write is fenced by the job's lock ({@link JobLock}): it only takes effect while the job
  * is {@code RUNNING} with the lock token of the writing attempt's claim, checked in the same
  * statement. A write that finds the job released (or claimed again since) throws a {@link
- * JobLockLostException}. A running step is also locked by its node ({@code locked_by}), so only the
- * node that started an attempt of a step can complete or fail it.
+ * JobLockLostException}. A running step is also locked by its node ({@code locked_by_node_id}), so
+ * only the node that started an attempt of a step can complete or fail it.
  */
 public final class StepStore {
 
@@ -54,12 +54,12 @@ public final class StepStore {
   // another kind of step, or the job is no longer running on this node.
   private static final String START_STEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, state, attempts, locked_by, started_at)
+            insert into bikesched_steps (job_id, name, state, attempts, locked_by_node_id, started_at)
             select ?, ?, 'RUNNING', 1, ?, now()
              where %s
             on conflict (job_id, name) do update
                set state = 'RUNNING', attempts = bikesched_steps.attempts + 1, failure_attempts = 0,
-                   locked_by = excluded.locked_by, started_at = now(), finished_at = null
+                   locked_by_node_id = excluded.locked_by_node_id, started_at = now(), finished_at = null
              where bikesched_steps.kind = 'STEP' and bikesched_steps.state not in ('SUCCEEDED', 'COMPENSATED')
             returning attempts"""
           .formatted(JOB_LOCKED);
@@ -67,8 +67,8 @@ public final class StepStore {
   private static final String COMPLETE_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'SUCCEEDED', result = ?::jsonb, compensable = ?, locked_by = null, finished_at = now()
-             where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
+               set state = 'SUCCEEDED', result = ?::jsonb, compensable = ?, locked_by_node_id = null, finished_at = now()
+             where job_id = ? and name = ? and state = 'RUNNING' and locked_by_node_id = ? and %s"""
           .formatted(JOB_LOCKED);
 
   // A step with a compensation: a completed step, or a child job step once the child was started
@@ -77,11 +77,12 @@ public final class StepStore {
       """
             (state = 'SUCCEEDED' or kind = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT'))""";
 
-  // A child job step keeps its child's outcome (child_state, last_error) when it is compensated.
+  // A child job step keeps its child's outcome (child_end_state, last_error) when it is
+  // compensated.
   private static final String COMPENSATE_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'COMPENSATED', last_error = case when kind = 'CHILD_JOB' and child_state is not null then last_error end
+               set state = 'COMPENSATED', last_error = case when kind = 'CHILD_JOB' and child_end_state is not null then last_error end
              where job_id = ? and name = ? and %s and %s"""
           .formatted(COMPENSABLE_STEP, JOB_LOCKED);
 
@@ -97,8 +98,8 @@ public final class StepStore {
   private static final String FAIL_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'FAILED', last_error = ?, locked_by = null, finished_at = now()
-             where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
+               set state = 'FAILED', last_error = ?, locked_by_node_id = null, finished_at = now()
+             where job_id = ? and name = ? and state = 'RUNNING' and locked_by_node_id = ? and %s"""
           .formatted(JOB_LOCKED);
 
   // A step whose attempts are used up and that has a failure handler: FAILING until the handler
@@ -106,8 +107,8 @@ public final class StepStore {
   private static final String MARK_STEP_FAILING_SQL =
       """
             update bikesched_steps
-               set state = 'FAILING', last_error = ?, locked_by = null, failure_attempts = 0
-             where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
+               set state = 'FAILING', last_error = ?, locked_by_node_id = null, failure_attempts = 0
+             where job_id = ? and name = ? and state = 'RUNNING' and locked_by_node_id = ? and %s"""
           .formatted(JOB_LOCKED);
 
   // A run of the failure handler of a FAILING step starts: counted before it runs, so a run that
@@ -152,7 +153,7 @@ public final class StepStore {
   private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED;
 
   // Ends a RUNNING attempt whose handler suspended at a waiting step (an event wait, a sleep or a
-  // wait for a child job): WAITING until the event arrives (the child ends) or wait_until
+  // wait for a child job): WAITING until the event arrives (the child ends) or wake_at
   // (scheduled_at; 'infinity' for a wait without deadline) has passed. If the step is no longer
   // WAITING (the event was published, the child ended since), the job is scheduled right away, as
   // is a job whose cancellation was requested (to cancel it). Suspending does not use up an
@@ -162,13 +163,13 @@ public final class StepStore {
             update bikesched_jobs j
                set state = case when s.state = 'WAITING' then 'WAITING' else 'SCHEDULED' end,
                    scheduled_at = case when s.state = 'WAITING' and j.cancel_requested_at is null
-                                       then coalesce(s.wait_until, 'infinity')
+                                       then coalesce(s.wake_at, 'infinity')
                                        else now() end,
-                   attempts = j.attempts - 1, locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+                   attempts = j.attempts - 1, locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
               from bikesched_steps s
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING'
                and s.job_id = j.id and s.name = ?
-            returning j.state, s.wait_until, j.attempts, j.type,
+            returning j.state, s.wake_at, j.attempts, j.type,
                       case when j.scheduled_at < 'infinity' then j.scheduled_at end""";
 
   // Job.postpone in a step's handler: the step keeps no result and gives its attempt back, so the
@@ -176,8 +177,8 @@ public final class StepStore {
   private static final String POSTPONE_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'POSTPONED', attempts = attempts - 1, locked_by = null, finished_at = now()
-             where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s"""
+               set state = 'POSTPONED', attempts = attempts - 1, locked_by_node_id = null, finished_at = now()
+             where job_id = ? and name = ? and state = 'RUNNING' and locked_by_node_id = ? and %s"""
           .formatted(JOB_LOCKED);
 
   // Job.postpone: the job is due again after the delay (right away if its cancellation was
@@ -188,39 +189,39 @@ public final class StepStore {
                set state = 'SCHEDULED',
                    scheduled_at = case when cancel_requested_at is null
                                        then now() + ? * interval '1 millisecond' else now() end,
-                   attempts = attempts - 1, locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+                   attempts = attempts - 1, locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
              where id = ? and lock_token = ? and state = 'RUNNING'
             returning scheduled_at, attempts, type, cancel_requested_at is not null""";
 
   // A step of a job, for a sleep.
   private static final String FIND_SLEEP_STEP_SQL =
       """
-            select kind, state, wait_until, wait_until <= now()
+            select kind, state, wake_at, wake_at <= now()
               from bikesched_steps where job_id = ? and name = ? for update""";
 
-  // Starts a sleep: WAITING until wait_until, or SUCCEEDED right away if that has passed.
+  // Starts a sleep: WAITING until wake_at, or SUCCEEDED right away if that has passed.
   private static final String START_SLEEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, kind, state, attempts, wait_until, finished_at)
+            insert into bikesched_steps (job_id, name, kind, state, attempts, wake_at, finished_at)
             select ?, ?, 'SLEEP', case when t.at <= now() then 'SUCCEEDED' else 'WAITING' end, 1, t.at,
                    case when t.at <= now() then now() end
               from (select coalesce(?::timestamptz, now() + ? * interval '1 millisecond') as at) t
-            returning state, wait_until""";
+            returning state, wake_at""";
 
   // The step of a job waiting for one of its children; locked (FIND_CHILD_WAIT_SQL) when waiting:
   // the child's end (JobStore) updates the same row, so a wait serializes with it.
   private static final String FIND_CHILD_WAIT_READ_ONLY_SQL =
       """
-            select name, state, child_state, result::text, last_error, wait_until, wait_until <= now()
+            select name, state, child_end_state, result::text, last_error, wake_at, wake_at <= now()
               from bikesched_steps where job_id = ? and child_job_id = ? and kind = 'CHILD_JOB'""";
 
   private static final String FIND_CHILD_WAIT_SQL = FIND_CHILD_WAIT_READ_ONLY_SQL + " for update";
 
   private static final String SET_CHILD_WAIT_DEADLINE_SQL =
       """
-            update bikesched_steps set wait_until = now() + ? * interval '1 millisecond'
+            update bikesched_steps set wake_at = now() + ? * interval '1 millisecond'
              where job_id = ? and name = ? and state = 'WAITING'
-            returning wait_until""";
+            returning wake_at""";
 
   private static final String TIME_OUT_CHILD_WAIT_SQL =
       """
@@ -243,14 +244,14 @@ public final class StepStore {
   // A step of a job, for a poll.
   private static final String FIND_POLL_STEP_SQL =
       """
-            select kind, state, result::text, attempts, wait_until, wait_until <= now(),
+            select kind, state, result::text, attempts, wake_at, wake_at <= now(),
                    coalesce(last_error, '')
               from bikesched_steps where job_id = ? and name = ? for update""";
 
-  // Starts the first check of a poll; its deadline (timeout_at) is null without a timeout.
+  // Starts the first check of a poll; its deadline (deadline_at) is null without a timeout.
   private static final String START_POLL_SQL =
       """
-            insert into bikesched_steps (job_id, name, kind, state, attempts, locked_by, timeout_at)
+            insert into bikesched_steps (job_id, name, kind, state, attempts, locked_by_node_id, deadline_at)
             values (?, ?, 'POLL', 'RUNNING', 1, ?, now() + ? * interval '1 millisecond')
             returning attempts""";
 
@@ -258,9 +259,9 @@ public final class StepStore {
   private static final String RESTART_POLL_SQL =
       """
             update bikesched_steps
-               set state = 'RUNNING', attempts = attempts + 1, locked_by = ?, started_at = now(),
+               set state = 'RUNNING', attempts = attempts + 1, locked_by_node_id = ?, started_at = now(),
                    finished_at = null,
-                   timeout_at = coalesce(timeout_at, now() + ? * interval '1 millisecond')
+                   deadline_at = coalesce(deadline_at, now() + ? * interval '1 millisecond')
              where job_id = ? and name = ?
             returning attempts""";
 
@@ -269,13 +270,13 @@ public final class StepStore {
   private static final String WAIT_POLL_SQL =
       """
             update bikesched_steps
-               set state = case when timeout_at <= now() then 'TIMED_OUT' else 'WAITING' end,
-                   wait_until = case when timeout_at <= now() then wait_until
-                                     else least(now() + ? * interval '1 millisecond', timeout_at) end,
-                   finished_at = case when timeout_at <= now() then now() end,
-                   locked_by = null, last_error = null
-             where job_id = ? and name = ? and state = 'RUNNING' and locked_by = ? and %s
-            returning state, wait_until, attempts"""
+               set state = case when deadline_at <= now() then 'TIMED_OUT' else 'WAITING' end,
+                   wake_at = case when deadline_at <= now() then wake_at
+                                     else least(now() + ? * interval '1 millisecond', deadline_at) end,
+                   finished_at = case when deadline_at <= now() then now() end,
+                   locked_by_node_id = null, last_error = null
+             where job_id = ? and name = ? and state = 'RUNNING' and locked_by_node_id = ? and %s
+            returning state, wake_at, attempts"""
           .formatted(JOB_LOCKED);
 
   /**

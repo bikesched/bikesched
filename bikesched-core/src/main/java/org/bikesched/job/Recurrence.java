@@ -49,7 +49,7 @@ public interface Recurrence {
    * no planned time.
    *
    * <p>If {@code true}, each occurrence additionally stores its planned run time (column {@code
-   * fixed_rate_at}).
+   * planned_run_at}).
    *
    * @return {@code true} to compute the next run from the planned run time; {@code false} by
    *     default ({@link #every(Duration)} returns {@code true})

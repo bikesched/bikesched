@@ -52,7 +52,7 @@ class JobSleepTest extends AbstractBikeschedTest {
               .schedule();
 
       awaitState(jobId, "WAITING");
-      assertThat(countSteps(jobId, "name = 'nap' and state = 'WAITING' and wait_until > now()"))
+      assertThat(countSteps(jobId, "name = 'nap' and state = 'WAITING' and wake_at > now()"))
           .isEqualTo(1);
       assertThat(count("id = '" + jobId + "' and attempts = 0"))
           .as("sleeping gives the attempt back")
@@ -61,8 +61,7 @@ class JobSleepTest extends AbstractBikeschedTest {
 
       awaitState(jobId, "SUCCEEDED");
       assertThat(calls).containsExactly("before", "after");
-      assertThat(
-              countSteps(jobId, "name = 'nap' and state = 'SUCCEEDED' and wait_until is not null"))
+      assertThat(countSteps(jobId, "name = 'nap' and state = 'SUCCEEDED' and wake_at is not null"))
           .isEqualTo(1);
       assertThat(logs.messages())
           .anyMatch(m -> m.startsWith("Step nap of job " + jobId + " sleeping until "))
@@ -143,7 +142,7 @@ class JobSleepTest extends AbstractBikeschedTest {
       await().until(() -> runs.get() == 2);
       awaitState(jobId, "WAITING");
 
-      assertThat(countSteps(jobId, "name = 'nap' and wait_until > now() + interval '50 minutes'"))
+      assertThat(countSteps(jobId, "name = 'nap' and wake_at > now() + interval '50 minutes'"))
           .as("still sleeping until the first run's wake-up time")
           .isEqualTo(1);
       assertThat(count("id = '" + jobId + "' and scheduled_at > now() + interval '50 minutes'"))
@@ -289,7 +288,7 @@ class JobSleepTest extends AbstractBikeschedTest {
   private static void insertStep(
       UUID jobId, String name, String kind, String state, String waitUntil) throws SQLException {
     execute(
-        "insert into bikesched_steps (job_id, name, kind, state, wait_until) values ('"
+        "insert into bikesched_steps (job_id, name, kind, state, wake_at) values ('"
             + jobId
             + "', '"
             + name

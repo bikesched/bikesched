@@ -76,7 +76,8 @@ export function elapsed(fromIso, toIso) {
 
 export const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
-export const shortId = (id) => (id ? id.slice(0, 8) : '');
+// The last 8 hex digits: the random part of a time-ordered id (UUIDv7), whose start is its time.
+export const shortId = (id) => (id ? id.slice(-8) : '');
 
 export const firstLine = (text) => (text ? text.split('\n')[0] : '');
 
@@ -131,7 +132,7 @@ export function toHash({ section, id, params = {} }) {
 
 export const jobHref = (id) => toHash({ section: 'jobs', id });
 
-// Search by id: a full id or at least its first 8 hex digits; whitespace, hyphens and case are
+// Search by id: a full id or at least its last 8 hex digits (the short id); whitespace, hyphens and case are
 // ignored, as on the server.
 const idDigits = (text) => text.trim().replace(/-/g, '').toLowerCase();
 
@@ -139,7 +140,7 @@ export function idSearchHint(text) {
   const digits = idDigits(text);
   if (!digits) return '';
   if (!/^[0-9a-f]+$/.test(digits)) return 'An id has only the digits 0-9, a-f and hyphens';
-  if (digits.length < 8) return 'Type at least 8 characters of the id';
+  if (digits.length < 8) return 'Type at least the last 8 characters of the id';
   if (digits.length > 32) return 'An id has 32 hex digits';
   return '';
 }
@@ -159,7 +160,7 @@ export function IdSearch({ kind, value, onSearch }) {
       <label class="field-label" for=${id}>${kind === 'job' ? 'Job id' : 'Event id'}</label>
       <div class="row">
         <input id=${id} class="input mono id-input" type="search" value=${input}
-          placeholder="Full id or its first 8 characters" aria-describedby=${hint ? `${id}-hint` : undefined}
+          placeholder="Full id or its last 8 characters" aria-describedby=${hint ? `${id}-hint` : undefined}
           onInput=${(event) => setInput(event.target.value)}
           onKeyDown=${(event) => {
             if (event.key === 'Escape') {

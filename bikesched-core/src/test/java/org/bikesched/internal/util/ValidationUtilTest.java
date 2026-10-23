@@ -49,9 +49,29 @@ class ValidationUtilTest {
 
   @Test
   void charactersOutsideTheBmpCountOnce() {
-    String bikes = "\uD83D\uDEB2".repeat(200);
+    String bikes = "\uD83D\uDEB2".repeat(150);
     assertThat(ValidationUtil.requireName(bikes, "job type")).isSameAs(bikes);
-    assertThatThrownBy(() -> ValidationUtil.requireName(bikes + "x", "job type"))
-        .hasMessage("job type must have at most 200 characters, but has 201");
+    assertThatThrownBy(() -> ValidationUtil.requireName(bikes.repeat(2), "job type"))
+        .hasMessage("job type must have at most 200 characters, but has 300");
+  }
+
+  @Test
+  void textOfTheBmpCanUseTheFullLimit() {
+    // Three bytes each in UTF-8, the most a character of the Basic Multilingual Plane takes.
+    String name = "\u81EA".repeat(ValidationUtil.MAX_NAME_LENGTH);
+    assertThat(ValidationUtil.requireName(name, "job type")).isSameAs(name);
+    String key = "\u81EA".repeat(ValidationUtil.MAX_KEY_LENGTH);
+    assertThat(ValidationUtil.requireKey(key, "event key")).isSameAs(key);
+  }
+
+  @Test
+  void valuesOverTheByteLimitAreRejected() {
+    // Four bytes each: 151 of them exceed the 600 bytes of a name, 376 the 1500 of a key.
+    assertThatThrownBy(() -> ValidationUtil.requireName("\uD83D\uDEB2".repeat(151), "job type"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("job type must have at most 600 bytes in UTF-8, but has 604");
+    assertThatThrownBy(() -> ValidationUtil.requireKey("\uD83D\uDEB2".repeat(376), "event key"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("event key must have at most 1500 bytes in UTF-8, but has 1504");
   }
 }

@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.internal.database.HistoryStore.Change;
+import org.bikesched.internal.util.UuidUtil;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -42,7 +43,7 @@ public final class EventStore {
 
   private static final String FIND_EVENT_STEP_SQL =
       """
-            select kind, state, result::text, event_name, event_key, wait_until, wait_until <= now(),
+            select kind, state, result::text, event_name, event_key, wake_at, wake_at <= now(),
                    coalesce(last_error, '')
               from bikesched_steps where job_id = ? and name = ? for update""";
 
@@ -59,9 +60,9 @@ public final class EventStore {
 
   private static final String WAIT_EVENT_STEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, kind, state, attempts, event_name, event_key, wait_until)
+            insert into bikesched_steps (job_id, name, kind, state, attempts, event_name, event_key, wake_at)
             values (?, ?, 'EVENT_WAIT', 'WAITING', 1, ?, ?, now() + ? * interval '1 millisecond')
-            returning wait_until""";
+            returning wake_at""";
 
   private static final String TIME_OUT_EVENT_STEP_SQL =
       """
@@ -507,7 +508,7 @@ public final class EventStore {
         return new Publication(earlier.get(), 0, true);
       }
     }
-    UUID eventId = UUID.randomUUID();
+    UUID eventId = UuidUtil.timeOrdered();
     db.update(
         INSERT_EVENT_SQL,
         eventId,

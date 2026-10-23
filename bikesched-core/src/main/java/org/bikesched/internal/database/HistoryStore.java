@@ -39,7 +39,7 @@ public final class HistoryStore {
             insert into bikesched_job_history (job_id, step_name, state, attempt, node_id, detail)
             select t.job_id, t.step_name, t.state,
                    coalesce(t.attempt, j.attempts, 0),
-                   case when t.step_name is null then t.node_id else coalesce(t.node_id, j.locked_by) end,
+                   case when t.step_name is null then t.node_id else coalesce(t.node_id, j.locked_by_node_id) end,
                    t.detail
               from unnest(?::uuid[], ?::text[], ?::text[], ?::integer[], ?::uuid[], ?::text[])
                    with ordinality as t (job_id, step_name, state, attempt, node_id, detail, position)

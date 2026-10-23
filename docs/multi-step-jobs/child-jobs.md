@@ -87,7 +87,7 @@ JobResult<Receipt> result = job.waitForJob(chargeId, Receipt.class, Duration.ofH
   ends there and the parent is `WAITING` without a deadline: no attempt used, no thread, no slot.
   When the child ends, its transaction stores the outcome with the parent's step and makes a waiting
   parent due; the parent's handler runs again from the start and the wait returns.
-- With a timeout, the first wait stores its deadline (`wait_until`, database time; the stored one
+- With a timeout, the first wait stores its deadline (`wake_at`, database time; the stored one
   wins over a changed argument). Once it has passed with the child still running, the step is
   `TIMED_OUT` and the wait returns `JobResult.TimedOut`, also on every later run. The child keeps
   running and its end no longer changes the step; cancel it with `bikesched.cancel(childId, …)` if

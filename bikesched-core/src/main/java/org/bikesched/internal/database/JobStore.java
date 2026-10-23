@@ -19,6 +19,7 @@ import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
 import org.bikesched.internal.database.ClaimEnd.FollowUp;
 import org.bikesched.internal.database.HistoryStore.Change;
+import org.bikesched.internal.util.UuidUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobState;
 import org.jspecify.annotations.Nullable;
@@ -44,7 +45,7 @@ public final class JobStore {
 
   private static final String INSERT_JOB_SQL =
       """
-            insert into bikesched_jobs (id, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, fixed_rate_at, idempotency_key)
+            insert into bikesched_jobs (id, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, planned_run_at, idempotency_key)
             values (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)""";
 
   // Inserts a job with an idempotency key unless a job of its type has the key (partial unique
@@ -81,8 +82,8 @@ public final class JobStore {
   private static final String RESTART_CHILD_JOB_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'WAITING', child_job_id = ?, child_state = null, result = null, last_error = null,
-                   wait_until = null, compensable = ?, attempts = attempts + 1, started_at = now(), finished_at = null
+               set state = 'WAITING', child_job_id = ?, child_end_state = null, result = null, last_error = null,
+                   wake_at = null, compensable = ?, attempts = attempts + 1, started_at = now(), finished_at = null
              where job_id = ? and name = ? and kind = 'CHILD_JOB' and state = 'COMPENSATED'""";
 
   // A child job ended: its outcome completes the parent's step waiting for it, in the child's
@@ -93,7 +94,7 @@ public final class JobStore {
   private static final String COMPLETE_CHILD_JOB_STEP_SQL =
       """
             update bikesched_steps s
-               set state = 'SUCCEEDED', child_state = c.state,
+               set state = 'SUCCEEDED', child_end_state = c.state,
                    result = case when c.state = 'SUCCEEDED' then c.result end,
                    last_error = case when c.state = 'SUCCEEDED' then null else c.last_error end,
                    finished_at = now()
@@ -122,7 +123,7 @@ public final class JobStore {
   private static final String RESCHEDULE_OCCURRENCE_SQL =
       """
             update bikesched_jobs j
-               set recurrence = ?, scheduled_at = ?, fixed_rate_at = ?, updated_at = now()
+               set recurrence = ?, scheduled_at = ?, planned_run_at = ?, updated_at = now()
               from (select id, recurrence from bikesched_jobs
                      where type = ? and recurrence is not null and state = 'SCHEDULED'
                        and recurrence <> ?
@@ -152,19 +153,26 @@ public final class JobStore {
   // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
   // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
   // releases the row locks, so no other node can pick them up afterwards. Claiming a COMPENSATING
-  // job counts a compensation attempt instead of an attempt (compensated_state stays set), claiming
-  // a FAILING job a run of its failure handler (failing_state stays set). Only jobs of types the
+  // job counts a compensation attempt instead of an attempt (compensation_end_state stays set),
+  // claiming
+  // a FAILING job a run of its failure handler (failure_end_state stays set). Only jobs of types
+  // the
   // node has handlers for: during a rolling deploy, nodes of the old version leave
   // jobs of new types to the new ones (the type is a key column of the polling index, so the filter
   // is checked on index entries, in claim order, without visiting other rows).
   private static final String CLAIM_JOBS_SQL =
       """
             update bikesched_jobs
-               set state = 'RUNNING', locked_by = ?, lock_token = gen_random_uuid(), locked_at = now(),
-                   attempts = attempts + case when compensated_state is null and failing_state is null then 1 else 0 end,
+               set state = 'RUNNING', locked_by_node_id = ?, lock_token = gen_random_uuid(),
+                   locked_at = now(),
+                   attempts = attempts
+                       + case when compensation_end_state is null and failure_end_state is null
+                              then 1 else 0 end,
                    compensation_attempts = compensation_attempts
-                       + case when compensated_state is not null and failing_state is null then 1 else 0 end,
-                   failure_attempts = failure_attempts + case when failing_state is null then 0 else 1 end,
+                       + case when compensation_end_state is not null and failure_end_state is null
+                              then 1 else 0 end,
+                   failure_attempts = failure_attempts
+                       + case when failure_end_state is null then 0 else 1 end,
                    updated_at = now()
              where id in (select id from bikesched_jobs
                            where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING') and scheduled_at <= now()
@@ -172,9 +180,11 @@ public final class JobStore {
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
-            returning id, type, payload::text, priority, scheduled_at, attempts, max_attempts, timeout_millis, recurrence, fixed_rate_at,
-                      compensated_state, compensation_attempts, cancel_requested_at is not null, cancel_message,
-                      locked_by, lock_token, parent_job_id, failing_state, failure_attempts, last_error""";
+            returning id, type, payload::text, priority, scheduled_at, attempts, max_attempts,
+                      timeout_millis, recurrence, planned_run_at, compensation_end_state,
+                      compensation_attempts, cancel_requested_at is not null, cancel_message,
+                      locked_by_node_id, lock_token, parent_job_id, failure_end_state,
+                      failure_attempts, last_error""";
 
   private static final String FIND_JOB_SQL =
       """
@@ -183,9 +193,9 @@ public final class JobStore {
   private static final String COMPLETE_JOB_SQL =
       """
             update bikesched_jobs
-               set state = 'SUCCEEDED', result = ?::jsonb, locked_by = null, lock_token = null, locked_at = null,
+               set state = 'SUCCEEDED', result = ?::jsonb, locked_by_node_id = null, lock_token = null, locked_at = null,
                    finished_at = now(), updated_at = now()
-             where id = ? and lock_token = ? and state = 'RUNNING' and failing_state is null
+             where id = ? and lock_token = ? and state = 'RUNNING' and failure_end_state is null
             returning attempts""";
 
   // Whether a job has completed steps to compensate; joined into the statements ending a job. A
@@ -204,14 +214,14 @@ public final class JobStore {
       """
             update bikesched_jobs j
                set state = case when c.compensate then 'COMPENSATING' else 'CANCELLED' end,
-                   compensated_state = case when c.compensate then 'CANCELLED' end,
+                   compensation_end_state = case when c.compensate then 'CANCELLED' end,
                    scheduled_at = case when c.compensate then now() else j.scheduled_at end,
                    finished_at = case when c.compensate then null else now() end,
                    attempts = j.attempts - ?,
-                   locked_by = null, lock_token = null, locked_at = null, last_error = ?, updated_at = now()
+                   locked_by_node_id = null, lock_token = null, locked_at = null, last_error = ?, updated_at = now()
               from %s
-             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensated_state is null
-               and j.failing_state is null
+             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensation_end_state is null
+               and j.failure_end_state is null
             returning j.state, j.attempts, j.type, j.scheduled_at"""
           .formatted(COMPENSATE_SQL);
 
@@ -221,11 +231,11 @@ public final class JobStore {
   // does (EventStore.RESUME_WAITING_STEPS_SQL), so the two cannot deadlock.
   private static final String CANCEL_STEPS_SQL =
       """
-            update bikesched_steps set state = 'CANCELLED', locked_by = null, finished_at = now()
+            update bikesched_steps set state = 'CANCELLED', locked_by_node_id = null, finished_at = now()
              where job_id = ? and state in ('WAITING', 'RUNNING')
                and exists (select 1 from bikesched_jobs
-                            where id = ? and lock_token = ? and state = 'RUNNING' and compensated_state is null
-                              and failing_state is null)
+                            where id = ? and lock_token = ? and state = 'RUNNING' and compensation_end_state is null
+                              and failure_end_state is null)
             returning name""";
 
   // Bikesched.retry(jobId): a FAILED job runs again with all its attempts, keeping its completed
@@ -234,7 +244,7 @@ public final class JobStore {
   private static final String RETRY_JOB_SQL =
       """
             update bikesched_jobs
-               set state = 'SCHEDULED', attempts = 0, compensated_state = null, compensation_attempts = 0,
+               set state = 'SCHEDULED', attempts = 0, compensation_end_state = null, compensation_attempts = 0,
                    failure_attempts = 0, cancel_requested_at = null, cancel_message = null,
                    scheduled_at = now(), finished_at = null, updated_at = now()
              where id = ? and state = 'FAILED' and recurrence is null and parent_job_id is null
@@ -254,8 +264,8 @@ public final class JobStore {
                set cancel_requested_at = coalesce(cancel_requested_at, now()), cancel_message = ?,
                    scheduled_at = case when state in ('SCHEDULED', 'WAITING') then now() else scheduled_at end,
                    updated_at = now()
-             where id = ? and state in ('SCHEDULED', 'WAITING', 'RUNNING') and compensated_state is null
-               and failing_state is null
+             where id = ? and state in ('SCHEDULED', 'WAITING', 'RUNNING') and compensation_end_state is null
+               and failure_end_state is null
             returning state, attempts, type, scheduled_at""";
 
   // All compensations of a compensating job ran: it ends in the state it was compensated for, or
@@ -263,16 +273,16 @@ public final class JobStore {
   private static final String COMPLETE_COMPENSATION_SQL =
       """
             update bikesched_jobs j
-               set state = case when j.compensated_state = 'FAILED' and p.failure_handler then 'FAILING'
-                                else j.compensated_state end,
-                   failing_state = case when j.compensated_state = 'FAILED' and p.failure_handler then 'FAILED' end,
-                   scheduled_at = case when j.compensated_state = 'FAILED' and p.failure_handler then now()
+               set state = case when j.compensation_end_state = 'FAILED' and p.failure_handler then 'FAILING'
+                                else j.compensation_end_state end,
+                   failure_end_state = case when j.compensation_end_state = 'FAILED' and p.failure_handler then 'FAILED' end,
+                   scheduled_at = case when j.compensation_end_state = 'FAILED' and p.failure_handler then now()
                                        else j.scheduled_at end,
-                   finished_at = case when j.compensated_state = 'FAILED' and p.failure_handler then null else now() end,
-                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+                   finished_at = case when j.compensation_end_state = 'FAILED' and p.failure_handler then null else now() end,
+                   locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
               from (values (?::boolean)) as p (failure_handler)
-             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensated_state is not null
-               and j.failing_state is null
+             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensation_end_state is not null
+               and j.failure_end_state is null
             returning j.state, j.attempts, j.type, j.scheduled_at""";
 
   // A failed compensation attempt: compensating again (after the delay, if any) while compensation
@@ -283,7 +293,7 @@ public final class JobStore {
             update bikesched_jobs j
                set state = case when j.compensation_attempts < j.max_attempts then 'COMPENSATING'
                                 when p.failure_handler then 'FAILING' else 'COMPENSATION_FAILED' end,
-                   failing_state = case when j.compensation_attempts >= j.max_attempts and p.failure_handler
+                   failure_end_state = case when j.compensation_attempts >= j.max_attempts and p.failure_handler
                                         then 'COMPENSATION_FAILED' end,
                    finished_at = case when j.compensation_attempts >= j.max_attempts and not p.failure_handler
                                       then now() end,
@@ -293,10 +303,10 @@ public final class JobStore {
                                        else now() end,
                    last_error = case when j.compensation_attempts >= j.max_attempts
                                      then p.error else j.last_error end,
-                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+                   locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
               from (values (?::text, ?::bigint, ?::boolean)) as p (error, retry_after_millis, failure_handler)
-             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensated_state is not null
-               and j.failing_state is null
+             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensation_end_state is not null
+               and j.failure_end_state is null
             returning j.state, j.max_attempts, j.scheduled_at, j.attempts, j.type""";
 
   // A failed attempt: retried (back to SCHEDULED) while attempts remain, otherwise FAILED, or
@@ -312,9 +322,9 @@ public final class JobStore {
                    state = case when j.attempts < coalesce(p.max_attempts, j.max_attempts) then 'SCHEDULED'
                                 when c.compensate then 'COMPENSATING'
                                 when p.failure_handler then 'FAILING' else 'FAILED' end,
-                   compensated_state = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
+                   compensation_end_state = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
                                                  and c.compensate then 'FAILED' end,
-                   failing_state = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
+                   failure_end_state = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
                                              and not c.compensate and p.failure_handler then 'FAILED' end,
                    finished_at = case when j.attempts >= coalesce(p.max_attempts, j.max_attempts)
                                            and not c.compensate and not p.failure_handler then now() end,
@@ -325,12 +335,12 @@ public final class JobStore {
                                        when p.retry_after_millis is not null
                                        then now() + p.retry_after_millis * interval '1 millisecond'
                                        else j.scheduled_at end,
-                   locked_by = null, lock_token = null, locked_at = null, last_error = p.error, updated_at = now()
+                   locked_by_node_id = null, lock_token = null, locked_at = null, last_error = p.error, updated_at = now()
               from (values (?::text, ?::integer, ?::bigint, ?::boolean))
                        as p (error, max_attempts, retry_after_millis, failure_handler),
                    %s
-             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensated_state is null
-               and j.failing_state is null
+             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensation_end_state is null
+               and j.failure_end_state is null
             returning j.state, j.max_attempts, j.scheduled_at, j.attempts, j.type"""
           .formatted(COMPENSATE_SQL);
 
@@ -339,9 +349,9 @@ public final class JobStore {
   private static final String END_FAILING_SQL =
       """
             update bikesched_jobs
-               set state = failing_state, failing_state = null, finished_at = now(),
-                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
-             where id = ? and lock_token = ? and state = 'RUNNING' and failing_state is not null
+               set state = failure_end_state, failure_end_state = null, finished_at = now(),
+                   locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
+             where id = ? and lock_token = ? and state = 'RUNNING' and failure_end_state is not null
             returning state, attempts, type, scheduled_at""";
 
   // The failure handler of a FAILING job failed: it runs again (after the delay, if any). The job
@@ -351,18 +361,18 @@ public final class JobStore {
             update bikesched_jobs j
                set state = 'FAILING',
                    scheduled_at = now() + coalesce(p.retry_after_millis, 0) * interval '1 millisecond',
-                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+                   locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
               from (values (?::bigint)) as p (retry_after_millis)
-             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.failing_state is not null
+             where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.failure_end_state is not null
             returning j.state, j.attempts, j.type, j.scheduled_at""";
 
   private static final String RELEASE_JOBS_SQL =
       """
             update bikesched_jobs
-               set state = case when failing_state is not null then 'FAILING'
-                                when compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
-                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
-             where locked_by = ? and state = 'RUNNING'
+               set state = case when failure_end_state is not null then 'FAILING'
+                                when compensation_end_state is null then 'SCHEDULED' else 'COMPENSATING' end,
+                   locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
+             where locked_by_node_id = ? and state = 'RUNNING'
             returning id, state, attempts, type""";
 
   // Releases a node's own jobs whose attempt has ended in memory without recording an outcome.
@@ -371,10 +381,10 @@ public final class JobStore {
   private static final String RELEASE_INACTIVE_JOBS_SQL =
       """
             update bikesched_jobs
-               set state = case when failing_state is not null then 'FAILING'
-                                when compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
-                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
-             where locked_by = ? and state = 'RUNNING'
+               set state = case when failure_end_state is not null then 'FAILING'
+                                when compensation_end_state is null then 'SCHEDULED' else 'COMPENSATING' end,
+                   locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
+             where locked_by_node_id = ? and state = 'RUNNING'
                and locked_at < now() - make_interval(secs => ?)
                and id <> all(?::uuid[])
             returning id, state, attempts, type""";
@@ -386,11 +396,11 @@ public final class JobStore {
   private static final String RELEASE_JOBS_OF_DEAD_NODES_SQL =
       """
             update bikesched_jobs j
-               set state = case when j.failing_state is not null then 'FAILING'
-                                when j.compensated_state is null then 'SCHEDULED' else 'COMPENSATING' end,
-                   locked_by = null, lock_token = null, locked_at = null, updated_at = now()
+               set state = case when j.failure_end_state is not null then 'FAILING'
+                                when j.compensation_end_state is null then 'SCHEDULED' else 'COMPENSATING' end,
+                   locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
               from bikesched_nodes n
-             where j.locked_by = n.id
+             where j.locked_by_node_id = n.id
                and j.state = 'RUNNING'
                and n.id <> ?
                and n.last_heartbeat_at < now() - make_interval(secs => ?)
@@ -702,7 +712,7 @@ public final class JobStore {
               return new ChildJob(found.childJobId(), false);
             }
           }
-          UUID childJobId = UUID.randomUUID();
+          UUID childJobId = UuidUtil.timeOrdered();
           db.update(
               INSERT_CHILD_JOB_SQL,
               childJobId,
@@ -1084,7 +1094,7 @@ public final class JobStore {
   }
 
   private boolean insertOccurrence(Sql db, NewJob occurrence) throws SQLException {
-    UUID jobId = UUID.randomUUID();
+    UUID jobId = UuidUtil.timeOrdered();
     if (db.update(INSERT_OCCURRENCE_SQL, insertParameters(jobId, occurrence)) == 0) {
       return false;
     }
