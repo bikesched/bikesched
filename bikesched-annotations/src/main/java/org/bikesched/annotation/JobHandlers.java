@@ -4,6 +4,8 @@ package org.bikesched.annotation;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
+import java.time.Duration;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -123,12 +125,18 @@ public final class JobHandlers {
         if (annotation != null) {
           add(
               jobHandlers,
-              handler(method, annotation.type(), annotation.schedule(), false),
+              handler(
+                  method,
+                  annotation.type(),
+                  annotation.schedule(),
+                  annotation.fixedDelay(),
+                  annotation.initialDelay(),
+                  false),
               "Job type '%s' is handled by two methods: %s and %s");
         } else if (failureAnnotation != null) {
           add(
               failureHandlers,
-              handler(method, failureAnnotation.type(), "", true),
+              handler(method, failureAnnotation.type(), "", "", "", true),
               "Failed jobs of type '%s' are handled by two methods: %s and %s");
         }
       }
@@ -189,7 +197,12 @@ public final class JobHandlers {
 
   /** Validates an annotated method and describes it; the handler is not bound to an instance. */
   private static AnnotatedJobHandler handler(
-      Method method, String type, String schedule, boolean failureHandler) {
+      Method method,
+      String type,
+      String schedule,
+      String fixedDelay,
+      String initialDelay,
+      boolean failureHandler) {
     String annotation = failureHandler ? "@JobFailureHandler" : "@JobHandler";
     Class<?> contextType = failureHandler ? FailedJob.class : Job.class;
     if (type == null || type.isBlank()) {
@@ -253,10 +266,26 @@ public final class JobHandlers {
     if (schedule == null) {
       throw invalid(annotation, method, "has no schedule expression");
     }
+    Duration delay = duration(annotation, method, "fixedDelay", fixedDelay);
+    Duration firstDelay = duration(annotation, method, "initialDelay", initialDelay);
+    if (delay != null && !schedule.isBlank()) {
+      throw invalid(annotation, method, "has both a schedule and a fixedDelay; use one of them");
+    }
+    if (delay != null && (delay.isZero() || delay.isNegative())) {
+      throw invalid(annotation, method, "has a fixedDelay that is not positive: " + delay);
+    }
+    if (firstDelay != null && firstDelay.isNegative()) {
+      throw invalid(annotation, method, "has a negative initialDelay: " + firstDelay);
+    }
+    if (firstDelay != null && delay == null && schedule.isBlank()) {
+      throw invalid(annotation, method, "has an initialDelay but no schedule or fixedDelay");
+    }
     return new AnnotatedJobHandler(
         type,
         payloadIndex < 0 ? null : parameters[payloadIndex],
         schedule.isBlank() ? null : schedule,
+        delay,
+        firstDelay,
         method,
         parameters.length,
         jobIndex,
@@ -264,6 +293,28 @@ public final class JobHandlers {
         failureHandler,
         null,
         null);
+  }
+
+  /** Parses an optional ISO-8601 duration attribute; {@code null} if it is empty. */
+  private static Duration duration(
+      String annotation, Method method, String attribute, String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    try {
+      return Duration.parse(value);
+    } catch (DateTimeParseException e) {
+      throw new IllegalArgumentException(
+          annotation
+              + " method "
+              + method
+              + " has an invalid "
+              + attribute
+              + " '"
+              + value
+              + "'; use an ISO-8601 duration, e.g. PT15M",
+          e);
+    }
   }
 
   private static IllegalArgumentException invalid(

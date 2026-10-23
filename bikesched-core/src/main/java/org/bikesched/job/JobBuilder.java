@@ -204,4 +204,21 @@ public interface JobBuilder<P extends @Nullable Object>
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
    */
   UUID schedule(Recurrence recurrence, Duration delay);
+
+  /**
+   * Registers a recurring job like {@link #schedule(String)}; a new first occurrence runs once the
+   * given delay has passed, the following ones according to the recurrence.
+   *
+   * @param recurrence the recurrence expression, e.g. {@code PT1H}
+   * @param delay how long to wait before a new first occurrence runs, not negative
+   * @return the id of the pending occurrence
+   * @throws IllegalArgumentException if not exactly one of the node's parsers supports the
+   *     expression, the expression is invalid, the delay is negative or no handler is set nor
+   *     registered for the job type
+   * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
+   *     valid JSON
+   * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed or the
+   *     recurrence does not return a later instant
+   */
+  UUID schedule(String recurrence, Duration delay);
 }

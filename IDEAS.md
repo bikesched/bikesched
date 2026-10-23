@@ -52,6 +52,28 @@ no commit callback, and reporting before the commit could count rolled-back even
 The Spring starter could register a `TransactionSynchronization` and report after the commit when
 the connection belongs to a Spring-managed transaction.
 
+### Pausing jobs
+
+An operator can cancel a job or one occurrence of a recurring job, and remove a recurring job that
+no node registers any more, but cannot hold work back for a while and let it continue later, e.g.
+during an incident with a downstream system. Removing a recurring job is undone by the next node
+start, and cancelling loses the job.
+
+- Recurring jobs: a paused flag per type in a small table (it must survive restarts and
+  re-registration); the pending occurrence stays, is not claimed while paused, and resuming makes
+  it due (missed runs skipped as usual).
+- Running and scheduled one-off jobs: `Bikesched.pause(jobId)` marks the job like a cancel request
+  (`pause_requested_at`); a scheduled or waiting job is not claimed, a running one is suspended at
+  its next safe point (the end of the current attempt or the next step boundary, like a
+  postponement) and keeps its steps; `resume(jobId)` makes it due again.
+- Preferred: a job state of its own rather than a flag next to the state, so a paused job is
+  visible in every query and the admin UI; `PAUSED` rather than `SUSPENDED`, which internally
+  already means a job ending its attempt at a wait, sleep or poll (`JobSuspended`).
+- Admin UI: pause and resume buttons on a job and on a recurring job.
+- Open: whether event waits and timeouts keep running while paused, and whether a type-wide pause
+  for one-off jobs (all jobs of a type) is needed too.
+- Outcome: operators stop and continue work without losing jobs or their progress.
+
 ## Testing
 
 ### Test support
@@ -115,23 +137,6 @@ All packages of `bikesched-core` are `@NullMarked` and checked with NullAway in 
 - Apply the `bikesched.errorprone` convention plugin to each, fixing its NullAway and Error Prone
   findings; drop null checks the types then exclude.
 - Outcome: nullness checked across the code base, not only in core.
-
-### Fixed-delay recurrences
-
-`Recurrence.every(Duration)` runs at a fixed rate; the other recurrences compute the next run from
-the previous occurrence's scheduled time. Neither waits for a run to finish: a sync job taking 10
-of its 15 minutes leaves only 5 minutes to the next run. A fixed delay (Spring's `fixedDelay`)
-starts the interval when the previous occurrence ended.
-
-- Core: e.g. `Recurrence.everyAfterCompletion(Duration)`, described as `every PT15M after
-  completion`. `RecurringJob.nextRun(ended, now)` already receives the end time (`now`); the
-  recurrence needs a way to ask for it instead of the planned or scheduled time, e.g. an enum
-  replacing `isFixedRate()` (`SCHEDULED`, `PLANNED`, `COMPLETED`).
-- Annotations: a schedule format for it, or a `fixedDelay` attribute next to `schedule`; ISO
-  durations stay fixed rate.
-- Not a boolean `fixedRate` flag on `@JobHandler`: computing from the scheduled time is neither a
-  fixed rate nor a fixed delay, and the flag would do nothing for wall-clock schedules.
-- Outcome: interval jobs that never overlap their own next run and keep a gap after long runs.
 
 ### Handler versions
 

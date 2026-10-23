@@ -81,7 +81,7 @@ BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
 | `advanceTime(DataSource, Duration, String type, String... moreTypes)` | advances the pending jobs of the given types by the duration: whatever was due within it runs now, the rest keeps waiting, closer by the duration | the number of jobs moved |
 | `advanceTime(DataSource, Duration, JobType<?> type, JobType<?>... moreTypes)` | the same for typed job types | the number of jobs moved |
 
-Both move a job's `scheduled_at` (and the planned run of a fixed-rate occurrence) and the wake-up
+Both move a job's `scheduled_at` (and the planned run of an occurrence) and the wake-up
 times and poll deadlines of its waiting steps back by the same amount, so a job's later deadlines
 keep their distance. They then notify the listening nodes, so the jobs now due are claimed at once.
 Only pending jobs are moved: running and ended jobs, events (and their retention) and the clean-up

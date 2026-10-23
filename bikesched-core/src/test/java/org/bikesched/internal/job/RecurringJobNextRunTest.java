@@ -24,6 +24,31 @@ class RecurringJobNextRunTest {
   }
 
   @Test
+  void nextRunAfterEndCountsFromThePlannedRun() {
+    var job = recurring(Recurrence.of("hourly", previous -> previous.plusSeconds(3600)));
+    Instant planned = Instant.parse("2026-10-03T10:00:00Z");
+
+    assertThat(job.nextRunAfterEnd(planned, Instant.parse("2026-10-03T10:20:00Z")))
+        .as("retries and waits that moved the run do not shift the next one")
+        .isEqualTo(Instant.parse("2026-10-03T11:00:00Z"));
+  }
+
+  @Test
+  void fixedDelayCountsFromTheEnd() {
+    var job = recurring(Recurrence.everyAfterEnd(Duration.ofMinutes(15)));
+    Instant planned = Instant.parse("2026-10-03T10:00:00Z");
+
+    assertThat(job.nextRunAfterEnd(planned, Instant.parse("2026-10-03T10:10:00Z")))
+        .isEqualTo(Instant.parse("2026-10-03T10:25:00Z"));
+    assertThat(job.nextRunAfterEnd(planned, Instant.parse("2026-10-03T11:40:00Z")))
+        .as("no run is skipped")
+        .isEqualTo(Instant.parse("2026-10-03T11:55:00Z"));
+    assertThat(job.nextRunAfterEnd(planned, Instant.parse("2026-10-03T09:55:00Z")))
+        .as("cancelled before its planned run: one run is skipped")
+        .isEqualTo(Instant.parse("2026-10-03T10:15:00Z"));
+  }
+
+  @Test
   void nextRunRejectsSchedulesThatDoNotMoveForward() {
     var job = recurring(Recurrence.of("broken", previous -> previous));
 

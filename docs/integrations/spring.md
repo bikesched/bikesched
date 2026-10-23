@@ -68,6 +68,13 @@ The schedule is evaluated in UTC and uses the expression itself as its stable re
 description. ISO-8601 durations, e.g. `@JobHandler(type = "refresh-cache", schedule = "PT15M")`,
 run at a fixed rate. The same expressions work in `newJob(type).schedule("PT15M")`.
 
+Spring's `@Scheduled` attributes map to `@JobHandler` like this: `fixedRate` to `schedule` with an
+ISO-8601 duration, `cron` to `schedule` with a cron expression, `fixedDelay` to `fixedDelay` (a
+[fixed delay](../jobs/recurring-jobs.md#fixed-delay)) and `initialDelay` to `initialDelay`. Without
+`initialDelay`, the first run is one interval after registration, not right away as with Spring's
+default of 0. Unlike Spring's, the initial delay only applies to a new first occurrence:
+restarting the application keeps the pending one.
+
 Every `RecurrenceParser` bean is added to these two, so an application can add its own formats. For
 other cron dialects or a time zone other than UTC, add `bikesched-cron` and declare its parser as a
 bean; the starter doesn't configure it. Its syntax must not overlap with the built-in parsers',

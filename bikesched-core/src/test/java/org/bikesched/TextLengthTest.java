@@ -224,8 +224,8 @@ class TextLengthTest extends AbstractBikeschedTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_jobs (id, type, recurrence)"
-                        + " values (gen_random_uuid(), 'x', '"
+                    "insert into bikesched_jobs (id, type, planned_run_at, recurrence)"
+                        + " values (gen_random_uuid(), 'x', now(), '"
                         + "d".repeat(201)
                         + "')"))
         .hasMessageContaining("bikesched_jobs_recurrence_check");

@@ -46,4 +46,25 @@ public @interface JobHandler {
    * @return the schedule expression, empty for a one-off handler
    */
   String schedule() default "";
+
+  /**
+   * Optional fixed delay: an ISO-8601 duration (e.g. {@code PT15M}), positive. The handler's job
+   * type becomes a recurring job whose next run is this long after the previous occurrence ended
+   * ({@link org.bikesched.job.Recurrence#everyAfterEnd(java.time.Duration)}), like Spring's {@code
+   * fixedDelay}. Not together with {@link #schedule()}.
+   *
+   * @return the delay, empty for none
+   */
+  String fixedDelay() default "";
+
+  /**
+   * Optional delay of a new first occurrence of a recurring handler ({@link #schedule()} or {@link
+   * #fixedDelay()}): an ISO-8601 duration, not negative, e.g. {@code PT0S} to run right away (like
+   * {@link org.bikesched.job.JobBuilder#schedule(String, java.time.Duration)}). By default the
+   * first occurrence is the recurrence's next run from now. Registration is idempotent: restarting
+   * a node keeps the pending occurrence, the delay only applies to a new first occurrence.
+   *
+   * @return the delay, empty for the default
+   */
+  String initialDelay() default "";
 }

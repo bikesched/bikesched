@@ -56,8 +56,8 @@ create table bikesched_jobs (
     locked_at              timestamptz,
     finished_at            timestamptz,
     cancel_requested_at    timestamptz,                    -- Bikesched.cancel(jobId): cancelled on its next claim
-    planned_run_at         timestamptz,                    -- planned run of a fixed-rate occurrence; unlike
-                                                           -- scheduled_at not moved by retries or event waits
+    planned_run_at         timestamptz,                    -- planned run of an occurrence; unlike scheduled_at
+                                                           -- not moved by retries or event waits
     timeout_millis         bigint,                         -- max. duration of an attempt; null: node default / none
     priority               integer     not null default 0,
     attempts               integer     not null default 0,
@@ -100,7 +100,7 @@ create table bikesched_jobs (
         check ((finished_at is not null)
                = (state in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED'))),
     constraint bikesched_jobs_planned_run_at_check
-        check (planned_run_at is null or recurrence is not null),
+        check ((planned_run_at is null) = (recurrence is null)),
     constraint bikesched_jobs_cancel_message_check
         check (cancel_message is null or cancel_requested_at is not null),
     constraint bikesched_jobs_type_check

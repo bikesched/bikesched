@@ -10,7 +10,6 @@ import java.time.ZonedDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Objects;
 import java.util.function.UnaryOperator;
-import org.bikesched.RetryBackoff;
 import org.bikesched.internal.util.ValidationUtil;
 
 /**
@@ -28,7 +27,9 @@ public interface Recurrence {
   /**
    * Returns the next run after the given one.
    *
-   * @param previous the previous (planned) run
+   * @param previous the previous occurrence's planned run, which retries ({@link
+   *     JobFailure#retryAfter(Duration)}, {@code RetryBackoff}) and event waits do not move; for a
+   *     {@linkplain #isFixedDelay() fixed delay} the time the previous occurrence ended
    * @return the next run, after {@code previous}
    */
   Instant next(Instant previous);
@@ -41,52 +42,61 @@ public interface Recurrence {
   String description();
 
   /**
-   * Returns whether this is a fixed-rate recurrence: the next run is computed from the previous
-   * occurrence's planned run time rather than from its scheduled time, which retries ({@link
-   * JobFailure#retryAfter(Duration)}, {@link RetryBackoff}) and event waits move. Schedules that
-   * only add to the previous run, like {@link #every(Duration)}, would otherwise drift; recurrences
-   * that snap to the wall clock, like {@link #daily(LocalTime, ZoneId)}, are not affected and need
-   * no planned time.
+   * Returns whether this is a fixed-delay recurrence: the next run is computed from the time the
+   * previous occurrence ended (succeeded, failed or was cancelled) instead of its planned run, so
+   * every run is followed by the same gap, however long it took. An occurrence cancelled before its
+   * planned run counts from its planned run, so cancelling the pending occurrence skips one run.
    *
-   * <p>If {@code true}, each occurrence additionally stores its planned run time (column {@code
-   * planned_run_at}).
-   *
-   * @return {@code true} to compute the next run from the planned run time; {@code false} by
-   *     default ({@link #every(Duration)} returns {@code true})
+   * @return {@code true} to compute the next run from the end of the previous occurrence; {@code
+   *     false} by default ({@link #everyAfterEnd(Duration)} returns {@code true})
    */
-  default boolean isFixedRate() {
+  default boolean isFixedDelay() {
     return false;
   }
 
   /**
-   * Runs at a fixed rate: every {@code interval} after the previous planned run (see {@link
-   * #isFixedRate()}), regardless of retries or event waits of the previous occurrence.
+   * Runs at a fixed rate: every {@code interval} after the previous planned run, regardless of
+   * retries or event waits of the previous occurrence. Runs missed because the previous occurrence
+   * took longer are skipped.
    *
    * @param interval the time between runs, positive
    * @return the recurrence
    */
   static Recurrence every(Duration interval) {
     ValidationUtil.requirePositive(interval, "interval");
-    Recurrence recurrence = of("every " + interval, previous -> previous.plus(interval));
+    return of("every " + interval, previous -> previous.plus(interval));
+  }
+
+  /**
+   * Runs with a fixed delay: {@code interval} after the previous occurrence ended (succeeded,
+   * failed or was cancelled), however long it ran (see {@link #isFixedDelay()}). Its description is
+   * {@code every <interval> after end}, e.g. {@code every PT15M after end}.
+   *
+   * @param interval the time between the end of one run and the start of the next, positive
+   * @return the recurrence
+   */
+  static Recurrence everyAfterEnd(Duration interval) {
+    ValidationUtil.requirePositive(interval, "interval");
+    String description = "every " + interval + " after end";
     return new Recurrence() {
       @Override
       public Instant next(Instant previous) {
-        return recurrence.next(previous);
+        return previous.plus(interval);
       }
 
       @Override
       public String description() {
-        return recurrence.description();
+        return description;
       }
 
       @Override
-      public boolean isFixedRate() {
-        return true; // a fixed rate must not drift when an occurrence is retried or waits
+      public boolean isFixedDelay() {
+        return true;
       }
 
       @Override
       public String toString() {
-        return recurrence.description();
+        return description;
       }
     };
   }

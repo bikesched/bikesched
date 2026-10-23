@@ -508,7 +508,7 @@ public final class JobStore {
       job.maxAttempts(),
       Sql.millis(job.timeout()),
       job.recurrence(),
-      Sql.timestamp(job.fixedRateAt()),
+      Sql.timestamp(job.plannedRunAt()),
       job.idempotencyKey()
     };
   }
@@ -1126,7 +1126,7 @@ public final class JobStore {
                       row -> new Moved(row.string(1), row.uuid(2), row.integer(3)),
                       first.recurrence(),
                       first.scheduledAt(),
-                      Sql.timestamp(first.fixedRateAt()),
+                      Sql.timestamp(first.plannedRunAt()),
                       first.type(),
                       first.recurrence());
           if (moved.isPresent()) {

@@ -72,11 +72,22 @@ class RecurrenceTest {
   }
 
   @Test
-  void onlyFixedRateSchedulesUsePlannedTimes() {
-    assertThat(Recurrence.every(Duration.ofMinutes(1)).isFixedRate()).isTrue();
-    assertThat(Recurrence.daily(LocalTime.NOON, BERLIN).isFixedRate()).isFalse();
-    assertThat(Recurrence.weekly(DayOfWeek.MONDAY, LocalTime.NOON, BERLIN).isFixedRate()).isFalse();
-    assertThat(Recurrence.of("custom", previous -> previous.plusSeconds(1)).isFixedRate())
+  void everyAfterEndIsAFixedDelay() {
+    Recurrence recurrence = Recurrence.everyAfterEnd(Duration.ofMinutes(15));
+
+    assertThat(recurrence.next(Instant.EPOCH)).isEqualTo(Instant.EPOCH.plusSeconds(900));
+    assertThat(recurrence.description()).isEqualTo("every PT15M after end");
+    assertThat(recurrence).hasToString("every PT15M after end");
+    assertThat(recurrence.isFixedDelay()).isTrue();
+  }
+
+  @Test
+  void onlyEveryAfterEndIsAFixedDelay() {
+    assertThat(Recurrence.every(Duration.ofMinutes(1)).isFixedDelay()).isFalse();
+    assertThat(Recurrence.daily(LocalTime.NOON, BERLIN).isFixedDelay()).isFalse();
+    assertThat(Recurrence.weekly(DayOfWeek.MONDAY, LocalTime.NOON, BERLIN).isFixedDelay())
+        .isFalse();
+    assertThat(Recurrence.of("custom", previous -> previous.plusSeconds(1)).isFixedDelay())
         .isFalse();
   }
 
@@ -85,6 +96,9 @@ class RecurrenceTest {
     assertThatThrownBy(() -> Recurrence.every(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("interval must be positive: PT0S");
+    assertThatThrownBy(() -> Recurrence.everyAfterEnd(Duration.ofSeconds(-1)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("interval must be positive: PT-1S");
     assertThatThrownBy(() -> Recurrence.of(" ", previous -> previous))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("recurrence description must not be blank");

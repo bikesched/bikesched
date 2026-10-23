@@ -99,6 +99,11 @@ public final class DefaultJobBuilder<P extends @Nullable Object>
     return schedule(recurrence, after(delay));
   }
 
+  @Override
+  public UUID schedule(String recurrence, Duration delay) {
+    return schedule(scheduler.parseRecurrence(recurrence), delay);
+  }
+
   private RecurringJob recurringJob(Recurrence recurrence) {
     Objects.requireNonNull(recurrence, "recurrence");
     return new RecurringJob(type, recurrence, payload, priority, maxAttempts, timeout);

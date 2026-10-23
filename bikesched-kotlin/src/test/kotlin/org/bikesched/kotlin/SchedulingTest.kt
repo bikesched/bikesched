@@ -270,6 +270,7 @@ class SchedulingTest {
   fun `createRecurringJob registers the recurrence with an optional payload and handler`() {
     val typed = unique("recurring-report")
     val plain = unique("recurring-cleanup")
+    val synced = unique("recurring-sync")
 
     testNode("recurring-job").use { bikesched ->
       val reportOccurrence =
@@ -288,9 +289,12 @@ class SchedulingTest {
           recurrence = every(1.hours),
           firstRun = firstRun,
         ) {}
+      val syncOccurrence =
+        bikesched.createRecurringJob(type = synced, recurrence = everyAfterEnd(15.minutes)) {}
 
       assertThat(bikesched.findJobOrNull(reportOccurrence)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(bikesched.findJobOrNull(cleanupOccurrence)?.state()).isEqualTo(JobState.SCHEDULED)
+      assertThat(bikesched.findJobOrNull(syncOccurrence)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(
           bikesched.createRecurringJob(
             type = plain,
@@ -302,6 +306,7 @@ class SchedulingTest {
         .isEqualTo(cleanupOccurrence)
       assertThat(bikesched.removeRecurringJob(typed)).isTrue()
       assertThat(bikesched.removeRecurringJob(plain)).isTrue()
+      assertThat(bikesched.removeRecurringJob(synced)).isTrue()
     }
   }
 

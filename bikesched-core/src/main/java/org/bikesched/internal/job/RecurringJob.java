@@ -40,32 +40,32 @@ public record RecurringJob(
   /** An occurrence running at the given time. */
   public NewJob occurrence(Instant at) {
     return new NewJob(
-        type,
-        payload,
-        at,
-        priority,
-        maxAttempts,
-        timeout,
-        recurrence.description(),
-        recurrence.isFixedRate() ? at : null);
+        type, payload, at, priority, maxAttempts, timeout, recurrence.description(), at);
   }
 
-  /**
-   * The next run after an ended occurrence: computed from its planned run if the recurrence {@link
-   * Recurrence#isFixedRate() is fixed-rate} and it has one, otherwise from its scheduled time
-   * (which retries and event waits may have moved).
-   */
+  /** The next run after an occurrence that ended now, see {@link #nextRunAfterEnd}. */
   Instant nextRun(DefaultJob ended, Instant now) {
-    Instant previous =
+    Instant planned =
         switch (ended.origin()) {
-          case JobOrigin.Occurrence(String ignored, Instant fixedRateAt)
-              when recurrence.isFixedRate() && fixedRateAt != null ->
-              fixedRateAt;
-          case JobOrigin.Occurrence ignored -> ended.scheduledAt();
+          case JobOrigin.Occurrence(String ignored, Instant plannedRunAt) -> plannedRunAt;
           case JobOrigin.OneOff ignored -> ended.scheduledAt();
           case JobOrigin.Child ignored -> ended.scheduledAt();
         };
-    return nextRun(previous, now);
+    return nextRunAfterEnd(planned, now);
+  }
+
+  /**
+   * The next run after an occurrence that ended: computed from its planned run, which retries and
+   * event waits do not move, or, if the recurrence is a {@linkplain Recurrence#isFixedDelay() fixed
+   * delay}, from its end. An occurrence cancelled before its planned run counts from its planned
+   * run, so cancelling it skips one run instead of starting the delay again.
+   *
+   * @param planned the occurrence's planned run
+   * @param ended when it ended (now)
+   */
+  Instant nextRunAfterEnd(Instant planned, Instant ended) {
+    Instant previous = recurrence.isFixedDelay() && ended.isAfter(planned) ? ended : planned;
+    return nextRun(previous, ended);
   }
 
   /**

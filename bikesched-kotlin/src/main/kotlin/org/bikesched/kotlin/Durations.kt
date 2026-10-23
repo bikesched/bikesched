@@ -31,6 +31,13 @@ public fun TransactionalJobBuilder<*>.schedule(delay: Duration): UUID =
 public fun JobBuilder<*>.schedule(recurrence: Recurrence, delay: Duration): UUID =
   schedule(recurrence, delay.toJavaDuration())
 
+/**
+ * Registers a recurring job from a recurrence expression with its first run once [delay] has
+ * passed, see `JobBuilder.schedule(String, Duration)`.
+ */
+public fun JobBuilder<*>.schedule(recurrence: String, delay: Duration): UUID =
+  schedule(recurrence, delay.toJavaDuration())
+
 /** Sets the maximum duration of an attempt, see `JobSettings.timeout(Duration)`. */
 public fun <B : JobSettings<B, *>> B.timeout(timeout: Duration): B =
   timeout(timeout.toJavaDuration())
@@ -53,6 +60,13 @@ public fun Job.sleep(stepName: String, duration: Duration): Unit =
 
 /** A fixed-rate recurrence running every [interval], see `Recurrence.every(Duration)`. */
 public fun every(interval: Duration): Recurrence = Recurrence.every(interval.toJavaDuration())
+
+/**
+ * A fixed-delay recurrence running [interval] after each run ended, see
+ * `Recurrence.everyAfterEnd(Duration)`.
+ */
+public fun everyAfterEnd(interval: Duration): Recurrence =
+  Recurrence.everyAfterEnd(interval.toJavaDuration())
 
 /** Retries after a fixed [delay], see `RetryBackoff.fixed(Duration)`. */
 public fun fixedBackoff(delay: Duration): RetryBackoff = RetryBackoff.fixed(delay.toJavaDuration())

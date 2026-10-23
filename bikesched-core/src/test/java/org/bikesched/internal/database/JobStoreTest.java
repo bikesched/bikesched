@@ -114,20 +114,22 @@ class JobStoreTest extends AbstractStoreTest {
     UUID succeeded = UUID.randomUUID();
     execute(
         "insert into bikesched_jobs (id, type, state, attempts, last_error, finished_at,"
-            + " compensation_end_state, compensation_attempts, cancel_requested_at, recurrence) values"
+            + " compensation_end_state, compensation_attempts, cancel_requested_at, recurrence,"
+            + " planned_run_at) values"
             + " ('"
             + failed
-            + "', 'test', 'FAILED', 3, 'boom', now(), null, 0, now(), null),"
+            + "', 'test', 'FAILED', 3, 'boom', now(), null, 0, now(), null, null),"
             + " ('"
             + compensated
-            + "', 'test', 'FAILED', 3, 'boom', now(), 'FAILED', 1, null, null),"
+            + "', 'test', 'FAILED', 3, 'boom', now(), 'FAILED', 1, null, null, null),"
             + " ('"
             + occurrence
-            + "', 'daily', 'FAILED', 3, 'boom', now(), null, 0, null, 'every PT1H'),"
-            + " (gen_random_uuid(), 'daily', 'SCHEDULED', 0, null, null, null, 0, null, 'every PT1H'),"
+            + "', 'daily', 'FAILED', 3, 'boom', now(), null, 0, null, 'every PT1H', now()),"
+            + " (gen_random_uuid(), 'daily', 'SCHEDULED', 0, null, null, null, 0, null, 'every PT1H',"
+            + " now()),"
             + " ('"
             + succeeded
-            + "', 'test', 'SUCCEEDED', 1, null, now(), null, 0, null, null)");
+            + "', 'test', 'SUCCEEDED', 1, null, now(), null, 0, null, null, null)");
 
     assertThat(database.jobs().retryJob(failed)).isTrue();
     assertThat(database.jobs().retryJob(compensated)).isTrue();

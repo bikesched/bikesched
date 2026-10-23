@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -164,6 +165,58 @@ class JobHandlersTest {
       await().atMost(Duration.ofSeconds(15)).until(() -> !jobs.calls.isEmpty());
     }
     assertThat(jobs.calls).isNotEmpty();
+  }
+
+  public static class FixedDelayJobs {
+    final List<String> calls = new CopyOnWriteArrayList<>();
+
+    @JobHandler(type = "fixed-delay-sync", fixedDelay = "PT1H", initialDelay = "PT0S")
+    public void sync() {
+      calls.add("sync");
+    }
+  }
+
+  @Test
+  void annotatedFixedDelayHandlerRunsAfterItsInitialDelay() {
+    var jobs = new FixedDelayJobs();
+    try (Bikesched bikesched = node()) {
+      JobHandlers.register(bikesched, jobs);
+      await().atMost(Duration.ofSeconds(15)).until(() -> !jobs.calls.isEmpty());
+
+      await()
+          .atMost(Duration.ofSeconds(15))
+          .untilAsserted(
+              () -> {
+                var runs = bikesched.admin().findRecurringJobRuns("fixed-delay-sync", 10);
+                assertThat(runs.previous()).hasSize(1);
+                assertThat(runs.pending()).isNotNull();
+                assertThat(runs.pending().recurrence()).isEqualTo("every PT1H after end");
+              });
+      bikesched.removeRecurringJob("fixed-delay-sync");
+    }
+    assertThat(jobs.calls).containsExactly("sync");
+  }
+
+  public static class InitialDelayJobs {
+    @JobHandler(type = "initial-delay-report", schedule = "PT1H", initialDelay = "PT0S")
+    public void report() {}
+  }
+
+  @Test
+  void initialDelayAppliesToANewFirstOccurrenceOnly() {
+    try (Bikesched first = node()) {
+      first.newJob("initial-delay-report").handler(() -> {}).schedule("PT1H", Duration.ofHours(2));
+    }
+    try (Bikesched bikesched = node()) {
+      JobHandlers.register(bikesched, new InitialDelayJobs());
+
+      var pending = bikesched.admin().findRecurringJobRuns("initial-delay-report", 10).pending();
+      assertThat(pending).isNotNull();
+      assertThat(pending.scheduledAt())
+          .as("registering again keeps the pending occurrence")
+          .isAfter(Instant.now().plus(Duration.ofMinutes(100)));
+      bikesched.removeRecurringJob("initial-delay-report");
+    }
   }
 
   public static class CustomScheduleJobs {

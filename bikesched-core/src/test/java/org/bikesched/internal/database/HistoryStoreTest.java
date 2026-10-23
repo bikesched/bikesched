@@ -75,19 +75,11 @@ class HistoryStoreTest extends AbstractStoreTest {
 
   @Test
   void deletedOccurrenceIsRecorded() {
+    Instant at = Instant.now().plusSeconds(3600);
     var registration =
         database
             .jobs()
-            .registerRecurringJob(
-                new NewJob(
-                    "report",
-                    null,
-                    Instant.now().plusSeconds(3600),
-                    0,
-                    3,
-                    null,
-                    "every PT1H",
-                    null));
+            .registerRecurringJob(new NewJob("report", null, at, 0, 3, null, "every PT1H", at));
 
     assertThat(database.jobs().deletePendingOccurrences("report")).isEqualTo(1);
 

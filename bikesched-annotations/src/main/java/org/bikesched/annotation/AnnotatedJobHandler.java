@@ -5,10 +5,13 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
 import org.bikesched.Bikesched;
+import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobType;
+import org.bikesched.job.Recurrence;
 
 /**
  * A job handler found on a {@link JobHandler @JobHandler} method, or a failure handler found on a
@@ -23,7 +26,9 @@ public final class AnnotatedJobHandler {
 
   private final String type;
   private final Class<?> payloadType;
-  private final String schedule; // null for a one-off handler
+  private final String schedule; // null for a one-off handler or a fixed delay
+  private final Duration fixedDelay; // null unless a fixed delay
+  private final Duration initialDelay; // null for the recurrence's next run from now
   private final Method method;
   private final int parameterCount;
   private final int jobIndex;
@@ -37,6 +42,8 @@ public final class AnnotatedJobHandler {
       String type,
       Class<?> payloadType,
       String schedule,
+      Duration fixedDelay,
+      Duration initialDelay,
       Method method,
       int parameterCount,
       int jobIndex,
@@ -47,6 +54,8 @@ public final class AnnotatedJobHandler {
     this.type = Objects.requireNonNull(type, "type");
     this.payloadType = payloadType;
     this.schedule = schedule;
+    this.fixedDelay = fixedDelay;
+    this.initialDelay = initialDelay;
     this.method = Objects.requireNonNull(method, "method");
     this.parameterCount = parameterCount;
     this.jobIndex = jobIndex;
@@ -92,6 +101,26 @@ public final class AnnotatedJobHandler {
    */
   public Optional<String> schedule() {
     return Optional.ofNullable(schedule);
+  }
+
+  /**
+   * The fixed delay declared by the annotation: the recurring job runs this long after each
+   * occurrence ended ({@link Recurrence#everyAfterEnd(Duration)}).
+   *
+   * @return the delay, empty unless the annotation declares one
+   */
+  public Optional<Duration> fixedDelay() {
+    return Optional.ofNullable(fixedDelay);
+  }
+
+  /**
+   * The delay of a new first occurrence declared by the annotation, see {@link
+   * JobHandler#initialDelay()}.
+   *
+   * @return the delay, empty for the recurrence's next run from now
+   */
+  public Optional<Duration> initialDelay() {
+    return Optional.ofNullable(initialDelay);
   }
 
   /**
@@ -142,6 +171,8 @@ public final class AnnotatedJobHandler {
         type,
         payloadType,
         schedule,
+        fixedDelay,
+        initialDelay,
         method,
         parameterCount,
         jobIndex,
@@ -191,12 +222,11 @@ public final class AnnotatedJobHandler {
     } else {
       registerTyped(bikesched, JobType.of(type, payloadType));
     }
-    if (schedule != null) {
-      if (payloadType == null) {
-        bikesched.newJob(type).schedule(schedule);
-      } else {
-        scheduleTyped(bikesched, JobType.of(type, payloadType));
-      }
+    if (schedule != null || fixedDelay != null) {
+      scheduleOn(
+          payloadType == null
+              ? bikesched.newJob(type)
+              : bikesched.newJob(JobType.of(type, payloadType)));
     }
   }
 
@@ -226,8 +256,20 @@ public final class AnnotatedJobHandler {
     bikesched.registerJobFailureHandler(jobType, this::invoke);
   }
 
-  private <T> void scheduleTyped(Bikesched bikesched, JobType<T> jobType) {
-    bikesched.newJob(jobType).schedule(schedule);
+  /** Registers the recurring job declared by the annotation. */
+  private void scheduleOn(JobBuilder<?> builder) {
+    if (fixedDelay != null) {
+      Recurrence recurrence = Recurrence.everyAfterEnd(fixedDelay);
+      if (initialDelay == null) {
+        builder.schedule(recurrence);
+      } else {
+        builder.schedule(recurrence, initialDelay);
+      }
+    } else if (initialDelay == null) {
+      builder.schedule(schedule);
+    } else {
+      builder.schedule(schedule, initialDelay);
+    }
   }
 
   /**

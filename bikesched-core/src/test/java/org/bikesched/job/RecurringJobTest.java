@@ -149,7 +149,9 @@ class RecurringJobTest extends AbstractBikeschedTest {
                     }
                   })
               .schedule(Recurrence.every(Duration.ofHours(1)), firstRun);
-      assertThat(count("id = '" + first + "' and planned_run_at = scheduled_at")).isEqualTo(1);
+      // not scheduled_at: the occurrence is due right away and may already be retried
+      assertThat(count("id = '" + first + "' and planned_run_at = '" + firstRun + "'"))
+          .isEqualTo(1);
 
       awaitState(first, "SUCCEEDED");
 
@@ -170,7 +172,7 @@ class RecurringJobTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void wallClockSchedulesStoreNoPlannedTime() throws Exception {
+  void wallClockSchedulesStoreTheirPlannedTime() throws Exception {
     try (Bikesched bikesched = node("node-recurring-wall-clock")) {
       UUID occurrence =
           bikesched
@@ -178,8 +180,145 @@ class RecurringJobTest extends AbstractBikeschedTest {
               .handler(() -> {})
               .schedule(Recurrence.daily(java.time.LocalTime.NOON, java.time.ZoneOffset.UTC));
 
-      assertThat(count("id = '" + occurrence + "' and planned_run_at is null")).isEqualTo(1);
+      assertThat(count("id = '" + occurrence + "' and planned_run_at = scheduled_at")).isEqualTo(1);
     }
+  }
+
+  @Test
+  void customRecurrenceIsComputedFromThePlannedTime() throws Exception {
+    try (Bikesched bikesched = node("node-recurring-custom")) {
+      UUID first =
+          bikesched
+              .newJob("recurring-custom")
+              .handler(
+                  job -> {
+                    if (job.attempts() == 1) {
+                      job.fail("later").retryAfter(Duration.ofMillis(500)); // moves scheduled_at
+                    }
+                  })
+              .schedule(
+                  Recurrence.of("hourly", previous -> previous.plus(Duration.ofHours(1))),
+                  Instant.now());
+
+      awaitState(first, "SUCCEEDED");
+
+      assertThat(
+              countRows(
+                  "bikesched_jobs next, bikesched_jobs ended",
+                  "ended.id = '"
+                      + first
+                      + "' and next.type = 'recurring-custom' and next.state = 'SCHEDULED'"
+                      + " and next.planned_run_at = ended.planned_run_at + interval '1 hour'"))
+          .as("the retry does not shift the next run")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void fixedDelayIsComputedFromTheEnd() throws Exception {
+    try (Bikesched bikesched = node("node-recurring-delay")) {
+      UUID first =
+          bikesched
+              .newJob("recurring-delay")
+              .handler(
+                  job -> {
+                    if (job.attempts() == 1) {
+                      job.fail("later").retryAfter(Duration.ofMillis(500));
+                    }
+                  })
+              .schedule(Recurrence.everyAfterEnd(Duration.ofHours(1)), Instant.now());
+      assertThat(count("id = '" + first + "' and recurrence = 'every PT1H after end'"))
+          .isEqualTo(1);
+
+      awaitState(first, "SUCCEEDED");
+
+      assertThat(count("id = '" + first + "' and finished_at > planned_run_at + interval '400 ms'"))
+          .as("the retry ended the occurrence well after its planned run")
+          .isEqualTo(1);
+      assertNextRunAnHourAfterTheEnd("recurring-delay", first);
+    }
+  }
+
+  @Test
+  void fixedDelayOccurrenceCancelledWhileWaitingCountsFromTheEnd() throws Exception {
+    try (Bikesched bikesched = node("node-recurring-delay-cancel")) {
+      UUID first =
+          bikesched
+              .newJob("recurring-delay-cancel")
+              .handler(job -> job.fail("later").retryAfter(Duration.ofHours(1)))
+              .schedule(Recurrence.everyAfterEnd(Duration.ofHours(1)), Instant.now());
+      awaitCount("id = '" + first + "' and state = 'SCHEDULED' and attempts = 1", 1);
+
+      bikesched.cancel(first, "enough");
+      awaitState(first, "CANCELLED");
+
+      assertNextRunAnHourAfterTheEnd("recurring-delay-cancel", first);
+    }
+  }
+
+  @Test
+  void fixedDelayOccurrenceCancelledBeforeItsRunSkipsOneRun() throws Exception {
+    try (Bikesched bikesched = node("node-recurring-delay-skip")) {
+      UUID first =
+          bikesched
+              .newJob("recurring-delay-skip")
+              .handler(() -> {})
+              .schedule(
+                  Recurrence.everyAfterEnd(Duration.ofHours(1)),
+                  Instant.now().plus(Duration.ofMinutes(10)));
+
+      bikesched.cancel(first, "skip this one");
+      awaitState(first, "CANCELLED");
+
+      assertThat(
+              countRows(
+                  "bikesched_jobs next, bikesched_jobs ended",
+                  "ended.id = '"
+                      + first
+                      + "' and next.type = 'recurring-delay-skip' and next.state = 'SCHEDULED'"
+                      + " and next.scheduled_at = ended.planned_run_at + interval '1 hour'"))
+          .as("the next run is an hour after the cancelled one's planned run")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void switchingToAFixedDelayMovesThePendingOccurrence() throws Exception {
+    try (Bikesched bikesched = node("node-recurring-switch")) {
+      bikesched
+          .newJob("recurring-switch")
+          .handler(() -> {})
+          .schedule(Recurrence.every(Duration.ofHours(1)));
+      UUID moved =
+          bikesched
+              .newJob("recurring-switch")
+              .schedule(Recurrence.everyAfterEnd(Duration.ofHours(1)), Duration.ofMinutes(5));
+
+      assertThat(
+              count(
+                  "id = '"
+                      + moved
+                      + "' and recurrence = 'every PT1H after end'"
+                      + " and scheduled_at < now() + interval '10 minutes'"
+                      + " and planned_run_at = scheduled_at"))
+          .isEqualTo(1);
+    }
+  }
+
+  /** The occurrence after {@code ended} is due an hour after it ended (node and database clock). */
+  private static void assertNextRunAnHourAfterTheEnd(String type, UUID ended) throws Exception {
+    assertThat(
+            countRows(
+                "bikesched_jobs next, bikesched_jobs ended",
+                "ended.id = '"
+                    + ended
+                    + "' and next.type = '"
+                    + type
+                    + "' and next.state = 'SCHEDULED' and next.planned_run_at = next.scheduled_at"
+                    + " and next.scheduled_at between ended.finished_at + interval '59 minutes'"
+                    + " and ended.finished_at + interval '1 hour 1 second'"))
+        .as("next run = end + 1 hour")
+        .isEqualTo(1);
   }
 
   @Test

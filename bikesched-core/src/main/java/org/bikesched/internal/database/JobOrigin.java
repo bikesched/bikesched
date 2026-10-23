@@ -3,7 +3,6 @@ package org.bikesched.internal.database;
 
 import java.time.Instant;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Where a job comes from. Exclusive: a child job is never an occurrence (a step cannot start a
@@ -25,15 +24,18 @@ public sealed interface JobOrigin {
    * An occurrence of a recurring job.
    *
    * @param recurrence the description of the recurring job's recurrence
-   * @param fixedRateAt the planned run if the recurrence is fixed-rate, {@code null} otherwise
+   * @param plannedRunAt the planned run, not moved by retries or event waits
    */
-  record Occurrence(String recurrence, @Nullable Instant fixedRateAt) implements JobOrigin {}
+  record Occurrence(String recurrence, Instant plannedRunAt) implements JobOrigin {}
 
-  /** The origin of a stored job, from its nullable columns. */
-  static JobOrigin of(UUID parentJobId, String recurrence, Instant fixedRateAt) {
+  /**
+   * The origin of a stored job, from its nullable columns; an occurrence always has a planned run
+   * ({@code bikesched_jobs_planned_run_at_check}).
+   */
+  static JobOrigin of(UUID parentJobId, String recurrence, Instant plannedRunAt) {
     if (parentJobId != null) {
       return new Child(parentJobId);
     }
-    return recurrence == null ? new OneOff() : new Occurrence(recurrence, fixedRateAt);
+    return recurrence == null ? new OneOff() : new Occurrence(recurrence, plannedRunAt);
   }
 }
