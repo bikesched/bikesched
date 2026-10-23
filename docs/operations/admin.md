@@ -149,7 +149,7 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   the step on its own (`#/jobs/{jobId}/steps/{stepId}`, keyed by the step's id): its kind,
   attempts (checks of a poll), times, deadline, failure handler runs, compensation, the node
   running it, its event or child job, the last error, its result (with `showPayloads(true)`) and
-  its entries of the job history. It refreshes every 3 seconds until the step or its job ended.
+  its entries of the job history. It refreshes every 3 seconds until its job ended.
 - **Schedule job** (operators): a form in the detail panel, opened by the button above the job list
   (with the type of the list filled in) or by "Schedule similar…" in a job's detail (type, payload,
   priority and max attempts copied from that job). It offers only the job types the serving node has

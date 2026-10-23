@@ -420,12 +420,14 @@ export function JobDetail({ jobId, me, nodes, stepHref, onUpdate, onChanged, onC
     </aside>`;
 }
 
-// Step states a step does not leave unless its job is compensated.
+// Step states without a running attempt; a later attempt or a compensation of the job can still
+// change them.
 const STEP_ENDED = ['SUCCEEDED', 'FAILED', 'COMPENSATED', 'CANCELLED'];
 
 /**
  * One step by its id, with its result and its entries of the job history. Polled every 3 seconds
- * while it is open, the tab is visible and neither the step nor its job has ended.
+ * while it is open, the tab is visible and its job has not ended: a failed step runs again in the
+ * job's next attempt, a succeeded one may be compensated.
  */
 function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
   const [data, setData] = useState(null);
@@ -449,7 +451,7 @@ function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
           setData(result.body);
         }
         const body = result.notModified ? null : result.body;
-        if (body && (STEP_ENDED.includes(body.step.state) || !body.job || ENDED.includes(body.job.state))) {
+        if (body && (!body.job || ENDED.includes(body.job.state))) {
           ended = true;
           setLive('stopped');
         } else {
@@ -495,7 +497,7 @@ function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
   }
 
   const { step, job, history } = data;
-  const liveText = { loading: 'Loading…', live: 'Live', stopped: 'Ended', lost: 'Connection lost, retrying' }[live];
+  const liveText = { loading: 'Loading…', live: 'Live', stopped: 'Job ended', lost: 'Connection lost, retrying' }[live];
   const poll = step.kind === 'POLL';
   const fields = [
     ['Kind', step.kind],
