@@ -29,7 +29,7 @@ publishing {
                 developers {
                     developer {
                         id = "sbuettner"
-                        name = "sbuettner"
+                        name = "Simon Büttner"
                         email = "mail@bikesched.org"
                     }
                 }

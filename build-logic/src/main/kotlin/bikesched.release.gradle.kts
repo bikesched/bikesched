@@ -55,7 +55,7 @@ val previousTag = providers.gradleProperty("previousTag").orNull?.takeIf { it.is
 jreleaser {
     project {
         description = "A PostgreSQL-backed job scheduler for Java"
-        authors = listOf("sbuettner")
+        authors = listOf("Simon Büttner")
         license = "Apache-2.0"
         inceptionYear = "2026"
         links {

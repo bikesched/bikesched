@@ -128,6 +128,13 @@ publishing.publications.create<MavenPublication>("shaded") {
                 distribution = "repo"
             }
         }
+        developers {
+            developer {
+                id = "sbuettner"
+                name = "Simon Büttner"
+                email = "mail@bikesched.org"
+            }
+        }
         scm {
             url = "https://github.com/bikesched/bikesched"
             connection = "scm:git:https://github.com/bikesched/bikesched.git"
