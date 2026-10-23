@@ -130,7 +130,7 @@ class HistoryStoreTest extends AbstractStoreTest {
     try (var connection = dataSource.getConnection();
         var query =
             connection.prepareStatement(
-                "select wait_until from bikesched_steps where job_id = ? and name = ?")) {
+                "select wake_at from bikesched_steps where job_id = ? and name = ?")) {
       query.setObject(1, jobId);
       query.setString(2, stepName);
       try (var rs = query.executeQuery()) {

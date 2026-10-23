@@ -71,14 +71,17 @@ class StepStoreTest extends AbstractStoreTest {
     UUID jobId = claimJobs(node, 1).getFirst().id();
 
     database.steps().startStep(jobId, lock(jobId), "a");
-    assertThat(countSteps("name = 'a' and state = 'RUNNING' and locked_by = '" + node + "'"))
+    assertThat(
+            countSteps("name = 'a' and state = 'RUNNING' and locked_by_node_id = '" + node + "'"))
         .isEqualTo(1);
     database.steps().completeStep(jobId, lock(jobId), "a", null);
-    assertThat(countSteps("name = 'a' and state = 'SUCCEEDED' and locked_by is null")).isEqualTo(1);
+    assertThat(countSteps("name = 'a' and state = 'SUCCEEDED' and locked_by_node_id is null"))
+        .isEqualTo(1);
 
     database.steps().startStep(jobId, lock(jobId), "b");
     database.steps().failStep(jobId, lock(jobId), "b", "boom");
-    assertThat(countSteps("name = 'b' and state = 'FAILED' and locked_by is null")).isEqualTo(1);
+    assertThat(countSteps("name = 'b' and state = 'FAILED' and locked_by_node_id is null"))
+        .isEqualTo(1);
   }
 
   @Test
@@ -93,14 +96,15 @@ class StepStoreTest extends AbstractStoreTest {
     database.steps().completeStep(jobId, mine, "b", null, true);
     // Released (as for a node considered dead) and claimed by another node.
     execute(
-        "update bikesched_jobs set locked_by = '"
+        "update bikesched_jobs set locked_by_node_id = '"
             + other
             + "', lock_token = gen_random_uuid() where id = '"
             + jobId
             + "'");
 
     assertStepWritesRejected(jobId, mine);
-    assertThat(countSteps("name = 'a' and state = 'RUNNING' and locked_by = '" + node + "'"))
+    assertThat(
+            countSteps("name = 'a' and state = 'RUNNING' and locked_by_node_id = '" + node + "'"))
         .as("unchanged")
         .isEqualTo(1);
 
@@ -108,7 +112,8 @@ class StepStoreTest extends AbstractStoreTest {
     JobLock theirs = lock(jobId);
     assertThat(database.steps().startStep(jobId, theirs, "a")).contains(2);
     database.steps().completeStep(jobId, theirs, "a", "1");
-    assertThat(countSteps("name = 'a' and state = 'SUCCEEDED' and locked_by is null")).isEqualTo(1);
+    assertThat(countSteps("name = 'a' and state = 'SUCCEEDED' and locked_by_node_id is null"))
+        .isEqualTo(1);
   }
 
   /**
@@ -166,7 +171,7 @@ class StepStoreTest extends AbstractStoreTest {
     UUID jobId = claimJobs(node, 1).getFirst().id();
     JobLock ended = lock(jobId);
     execute(
-        "update bikesched_jobs set state = 'CANCELLED', locked_by = null, lock_token = null,"
+        "update bikesched_jobs set state = 'CANCELLED', locked_by_node_id = null, lock_token = null,"
             + " locked_at = null,"
             + " finished_at = now() where id = '"
             + jobId
@@ -190,9 +195,9 @@ class StepStoreTest extends AbstractStoreTest {
         .isEqualTo(new StepStore.PollStep.CheckStarted(1, false));
     assertThat(
             countSteps(
-                "name = 'p' and kind = 'POLL' and state = 'RUNNING' and locked_by = '"
+                "name = 'p' and kind = 'POLL' and state = 'RUNNING' and locked_by_node_id = '"
                     + node
-                    + "' and timeout_at > now() + interval '50 minutes'"))
+                    + "' and deadline_at > now() + interval '50 minutes'"))
         .isEqualTo(1);
 
     StepStore.PollWait wait = steps.waitPoll(jobId, lock(jobId), "p", Duration.ofMinutes(5));
@@ -200,8 +205,8 @@ class StepStoreTest extends AbstractStoreTest {
     assertThat(wait.checks()).isEqualTo(1);
     assertThat(
             countSteps(
-                "name = 'p' and state = 'WAITING' and locked_by is null"
-                    + " and wait_until between now() + interval '4 minutes'"
+                "name = 'p' and state = 'WAITING' and locked_by_node_id is null"
+                    + " and wake_at between now() + interval '4 minutes'"
                     + " and now() + interval '6 minutes'"))
         .isEqualTo(1);
 
@@ -209,10 +214,10 @@ class StepStoreTest extends AbstractStoreTest {
         .as("not due: no check")
         .isEqualTo(new StepStore.PollStep.NotDue(1, wait.waitUntil()));
 
-    execute("update bikesched_steps set wait_until = now() where name = 'p'");
+    execute("update bikesched_steps set wake_at = now() where name = 'p'");
     assertThat(steps.startPoll(jobId, lock(jobId), "p", Duration.ofMillis(1)))
         .isEqualTo(new StepStore.PollStep.CheckStarted(2, true));
-    assertThat(countSteps("name = 'p' and timeout_at > now() + interval '50 minutes'"))
+    assertThat(countSteps("name = 'p' and deadline_at > now() + interval '50 minutes'"))
         .as("the first deadline wins")
         .isEqualTo(1);
 
@@ -232,11 +237,11 @@ class StepStoreTest extends AbstractStoreTest {
     StepStore steps = database.steps();
     steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1));
     steps.waitPoll(jobId, lock(jobId), "p", Duration.ofHours(2));
-    assertThat(countSteps("name = 'p' and wait_until = timeout_at"))
+    assertThat(countSteps("name = 'p' and wake_at = deadline_at"))
         .as("the next check is at most at the deadline")
         .isEqualTo(1);
 
-    execute("update bikesched_steps set wait_until = now(), timeout_at = now() where name = 'p'");
+    execute("update bikesched_steps set wake_at = now(), deadline_at = now() where name = 'p'");
     steps.startPoll(jobId, lock(jobId), "p", Duration.ofHours(1));
     StepStore.PollWait wait = steps.waitPoll(jobId, lock(jobId), "p", Duration.ofHours(2));
 

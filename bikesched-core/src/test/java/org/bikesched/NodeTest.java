@@ -152,10 +152,10 @@ class NodeTest extends AbstractBikeschedTest {
     // poller does not execute it right after the release).
     execute("insert into bikesched_nodes (id, name) values ('" + staleId + "', 'node-restarted')");
     execute(
-        "insert into bikesched_jobs (id, type, state, locked_by, lock_token, scheduled_at)"
-            + " values (gen_random_uuid(), 'orphan-restart', 'RUNNING', '"
+        "insert into bikesched_jobs (id, type, state, locked_by_node_id, lock_token, locked_at,"
+            + " scheduled_at) values (gen_random_uuid(), 'orphan-restart', 'RUNNING', '"
             + staleId
-            + "', gen_random_uuid(), now() + interval '1 hour')");
+            + "', gen_random_uuid(), now(), now() + interval '1 hour')");
 
     try (Bikesched bikesched =
         testNode("node-restarted", Duration.ofMillis(50))
@@ -168,7 +168,7 @@ class NodeTest extends AbstractBikeschedTest {
               () -> {
                 assertThat(
                         count(
-                            "type = 'orphan-restart' and state = 'SCHEDULED' and locked_by is null"))
+                            "type = 'orphan-restart' and state = 'SCHEDULED' and locked_by_node_id is null"))
                     .as("released by the node clean-up once the stale entry timed out")
                     .isEqualTo(1);
                 assertThat(nodeName(staleId)).isNull();
@@ -198,10 +198,10 @@ class NodeTest extends AbstractBikeschedTest {
               + deadNode
               + "', 'node-dead', now() - interval '1 minute')");
       execute(
-          "insert into bikesched_jobs (id, type, state, locked_by, lock_token)"
+          "insert into bikesched_jobs (id, type, state, locked_by_node_id, lock_token, locked_at)"
               + " select gen_random_uuid(), 'orphan', 'RUNNING', '"
               + deadNode
-              + "', gen_random_uuid() from generate_series(1, 2)");
+              + "', gen_random_uuid(), now() from generate_series(1, 2)");
 
       // Released by the node clean-up, then claimed and executed by this node's poller; the dead
       // node itself is removed once its jobs no longer reference it.

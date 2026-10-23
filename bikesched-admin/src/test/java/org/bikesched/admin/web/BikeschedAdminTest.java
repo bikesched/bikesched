@@ -153,7 +153,7 @@ class BikeschedAdminTest {
   }
 
   @Test
-  void findsJobsAndEventsByTheFirstDigitsOfTheirId() {
+  void findsJobsAndEventsByTheLastDigitsOfTheirId() {
     String type = prefix + "by-id";
     bikesched.registerJobHandler(type, ignored -> {});
     UUID jobId = bikesched.newJob(type).schedule(Duration.ofHours(1));
@@ -161,7 +161,7 @@ class BikeschedAdminTest {
 
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
       JsonObject jobs =
-          AdminServer.json(server.get("/api/jobs?id=" + jobId.toString().substring(0, 8)));
+          AdminServer.json(server.get("/api/jobs?id=" + jobId.toString().substring(28)));
       assertThat(ids(jobs.getArray("jobs"))).containsExactly(jobId.toString());
       assertThat(jobs.isNull("next")).isTrue();
       JsonObject events = AdminServer.json(server.get("/api/events?id=" + eventId));

@@ -60,7 +60,7 @@ bikesched.newEvent("payment-received", order.id())
   `Duration.ZERO`, the key has no effect.
 - The check runs under the advisory lock `publish` takes on name and key, so concurrent
   duplicates are published once, also with `.connection(connection)`.
-- Keys have 1 to 500 characters. The [event listener](../operations/metrics.md#own-listeners) is not
+- Keys have 1 to 500 characters and at most 1500 bytes in UTF-8. The [event listener](../operations/metrics.md#own-listeners) is not
   called for a duplicate.
 - Events published by a job (`Job.newEvent`) have no key: their step publishes them once.
 
@@ -81,7 +81,7 @@ stateDiagram-v2
 ```
 
 1. **The handler reaches the wait.** If no matching, unexpired event exists, the step is created
-   `WAITING` (with `wait_until` if it has a timeout). The attempt ends: the job becomes `WAITING`,
+   `WAITING` (with `wake_at` if it has a timeout). The attempt ends: the job becomes `WAITING`,
    due at the deadline (or never without one), its lock is released and the attempt is given back,
    so waiting does not count as an attempt.
 2. **The event is published.** In one transaction, holding the advisory lock on name and key:
@@ -101,7 +101,7 @@ Other paths:
 
 - **Published before the wait:** the step is created `SUCCEEDED` with the latest unexpired event's
   payload right away; the job is never suspended.
-- **Timeout:** the job becomes due at `wait_until`. Its next run finds the deadline passed and marks
+- **Timeout:** the job becomes due at `wake_at`. Its next run finds the deadline passed and marks
   the step `TIMED_OUT`; the job fails, unless the wait's failure handler resolves it with a
   fallback, which `receive` returns on this and every later run. See [Timeouts](#timeouts).
 - **Cancellation:** cancelling the job marks a `WAITING` step `CANCELLED`; it no longer receives

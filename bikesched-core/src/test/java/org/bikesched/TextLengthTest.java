@@ -178,8 +178,28 @@ class TextLengthTest extends AbstractBikeschedTest {
 
   @Test
   void lengthIsCountedInCharactersLikePostgres() {
-    // 200 emoji: 400 UTF-16 chars, but 200 characters for Java's code points and Postgres.
-    assertThat(JobType.of("\uD83D\uDEB2".repeat(200), String.class).name()).hasSize(400);
+    // 150 emoji: 300 UTF-16 chars, but 150 characters for Java's code points and Postgres.
+    assertThat(JobType.of("\uD83D\uDEB2".repeat(150), String.class).name()).hasSize(300);
+  }
+
+  @Test
+  void longestNamesAndKeysOfFourByteCharactersFitTheIndexes() throws Exception {
+    // At most 600 bytes per name and 1500 per key: the indexes on a name and a key stay below
+    // PostgreSQL's B-tree maximum of 2704 bytes (200 + 500 such characters would need 2800).
+    String name = UUID.randomUUID().toString().substring(0, 8) + "\uD83D\uDEB2".repeat(148);
+    String key = "\uD83D\uDEB2".repeat(375);
+    try (Bikesched bikesched = testNode("text-length-bytes").autoStartPolling(false).build()) {
+      UUID event = bikesched.newEvent(name, key).idempotencyKey(key).publish();
+      assertThat(bikesched.newEvent(name, key).idempotencyKey(key).publish()).isEqualTo(event);
+      Duration inAnHour = Duration.ofHours(1);
+      UUID job = bikesched.newJob(name).handler(() -> {}).idempotencyKey(key).schedule(inAnHour);
+      assertThat(bikesched.newJob(name).handler(() -> {}).idempotencyKey(key).schedule(inAnHour))
+          .isEqualTo(job);
+      execute("delete from bikesched_jobs where id = '" + job + "'");
+    }
+    assertThatThrownBy(() -> JobType.of("\uD83D\uDEB2".repeat(151), String.class))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("at most 600 bytes in UTF-8");
   }
 
   @Test
@@ -223,6 +243,14 @@ class TextLengthTest extends AbstractBikeschedTest {
                     "insert into bikesched_events (id, name, key, idempotency_key, expires_at)"
                         + " values (gen_random_uuid(), 'event', 'key', '', now())"))
         .hasMessageContaining("bikesched_events_idempotency_key_check");
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "insert into bikesched_jobs (id, type) values (gen_random_uuid(), repeat(chr("
+                        + 0x1F6B2
+                        + "), 151))"))
+        .as("over 600 bytes")
+        .hasMessageContaining("bikesched_jobs_type_check");
   }
 
   /** The prefix padded with {@code x} to exactly the given length. */

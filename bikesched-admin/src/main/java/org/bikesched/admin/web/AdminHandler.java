@@ -343,9 +343,9 @@ final class AdminHandler {
 
   private Json.Obj jobs(Admin admin, Map<String, String> params) {
     int limit = limit(params);
-    String idPrefix = idPrefix(params, "type", "state", "node");
-    if (idPrefix != null) {
-      List<JobSummary> jobs = byIdPrefix(() -> admin.findJobsByIdPrefix(idPrefix, limit));
+    String idSuffix = idSuffix(params, "type", "state", "node");
+    if (idSuffix != null) {
+      List<JobSummary> jobs = byIdSuffix(() -> admin.findJobsByIdSuffix(idSuffix, limit));
       return Json.object()
           .put("jobs", jobs.stream().map(AdminJson::job).toList())
           .put("next", null);
@@ -367,18 +367,12 @@ final class AdminHandler {
       }
       query = query.withStates(set);
     }
-    Cursor before = Cursor.parse(params.get("before"));
+    String before = blankToNull(params.get("before"));
     if (before != null) {
-      query =
-          new JobQuery(
-              query.type(), query.states(), query.nodeId(), before.time(), before.id(), limit);
+      query = new JobQuery(query.type(), query.states(), query.nodeId(), id(before), limit);
     }
     List<JobSummary> jobs = admin.findJobs(query);
-    String next = null;
-    if (jobs.size() == limit) {
-      JobSummary last = jobs.getLast();
-      next = new Cursor(last.createdAt(), last.id()).toString();
-    }
+    String next = jobs.size() == limit ? jobs.getLast().id().toString() : null;
     return Json.object().put("jobs", jobs.stream().map(AdminJson::job).toList()).put("next", next);
   }
 
@@ -461,9 +455,9 @@ final class AdminHandler {
 
   private Json.Obj events(Admin admin, Map<String, String> params) {
     int limit = limit(params);
-    String idPrefix = idPrefix(params, "name", "key");
-    if (idPrefix != null) {
-      List<EventSummary> events = byIdPrefix(() -> admin.findEventsByIdPrefix(idPrefix, limit));
+    String idSuffix = idSuffix(params, "name", "key");
+    if (idSuffix != null) {
+      List<EventSummary> events = byIdSuffix(() -> admin.findEventsByIdSuffix(idSuffix, limit));
       return Json.object()
           .put("events", events.stream().map(AdminJson::event).toList())
           .put("next", null);
@@ -472,16 +466,12 @@ final class AdminHandler {
         EventQuery.newest(limit)
             .withName(blankToNull(params.get("name")))
             .withKeyPrefix(blankToNull(params.get("key")));
-    Cursor before = Cursor.parse(params.get("before"));
+    String before = blankToNull(params.get("before"));
     if (before != null) {
-      query = new EventQuery(query.name(), query.keyPrefix(), before.time(), before.id(), limit);
+      query = new EventQuery(query.name(), query.keyPrefix(), id(before), limit);
     }
     List<EventSummary> events = admin.findEvents(query);
-    String next = null;
-    if (events.size() == limit) {
-      EventSummary last = events.getLast();
-      next = new Cursor(last.publishedAt(), last.id()).toString();
-    }
+    String next = events.size() == limit ? events.getLast().id().toString() : null;
     return Json.object()
         .put("events", events.stream().map(AdminJson::event).toList())
         .put("next", next);
@@ -616,9 +606,9 @@ final class AdminHandler {
 
   // The id search of a list: the "id" parameter, which excludes the list's other filters and
   // paging.
-  private static String idPrefix(Map<String, String> params, String... filters) {
-    String idPrefix = blankToNull(params.get("id"));
-    if (idPrefix == null) {
+  private static String idSuffix(Map<String, String> params, String... filters) {
+    String idSuffix = blankToNull(params.get("id"));
+    if (idSuffix == null) {
       return null;
     }
     for (String filter : filters) {
@@ -629,10 +619,10 @@ final class AdminHandler {
     if (blankToNull(params.get("before")) != null) {
       throw new BadRequest("Parameter id cannot be combined with before");
     }
-    return idPrefix;
+    return idSuffix;
   }
 
-  private static <T> List<T> byIdPrefix(Supplier<List<T>> lookup) {
+  private static <T> List<T> byIdSuffix(Supplier<List<T>> lookup) {
     try {
       return lookup.get();
     } catch (IllegalArgumentException e) {
@@ -690,31 +680,5 @@ final class AdminHandler {
 
   private static String blankToNull(String value) {
     return value == null || value.isBlank() ? null : value;
-  }
-
-  /** The position after the last row of a page: its time and id, as {@code time,id}. */
-  private record Cursor(Instant time, UUID id) {
-
-    static Cursor parse(String value) {
-      if (value == null || value.isBlank()) {
-        return null;
-      }
-      int comma = value.indexOf(',');
-      try {
-        if (comma > 0) {
-          return new Cursor(
-              Instant.parse(value.substring(0, comma)),
-              UUID.fromString(value.substring(comma + 1)));
-        }
-      } catch (DateTimeParseException | IllegalArgumentException e) {
-        // reported below
-      }
-      throw new BadRequest("Malformed cursor: " + value);
-    }
-
-    @Override
-    public String toString() {
-      return time + "," + id;
-    }
   }
 }

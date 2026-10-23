@@ -42,7 +42,7 @@ public final class NodeStore {
             delete from bikesched_nodes n
              where n.id <> ?
                and n.last_heartbeat_at < now() - make_interval(secs => ?)
-               and not exists (select 1 from bikesched_jobs j where j.locked_by = n.id)
+               and not exists (select 1 from bikesched_jobs j where j.locked_by_node_id = n.id)
             returning n.id, n.name, n.last_heartbeat_at""";
 
   /**

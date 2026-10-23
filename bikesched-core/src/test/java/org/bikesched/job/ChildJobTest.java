@@ -175,7 +175,7 @@ class ChildJobTest extends AbstractBikeschedTest {
               countSteps(
                   parentId,
                   "name = 'start child-basic-child' and kind = 'CHILD_JOB' and state = 'SUCCEEDED'"
-                      + " and child_state = 'SUCCEEDED' and child_job_id = '"
+                      + " and child_end_state = 'SUCCEEDED' and child_job_id = '"
                       + childId
                       + "'"))
           .isEqualTo(1);
@@ -825,7 +825,7 @@ class ChildJobTest extends AbstractBikeschedTest {
               countSteps(
                   parentId,
                   "kind = 'CHILD_JOB' and state = 'TIMED_OUT'"
-                      + " and wait_until < started_at + interval '1 minute'"))
+                      + " and wake_at < started_at + interval '1 minute'"))
           .isEqualTo(1);
       assertThat(count("id = '" + child.get() + "' and state = 'WAITING'")).isEqualTo(1);
       assertThatThrownBy(outcomes.getFirst()::orElseThrow)

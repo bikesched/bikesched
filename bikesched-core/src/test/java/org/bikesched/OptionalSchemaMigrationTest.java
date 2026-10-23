@@ -96,7 +96,7 @@ class OptionalSchemaMigrationTest extends AbstractBikeschedTest {
       deploy.migrate();
     }
     sql(
-        "insert into bikesched_schema_migrations (version, description, checksum, execution_time_ms)"
+        "insert into bikesched_schema_migrations (version, description, checksum, execution_time_millis)"
             + " values (99, 'future', 'unknown', 0)");
     var before = history();
     isolated.setOptions("-c default_transaction_read_only=on");

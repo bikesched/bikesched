@@ -379,47 +379,51 @@ class AdminTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void findsJobsAndEventsByTheFirstDigitsOfTheirId() {
+  void findsJobsAndEventsByTheLastDigitsOfTheirId() {
     String type = prefix + "by-id";
     try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
       bikesched.registerJobHandler(type, ignored -> {});
       UUID jobId = bikesched.newJob(type).schedule(Duration.ofHours(1));
       UUID eventId = bikesched.newEvent(prefix + "by-id", "k").publish();
-      String jobShort = jobId.toString().substring(0, 8);
+      String jobShort = jobId.toString().substring(28);
 
       Admin admin = bikesched.admin();
-      assertThat(admin.findJobsByIdPrefix(jobShort, 10))
+      assertThat(admin.findJobsByIdSuffix(jobShort, 10))
           .extracting(JobSummary::id)
           .containsExactly(jobId);
-      assertThat(admin.findJobsByIdPrefix(" " + jobId.toString().toUpperCase() + " ", 10))
+      assertThat(admin.findJobsByIdSuffix(" " + jobId.toString().toUpperCase() + " ", 10))
           .as("a full id, upper case and padded")
           .extracting(JobSummary::id)
           .containsExactly(jobId);
-      assertThat(admin.findJobsByIdPrefix(jobId.toString().replace("-", ""), 10))
+      assertThat(admin.findJobsByIdSuffix(jobId.toString().replace("-", ""), 10))
           .as("a full id without hyphens")
           .extracting(JobSummary::id)
           .containsExactly(jobId);
-      assertThat(admin.findEventsByIdPrefix(eventId.toString().substring(0, 13), 10))
-          .as("a prefix with a hyphen")
+      assertThat(admin.findEventsByIdSuffix(eventId.toString().substring(19), 10))
+          .as("a suffix with a hyphen")
           .extracting(EventSummary::id)
           .containsExactly(eventId);
-      assertThat(admin.findJobsByIdPrefix(eventId.toString(), 10)).as("only jobs").isEmpty();
-      assertThat(admin.findEventsByIdPrefix(UUID.randomUUID().toString(), 10)).isEmpty();
+      assertThat(admin.findJobsByIdSuffix(eventId.toString(), 10)).as("only jobs").isEmpty();
+      assertThat(admin.findEventsByIdSuffix(UUID.randomUUID().toString(), 10)).isEmpty();
+      String otherStart = "f" + jobId.toString().replace("-", "").substring(1);
+      assertThat(admin.findJobsByIdSuffix(otherStart, 10))
+          .as("the same short id, another id")
+          .isEmpty();
     }
   }
 
   @Test
-  void rejectsIdPrefixesThatAreTooShortOrNotHex() {
+  void rejectsIdSuffixesThatAreTooShortOrNotHex() {
     try (Bikesched bikesched = testNode(prefix + "node").autoStartPolling(false).build()) {
       Admin admin = bikesched.admin();
-      assertThatThrownBy(() -> admin.findJobsByIdPrefix("3f2a9c1", 10))
+      assertThatThrownBy(() -> admin.findJobsByIdSuffix("3f2a9c1", 10))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("between 8 and 32 hex digits");
-      assertThatThrownBy(() -> admin.findEventsByIdPrefix("3f2a9c1g", 10))
+      assertThatThrownBy(() -> admin.findEventsByIdSuffix("3f2a9c1g", 10))
           .isInstanceOf(IllegalArgumentException.class);
-      assertThatThrownBy(() -> admin.findJobsByIdPrefix(UUID.randomUUID() + "0", 10))
+      assertThatThrownBy(() -> admin.findJobsByIdSuffix(UUID.randomUUID() + "0", 10))
           .isInstanceOf(IllegalArgumentException.class);
-      assertThatThrownBy(() -> admin.findJobsByIdPrefix("3f2a9c1e", 0))
+      assertThatThrownBy(() -> admin.findJobsByIdSuffix("3f2a9c1e", 0))
           .isInstanceOf(IllegalArgumentException.class);
     }
   }
