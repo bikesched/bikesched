@@ -340,7 +340,7 @@ class DueJobsStoreTest extends AbstractStoreTest {
   }
 
   private static NewJob occurrence(String type, Instant at) {
-    return new NewJob(type, null, at, 0, 3, null, "every PT1M", null);
+    return new NewJob(type, null, at, 0, 3, null, "every PT1M", at);
   }
 
   private static Connection listen() throws SQLException {

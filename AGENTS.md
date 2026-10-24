@@ -126,7 +126,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `stepName(…)`; `connection(…)` → `TransactionalJobBuilder`, which has no
   `schedule(Recurrence)`), enforced at compile time, not with runtime checks. Overloads of the
   verb are distinguished by argument type (`Instant`/`Duration` vs. `Recurrence`).
-- Boolean accessors use the `is` prefix (`isPolling`, `isEnded`, `isFixedRate`); builder setters are
+- Boolean accessors use the `is` prefix (`isPolling`, `isEnded`, `isFixedDelay`); builder setters are
   named after the property (`nodeName(String)`).
 - SPI defaults are static factories on the interface (`RetryBackoff.none()`); a default that only
   makes sense as "nothing configured" stays internal instead (`RawJsonMapper`, used by `Internals`

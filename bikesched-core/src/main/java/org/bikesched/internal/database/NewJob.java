@@ -4,7 +4,6 @@ package org.bikesched.internal.database;
 import java.time.Duration;
 import java.time.Instant;
 import org.bikesched.job.JobBuilder;
-import org.bikesched.job.Recurrence;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -19,8 +18,8 @@ import org.jspecify.annotations.Nullable;
  * @param timeout maximum duration of an attempt, {@code null} for the executing node's default
  * @param recurrence the description of the recurring job's recurrence this job is an occurrence of;
  *     {@code null} for a one-off job
- * @param fixedRateAt the planned run of an occurrence whose recurrence {@link
- *     Recurrence#isFixedRate() is fixed-rate}; {@code null} otherwise
+ * @param plannedRunAt the planned run of an occurrence, not moved by retries or event waits; {@code
+ *     null} for a one-off job
  * @param idempotencyKey unique per job type while the job exists: scheduling a job with the key of
  *     an existing one returns that job; {@code null} for none
  */
@@ -32,7 +31,7 @@ public record NewJob(
     int maxAttempts,
     @Nullable Duration timeout,
     @Nullable String recurrence,
-    @Nullable Instant fixedRateAt,
+    @Nullable Instant plannedRunAt,
     @Nullable String idempotencyKey) {
 
   /** A job without idempotency key: a one-off job or an occurrence. */
@@ -44,8 +43,9 @@ public record NewJob(
       int maxAttempts,
       @Nullable Duration timeout,
       @Nullable String recurrence,
-      @Nullable Instant fixedRateAt) {
-    this(type, payload, scheduledAt, priority, maxAttempts, timeout, recurrence, fixedRateAt, null);
+      @Nullable Instant plannedRunAt) {
+    this(
+        type, payload, scheduledAt, priority, maxAttempts, timeout, recurrence, plannedRunAt, null);
   }
 
   /** A one-off job without idempotency key. */

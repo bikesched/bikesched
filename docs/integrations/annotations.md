@@ -52,7 +52,7 @@ the method and the problem, not when a job runs.
 | Method | Does |
 |---|---|
 | `JobHandlers.register(bikesched, target)` | registers all annotated methods of `target`; returns them, job handlers first, then failure handlers |
-| `JobHandlers.scan(target)` | finds and checks them without registering; each `AnnotatedJobHandler` has `type()`, `isFailureHandler()`, `payloadType()`, `schedule()`, `method()` and `registerOn(bikesched)` |
+| `JobHandlers.scan(target)` | finds and checks them without registering; each `AnnotatedJobHandler` has `type()`, `isFailureHandler()`, `payloadType()`, `schedule()`, `fixedDelay()`, `initialDelay()`, `method()` and `registerOn(bikesched)` |
 
 A method with a payload parameter is registered for `JobType.of(type, payloadClass)`, so the node
 rejects a typed job type with the same name and another payload class. Methods without one are
@@ -81,3 +81,12 @@ JobHandlers.register(bikesched, new ReportJobs());
 @JobHandler(type = "report", schedule = "0 3 * * MON-FRI")
 public void report() { … }
 ```
+
+`fixedDelay` declares a [fixed delay](../jobs/recurring-jobs.md#fixed-delay) instead, an ISO-8601
+duration: `@JobHandler(type = "sync-crm", fixedDelay = "PT15M")` registers the recurring job with
+`Recurrence.everyAfterEnd(PT15M)`, so each run starts 15 minutes after the previous one ended.
+`initialDelay` (an ISO-8601 duration, e.g. `PT0S` to run right away) delays a new first occurrence
+of a recurring handler, like `schedule(recurrence, delay)`; registering again (on a restart) keeps
+the pending occurrence. Scanning parses both and rejects an invalid duration, a `fixedDelay` that
+is not positive, a negative `initialDelay`, a method with both `schedule` and `fixedDelay`, and an
+`initialDelay` without either.

@@ -24,3 +24,4 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-14 | [Publishing events from the admin UI](admin-publish-events.md) | implemented | [ADR 0044](../decisions/0044-publishing-events-from-the-admin-ui.md) |
 | 2026-10-14 | [Nodes in the admin UI](admin-nodes.md) | implemented | [ADR 0045](../decisions/0045-nodes-in-the-admin-ui.md) |
 | 2026-10-14 | [Scheduling jobs from the admin UI](admin-schedule-jobs.md) | implemented | [ADR 0046](../decisions/0046-scheduling-jobs-from-the-admin-ui.md) |
+| 2026-10-23 | [Fixed-delay recurrences](fixed-delay-recurrences.md) | implemented | [ADR 0058](../decisions/0058-fixed-delay-recurrences-and-planned-runs.md) |

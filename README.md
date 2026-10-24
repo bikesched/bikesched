@@ -74,7 +74,7 @@ modelling and no orchestration across services. If that's what you're after, hav
 - **Cancellation** from within a handler or from outside
 - **Postponing**: a handler hit by a rate limit runs again later with `job.postpone(…)`, without
   using up an attempt
-- **Recurring jobs** with fixed-rate, daily, weekly or custom schedules
+- **Recurring jobs** with fixed-rate, fixed-delay, daily, weekly or custom schedules
 - **Events**: jobs wait for an event without holding a thread and resume when it is published
 - **Sleeping**: jobs pause for days with `job.sleep(…)` without holding a thread
 - **Polling**: jobs check an external service until a result is ready, as one durable step

@@ -21,6 +21,7 @@ bikesched.newJob("cleanup")
 | `schedule(recurrence, Instant firstRun)` | at `firstRun` |
 | `schedule(recurrence, Duration delay)` | once `delay` has passed |
 | `schedule(String recurrence)` | like `schedule(recurrence)`, parsed from an expression, see [Recurrence expressions](#recurrence-expressions) |
+| `schedule(String recurrence, Duration delay)` | once `delay` has passed, the recurrence parsed from an expression |
 
 Unlike the one-off `schedule` calls, registering a recurring job is **idempotent**: it only creates
 the first occurrence if none is pending, so every node can run the same code on every start. It
@@ -28,15 +29,43 @@ returns the id of the pending occurrence.
 
 ## Recurrences
 
-- `Recurrence.every(Duration)`, `Recurrence.daily(LocalTime, ZoneId)`,
+- `Recurrence.every(Duration)` (a fixed rate), `Recurrence.everyAfterEnd(Duration)` (a
+  [fixed delay](#fixed-delay)), `Recurrence.daily(LocalTime, ZoneId)`,
   `Recurrence.weekly(DayOfWeek, LocalTime, ZoneId)`, or your own via
   `Recurrence.of(description, previous -> next)`.
-- The next run is computed from the previous occurrence's scheduled time. Recurrences whose
-  `isFixedRate()` returns `true` (by default only `every`) also store each occurrence's planned
-  time (`planned_run_at`) and compute from that instead, so retries and event waits don't shift a
-  fixed rate.
+- Each occurrence stores the time it was planned for (`planned_run_at`), and the next run is
+  computed from it, so retries, sleeps and event waits that move an occurrence don't shift the
+  ones after it. Runs whose time has passed when an occurrence ends are skipped: `every(PT15M)`
+  started at 12:00 and running for 20 minutes is followed by the run at 12:30.
+- Recurrences that snap to the wall clock (`daily`, `weekly`, cron) return `true` from
+  `isWallClock()`: after missed runs, the next run is computed from the current time in one step.
+  A custom recurrence that returns the first match after any instant can do the same.
 - Each occurrence stores the recurrence's description. Registering a recurrence with a different
   description (e.g. after a deploy) moves the pending occurrence to the new recurrence.
+
+## Fixed delay
+
+`Recurrence.everyAfterEnd(Duration)` computes the next run from the time the previous occurrence
+ended instead of its planned run, like Spring's `fixedDelay`. Every run is followed by the same
+gap, however long it took:
+
+```java
+bikesched.newJob("sync-crm")
+        .handler(job -> crm.sync())
+        .schedule(Recurrence.everyAfterEnd(Duration.ofMinutes(15)));
+```
+
+- A run ending at 12:10 is followed by the next one at 12:25, whether it started at 12:00 or at
+  12:09. No run is skipped.
+- The end is whatever ends the occurrence: it succeeded, failed permanently (after its failure
+  handler) or was cancelled, after its compensations if it has any. Retries, sleeps, event waits
+  and postponements belong to the run.
+- Cancelling the pending occurrence before its planned run skips one run: the next one is
+  computed from the cancelled occurrence's planned run, as with a fixed rate.
+- The description is `every PT15M after end`. The first occurrence runs one interval after
+  registration, or at the `firstRun` or after the `delay` given to `schedule`.
+- With annotations, declare it with `@JobHandler(fixedDelay = "PT15M")`, see
+  [Annotations](../integrations/annotations.md).
 
 ## Recurrence expressions
 
@@ -74,7 +103,7 @@ bikesched.newJob("report")
   an `IllegalArgumentException` when the recurrence is created.
 - The description is the dialect, the normalized expression and the zone
   (`cron unix 0 3 * * 1-5 Europe/Berlin`), so changing any of them moves the pending occurrence.
-  Cron snaps to the wall clock and is not fixed rate.
+  Cron snaps to the wall clock.
 - Daylight saving time: a local time that doesn't exist on a day (clocks moving forward) is skipped
   that day — unlike `Recurrence.daily`, which shifts it. A local time that occurs twice (clocks
   moving back) runs once if the expression names the hour (`30 2 * * *`) and in both passes if the

@@ -4,6 +4,7 @@ package org.bikesched.annotation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Duration;
 import java.util.List;
 import org.bikesched.job.FailedJob;
 import org.bikesched.job.Job;
@@ -38,6 +39,36 @@ class JobHandlersScanTest {
     public void recurring() {}
   }
 
+  public static class FixedDelayHandlers {
+    @JobHandler(type = "fixed-delay", fixedDelay = "PT15M", initialDelay = "PT0S")
+    public void recurring() {}
+  }
+
+  public static class ScheduleAndFixedDelay {
+    @JobHandler(type = "x", schedule = "PT5M", fixedDelay = "PT5M")
+    public void recurring() {}
+  }
+
+  public static class InvalidFixedDelay {
+    @JobHandler(type = "x", fixedDelay = "15 minutes")
+    public void recurring() {}
+  }
+
+  public static class ZeroFixedDelay {
+    @JobHandler(type = "x", fixedDelay = "PT0S")
+    public void recurring() {}
+  }
+
+  public static class NegativeInitialDelay {
+    @JobHandler(type = "x", schedule = "PT5M", initialDelay = "-PT1M")
+    public void recurring() {}
+  }
+
+  public static class InitialDelayWithoutSchedule {
+    @JobHandler(type = "x", initialDelay = "PT1M")
+    public void oneOff() {}
+  }
+
   public static class UnsupportedSchedule {
     @JobHandler(type = "unsupported", schedule = "every 5 minutes")
     public void recurring() {}
@@ -51,6 +82,15 @@ class JobHandlersScanTest {
   }
 
   @Test
+  void keepsTheFixedAndInitialDelay() {
+    var handler = JobHandlers.scan(FixedDelayHandlers.class).getFirst();
+
+    assertThat(handler.schedule()).isEmpty();
+    assertThat(handler.fixedDelay()).contains(Duration.ofMinutes(15));
+    assertThat(handler.initialDelay()).contains(Duration.ZERO);
+  }
+
+  @Test
   void doesNotParseTheSchedule() {
     // parsed by the node's recurrence parsers when registering, see JobHandlersTest
     var handler = JobHandlers.scan(UnsupportedSchedule.class).getFirst();
@@ -61,7 +101,24 @@ class JobHandlersScanTest {
   @Test
   void oneOffHandlersHaveNoSchedule() {
     assertThat(JobHandlers.scan(ValidHandlers.class))
-        .allSatisfy(handler -> assertThat(handler.schedule()).isEmpty());
+        .allSatisfy(
+            handler -> {
+              assertThat(handler.schedule()).isEmpty();
+              assertThat(handler.fixedDelay()).isEmpty();
+              assertThat(handler.initialDelay()).isEmpty();
+            });
+  }
+
+  @Test
+  void rejectsInvalidDelays() {
+    assertInvalid(new ScheduleAndFixedDelay(), "has both a schedule and a fixedDelay");
+    assertInvalid(
+        new InvalidFixedDelay(),
+        "has an invalid fixedDelay '15 minutes'; use an ISO-8601 duration, e.g. PT15M");
+    assertInvalid(new ZeroFixedDelay(), "has a fixedDelay that is not positive: PT0S");
+    assertInvalid(new NegativeInitialDelay(), "has a negative initialDelay: PT-1M");
+    assertInvalid(
+        new InitialDelayWithoutSchedule(), "has an initialDelay but no schedule or fixedDelay");
   }
 
   @Test

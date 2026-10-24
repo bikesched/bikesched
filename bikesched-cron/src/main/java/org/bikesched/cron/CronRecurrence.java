@@ -28,8 +28,8 @@ import org.bikesched.job.Recurrence;
  *
  * <p>The {@link #description() description} is the dialect, the normalized expression and the zone,
  * e.g. {@code cron unix 0 3 * * 1-5 Europe/Berlin}, so changing any of them moves the pending
- * occurrence. A cron recurrence snaps to the wall clock and is not {@link #isFixedRate() fixed
- * rate}.
+ * occurrence. A cron recurrence snaps to the wall clock: its next run is the first match after the
+ * previous planned run, and runs in the past are skipped.
  *
  * <p>Daylight saving time: a local time that does not exist on a day (the gap when clocks move
  * forward) is skipped on that day; a local time that occurs twice (when clocks move back) runs once
@@ -140,6 +140,16 @@ public final class CronRecurrence implements Recurrence {
   @Override
   public String description() {
     return recurrence.description();
+  }
+
+  /**
+   * Returns {@code true}: a cron recurrence snaps to the wall clock.
+   *
+   * @return {@code true}
+   */
+  @Override
+  public boolean isWallClock() {
+    return true;
   }
 
   @Override

@@ -66,7 +66,7 @@ class RecurrenceParserTest extends AbstractBikeschedTest {
     assertThat(parser.supports("0 3 * * *")).isFalse();
     Recurrence recurrence = parser.parse("PT5M");
     assertThat(recurrence.description()).isEqualTo("every PT5M");
-    assertThat(recurrence.isFixedRate()).isTrue();
+    assertThat(recurrence.isFixedDelay()).isFalse();
     assertThat(recurrence.next(Instant.EPOCH)).isEqualTo(Instant.EPOCH.plusSeconds(300));
     assertThatThrownBy(() -> parser.parse("P1Y"))
         .isInstanceOf(IllegalArgumentException.class)

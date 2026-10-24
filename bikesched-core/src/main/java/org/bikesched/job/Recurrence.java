@@ -10,7 +10,6 @@ import java.time.ZonedDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Objects;
 import java.util.function.UnaryOperator;
-import org.bikesched.RetryBackoff;
 import org.bikesched.internal.util.ValidationUtil;
 
 /**
@@ -28,7 +27,9 @@ public interface Recurrence {
   /**
    * Returns the next run after the given one.
    *
-   * @param previous the previous (planned) run
+   * @param previous the previous occurrence's planned run, which retries ({@link
+   *     JobFailure#retryAfter(Duration)}, {@code RetryBackoff}) and event waits do not move; for a
+   *     {@linkplain #isFixedDelay() fixed delay} the time the previous occurrence ended
    * @return the next run, after {@code previous}
    */
   Instant next(Instant previous);
@@ -41,52 +42,77 @@ public interface Recurrence {
   String description();
 
   /**
-   * Returns whether this is a fixed-rate recurrence: the next run is computed from the previous
-   * occurrence's planned run time rather than from its scheduled time, which retries ({@link
-   * JobFailure#retryAfter(Duration)}, {@link RetryBackoff}) and event waits move. Schedules that
-   * only add to the previous run, like {@link #every(Duration)}, would otherwise drift; recurrences
-   * that snap to the wall clock, like {@link #daily(LocalTime, ZoneId)}, are not affected and need
-   * no planned time.
+   * Returns whether this is a fixed-delay recurrence: the next run is computed from the time the
+   * previous occurrence ended (succeeded, failed or was cancelled) instead of its planned run, so
+   * every run is followed by the same gap, however long it took. An occurrence cancelled before its
+   * planned run counts from its planned run, so cancelling the pending occurrence skips one run.
    *
-   * <p>If {@code true}, each occurrence additionally stores its planned run time (column {@code
-   * planned_run_at}).
-   *
-   * @return {@code true} to compute the next run from the planned run time; {@code false} by
-   *     default ({@link #every(Duration)} returns {@code true})
+   * @return {@code true} to compute the next run from the end of the previous occurrence; {@code
+   *     false} by default ({@link #everyAfterEnd(Duration)} returns {@code true})
    */
-  default boolean isFixedRate() {
+  default boolean isFixedDelay() {
     return false;
   }
 
   /**
-   * Runs at a fixed rate: every {@code interval} after the previous planned run (see {@link
-   * #isFixedRate()}), regardless of retries or event waits of the previous occurrence.
+   * Returns whether this recurrence snaps to the wall clock: {@link #next(Instant)} returns the
+   * first match after any given instant (a time of day, a cron expression), so the run after a
+   * later instant is the same whichever earlier run it is computed from. A node then computes the
+   * next run after many missed ones (e.g. after a long retry or event wait) with one call from the
+   * current time instead of walking through each missed run. Recurrences that add to the previous
+   * run, like {@link #every(Duration)}, must return {@code false} to keep their rhythm.
+   *
+   * @return {@code true} for a wall-clock recurrence; {@code false} by default ({@link
+   *     #daily(LocalTime, ZoneId)} and {@link #weekly(DayOfWeek, LocalTime, ZoneId)} return {@code
+   *     true})
+   */
+  default boolean isWallClock() {
+    return false;
+  }
+
+  /**
+   * Runs at a fixed rate: every {@code interval} after the previous planned run, regardless of
+   * retries or event waits of the previous occurrence. Runs missed because the previous occurrence
+   * took longer are skipped.
    *
    * @param interval the time between runs, positive
    * @return the recurrence
    */
   static Recurrence every(Duration interval) {
     ValidationUtil.requirePositive(interval, "interval");
-    Recurrence recurrence = of("every " + interval, previous -> previous.plus(interval));
+    return of("every " + interval, previous -> previous.plus(interval));
+  }
+
+  /**
+   * Runs with a fixed delay: {@code interval} after the previous occurrence ended (succeeded,
+   * failed or was cancelled), however long it ran (see {@link #isFixedDelay()}). Its description is
+   * {@code every <interval> after end}, e.g. {@code every PT15M after end}.
+   *
+   * @param interval the time between the end of one run and the start of the next, positive
+   * @return the recurrence
+   */
+  static Recurrence everyAfterEnd(Duration interval) {
+    ValidationUtil.requirePositive(interval, "interval");
+    String description = "every " + interval + " after end";
     return new Recurrence() {
       @Override
       public Instant next(Instant previous) {
-        return recurrence.next(previous);
+        return previous.plus(interval);
       }
 
       @Override
       public String description() {
-        return recurrence.description();
+        return description;
       }
 
       @Override
-      public boolean isFixedRate() {
-        return true; // a fixed rate must not drift when an occurrence is retried or waits
+      public boolean isFixedDelay() {
+        return true;
       }
 
       @Override
       public String toString() {
-        return recurrence.description();
+        return description;
       }
     };
   }
@@ -102,7 +128,7 @@ public interface Recurrence {
   static Recurrence daily(LocalTime time, ZoneId zone) {
     Objects.requireNonNull(time, "time");
     Objects.requireNonNull(zone, "zone");
-    return of(
+    return wallClock(
         "daily at " + time + " " + zone,
         previous -> {
           ZonedDateTime start = previous.atZone(zone);
@@ -125,7 +151,7 @@ public interface Recurrence {
     Objects.requireNonNull(day, "day");
     Objects.requireNonNull(time, "time");
     Objects.requireNonNull(zone, "zone");
-    return of(
+    return wallClock(
         "weekly on " + day + " at " + time + " " + zone,
         previous -> {
           var date = previous.atZone(zone).toLocalDate().with(TemporalAdjusters.nextOrSame(day));
@@ -160,6 +186,32 @@ public interface Recurrence {
       @Override
       public String description() {
         return description;
+      }
+
+      @Override
+      public String toString() {
+        return description;
+      }
+    };
+  }
+
+  /** A recurrence created with {@link #of(String, UnaryOperator)} that snaps to the wall clock. */
+  private static Recurrence wallClock(String description, UnaryOperator<Instant> next) {
+    Recurrence recurrence = of(description, next);
+    return new Recurrence() {
+      @Override
+      public Instant next(Instant previous) {
+        return recurrence.next(previous);
+      }
+
+      @Override
+      public String description() {
+        return description;
+      }
+
+      @Override
+      public boolean isWallClock() {
+        return true;
       }
 
       @Override
