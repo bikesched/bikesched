@@ -19,7 +19,7 @@ stored, looked up by their name. What is stored per job:
 | Stored | Set by | Used by later attempts |
 |---|---|---|
 | payload, priority, `maxAttempts`, timeout | scheduling | as stored; a job without a timeout uses the claiming node's `defaultJobTimeout` |
-| completed step: name, kind, result | the step's first completion | returned instead of running the step again |
+| completed step: name, type, result | the step's first completion | returned instead of running the step again |
 | event wait: event name and key, deadline | the first wait | compared with the call's name and key; the deadline wins over a changed timeout |
 | sleep: wake-up time | the first sleep | wins over a changed duration |
 | poll: deadline, number of checks | the first check | the deadline wins over a changed timeout; the interval comes from the code |
@@ -60,7 +60,7 @@ directions until the last old node is gone, or be split into two deploys (see
 |---|---|
 | rename a completed step | the step runs again under its new name: its side effect happens twice. The old row stays unused, and its compensation no longer runs |
 | change a step's result type incompatibly | reading the stored result fails with the `JsonMapper`'s exception: the attempt fails and is retried until the job is `FAILED`. A step that returned `Void` before returns `null` |
-| reuse a step name for another kind (a step becomes a sleep, a wait, a poll or a child job) | rejected with an `IllegalStateException` ("step names must be unique within a job"); the attempt fails |
+| reuse a step name for another step type (a step becomes a sleep, a wait, a poll or a child job) | rejected with an `IllegalStateException` ("step names must be unique within a job"); the attempt fails |
 | change the event name or key of a wait | rejected the same way, also for a completed wait: compute keys from the payload or stored results the same way as before |
 | change the type of a child job | rejected for a started child. With the default step name `start <type>`, a renamed type is a new step instead and starts a second child; `job.newEvent(name, key)` publishes a second event under its default step name `publish <name>` the same way |
 | add a step before steps a job has completed | the job runs the new step on its next attempt, after the later steps already happened |
@@ -150,7 +150,7 @@ only on a node with a handler for its type.
 ## Checklist
 
 - Give steps, waits, children and published events stable names and never reuse a name for another
-  kind; set `stepName(…)` for child jobs and published events, so renaming their type or event
+  step type; set `stepName(…)` for child jobs and published events, so renaming their type or event
   name doesn't change the step.
 - Keep step results, payloads and job results compatible: add optional properties, don't rename or
   remove them.

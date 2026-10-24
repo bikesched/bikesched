@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.bikesched.event.EventWait;
+import org.bikesched.internal.database.StepRef;
 import org.bikesched.job.Job;
 import org.jspecify.annotations.Nullable;
 
@@ -30,9 +31,9 @@ final class JobSuspended extends Error {
 
   JobSuspended(Suspension suspension) {
     super(
-        suspension.stepName() == null
+        suspension.step() == null
             ? "Job suspended " + suspension
-            : "Job suspended in step '" + suspension.stepName() + "' " + suspension,
+            : "Job suspended in step '" + suspension.step().name() + "' " + suspension,
         null,
         false,
         false);
@@ -47,12 +48,20 @@ final class JobSuspended extends Error {
   sealed interface Suspension permits Wait, PostponeSuspension {
 
     /** The waiting or postponed step; {@code null} for a job postponed outside a step. */
-    String stepName();
+    @Nullable StepRef step();
   }
 
   /** A step a job is suspended at: waiting for an event or a child job, sleeping, or polling. */
   sealed interface Wait extends Suspension
       permits EventSuspension, SleepSuspension, JobSuspension, PollSuspension {
+
+    @Override
+    StepRef step();
+
+    /** The name of the waiting step. */
+    default String stepName() {
+      return step().name();
+    }
 
     /**
      * The deadline of an event wait or a wait for a child job ({@code null} if none), the wake-up
@@ -64,13 +73,13 @@ final class JobSuspended extends Error {
   /**
    * A step waiting for an event.
    *
-   * @param stepName the waiting step
+   * @param step the waiting step
    * @param eventName the event it waits for
    * @param eventKey the event key
    * @param waitUntil the deadline of the wait, {@code null} if none
    */
   record EventSuspension(
-      String stepName, String eventName, String eventKey, @Nullable Instant waitUntil)
+      StepRef step, String eventName, String eventKey, @Nullable Instant waitUntil)
       implements Wait {
 
     /** The event, e.g. {@code event payment-received/42}. */
@@ -87,10 +96,10 @@ final class JobSuspended extends Error {
   /**
    * A sleeping step.
    *
-   * @param stepName the sleeping step
+   * @param step the sleeping step
    * @param waitUntil when the job wakes up
    */
-  record SleepSuspension(String stepName, Instant waitUntil) implements Wait {
+  record SleepSuspension(StepRef step, Instant waitUntil) implements Wait {
 
     @Override
     public String toString() {
@@ -101,12 +110,11 @@ final class JobSuspended extends Error {
   /**
    * A step waiting for the child job it started.
    *
-   * @param stepName the step that started the child
+   * @param step the step that started the child
    * @param childJobId the child
    * @param waitUntil the deadline of the wait, {@code null} if none
    */
-  record JobSuspension(String stepName, UUID childJobId, @Nullable Instant waitUntil)
-      implements Wait {
+  record JobSuspension(StepRef step, UUID childJobId, @Nullable Instant waitUntil) implements Wait {
 
     @Override
     public String toString() {
@@ -117,14 +125,14 @@ final class JobSuspended extends Error {
   /**
    * A poll waiting for its next check.
    *
-   * @param stepName the polling step
+   * @param step the polling step
    * @param check the number of the check that was not ready (or of the last check, if the job was
    *     claimed before the next one was due)
    * @param waitUntil the time of the next check
    * @param resumed whether the poll was already waiting when the job was claimed: then neither the
    *     claim nor this suspension is recorded in the job history
    */
-  record PollSuspension(String stepName, int check, Instant waitUntil, boolean resumed)
+  record PollSuspension(StepRef step, int check, Instant waitUntil, boolean resumed)
       implements Wait {
 
     @Override
@@ -136,10 +144,10 @@ final class JobSuspended extends Error {
   /**
    * A job postponed by its handler ({@link Job#postpone}).
    *
-   * @param stepName the step whose handler postponed the job, {@code null} if none ran
+   * @param step the step whose handler postponed the job, {@code null} if none ran
    * @param delay how long from now the job is due again (counted by the database)
    */
-  record PostponeSuspension(@Nullable String stepName, Duration delay) implements Suspension {
+  record PostponeSuspension(@Nullable StepRef step, Duration delay) implements Suspension {
 
     @Override
     public String toString() {

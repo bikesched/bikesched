@@ -145,6 +145,11 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   scheduled without a recurrence are not runs and not listed. The tab refreshes every 3 seconds.
   While the job is open and has not ended, the detail refreshes every 3 seconds and updates the
   job's row in the list; an unchanged job costs a `304` without a body.
+- **Step detail**: a step's name in the job detail, in its history and on the event pages opens
+  the step on its own (`#/jobs/{jobId}/steps/{stepId}`, keyed by the step's id): its type,
+  attempts (checks of a poll), times, deadline, failure handler runs, compensation, the node
+  running it, its event or child job, the last error, its result (with `showPayloads(true)`) and
+  its entries of the job history. It refreshes every 3 seconds until its job ended.
 - **Schedule job** (operators): a form in the detail panel, opened by the button above the job list
   (with the type of the list filled in) or by "Schedule similar…" in a job's detail (type, payload,
   priority and max attempts copied from that job). It offers only the job types the serving node has
@@ -173,7 +178,7 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   running job's Node field links to the node.
 
 Every view is a link (`#/jobs?type=send-invoice&state=FAILED`, `#/jobs?id=3f2a9c1e`, `#/jobs/{id}`,
-`#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`, `#/nodes/{id}`), so
+`#/jobs/{id}/steps/{stepId}`, `#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`, `#/nodes/{id}`), so
 it can be shared or put into an alert. The page follows the browser's light or dark mode.
 
 ## Other HTTP servers
@@ -211,6 +216,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/jobs?type=&state=&node=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
 | GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id ends with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
+| GET | `api/steps/{id}` | `{"step", "job", "history", "payloadsShown"}`: one step by its id with its job's summary and the step's history entries, plus `result` with `showPayloads(true)` |
 | GET | `api/types` | `{"types": [{"type", "total", "counts", "recurrence", "handled"}]}`: `handled` if the serving node has a handler for the type (handled types without jobs are listed too) |
 | GET | `api/events?name=&key=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix |
 | GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `id`, as for jobs |
@@ -228,7 +234,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 
 Errors are `{"error": "..."}` with `400` (malformed parameter, id, job or event, a type without a
 handler on the serving node), `401`/`403` (access),
-`404` (unknown job, event or path), `405` (wrong method) or `503` (the database cannot be reached).
+`404` (unknown job, step, event or path), `405` (wrong method) or `503` (the database cannot be reached).
 
 ## Lookups in code
 
@@ -251,6 +257,7 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findJob(type, idempotencyKey)` | the job of a type with an idempotency key, the one scheduling with that key returns |
 | `findJobData(id)` | the payload and result as JSON text |
 | `findSteps(id)` | the job's steps in the order they started, with event and child job details |
+| `findStep(stepId)`, `findStepResult(stepId)` | one step by its id, its result as JSON text |
 | `findJobTypes()` | every job type with its number of jobs per state and whether this node handles it (handled types without jobs too) |
 | `findRecurringJobRuns(type, limit)` | a recurring job's pending run and its latest ended runs, newest first |
 | `findEvents(EventQuery)` | unexpired events by name and key prefix, newest first, in pages |

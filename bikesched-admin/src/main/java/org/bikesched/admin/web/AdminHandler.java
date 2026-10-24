@@ -69,6 +69,8 @@ final class AdminHandler {
 
   private static final Pattern NODE = Pattern.compile("/api/nodes/([^/]+)");
 
+  private static final Pattern STEP = Pattern.compile("/api/steps/([^/]+)");
+
   private final Bikesched bikesched;
 
   private final boolean readOnly;
@@ -169,8 +171,11 @@ final class AdminHandler {
       Matcher job = JOB.matcher(path);
       Matcher event = EVENT.matcher(path);
       Matcher node = NODE.matcher(path);
+      Matcher step = STEP.matcher(path);
       if (job.matches()) {
         body = job(admin, id(job.group(1))).orElse(null);
+      } else if (step.matches()) {
+        body = step(admin, id(step.group(1))).orElse(null);
       } else if (event.matches()) {
         body = event(admin, id(event.group(1))).orElse(null);
       } else if (node.matches()) {
@@ -415,6 +420,31 @@ final class AdminHandler {
               data ->
                   body.put("payload", new Json.Raw(data.payload()))
                       .put("result", new Json.Raw(data.result())));
+    }
+    return Optional.of(body);
+  }
+
+  /** One step with its job and the step's entries of the job history. */
+  private Optional<Json.Obj> step(Admin admin, UUID stepId) {
+    Optional<StepInfo> found = admin.findStep(stepId);
+    if (found.isEmpty()) {
+      return Optional.empty();
+    }
+    StepInfo step = found.get();
+    Json.Obj body =
+        Json.object()
+            .put("step", AdminJson.step(step))
+            .put("job", admin.findJob(step.jobId()).map(AdminJson::job).orElse(null))
+            .put(
+                "history",
+                bikesched.findJobHistory(step.jobId()).stream()
+                    .filter(entry -> step.name().equals(entry.stepName()))
+                    .map(AdminJson::history)
+                    .toList())
+            .put("payloadsShown", showPayloads);
+    if (showPayloads) {
+      // Only read with showPayloads(true): without it, results never leave the database.
+      admin.findStepResult(stepId).ifPresent(result -> body.put("result", new Json.Raw(result)));
     }
     return Optional.of(body);
   }

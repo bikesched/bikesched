@@ -24,8 +24,8 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     insertJob("COMPENSATING", "null", "compensating");
     insertJob("COMPENSATION_FAILED", "now() - interval '2 hours'", "compensation-failed");
     execute(
-        "insert into bikesched_steps (job_id, name, state, attempts, finished_at)"
-            + " select id, 's', 'SUCCEEDED', 1, now() from bikesched_jobs");
+        "insert into bikesched_steps (id, job_id, name, state, attempts, finished_at)"
+            + " select gen_random_uuid(), id, 's', 'SUCCEEDED', 1, now() from bikesched_jobs");
 
     assertThat(database.jobs().deleteFinishedJobs(null, null, Duration.ofHours(1), 1000).count())
         .isEqualTo(3);

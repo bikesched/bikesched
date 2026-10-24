@@ -17,6 +17,7 @@ import org.bikesched.internal.database.JobOrigin;
 import org.bikesched.internal.database.JobPhase;
 import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.NewJob;
+import org.bikesched.internal.database.StepRef;
 import org.bikesched.internal.util.Retry;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobFailureHandler;
@@ -577,11 +578,10 @@ public final class JobProcessor {
         "Postponing",
         null,
         () ->
-            database
-                .steps()
-                .postponeJob(job.id(), job.lock(), postponed.stepName(), postponed.delay()),
+            database.steps().postponeJob(job.id(), job.lock(), postponed.step(), postponed.delay()),
         stored -> {
-          String step = postponed.stepName() == null ? "" : " in step " + postponed.stepName();
+          StepRef postponedStep = postponed.step();
+          String step = postponedStep == null ? "" : " in step " + postponedStep.name();
           return new Reported(
               JobAttemptOutcome.POSTPONED,
               stored.cancelRequested()
@@ -606,17 +606,17 @@ public final class JobProcessor {
                   database
                       .events()
                       .suspendJob(
-                          job.id(), job.lock(), wait.stepName(), wait.eventName(), wait.eventKey());
+                          job.id(), job.lock(), wait.step(), wait.eventName(), wait.eventKey());
               case JobSuspended.SleepSuspension sleep ->
-                  database.steps().suspendJob(job.id(), job.lock(), sleep.stepName());
+                  database.steps().suspendJob(job.id(), job.lock(), sleep.step());
               case JobSuspended.JobSuspension wait ->
                   database
                       .steps()
-                      .suspendAtChildJob(job.id(), job.lock(), wait.stepName(), wait.childJobId());
+                      .suspendAtChildJob(job.id(), job.lock(), wait.step(), wait.childJobId());
               case JobSuspended.PollSuspension poll ->
                   database
                       .steps()
-                      .suspendAtPoll(job.id(), job.lock(), poll.stepName(), !poll.resumed());
+                      .suspendAtPoll(job.id(), job.lock(), poll.step(), !poll.resumed());
             },
         suspended ->
             new Reported(

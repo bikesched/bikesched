@@ -55,7 +55,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
       setNext(body.next);
       setError(null);
       if (id && body.jobs.length === 1 && !route.id) {
-        navigate({ ...route, id: body.jobs[0].id });
+        navigate({ ...route, id: body.jobs[0].id, stepId: null });
       }
     } catch (e) {
       setError(e.message);
@@ -92,8 +92,8 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
   const setStates = (states) =>
     navigate({ ...route, params: { ...route.params, state: STATES.filter((s) => states.includes(s)).join(',') } });
   const toggle = (s) => setStates(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s]);
-  const open = (jobId) => navigate({ ...route, id: jobId, params: listParams(route.params) });
-  const href = (jobId) => toHash({ ...route, id: jobId, params: listParams(route.params) });
+  const open = (jobId) => navigate({ ...route, id: jobId, stepId: null, params: listParams(route.params) });
+  const href = (jobId) => toHash({ ...route, id: jobId, stepId: null, params: listParams(route.params) });
   const search = (text) => navigate({ section: 'jobs', id: null, params: text ? { id: text } : {} });
   const empty = !id
     ? 'No jobs match these filters.'
@@ -105,6 +105,8 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
   // Opens the form next to the list, keeping its filters.
   const schedule = (prefill) => navigate({ section: 'jobs', id: 'new', params: { ...listParams(route.params), ...prefill } });
   const closeForm = () => navigate({ ...route, id: null, params: listParams(route.params) });
+  // A step's detail replaces its job's next to the list; closing it returns to the job.
+  const stepRoute = (stepId) => ({ ...route, stepId, params: listParams(route.params) });
 
   return html`
     <div class="view-head">
@@ -201,10 +203,14 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
               <${DetailHead} title="Schedule job" plain=${true} onClose=${closeForm} />
               <p class="detail-body muted">Only operators can schedule jobs.</p>
             </aside>`
-        : route.id &&
-          html`<${JobDetail} key=${route.id} jobId=${route.id} me=${me} nodes=${nodes}
-            onUpdate=${updateRow} onChanged=${onChanged} onClose=${() => navigate({ ...route, id: null })}
-            onScheduleSimilar=${canSchedule ? (jobId) => schedule({ from: jobId }) : null} />`}
+        : route.id && route.stepId
+          ? html`<${StepDetail} key=${route.stepId} stepId=${route.stepId} nodes=${nodes}
+              jobHref=${toHash(stepRoute(null))} onClose=${() => navigate(stepRoute(null))} />`
+          : route.id &&
+            html`<${JobDetail} key=${route.id} jobId=${route.id} me=${me} nodes=${nodes}
+              stepHref=${(stepId) => toHash(stepRoute(stepId))}
+              onUpdate=${updateRow} onChanged=${onChanged} onClose=${() => navigate({ ...route, id: null })}
+              onScheduleSimilar=${canSchedule ? (jobId) => schedule({ from: jobId }) : null} />`}
     </div>`;
 }
 
@@ -212,7 +218,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
  * One job, polled every 3 seconds while it is open, the tab is visible and the job has not ended.
  * The ETag makes an unchanged job a 304 without a body, so nothing re-renders.
  */
-export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose, onScheduleSimilar }) {
+export function JobDetail({ jobId, me, nodes, stepHref, onUpdate, onChanged, onClose, onScheduleSimilar }) {
   const [scheduled] = useState(() => takeScheduled(jobId));
   const [data, setData] = useState(null);
   const [live, setLive] = useState('loading');
@@ -401,10 +407,151 @@ export function JobDetail({ jobId, me, nodes, onUpdate, onChanged, onClose, onSc
         )}
       </div>
       <div class="detail-body" role="tabpanel">
-        ${shownTab === 'steps' && html`<${Steps} steps=${steps} ended=${ENDED.includes(job.state)} operator=${operator} />`}
+        ${shownTab === 'steps' &&
+        html`<${Steps} steps=${steps} ended=${ENDED.includes(job.state)} operator=${operator} stepHref=${stepHref} />`}
         ${shownTab === 'recurrence' && html`<${Recurrence} job=${job} />`}
-        ${shownTab === 'history' && html`<${History} history=${history} nodes=${nodes} />`}
+        ${shownTab === 'history' &&
+        html`<${History} history=${history} nodes=${nodes} stepHref=${(name) => {
+          const step = steps.find((candidate) => candidate.name === name);
+          return step && stepHref(step.id);
+        }} />`}
         ${shownTab === 'data' && html`<${JobData} data=${data} ended=${ENDED.includes(job.state)} />`}
+      </div>
+    </aside>`;
+}
+
+// Step states without a running attempt; a later attempt or a compensation of the job can still
+// change them.
+const STEP_ENDED = ['SUCCEEDED', 'FAILED', 'COMPENSATED', 'CANCELLED'];
+
+/**
+ * One step by its id, with its result and its entries of the job history. Polled every 3 seconds
+ * while it is open, the tab is visible and its job has not ended: a failed step runs again in the
+ * job's next attempt, a succeeded one may be compensated.
+ */
+function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
+  const [data, setData] = useState(null);
+  const [live, setLive] = useState('loading');
+  const [missing, setMissing] = useState(false);
+  const etag = useRef(null);
+
+  useEffect(() => {
+    let timer = null;
+    let stopped = false;
+    let ended = false;
+    async function tick() {
+      if (stopped || ended || document.hidden) {
+        return; // a hidden tab resumes on visibilitychange
+      }
+      try {
+        const result = await getJson(`api/steps/${stepId}`, etag.current);
+        if (stopped) return;
+        if (!result.notModified) {
+          etag.current = result.etag;
+          setData(result.body);
+        }
+        const body = result.notModified ? null : result.body;
+        if (body && (!body.job || ENDED.includes(body.job.state))) {
+          ended = true;
+          setLive('stopped');
+        } else {
+          setLive('live');
+          timer = setTimeout(tick, POLL_MS);
+        }
+      } catch (e) {
+        if (stopped) return;
+        if (e instanceof ApiError && e.status === 404) {
+          ended = true;
+          setMissing(true);
+        } else {
+          setLive('lost');
+          timer = setTimeout(tick, RETRY_MS);
+        }
+      }
+    }
+    const onVisibility = () => {
+      if (!document.hidden) {
+        clearTimeout(timer);
+        tick();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [stepId]);
+
+  if (missing) {
+    return html`<aside class="panel detail" aria-label="Step details">
+      <${DetailHead} title="Step not found" onClose=${onClose} />
+      <p class="detail-body muted">Step ${stepId} does not exist (anymore): steps are deleted with their job.</p>
+    </aside>`;
+  }
+  if (!data) {
+    return html`<aside class="panel detail" aria-label="Step details">
+      <${DetailHead} title="Loading…" onClose=${onClose} />
+    </aside>`;
+  }
+
+  const { step, job, history } = data;
+  const liveText = { loading: 'Loading…', live: 'Live', stopped: 'Job ended', lost: 'Connection lost, retrying' }[live];
+  const poll = step.type === 'POLL';
+  const fields = [
+    ['Type', step.type],
+    [poll ? 'Checks' : 'Attempts', step.attempts],
+    ['Started', dateTime(step.startedAt)],
+    ['Finished', dateTime(step.finishedAt)],
+  ];
+  if (step.finishedAt) fields.push(['Took', elapsed(step.startedAt, step.finishedAt)]);
+  if (step.waitUntil && !step.finishedAt) fields.push([poll ? 'Next check' : 'Until', dateTime(step.waitUntil)]);
+  if (step.deadline) fields.push(['Deadline', dateTime(step.deadline)]);
+  if (step.failureAttempts > 0) fields.push(['Failure handler runs', step.failureAttempts]);
+  if (step.compensable) fields.push(['Compensation', step.state === 'COMPENSATED' ? 'ran' : 'pending if the job fails']);
+  if (step.nodeId) {
+    const node = nodes.find((candidate) => candidate.id === step.nodeId);
+    fields.push(['Node', node ? html`<a href=${toHash({ section: 'nodes', id: node.id })}>${node.name}</a>` : shortId(step.nodeId), node?.name || step.nodeId]);
+  }
+
+  return html`
+    <aside class="panel detail" aria-label="Step details">
+      <nav class="path" aria-label="Job">
+        ${job
+          ? html`<a class="mono" href=${backHref}>${job.type} ${shortId(job.id)}</a>`
+          : html`<span class="mono muted">${shortId(step.jobId)}</span>`}
+        <span class="path-sep">›</span>
+        <span class="mono strong">${step.name}</span>
+      </nav>
+      <${DetailHead} title=${step.name} state=${step.state} id=${step.id} onClose=${onClose}>
+        <span role="status" class=${`live live-${live}`}><span class="live-dot"></span>${liveText}</span>
+      <//>
+      <dl class="meta">
+        ${fields.map(
+          ([label, value, title = String(value)]) => html`<div><dt>${label}</dt><dd class="mono" title=${title}>${value}</dd></div>`,
+        )}
+      </dl>
+      ${step.eventName &&
+      html`<div class="step-event small detail-note">
+        <span>Event <span class="mono">${step.eventName}</span> / <span class="mono">${step.eventKey}</span></span>
+        ${step.eventId && html`<a class="button small" href=${toHash({ section: 'events', id: step.eventId })}>Open event</a>`}
+      </div>`}
+      ${step.type === 'CHILD_JOB' && step.childJobId && html`<div class="detail-note"><${ChildJob} step=${step} /></div>`}
+      ${step.lastError && html`<pre class="error-box">${step.lastError}</pre>`}
+      <div class="detail-body">
+        <section aria-label="Result">
+          <h3 class="section-label">Result</h3>
+          ${data.payloadsShown && data.result == null
+            ? html`<p class="muted">${STEP_ENDED.includes(step.state) ? 'The step has no result.' : 'No result yet: the step has not succeeded.'}</p>`
+            : html`<${Payload} data=${data} name="result" />`}
+        </section>
+        <section aria-label="History">
+          <h3 class="section-label">History</h3>
+          ${history.length > 0
+            ? html`<${History} history=${history} nodes=${nodes} stepHref=${() => null} />`
+            : html`<p class="muted">No history: the job history is off, or the step has no entries.</p>`}
+        </section>
       </div>
     </aside>`;
 }
@@ -460,7 +607,7 @@ const publishHref = (step) =>
     params: { name: step.eventName, pubName: step.eventName, pubKey: step.eventKey },
   });
 
-function Steps({ steps, ended, operator }) {
+function Steps({ steps, ended, operator, stepHref: hrefOf }) {
   const counting = !ended && steps.some((step) => !step.finishedAt && OPEN_STEP_STATES.includes(step.state));
   const [now, setNow] = useState(() => new Date().toISOString());
   useEffect(() => {
@@ -482,8 +629,8 @@ function Steps({ steps, ended, operator }) {
           <li class="step">
             <div class="step-head">
               <div class="row">
-                <span class="mono strong">${step.name}</span>
-                <span class="tag">${step.kind}</span>
+                <a class="mono strong" href=${hrefOf(step.id)} title="Step details">${step.name}</a>
+                <span class="tag">${step.type}</span>
                 <${Badge} state=${step.state} />
                 ${!took && step.attempts > 1 && html`<span class="muted small">${step.attempts} attempts</span>`}
               </div>
@@ -497,10 +644,10 @@ function Steps({ steps, ended, operator }) {
             ${step.eventName &&
             html`<div class="step-event small">
               <span>Event <span class="mono">${step.eventName}</span> / <span class="mono">${step.eventKey}</span></span>
-              ${operator && !ended && step.kind === 'EVENT_WAIT' && step.state === 'WAITING' &&
+              ${operator && !ended && step.type === 'EVENT_WAIT' && step.state === 'WAITING' &&
               html`<a class="button small" href=${publishHref(step)}>Publish event…</a>`}
             </div>`}
-            ${step.kind === 'CHILD_JOB' && step.childJobId && html`<${ChildJob} step=${step} />`}
+            ${step.type === 'CHILD_JOB' && step.childJobId && html`<${ChildJob} step=${step} />`}
             ${step.lastError && html`<pre class="error-box small">${step.lastError}</pre>`}
           </li>`;
       })}
@@ -589,7 +736,7 @@ function ChildJob({ step }) {
     </div>`;
 }
 
-function History({ history, nodes }) {
+function History({ history, nodes, stepHref: hrefOf }) {
   const nodeName = (id) => nodes.find((node) => node.id === id)?.name || shortId(id) || '-';
   return html`
     <ol class="steps history">
@@ -599,7 +746,9 @@ function History({ history, nodes }) {
             <div class="step-head">
               <div class="row">
                 <span class="tag">${entry.stepName ? 'STEP' : 'JOB'}</span>
-                ${entry.stepName && html`<span class="mono strong">${entry.stepName}</span>`}
+                ${entry.stepName && (hrefOf(entry.stepName)
+                  ? html`<a class="mono strong" href=${hrefOf(entry.stepName)}>${entry.stepName}</a>`
+                  : html`<span class="mono strong">${entry.stepName}</span>`)}
                 <${Badge} state=${entry.state} />
               </div>
               <span class="mono muted small">${preciseTime(entry.at)}</span>

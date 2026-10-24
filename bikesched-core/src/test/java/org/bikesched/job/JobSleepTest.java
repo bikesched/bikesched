@@ -286,14 +286,15 @@ class JobSleepTest extends AbstractBikeschedTest {
   }
 
   private static void insertStep(
-      UUID jobId, String name, String kind, String state, String waitUntil) throws SQLException {
+      UUID jobId, String name, String type, String state, String waitUntil) throws SQLException {
     execute(
-        "insert into bikesched_steps (job_id, name, kind, state, wake_at) values ('"
+        "insert into bikesched_steps (id, job_id, name, type, state, wake_at)"
+            + " values (gen_random_uuid(), '"
             + jobId
             + "', '"
             + name
             + "', '"
-            + kind
+            + type
             + "', "
             + state
             + ", "

@@ -107,19 +107,24 @@ export function Dot({ state }) {
   return html`<span class=${`dot state-${state}`} aria-hidden="true"></span>`;
 }
 
-/** Hash routes: #/jobs/{id}?type=…&state=…, #/events/{id}?name=…&key=…&tab=…, #/nodes/{id} */
+/**
+ * Hash routes: #/jobs/{id}?type=…&state=…, #/jobs/{id}/steps/{stepId} (one step of the job),
+ * #/events/{id}?name=…&key=…&tab=…, #/nodes/{id}
+ */
 export function parseHash(hash = location.hash) {
   const raw = hash.replace(/^#\/?/, '');
   const [path, search = ''] = raw.split('?');
-  const [section, id] = path.split('/');
+  const [section, id, sub, subId] = path.split('/');
+  const jobs = !['events', 'nodes'].includes(section);
   return {
-    section: ['events', 'nodes'].includes(section) ? section : 'jobs',
+    section: jobs ? 'jobs' : section,
     id: id || null,
+    stepId: (jobs && id && sub === 'steps' && subId) || null,
     params: Object.fromEntries(new URLSearchParams(search)),
   };
 }
 
-export function toHash({ section, id, params = {} }) {
+export function toHash({ section, id, stepId, params = {} }) {
   const search = new URLSearchParams();
   for (const [name, value] of Object.entries(params)) {
     if (value) {
@@ -127,10 +132,13 @@ export function toHash({ section, id, params = {} }) {
     }
   }
   const text = search.toString();
-  return `#/${section}${id ? `/${id}` : ''}${text ? `?${text}` : ''}`;
+  const step = id && stepId ? `/steps/${stepId}` : '';
+  return `#/${section}${id ? `/${id}` : ''}${step}${text ? `?${text}` : ''}`;
 }
 
 export const jobHref = (id) => toHash({ section: 'jobs', id });
+
+export const stepHref = (jobId, stepId) => toHash({ section: 'jobs', id: jobId, stepId });
 
 // Search by id: a full id or at least its last 8 hex digits (the short id); whitespace, hyphens and case are
 // ignored, as on the server.

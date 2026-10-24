@@ -234,7 +234,7 @@ class BikeschedAdminTest {
       assertThat(steps.stream().map(s -> ((JsonObject) s).getString("name")))
           .containsExactly("prepare", "run-child");
       JsonObject childStep = steps.getObject(1);
-      assertThat(childStep.getString("kind")).isEqualTo("CHILD_JOB");
+      assertThat(childStep.getString("type")).isEqualTo("CHILD_JOB");
       assertThat(childStep.getString("childJobType")).isEqualTo(childType);
       assertThat(childStep.getString("childJobState")).isEqualTo("SUCCEEDED");
       assertThat(childStep.getBoolean("childJobExists")).isTrue();
@@ -252,6 +252,47 @@ class BikeschedAdminTest {
       assertThat(server.get("/api/jobs/" + UUID.randomUUID()).statusCode()).isEqualTo(404);
       assertThat(server.get("/api/jobs/not-a-uuid").statusCode()).isEqualTo(400);
       assertThat(server.get("/api/unknown").statusCode()).isEqualTo(404);
+    }
+  }
+
+  @Test
+  void showsOneStepByItsId() {
+    String type = prefix + "step";
+    String marker = "secret-" + UUID.randomUUID();
+    bikesched.registerJobHandler(
+        type,
+        job -> {
+          job.step("prepare", String.class, ignored -> "\"" + marker + "\"");
+          job.complete(null);
+        });
+    UUID jobId = bikesched.newJob(type).schedule();
+    awaitState(jobId, JobState.SUCCEEDED);
+
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      JsonObject listed = AdminServer.json(server.get("/api/jobs/" + jobId));
+      String stepId = listed.getArray("steps").getObject(0).getString("id");
+
+      HttpResponse<String> response = server.get("/api/steps/" + stepId);
+      assertThat(response.statusCode()).isEqualTo(200);
+      assertThat(response.body()).doesNotContain(marker, "\"result\":");
+      JsonObject detail = AdminServer.json(response);
+      JsonObject step = detail.getObject("step");
+      assertThat(step.getString("id")).isEqualTo(stepId);
+      assertThat(step.getString("jobId")).isEqualTo(jobId.toString());
+      assertThat(step.getString("name")).isEqualTo("prepare");
+      assertThat(step.getString("state")).isEqualTo("SUCCEEDED");
+      assertThat(detail.getObject("job").getString("type")).isEqualTo(type);
+      assertThat(detail.getArray("history")).as("history disabled").isEmpty();
+      assertThat(detail.getBoolean("payloadsShown")).isFalse();
+
+      assertThat(server.get("/api/steps/" + UUID.randomUUID()).statusCode()).isEqualTo(404);
+      assertThat(server.get("/api/steps/not-a-uuid").statusCode()).isEqualTo(400);
+    }
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched).showPayloads(true))) {
+      JsonObject listed = AdminServer.json(server.get("/api/jobs/" + jobId));
+      String stepId = listed.getArray("steps").getObject(0).getString("id");
+      JsonObject detail = AdminServer.json(server.get("/api/steps/" + stepId));
+      assertThat(detail.getString("result")).isEqualTo(marker);
     }
   }
 

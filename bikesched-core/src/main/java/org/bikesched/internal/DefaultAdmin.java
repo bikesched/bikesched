@@ -107,6 +107,20 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
+  public Optional<StepInfo> findStep(UUID stepId) {
+    Objects.requireNonNull(stepId, "stepId");
+    ensureReady.run();
+    return store.findStep(stepId);
+  }
+
+  @Override
+  public Optional<String> findStepResult(UUID stepId) {
+    Objects.requireNonNull(stepId, "stepId");
+    ensureReady.run();
+    return store.findStepResult(stepId);
+  }
+
+  @Override
   public List<JobTypeSummary> findJobTypes() {
     ensureReady.run();
     Set<String> handled = new TreeSet<>(handledTypes);

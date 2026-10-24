@@ -115,7 +115,7 @@ class EventTest extends AbstractBikeschedTest {
                   "bikesched_steps",
                   "job_id = '"
                       + jobId
-                      + "' and name = 'publish job-event' and kind = 'EVENT_PUBLISH'"
+                      + "' and name = 'publish job-event' and type = 'EVENT_PUBLISH'"
                       + " and state = 'SUCCEEDED' and event_name = 'job-event'"))
           .isOne();
       bikesched.newEvent("continue-job", key).payload("\"continue\"").publish();

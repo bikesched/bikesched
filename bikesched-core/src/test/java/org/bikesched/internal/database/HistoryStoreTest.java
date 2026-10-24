@@ -45,7 +45,7 @@ class HistoryStoreTest extends AbstractStoreTest {
     UUID jobId = scheduleAndClaim(node);
 
     database.steps().startStep(jobId, lock(jobId), "charge");
-    database.steps().failStep(jobId, lock(jobId), "charge", "card declined");
+    database.steps().failStep(jobId, lock(jobId), step(jobId, "charge"), "card declined");
     database.steps().startStep(jobId, lock(jobId), "charge");
     database
         .events()

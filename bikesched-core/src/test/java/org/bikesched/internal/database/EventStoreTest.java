@@ -51,7 +51,7 @@ class EventStoreTest extends AbstractStoreTest {
     var suspended =
         database
             .events()
-            .suspendJob(job.id(), lock(job.id()), "wait", "paid", "race-1")
+            .suspendJob(job.id(), lock(job.id()), step(job.id(), "wait"), "paid", "race-1")
             .orElseThrow();
     assertThat(suspended.waiting()).isFalse();
     assertThat(
@@ -80,7 +80,7 @@ class EventStoreTest extends AbstractStoreTest {
     var suspended =
         database
             .events()
-            .suspendJob(job.id(), lock(job.id()), "wait", "paid", "suspend-1")
+            .suspendJob(job.id(), lock(job.id()), step(job.id(), "wait"), "paid", "suspend-1")
             .orElseThrow();
 
     assertThat(suspended).isEqualTo(new StepStore.SuspendedJob(true, null));
@@ -159,7 +159,9 @@ class EventStoreTest extends AbstractStoreTest {
   void eventPublishedInRolledBackTransactionIsNeitherStoredNorReceived() throws Exception {
     JobStore.ClaimedJob job = claimNewJob("rollback");
     database.events().awaitEvent(job.id(), lock(job.id()), "wait", "paid", "rollback-1", null);
-    database.events().suspendJob(job.id(), lock(job.id()), "wait", "paid", "rollback-1");
+    database
+        .events()
+        .suspendJob(job.id(), lock(job.id()), step(job.id(), "wait"), "paid", "rollback-1");
 
     try (Connection connection = dataSource.getConnection()) {
       connection.setAutoCommit(false);
@@ -201,7 +203,9 @@ class EventStoreTest extends AbstractStoreTest {
                 job.id(), lock(job.id()), "wait", "paid", "deadline-1", Duration.ofMillis(200));
     assertThat(wait).isInstanceOf(EventStore.EventWaitResult.Waiting.class);
     assertThat(((EventStore.EventWaitResult.Waiting) wait).waitUntil()).isNotNull();
-    database.events().suspendJob(job.id(), lock(job.id()), "wait", "paid", "deadline-1");
+    database
+        .events()
+        .suspendJob(job.id(), lock(job.id()), step(job.id(), "wait"), "paid", "deadline-1");
     assertThat(stateAndSchedule(job.id())).startsWith("WAITING 20");
 
     Thread.sleep(300);
@@ -211,7 +215,7 @@ class EventStoreTest extends AbstractStoreTest {
                 .events()
                 .awaitEvent(
                     job.id(), lock(job.id()), "wait", "paid", "deadline-1", Duration.ofMillis(200)))
-        .isEqualTo(new EventStore.EventWaitResult.TimedOut());
+        .isEqualTo(new EventStore.EventWaitResult.TimedOut(step(job.id(), "wait")));
     assertThat(database.events().publishEvent("paid", "deadline-1", null, KEPT, null).received())
         .as("a timed out step no longer receives the event")
         .isZero();
@@ -254,7 +258,9 @@ class EventStoreTest extends AbstractStoreTest {
   void eventWithoutRetentionOnlyReachesTheStepsWaitingNow() {
     JobStore.ClaimedJob waiting = claimNewJob("zero-waiting");
     database.events().awaitEvent(waiting.id(), lock(waiting.id()), "wait", "ping", "zero-1", null);
-    database.events().suspendJob(waiting.id(), lock(waiting.id()), "wait", "ping", "zero-1");
+    database
+        .events()
+        .suspendJob(waiting.id(), lock(waiting.id()), step(waiting.id(), "wait"), "ping", "zero-1");
 
     assertThat(
             database
@@ -285,7 +291,9 @@ class EventStoreTest extends AbstractStoreTest {
   void publishingCopiesThePayloadIntoTheWaitingSteps() throws Exception {
     JobStore.ClaimedJob job = claimNewJob("copied");
     database.events().awaitEvent(job.id(), lock(job.id()), "wait", "paid", "copied-1", null);
-    database.events().suspendJob(job.id(), lock(job.id()), "wait", "paid", "copied-1");
+    database
+        .events()
+        .suspendJob(job.id(), lock(job.id()), step(job.id(), "wait"), "paid", "copied-1");
 
     database.events().publishEvent("paid", "copied-1", "{\"amount\": 7}", Duration.ZERO, null);
     assertThat(
@@ -329,7 +337,10 @@ class EventStoreTest extends AbstractStoreTest {
     database
         .events()
         .awaitEvent(receiver.id(), lock(receiver.id()), "wait", "paid", "once-1", null);
-    database.events().suspendJob(receiver.id(), lock(receiver.id()), "wait", "paid", "once-1");
+    database
+        .events()
+        .suspendJob(
+            receiver.id(), lock(receiver.id()), step(receiver.id(), "wait"), "paid", "once-1");
     JobStore.ClaimedJob publisher = claimNewJob("step-publisher");
 
     UUID published = publishAsStep(publisher, "publish", "paid", "once-1", "\"first\"");
@@ -342,7 +353,7 @@ class EventStoreTest extends AbstractStoreTest {
             countSteps(
                 "job_id = '"
                     + publisher.id()
-                    + "' and name = 'publish' and kind = 'EVENT_PUBLISH' and state = 'SUCCEEDED'"
+                    + "' and name = 'publish' and type = 'EVENT_PUBLISH' and state = 'SUCCEEDED'"
                     + " and event_name = 'paid' and event_key = 'once-1' and event_id = '"
                     + published
                     + "' and result is null"))
@@ -410,7 +421,7 @@ class EventStoreTest extends AbstractStoreTest {
             countSteps(
                 "job_id = '"
                     + job.id()
-                    + "' and kind = 'EVENT_WAIT' and state = 'SUCCEEDED' and event_id = '"
+                    + "' and type = 'EVENT_WAIT' and state = 'SUCCEEDED' and event_id = '"
                     + eventId
                     + "'"))
         .isOne();

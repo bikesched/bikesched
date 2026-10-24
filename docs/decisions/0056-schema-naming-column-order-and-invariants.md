@@ -9,7 +9,8 @@ Date: 2026-10-23
 
 ## Status
 
-Accepted
+Accepted; the column order is amended by
+[ADR 0057](0057-steps-keyed-by-a-time-ordered-id.md) (identifying columns and the state first)
 
 ## Context
 

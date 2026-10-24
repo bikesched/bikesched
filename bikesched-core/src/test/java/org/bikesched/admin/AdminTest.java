@@ -172,7 +172,7 @@ class AdminTest extends AbstractBikeschedTest {
       assertThat(waiting.scheduledAt()).as("waiting without a deadline").isNull();
       assertThat(waiting.idempotencyKey()).isEqualTo("order-42");
       assertThat(admin.findSteps(jobId))
-          .extracting(StepInfo::name, StepInfo::kind, StepInfo::state)
+          .extracting(StepInfo::name, StepInfo::type, StepInfo::state)
           .containsExactly(
               org.assertj.core.groups.Tuple.tuple("first", "STEP", "SUCCEEDED"),
               org.assertj.core.groups.Tuple.tuple("await", "EVENT_WAIT", "WAITING"));
@@ -298,7 +298,7 @@ class AdminTest extends AbstractBikeschedTest {
       assertThat(child.parentJobId()).isEqualTo(parentId);
       assertThat(child.parentJobType()).isEqualTo(parentType);
       assertThat(admin.findSteps(parentId))
-          .filteredOn(step -> step.kind().equals("CHILD_JOB"))
+          .filteredOn(step -> step.type().equals("CHILD_JOB"))
           .singleElement()
           .satisfies(
               step -> {

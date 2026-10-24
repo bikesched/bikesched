@@ -79,6 +79,24 @@ public interface Admin {
   List<StepInfo> findSteps(UUID jobId);
 
   /**
+   * Looks up one step by its id, see {@link StepInfo#id()}.
+   *
+   * @param stepId the step id
+   * @return the step; empty if there is no such step (e.g. its job was deleted)
+   */
+  Optional<StepInfo> findStep(UUID stepId);
+
+  /**
+   * Reads a step's result as JSON text: what a step returned, the payload an event wait received,
+   * the ready value of a poll or the result of a child job.
+   *
+   * @param stepId the step id
+   * @return the result ({@code null} JSON text if the step has none, e.g. it has not succeeded);
+   *     empty if there is no such step
+   */
+  Optional<String> findStepResult(UUID stepId);
+
+  /**
    * Counts the jobs of every type in the table by state. Types this node has a handler for are
    * listed even without any job yet, see {@link JobTypeSummary#handled()}.
    *

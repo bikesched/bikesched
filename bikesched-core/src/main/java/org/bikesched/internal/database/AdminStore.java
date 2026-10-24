@@ -29,8 +29,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Read-only lookups across the tables for {@link org.bikesched.admin.Admin}; every method runs in
- * its own read-only transaction. Payloads and results are only read by {@link #findJobData} and
- * {@link #findEventPayload}.
+ * its own read-only transaction. Payloads and results are only read by {@link #findJobData}, {@link
+ * #findStepResult} and {@link #findEventPayload}.
  */
 public final class AdminStore {
 
@@ -91,16 +91,26 @@ public final class AdminStore {
   private static final String FIND_JOB_DATA_SQL =
       "select payload::text, result::text from bikesched_jobs where id = ?";
 
-  // A child job's state: its current state while it exists, the recorded one after it was deleted.
-  private static final String FIND_STEPS_SQL =
+  // The columns of a StepInfo. A child job's state: its current state while it exists, the
+  // recorded one after it was deleted.
+  private static final String STEP_COLUMNS =
       """
-            select s.name, s.kind, s.state, s.attempts, s.last_error, s.started_at, s.finished_at,
-                   nullif(s.wake_at, 'infinity'), s.event_name, s.event_key, s.child_job_id,
-                   s.child_job_type, coalesce(c.state, s.child_end_state), c.id is not null
+            select s.id, s.job_id, s.name, s.type, s.state, s.attempts, s.failure_attempts,
+                   s.compensable, s.last_error, s.started_at, s.finished_at,
+                   nullif(s.wake_at, 'infinity'), s.deadline_at, s.locked_by_node_id, s.event_name,
+                   s.event_key, s.event_id, s.child_job_id, s.child_job_type,
+                   coalesce(c.state, s.child_end_state), c.id is not null
               from bikesched_steps s
-              left join bikesched_jobs c on c.id = s.child_job_id
-             where s.job_id = ?
-             order by s.started_at, s.name""";
+              left join bikesched_jobs c on c.id = s.child_job_id""";
+
+  // Along bikesched_steps_job_id_name_key.
+  private static final String FIND_STEPS_SQL =
+      STEP_COLUMNS + "\n where s.job_id = ?\n order by s.started_at, s.name";
+
+  private static final String FIND_STEP_SQL = STEP_COLUMNS + "\n where s.id = ?";
+
+  private static final String FIND_STEP_RESULT_SQL =
+      "select coalesce(result::text, 'null') from bikesched_steps where id = ?";
 
   private static final String FIND_JOB_TYPES_SQL =
       """
@@ -113,7 +123,7 @@ public final class AdminStore {
       """
             select e.id, e.name, e.key, e.idempotency_key, e.published_at, e.expires_at,
                    (select count(*) from bikesched_steps s
-                     where s.event_id = e.id and s.kind = 'EVENT_WAIT'),
+                     where s.event_id = e.id and s.type = 'EVENT_WAIT'),
                    e.expires_at > now() and not exists (
                        select 1 from bikesched_events l
                         where l.name = e.name and l.key = e.key and l.expires_at > now()
@@ -143,25 +153,25 @@ public final class AdminStore {
                      where expires_at > now() group by name
                     union all
                     select event_name, 0, count(*) from bikesched_steps
-                     where kind = 'EVENT_WAIT' and state = 'WAITING' group by event_name) names
+                     where type = 'EVENT_WAIT' and state = 'WAITING' group by event_name) names
              group by name order by name""";
 
   private static final String FIND_EVENT_STEPS_SQL =
       """
-            select s.job_id, j.type, j.state, s.name, s.kind
+            select s.id, s.job_id, j.type, j.state, s.name, s.type
               from bikesched_steps s
               join bikesched_jobs j on j.id = s.job_id
-             where s.event_id = ? and s.kind in ('EVENT_PUBLISH', 'EVENT_WAIT')
+             where s.event_id = ? and s.type in ('EVENT_PUBLISH', 'EVENT_WAIT')
              order by s.started_at, s.job_id, s.name""";
 
   // Uses bikesched_steps_waiting_idx (event_name, event_key).
   private static final String FIND_WAITING_STEPS_SQL =
       """
-            select s.job_id, j.type, s.name, s.event_name, s.event_key, s.started_at,
+            select s.id, s.job_id, j.type, s.name, s.event_name, s.event_key, s.started_at,
                    nullif(s.wake_at, 'infinity')
               from bikesched_steps s
               join bikesched_jobs j on j.id = s.job_id
-             where s.kind = 'EVENT_WAIT' and s.state = 'WAITING' and s.event_name = ?
+             where s.type = 'EVENT_WAIT' and s.state = 'WAITING' and s.event_name = ?
                and (?::text is null or starts_with(s.event_key, ?::text))
              order by s.started_at, s.job_id
              limit ?""";
@@ -249,29 +259,48 @@ public final class AdminStore {
 
   public List<StepInfo> findSteps(UUID jobId) {
     return access.inReadOnlyTransaction(
-        db ->
-            db.list(
-                FIND_STEPS_SQL,
-                row -> {
-                  String childState = row.string(13);
-                  return new StepInfo(
-                      row.string(1),
-                      row.string(2),
-                      row.string(3),
-                      row.integer(4),
-                      row.string(5),
-                      row.instant(6),
-                      row.instant(7),
-                      row.instant(8),
-                      row.string(9),
-                      row.string(10),
-                      row.uuid(11),
-                      row.string(12),
-                      childState == null ? null : JobState.valueOf(childState),
-                      row.bool(14));
-                },
-                jobId),
+        db -> db.list(FIND_STEPS_SQL, AdminStore::stepInfo, jobId),
         e -> new BikeschedException("Reading the steps of bikesched job " + jobId + " failed", e));
+  }
+
+  public Optional<StepInfo> findStep(UUID stepId) {
+    return access.inReadOnlyTransaction(
+        db -> db.one(FIND_STEP_SQL, AdminStore::stepInfo, stepId),
+        e -> new BikeschedException("Reading bikesched step " + stepId + " failed", e));
+  }
+
+  public Optional<String> findStepResult(UUID stepId) {
+    return access.inReadOnlyTransaction(
+        db -> db.one(FIND_STEP_RESULT_SQL, row -> row.string(1), stepId),
+        e ->
+            new BikeschedException(
+                "Reading the result of bikesched step " + stepId + " failed", e));
+  }
+
+  private static StepInfo stepInfo(Sql.Row row) throws SQLException {
+    String childState = row.string(20);
+    return new StepInfo(
+        row.uuid(1),
+        row.uuid(2),
+        row.string(3),
+        row.string(4),
+        row.string(5),
+        row.integer(6),
+        row.integer(7),
+        row.bool(8),
+        row.string(9),
+        row.instant(10),
+        row.instant(11),
+        row.instant(12),
+        row.instant(13),
+        row.uuid(14),
+        row.string(15),
+        row.string(16),
+        row.uuid(17),
+        row.uuid(18),
+        row.string(19),
+        childState == null ? null : JobState.valueOf(childState),
+        row.bool(21));
   }
 
   public List<JobTypeSummary> findJobTypes() {
@@ -373,10 +402,11 @@ public final class AdminStore {
                 row ->
                     new EventStep(
                         row.uuid(1),
-                        row.string(2),
-                        JobState.valueOf(row.string(3)),
-                        row.string(4),
-                        row.string(5)),
+                        row.uuid(2),
+                        row.string(3),
+                        JobState.valueOf(row.string(4)),
+                        row.string(5),
+                        row.string(6)),
                 eventId),
         e ->
             new BikeschedException(
@@ -394,12 +424,13 @@ public final class AdminStore {
                 row ->
                     new WaitingStep(
                         row.uuid(1),
-                        row.string(2),
+                        row.uuid(2),
                         row.string(3),
                         row.string(4),
                         row.string(5),
-                        row.instant(6),
-                        row.instant(7)),
+                        row.string(6),
+                        row.instant(7),
+                        row.instant(8)),
                 eventName,
                 prefix,
                 prefix,

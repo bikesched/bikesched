@@ -119,7 +119,7 @@ class DueJobsStoreTest extends AbstractStoreTest {
         database.steps().sleep(claimed.id(), claimed.lock(), "nap", Duration.ofMinutes(1), null);
     due.clear();
 
-    database.steps().suspendJob(claimed.id(), claimed.lock(), "nap");
+    database.steps().suspendJob(claimed.id(), claimed.lock(), step(claimed.id(), "nap"));
 
     assertThat(due.now).isEmpty();
     assertThat(due.at).containsExactly(Map.entry("sleeping", sleep.wakeUpAt()));
@@ -133,7 +133,9 @@ class DueJobsStoreTest extends AbstractStoreTest {
     database.events().awaitEvent(claimed.id(), claimed.lock(), "wait", "paid", "due-1", null);
     due.clear();
 
-    database.events().suspendJob(claimed.id(), claimed.lock(), "wait", "paid", "due-1");
+    database
+        .events()
+        .suspendJob(claimed.id(), claimed.lock(), step(claimed.id(), "wait"), "paid", "due-1");
 
     assertThat(due.now).isEmpty();
     assertThat(due.at).isEmpty();
@@ -145,7 +147,9 @@ class DueJobsStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-due-event");
     var claimed = claimJobs(node, 1).getFirst();
     database.events().awaitEvent(claimed.id(), claimed.lock(), "wait", "paid", "due-2", null);
-    database.events().suspendJob(claimed.id(), claimed.lock(), "wait", "paid", "due-2");
+    database
+        .events()
+        .suspendJob(claimed.id(), claimed.lock(), step(claimed.id(), "wait"), "paid", "due-2");
     due.clear();
 
     database.events().publishEvent("paid", "due-2", null, KEPT, null);
@@ -260,7 +264,9 @@ class DueJobsStoreTest extends AbstractStoreTest {
     UUID node = registerNode("node-due-caller-event");
     var claimed = claimJobs(node, 1).getFirst();
     database.events().awaitEvent(claimed.id(), claimed.lock(), "wait", "paid", "due-3", null);
-    database.events().suspendJob(claimed.id(), claimed.lock(), "wait", "paid", "due-3");
+    database
+        .events()
+        .suspendJob(claimed.id(), claimed.lock(), step(claimed.id(), "wait"), "paid", "due-3");
     due.notifying = true;
     try (Connection listener = listen();
         Connection connection = dataSource.getConnection()) {

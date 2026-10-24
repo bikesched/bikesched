@@ -67,15 +67,15 @@ public final class JobStore {
   // The step of a job starting a child job.
   private static final String FIND_CHILD_JOB_STEP_SQL =
       """
-            select kind, state, child_job_id, child_job_type
+            select id, type, state, child_job_id, child_job_type
               from bikesched_steps
              where job_id = ? and name = ?
                for update""";
 
   private static final String INSERT_CHILD_JOB_STEP_SQL =
       """
-            insert into bikesched_steps (job_id, name, kind, state, attempts, child_job_id, child_job_type, compensable)
-            values (?, ?, 'CHILD_JOB', 'WAITING', 1, ?, ?, ?)""";
+            insert into bikesched_steps (id, job_id, name, type, state, attempts, child_job_id, child_job_type, compensable)
+            values (?, ?, ?, 'CHILD_JOB', 'WAITING', 1, ?, ?, ?)""";
 
   // A compensated child job step runs again when its job is retried: it starts a new child of the
   // same type.
@@ -84,7 +84,7 @@ public final class JobStore {
             update bikesched_steps
                set state = 'WAITING', child_job_id = ?, child_end_state = null, result = null, last_error = null,
                    wake_at = null, compensable = ?, attempts = attempts + 1, started_at = now(), finished_at = null
-             where job_id = ? and name = ? and kind = 'CHILD_JOB' and state = 'COMPENSATED'""";
+             where id = ? and type = 'CHILD_JOB' and state = 'COMPENSATED'""";
 
   // A child job ended: its outcome completes the parent's step waiting for it, in the child's
   // transaction and without the parent's lock (like publishing an event completes other jobs'
@@ -100,7 +100,7 @@ public final class JobStore {
                    finished_at = now()
               from bikesched_jobs c
              where c.id = ? and s.job_id = c.parent_job_id and s.child_job_id = c.id
-               and s.kind = 'CHILD_JOB' and s.state = 'WAITING'
+               and s.type = 'CHILD_JOB' and s.state = 'WAITING'
             returning s.job_id, s.name, c.state""";
 
   // A WAITING parent is due again (it may wait for another step: it replays and suspends again); a
@@ -148,7 +148,7 @@ public final class JobStore {
   private static final String WAITING_AT_POLL_SQL =
       """
             select job_id from bikesched_steps
-             where job_id = any(?) and kind = 'POLL' and state = 'WAITING'""";
+             where job_id = any(?) and type = 'POLL' and state = 'WAITING'""";
 
   // Claims due jobs in one statement: rows locked by other nodes' concurrent claims are skipped
   // (instead of waiting), and claimed rows are marked RUNNING for this node before the commit
@@ -206,7 +206,7 @@ public final class JobStore {
             (select exists (select 1 from bikesched_steps
                              where job_id = ? and compensable
                                and (state = 'SUCCEEDED'
-                                    or kind = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT'))) as compensate) c""";
+                                    or type = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT'))) as compensate) c""";
 
   // A cancelled job ends CANCELLED, or is COMPENSATING first if it has steps to compensate. A job
   // cancelled on request without running its handler gives back the attempt its claim counted.
@@ -671,7 +671,7 @@ public final class JobStore {
    * @param child the child's attributes
    * @param compensable whether the step has a compensation
    * @return the child's id, and whether it was started now
-   * @throws IllegalStateException if the step name belongs to another kind of step, or to a step
+   * @throws IllegalStateException if the step name belongs to another type of step, or to a step
    *     that started a child of another type
    * @throws JobLockLostException if the parent is no longer running on the node
    */
@@ -685,15 +685,16 @@ public final class JobStore {
                   FIND_CHILD_JOB_STEP_SQL,
                   row ->
                       new ChildJobStep(
-                          row.enumValue(1, StepKind.class),
-                          row.enumValue(2, StepState.class),
-                          row.uuid(3),
-                          row.string(4)),
+                          row.uuid(1),
+                          row.enumValue(2, StepType.class),
+                          row.enumValue(3, StepState.class),
+                          row.uuid(4),
+                          row.string(5)),
                   parentJobId,
                   stepName);
           if (step.isPresent()) {
             ChildJobStep found = step.get();
-            StepKind.CHILD_JOB.require(stepName, parentJobId, found.kind());
+            StepType.CHILD_JOB.require(stepName, parentJobId, found.type());
             if (!found.childType().equals(child.type())) {
               throw new IllegalStateException(
                   "Step '"
@@ -725,10 +726,11 @@ public final class JobStore {
               parentJobId);
           db.due(child.type(), child.scheduledAt());
           if (step.isPresent()) {
-            db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, parentJobId, stepName);
+            db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, step.get().id());
           } else {
             db.update(
                 INSERT_CHILD_JOB_STEP_SQL,
+                UuidUtil.timeOrdered(),
                 parentJobId,
                 stepName,
                 childJobId,
@@ -777,8 +779,9 @@ public final class JobStore {
    */
   public record ChildJob(UUID id, boolean started) {}
 
-  /** A row of {@code FIND_CHILD_JOB_STEP_SQL}; {@code childType} is null for other kinds. */
-  private record ChildJobStep(StepKind kind, StepState state, UUID childJobId, String childType) {}
+  /** A row of {@code FIND_CHILD_JOB_STEP_SQL}; {@code childType} is null for other types. */
+  private record ChildJobStep(
+      UUID id, StepType type, StepState state, UUID childJobId, String childType) {}
 
   /**
    * After a job's state changed in the caller's transaction: once it ended, runs the claim's {@link

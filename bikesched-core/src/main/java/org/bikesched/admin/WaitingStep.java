@@ -8,6 +8,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * An event wait still waiting, see {@link Admin#findWaitingSteps(String, String, int)}.
  *
+ * @param stepId the step id, see {@link StepInfo#id()}
  * @param jobId the step's job
  * @param jobType the job's type
  * @param stepName the step name
@@ -17,6 +18,7 @@ import org.jspecify.annotations.Nullable;
  * @param timeoutAt when it times out; {@code null} if it waits without a deadline
  */
 public record WaitingStep(
+    UUID stepId,
     UUID jobId,
     String jobType,
     String stepName,
