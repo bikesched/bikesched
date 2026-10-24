@@ -37,7 +37,7 @@ class StepStoreTest extends AbstractStoreTest {
     assertThat(database.steps().findCompletedStep(jobId, "a"))
         .contains(
             new StepStore.CompletedStep(
-                step(jobId, "a"), StepKind.STEP, "{\"x\": 1}", false, false, 2));
+                step(jobId, "a"), StepType.STEP, "{\"x\": 1}", false, false, 2));
     assertThat(database.steps().startStep(jobId, lock(jobId), "a"))
         .as("no restart once succeeded")
         .isEmpty();
@@ -50,7 +50,7 @@ class StepStoreTest extends AbstractStoreTest {
     database.steps().completeStep(jobId, lock(jobId), step(jobId, "b"), null);
     assertThat(database.steps().findCompletedStep(jobId, "b"))
         .contains(
-            new StepStore.CompletedStep(step(jobId, "b"), StepKind.STEP, null, false, false, 1));
+            new StepStore.CompletedStep(step(jobId, "b"), StepType.STEP, null, false, false, 1));
   }
 
   @Test
@@ -199,7 +199,7 @@ class StepStoreTest extends AbstractStoreTest {
         .isEqualTo(new StepStore.PollStep.CheckStarted(step(jobId, "p"), 1, false));
     assertThat(
             countSteps(
-                "name = 'p' and kind = 'POLL' and state = 'RUNNING' and locked_by_node_id = '"
+                "name = 'p' and type = 'POLL' and state = 'RUNNING' and locked_by_node_id = '"
                     + node
                     + "' and deadline_at > now() + interval '50 minutes'"))
         .isEqualTo(1);

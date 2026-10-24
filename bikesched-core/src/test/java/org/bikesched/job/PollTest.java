@@ -67,7 +67,7 @@ class PollTest extends AbstractBikeschedTest {
       assertThat(
               countSteps(
                   jobId,
-                  "name = 'await-report' and kind = 'POLL' and state = 'SUCCEEDED'"
+                  "name = 'await-report' and type = 'POLL' and state = 'SUCCEEDED'"
                       + " and attempts = 3 and result = '\"report\"'"))
           .isEqualTo(1);
       assertThat(countSteps(jobId, "true")).as("one row for all checks").isEqualTo(2);
@@ -717,18 +717,18 @@ class PollTest extends AbstractBikeschedTest {
   }
 
   private static void insertStep(
-      UUID jobId, String name, String kind, String state, String wakeAt, String deadlineAt)
+      UUID jobId, String name, String type, String state, String wakeAt, String deadlineAt)
       throws SQLException {
     String finishedAt = state.equals("WAITING") ? "null" : "now()";
     execute(
         "insert into bikesched_steps"
-            + " (id, job_id, name, kind, state, wake_at, deadline_at, finished_at)"
+            + " (id, job_id, name, type, state, wake_at, deadline_at, finished_at)"
             + " values (gen_random_uuid(), '"
             + jobId
             + "', '"
             + name
             + "', '"
-            + kind
+            + type
             + "', '"
             + state
             + "', "

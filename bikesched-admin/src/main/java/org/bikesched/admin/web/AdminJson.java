@@ -40,7 +40,7 @@ final class AdminJson {
         .put("id", step.id())
         .put("jobId", step.jobId())
         .put("name", step.name())
-        .put("kind", step.kind())
+        .put("type", step.type())
         .put("state", step.state())
         .put("attempts", step.attempts())
         .put("failureAttempts", step.failureAttempts())
@@ -89,7 +89,7 @@ final class AdminJson {
         .put("jobType", step.jobType())
         .put("jobState", step.jobState())
         .put("stepName", step.stepName())
-        .put("kind", step.kind())
+        .put("stepType", step.stepType())
         .put("publisher", step.isPublisher());
   }
 

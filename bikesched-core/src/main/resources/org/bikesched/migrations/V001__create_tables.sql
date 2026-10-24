@@ -5,8 +5,9 @@
 -- limited to 2704 bytes. Since a character takes up to 4 bytes, they also have at most 3 bytes per
 -- character in UTF-8 (600 and 1500), so an index on a name and a key stays at most 2100 bytes. The
 -- library checks the same limits (ValidationUtil) before writing.
--- Columns are ordered by alignment: uuids, then timestamps and bigints, then integers and booleans,
--- then text and jsonb, so rows have no padding between columns.
+-- The identifying columns and the state come first (a job's id, type and state; a step's id, job,
+-- name, type and state); the other columns are ordered by alignment: uuids, then timestamps and
+-- bigints, then integers and booleans, then text and jsonb, so rows have little padding.
 -- Ids are time-ordered UUIDs (version 7, created by the library), so new rows land at the end of
 -- the primary keys and of the indexes led by a job id.
 -- Messages (last_error, cancel_message) are not indexed and have no constraint: the library
@@ -39,11 +40,13 @@ create table bikesched_nodes (
 -- COMPENSATION_FAILED once they failed in max_attempts compensation attempts.
 -- A job of a type with a failure handler that would end FAILED or COMPENSATION_FAILED is FAILING
 -- (failure_end_state: the state it ends in) until its failure handler ran (failure_attempts: its runs).
--- A child job (parent_job_id set) was started by a step of its parent (kind CHILD_JOB); ending it
+-- A child job (parent_job_id set) was started by a step of its parent (type CHILD_JOB); ending it
 -- completes that step with its outcome. parent_job_id only references the parent (no FK): the
 -- parent may be deleted after its retention while the child still runs.
 create table bikesched_jobs (
     id                     uuid        not null,
+    type                   text        not null,           -- identifies the handler that executes the job
+    state                  text        not null default 'SCHEDULED',
     parent_job_id          uuid,                           -- the job that started this one as a child
     locked_by_node_id      uuid,
     lock_token             uuid,                           -- new for every claim: fences the claim's writes
@@ -61,8 +64,6 @@ create table bikesched_jobs (
     max_attempts           integer     not null default 3,
     compensation_attempts  integer     not null default 0,
     failure_attempts       integer     not null default 0, -- runs of its failure handler
-    type                   text        not null,           -- identifies the handler that executes the job
-    state                  text        not null default 'SCHEDULED',
     compensation_end_state text,                           -- CANCELLED or FAILED: the state a compensating job ends in
     failure_end_state      text,                           -- FAILED or COMPENSATION_FAILED: the state a FAILING job ends in
     recurrence             text,                           -- occurrence of a recurring job: its recurrence's description
@@ -151,7 +152,7 @@ create index bikesched_jobs_type_id_idx on bikesched_jobs (type, id);
 create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
 
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
--- job can skip steps that already succeeded. The kind tells what a step does:
+-- job can skip steps that already succeeded. The type tells what a step does:
 -- - STEP: a regular step running user code; result = what it returned.
 -- - SLEEP: WAITING until wake_at has passed and the job runs again (SUCCEEDED).
 -- - EVENT_WAIT: waits for the event event_name/event_key: WAITING until it is published
@@ -182,6 +183,9 @@ create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
 create table bikesched_steps (
     id                uuid        not null,
     job_id            uuid        not null,
+    name              text        not null,
+    type              text        not null default 'STEP',
+    state             text        not null default 'RUNNING',
     locked_by_node_id uuid,                           -- the node running the step (no FK: may outlive a dead node)
     event_id          uuid,                           -- the event received or published (no FK: see above)
     child_job_id      uuid,                           -- the child job started (no FK: see above)
@@ -192,9 +196,6 @@ create table bikesched_steps (
     attempts          integer     not null default 0,
     failure_attempts  integer     not null default 0, -- runs of its failure handler while FAILING
     compensable       boolean     not null default false,
-    name              text        not null,
-    kind              text        not null default 'STEP',
-    state             text        not null default 'RUNNING',
     child_end_state   text,                           -- the child's terminal state, once it ended
     child_job_type    text,                           -- its type, checked on replays even after it was deleted
     event_name        text,
@@ -215,8 +216,8 @@ create table bikesched_steps (
                    when state = 'COMPENSATED' then true
                    else finished_at is not null
                end),
-    constraint bikesched_steps_kind_check
-        check (kind in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB', 'POLL')),
+    constraint bikesched_steps_type_check
+        check (type in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB', 'POLL')),
     constraint bikesched_steps_state_check
         check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING', 'FAILED', 'TIMED_OUT',
                          'COMPENSATED', 'CANCELLED', 'POSTPONED')),
@@ -224,36 +225,36 @@ create table bikesched_steps (
     -- received it (not if its failure handler resolved it after a timeout: it keeps last_error), a
     -- publish always; only event waits, child jobs and polls time out.
     constraint bikesched_steps_event_check
-        check ((event_name is not null) = (kind in ('EVENT_WAIT', 'EVENT_PUBLISH'))
+        check ((event_name is not null) = (type in ('EVENT_WAIT', 'EVENT_PUBLISH'))
                and (event_name is null) = (event_key is null)
-               and case kind
+               and case type
                        when 'EVENT_WAIT' then (event_id is not null) = (state = 'SUCCEEDED' and last_error is null)
                        when 'EVENT_PUBLISH' then event_id is not null
                        else event_id is null
                    end
-               and (kind in ('EVENT_WAIT', 'CHILD_JOB', 'POLL') or state <> 'TIMED_OUT')),
+               and (type in ('EVENT_WAIT', 'CHILD_JOB', 'POLL') or state <> 'TIMED_OUT')),
     -- Child job steps reference their child; the child's state is set once it ended (kept when the
     -- step is compensated afterwards).
     constraint bikesched_steps_child_check
-        check ((child_job_id is not null) = (kind = 'CHILD_JOB')
-               and (child_job_type is not null) = (kind = 'CHILD_JOB')
-               and (child_end_state is null or kind = 'CHILD_JOB' and state in ('SUCCEEDED', 'COMPENSATED'))
-               and (kind <> 'CHILD_JOB' or state <> 'SUCCEEDED' or child_end_state is not null)
+        check ((child_job_id is not null) = (type = 'CHILD_JOB')
+               and (child_job_type is not null) = (type = 'CHILD_JOB')
+               and (child_end_state is null or type = 'CHILD_JOB' and state in ('SUCCEEDED', 'COMPENSATED'))
+               and (type <> 'CHILD_JOB' or state <> 'SUCCEEDED' or child_end_state is not null)
                and child_end_state in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED')),
     -- Only sleeps, event waits, child jobs and polls wait; a sleep and a waiting poll need their
     -- wake-up time. (An event wait or a wait for a child job without a timeout waits without a
     -- deadline.) Only polls have a deadline of their own.
     constraint bikesched_steps_wait_check
-        check ((state <> 'WAITING' or kind in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL'))
-               and (wake_at is null or kind in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL'))
-               and (kind <> 'SLEEP' or wake_at is not null)
-               and (kind <> 'POLL' or state <> 'WAITING' or wake_at is not null)
-               and (deadline_at is null or kind = 'POLL')),
+        check ((state <> 'WAITING' or type in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL'))
+               and (wake_at is null or type in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL'))
+               and (type <> 'SLEEP' or wake_at is not null)
+               and (type <> 'POLL' or state <> 'WAITING' or wake_at is not null)
+               and (deadline_at is null or type = 'POLL')),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by_node_id is not null)),
     -- Only regular steps run handlers that can postpone the job.
     constraint bikesched_steps_postponed_check
-        check (state <> 'POSTPONED' or kind = 'STEP'),
+        check (state <> 'POSTPONED' or type = 'STEP'),
     constraint bikesched_steps_name_check
         check (char_length(name) between 1 and 200 and octet_length(name) <= 600),
     constraint bikesched_steps_event_name_check
@@ -266,11 +267,11 @@ create table bikesched_steps (
 
 -- Matching published events to the steps waiting for them.
 create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_key)
-    where kind = 'EVENT_WAIT' and state = 'WAITING';
+    where type = 'EVENT_WAIT' and state = 'WAITING';
 
 -- Finding the step of a child job that ended.
 create index bikesched_steps_child_job_idx on bikesched_steps (child_job_id)
-    where kind = 'CHILD_JOB' and state = 'WAITING';
+    where type = 'CHILD_JOB' and state = 'WAITING';
 
 -- Finding the steps that published or received an event (admin lookups).
 create index bikesched_steps_event_id_idx on bikesched_steps (event_id)

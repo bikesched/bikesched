@@ -146,7 +146,7 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   While the job is open and has not ended, the detail refreshes every 3 seconds and updates the
   job's row in the list; an unchanged job costs a `304` without a body.
 - **Step detail**: a step's name in the job detail, in its history and on the event pages opens
-  the step on its own (`#/jobs/{jobId}/steps/{stepId}`, keyed by the step's id): its kind,
+  the step on its own (`#/jobs/{jobId}/steps/{stepId}`, keyed by the step's id): its type,
   attempts (checks of a poll), times, deadline, failure handler runs, compensation, the node
   running it, its event or child job, the last error, its result (with `showPayloads(true)`) and
   its entries of the job history. It refreshes every 3 seconds until its job ended.

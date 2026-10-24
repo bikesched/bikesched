@@ -234,7 +234,7 @@ class BikeschedAdminTest {
       assertThat(steps.stream().map(s -> ((JsonObject) s).getString("name")))
           .containsExactly("prepare", "run-child");
       JsonObject childStep = steps.getObject(1);
-      assertThat(childStep.getString("kind")).isEqualTo("CHILD_JOB");
+      assertThat(childStep.getString("type")).isEqualTo("CHILD_JOB");
       assertThat(childStep.getString("childJobType")).isEqualTo(childType);
       assertThat(childStep.getString("childJobState")).isEqualTo("SUCCEEDED");
       assertThat(childStep.getBoolean("childJobExists")).isTrue();

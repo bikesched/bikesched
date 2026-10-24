@@ -43,6 +43,9 @@ attempt (`on conflict (job_id, name)`) and the lookups of a job's steps use.
   pages link to it.
 - The job history keeps naming the step (`step_name`): a step id per history row would grow the
   largest table, and the job id and step name identify the step there.
+- The identifying columns and the state lead their tables: `bikesched_jobs` starts with `id`,
+  `type` and `state`, `bikesched_steps` with `id`, `job_id`, `name`, `type` and `state`. What a step does was named `kind`; it
+  is now its `type` (`StepInfo.type()`, `EventStep.stepType()`), like a job's.
 
 ## Consequences
 
@@ -53,3 +56,5 @@ attempt (`on conflict (job_id, name)`) and the lookups of a job's steps use.
 - The id is internal to the store and the admin for now: the `Step` handed to handlers does not
   expose it, see the idea "Stable step id for external callbacks" in `IDEAS.md`.
 - An id reveals when its step first started.
+- The text columns between the uuids and the timestamps cost up to 7 bytes of alignment padding per
+  row; the other columns stay ordered by alignment.

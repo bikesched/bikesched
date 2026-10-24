@@ -95,7 +95,7 @@ public final class AdminStore {
   // recorded one after it was deleted.
   private static final String STEP_COLUMNS =
       """
-            select s.id, s.job_id, s.name, s.kind, s.state, s.attempts, s.failure_attempts,
+            select s.id, s.job_id, s.name, s.type, s.state, s.attempts, s.failure_attempts,
                    s.compensable, s.last_error, s.started_at, s.finished_at,
                    nullif(s.wake_at, 'infinity'), s.deadline_at, s.locked_by_node_id, s.event_name,
                    s.event_key, s.event_id, s.child_job_id, s.child_job_type,
@@ -123,7 +123,7 @@ public final class AdminStore {
       """
             select e.id, e.name, e.key, e.idempotency_key, e.published_at, e.expires_at,
                    (select count(*) from bikesched_steps s
-                     where s.event_id = e.id and s.kind = 'EVENT_WAIT'),
+                     where s.event_id = e.id and s.type = 'EVENT_WAIT'),
                    e.expires_at > now() and not exists (
                        select 1 from bikesched_events l
                         where l.name = e.name and l.key = e.key and l.expires_at > now()
@@ -153,15 +153,15 @@ public final class AdminStore {
                      where expires_at > now() group by name
                     union all
                     select event_name, 0, count(*) from bikesched_steps
-                     where kind = 'EVENT_WAIT' and state = 'WAITING' group by event_name) names
+                     where type = 'EVENT_WAIT' and state = 'WAITING' group by event_name) names
              group by name order by name""";
 
   private static final String FIND_EVENT_STEPS_SQL =
       """
-            select s.id, s.job_id, j.type, j.state, s.name, s.kind
+            select s.id, s.job_id, j.type, j.state, s.name, s.type
               from bikesched_steps s
               join bikesched_jobs j on j.id = s.job_id
-             where s.event_id = ? and s.kind in ('EVENT_PUBLISH', 'EVENT_WAIT')
+             where s.event_id = ? and s.type in ('EVENT_PUBLISH', 'EVENT_WAIT')
              order by s.started_at, s.job_id, s.name""";
 
   // Uses bikesched_steps_waiting_idx (event_name, event_key).
@@ -171,7 +171,7 @@ public final class AdminStore {
                    nullif(s.wake_at, 'infinity')
               from bikesched_steps s
               join bikesched_jobs j on j.id = s.job_id
-             where s.kind = 'EVENT_WAIT' and s.state = 'WAITING' and s.event_name = ?
+             where s.type = 'EVENT_WAIT' and s.state = 'WAITING' and s.event_name = ?
                and (?::text is null or starts_with(s.event_key, ?::text))
              order by s.started_at, s.job_id
              limit ?""";

@@ -43,7 +43,7 @@ public final class EventStore {
 
   private static final String FIND_EVENT_STEP_SQL =
       """
-            select id, kind, state, result::text, event_name, event_key, wake_at, wake_at <= now(),
+            select id, type, state, result::text, event_name, event_key, wake_at, wake_at <= now(),
                    coalesce(last_error, '')
               from bikesched_steps where job_id = ? and name = ? for update""";
 
@@ -55,12 +55,12 @@ public final class EventStore {
 
   private static final String RECEIVE_EVENT_STEP_SQL =
       """
-            insert into bikesched_steps (id, job_id, name, kind, state, result, attempts, event_name, event_key, event_id, finished_at)
+            insert into bikesched_steps (id, job_id, name, type, state, result, attempts, event_name, event_key, event_id, finished_at)
             values (?, ?, ?, 'EVENT_WAIT', 'SUCCEEDED', ?::jsonb, 1, ?, ?, ?, now())""";
 
   private static final String WAIT_EVENT_STEP_SQL =
       """
-            insert into bikesched_steps (id, job_id, name, kind, state, attempts, event_name, event_key, wake_at)
+            insert into bikesched_steps (id, job_id, name, type, state, attempts, event_name, event_key, wake_at)
             values (?, ?, ?, 'EVENT_WAIT', 'WAITING', 1, ?, ?, now() + ? * interval '1 millisecond')
             returning wake_at""";
 
@@ -92,7 +92,7 @@ public final class EventStore {
             with received as (
                 update bikesched_steps
                    set state = 'SUCCEEDED', result = ?::jsonb, event_id = ?, finished_at = now()
-                 where kind = 'EVENT_WAIT' and event_name = ? and event_key = ? and state = 'WAITING'
+                 where type = 'EVENT_WAIT' and event_name = ? and event_key = ? and state = 'WAITING'
                 returning job_id, name),
             resumed as (
                 update bikesched_jobs j
@@ -124,12 +124,12 @@ public final class EventStore {
   // the same id and can check that they publish the same event.
   private static final String FIND_PUBLISH_STEP_SQL =
       """
-            select kind, event_name, event_key, event_id
+            select type, event_name, event_key, event_id
               from bikesched_steps where job_id = ? and name = ?""";
 
   private static final String INSERT_PUBLISH_STEP_SQL =
       """
-            insert into bikesched_steps (id, job_id, name, kind, state, attempts, event_name, event_key, event_id, finished_at)
+            insert into bikesched_steps (id, job_id, name, type, state, attempts, event_name, event_key, event_id, finished_at)
             values (?, ?, ?, 'EVENT_PUBLISH', 'SUCCEEDED', 1, ?, ?, ?, now())""";
 
   /** The outcome of waiting for an event, by the state of the waiting step. */
@@ -184,7 +184,7 @@ public final class EventStore {
    * @param timeout how long to wait at most, counted from the first wait; {@code null} for no limit
    * @return the outcome
    * @throws IllegalStateException if the step name belongs to a step waiting for another event or
-   *     to another kind of step
+   *     to another type of step
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public EventWaitResult awaitEvent(
@@ -204,7 +204,7 @@ public final class EventStore {
                   row ->
                       new EventStep(
                           new StepRef(row.uuid(1), stepName),
-                          row.enumValue(2, StepKind.class),
+                          row.enumValue(2, StepType.class),
                           row.enumValue(3, StepState.class),
                           row.string(4),
                           row.string(5),
@@ -216,7 +216,7 @@ public final class EventStore {
                   stepName);
           if (step.isPresent()) {
             EventStep found = step.get();
-            if (found.kind() != StepKind.EVENT_WAIT
+            if (found.type() != StepType.EVENT_WAIT
                 || !eventName.equals(found.eventName())
                 || !eventKey.equals(found.eventKey())) {
               throw new IllegalStateException(
@@ -224,9 +224,9 @@ public final class EventStore {
                       + stepName
                       + "' of job "
                       + jobId
-                      + (found.kind() == StepKind.EVENT_WAIT
+                      + (found.type() == StepType.EVENT_WAIT
                           ? " waits for event " + found.eventName() + "/" + found.eventKey()
-                          : " is " + found.kind().description())
+                          : " is " + found.type().description())
                       + ", not for event "
                       + eventName
                       + "/"
@@ -436,7 +436,7 @@ public final class EventStore {
                   FIND_PUBLISH_STEP_SQL,
                   row ->
                       new PublishStep(
-                          row.enumValue(1, StepKind.class),
+                          row.enumValue(1, StepType.class),
                           row.string(2),
                           row.string(3),
                           row.uuid(4)),
@@ -483,17 +483,17 @@ public final class EventStore {
                 e));
   }
 
-  /** A row of {@code FIND_PUBLISH_STEP_SQL}: a step (of any kind) of a job. */
+  /** A row of {@code FIND_PUBLISH_STEP_SQL}: a step (of any type) of a job. */
   // Publishing steps are created SUCCEEDED and never change: they are not compensable, and
   // cancelling a job only cancels WAITING and RUNNING steps.
-  private record PublishStep(StepKind kind, String eventName, String eventKey, UUID eventId) {
+  private record PublishStep(StepType type, String eventName, String eventKey, UUID eventId) {
 
     /**
      * The id of the event this publishing step published, after checking that it published the same
      * event as the current run.
      */
     UUID eventId(UUID jobId, String stepName, String expectedName, String expectedKey) {
-      if (kind != StepKind.EVENT_PUBLISH
+      if (type != StepType.EVENT_PUBLISH
           || !expectedName.equals(eventName)
           || !expectedKey.equals(eventKey)) {
         throw new IllegalStateException(
@@ -501,9 +501,9 @@ public final class EventStore {
                 + stepName
                 + "' of job "
                 + jobId
-                + (kind == StepKind.EVENT_PUBLISH
+                + (type == StepType.EVENT_PUBLISH
                     ? " published event " + eventName + "/" + eventKey
-                    : " is " + kind.description())
+                    : " is " + type.description())
                 + ", not event "
                 + expectedName
                 + "/"
@@ -625,10 +625,10 @@ public final class EventStore {
   private record Resumption(
       UUID jobId, String stepName, boolean jobResumed, int attempts, String type) {}
 
-  /** A row of {@code FIND_EVENT_STEP_SQL}: a step (of any kind) of a job. */
+  /** A row of {@code FIND_EVENT_STEP_SQL}: a step (of any type) of a job. */
   private record EventStep(
       StepRef step,
-      StepKind kind,
+      StepType type,
       StepState state,
       String result,
       String eventName,

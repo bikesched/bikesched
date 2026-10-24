@@ -181,7 +181,7 @@ external system (e.g. embedded in a callback URL) and have it call back with jus
   step.
 - Needs a lookup keyed on the id alone (not through the job first) for whatever API receives the
   external callback.
-- Open: the callback-receiving API shape (new method on `Bikesched`? a step kind addition?),
+- Open: the callback-receiving API shape (new method on `Bikesched`? a new step type?),
   deferred until there's a concrete use case.
 - Outcome: an external system resumes a job's step with nothing but the token it was given.
 

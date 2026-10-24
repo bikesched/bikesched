@@ -8,10 +8,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
 import org.bikesched.internal.database.Database;
-import org.bikesched.internal.database.StepKind;
 import org.bikesched.internal.database.StepRef;
 import org.bikesched.internal.database.StepState;
 import org.bikesched.internal.database.StepStore;
+import org.bikesched.internal.database.StepType;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.JobResult;
 import org.bikesched.job.Step;
@@ -64,7 +64,7 @@ final class CompensationReplay {
     if (completed.isEmpty()) {
       throw new CompensationReplayEnded(name);
     }
-    StepKind.STEP.require(name, jobId, completed.get().kind());
+    StepType.STEP.require(name, jobId, completed.get().type());
     @Nullable T result = fromJson.apply(completed.get().result());
     if (compensation != null && completed.get().compensable() && !completed.get().compensated()) {
       var step = new Step(jobId, name, completed.get().attempts());
@@ -84,7 +84,7 @@ final class CompensationReplay {
     if (step.isEmpty()) {
       throw new CompensationReplayEnded(stepName);
     }
-    StepKind.CHILD_JOB.require(stepName, jobId, step.get().kind());
+    StepType.CHILD_JOB.require(stepName, jobId, step.get().type());
     UUID childJobId =
         Objects.requireNonNull(step.get().childJobId(), "child job of a CHILD_JOB step");
     if (compensation != null && step.get().state() != StepState.COMPENSATED) {
@@ -110,30 +110,30 @@ final class CompensationReplay {
 
   /** A sleep: returns only after a completed sleep. */
   void sleep(String stepName) {
-    requireSucceeded(stepName, StepKind.SLEEP);
+    requireSucceeded(stepName, StepType.SLEEP);
   }
 
   /** A poll: its ready value; a poll that failed or timed out ended the job there. */
   <T extends @Nullable Object> @Nullable T poll(
       String name, Function<@Nullable String, @Nullable T> read) {
-    return read.apply(requireSucceeded(name, StepKind.POLL).result());
+    return read.apply(requireSucceeded(name, StepType.POLL).result());
   }
 
   /** An event wait: the received payload; a wait that timed out ended the job there. */
   <T extends @Nullable Object> @Nullable T event(
       String stepName, Function<@Nullable String, @Nullable T> read) {
-    return read.apply(requireSucceeded(stepName, StepKind.EVENT_WAIT).result());
+    return read.apply(requireSucceeded(stepName, StepType.EVENT_WAIT).result());
   }
 
   /**
    * The stored step, if it succeeded; otherwise the replay ends there.
    *
-   * @param kind the expected kind, {@code null} to accept any
+   * @param type the expected type, {@code null} to accept any
    */
-  private StepStore.StoredStep requireSucceeded(String stepName, @Nullable StepKind kind) {
+  private StepStore.StoredStep requireSucceeded(String stepName, @Nullable StepType type) {
     var stored = database.steps().findStep(jobId, stepName);
-    if (kind != null) {
-      stored.ifPresent(step -> kind.require(stepName, jobId, step.kind()));
+    if (type != null) {
+      stored.ifPresent(step -> type.require(stepName, jobId, step.type()));
     }
     return stored
         .filter(step -> step.state() == StepState.SUCCEEDED)

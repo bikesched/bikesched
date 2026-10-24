@@ -29,10 +29,10 @@ import org.bikesched.internal.database.JobOrigin;
 import org.bikesched.internal.database.JobPhase;
 import org.bikesched.internal.database.JobStore;
 import org.bikesched.internal.database.NewJob;
-import org.bikesched.internal.database.StepKind;
 import org.bikesched.internal.database.StepRef;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.database.StepStore.ChildWait;
+import org.bikesched.internal.database.StepType;
 import org.bikesched.internal.event.DefaultStepEventBuilder;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.CompensationHandler;
@@ -701,10 +701,10 @@ public final class DefaultJob implements Job {
     }
     try (var stepLogContext = stepContext(name)) {
       var completed = database.steps().findCompletedStep(id, name);
-      completed.ifPresent(step -> StepKind.STEP.require(name, id, step.kind()));
+      completed.ifPresent(step -> StepType.STEP.require(name, id, step.type()));
       if (completed.isEmpty()) {
         if (failureHandler != null) {
-          var failing = database.steps().findFailingStep(id, name, StepKind.STEP);
+          var failing = database.steps().findFailingStep(id, name, StepType.STEP);
           if (failing.isPresent()) {
             // The handler threw or was lost in an earlier attempt: run it again, then fail the job
             // (unless it resolves the step).
@@ -723,11 +723,11 @@ public final class DefaultJob implements Job {
               compensation != null,
               failureHandler);
         }
-        // Completed in the meantime, or a step of another kind (e.g. still waiting for an event).
+        // Completed in the meantime, or a step of another type (e.g. still waiting for an event).
         database
             .steps()
             .findStep(id, name)
-            .ifPresent(step -> StepKind.STEP.require(name, id, step.kind()));
+            .ifPresent(step -> StepType.STEP.require(name, id, step.type()));
         completed = database.steps().findCompletedStep(id, name);
       }
       LOG.debug("Step {} of job {} already completed, reusing its result", name, id);

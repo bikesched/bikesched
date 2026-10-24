@@ -3,8 +3,8 @@ package org.bikesched.internal.database;
 
 import java.util.UUID;
 
-/** What a step does, as stored in {@code bikesched_steps.kind}. */
-public enum StepKind {
+/** What a step does, as stored in {@code bikesched_steps.type}. */
+public enum StepType {
   /** A regular step running a handler. */
   STEP("a regular step"),
   /** A durable sleep. */
@@ -20,24 +20,24 @@ public enum StepKind {
 
   private final String description;
 
-  StepKind(String description) {
+  StepType(String description) {
     this.description = description;
   }
 
-  /** Describes the kind for messages, e.g. {@code "a regular step"}. */
+  /** Describes the type for messages, e.g. {@code "a regular step"}. */
   public String description() {
     return description;
   }
 
   /**
-   * Rejects a step name already used by another kind of step of the job.
+   * Rejects a step name already used by another type of step of the job.
    *
    * @param name the step name
    * @param jobId the job
-   * @param actual the kind of the stored step
-   * @throws IllegalStateException if {@code actual} is not this kind
+   * @param actual the type of the stored step
+   * @throws IllegalStateException if {@code actual} is not this type
    */
-  public void require(String name, UUID jobId, StepKind actual) {
+  public void require(String name, UUID jobId, StepType actual) {
     if (actual != this) {
       throw new IllegalStateException(
           "Step '"

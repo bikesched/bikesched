@@ -353,7 +353,7 @@ class EventStoreTest extends AbstractStoreTest {
             countSteps(
                 "job_id = '"
                     + publisher.id()
-                    + "' and name = 'publish' and kind = 'EVENT_PUBLISH' and state = 'SUCCEEDED'"
+                    + "' and name = 'publish' and type = 'EVENT_PUBLISH' and state = 'SUCCEEDED'"
                     + " and event_name = 'paid' and event_key = 'once-1' and event_id = '"
                     + published
                     + "' and result is null"))
@@ -421,7 +421,7 @@ class EventStoreTest extends AbstractStoreTest {
             countSteps(
                 "job_id = '"
                     + job.id()
-                    + "' and kind = 'EVENT_WAIT' and state = 'SUCCEEDED' and event_id = '"
+                    + "' and type = 'EVENT_WAIT' and state = 'SUCCEEDED' and event_id = '"
                     + eventId
                     + "'"))
         .isOne();

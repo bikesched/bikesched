@@ -48,13 +48,13 @@ public final class StepStore {
 
   private static final String FIND_STEP_SQL =
       """
-            select id, kind, state, result::text, attempts, compensable from bikesched_steps where job_id = ? and name = ?""";
+            select id, type, state, result::text, attempts, compensable from bikesched_steps where job_id = ? and name = ?""";
 
   // Starts an attempt of a regular step that has not succeeded yet; returns its id (the one given
   // on
   // the first attempt, kept by later ones) and attempt number. Returns no row if the step already
   // succeeded (e.g. concurrently), was compensated since, is
-  // another kind of step, or the job is no longer running on this node.
+  // another type of step, or the job is no longer running on this node.
   private static final String START_STEP_SQL =
       """
             insert into bikesched_steps (id, job_id, name, state, attempts, locked_by_node_id, started_at)
@@ -63,7 +63,7 @@ public final class StepStore {
             on conflict (job_id, name) do update
                set state = 'RUNNING', attempts = bikesched_steps.attempts + 1, failure_attempts = 0,
                    locked_by_node_id = excluded.locked_by_node_id, started_at = now(), finished_at = null
-             where bikesched_steps.kind = 'STEP' and bikesched_steps.state not in ('SUCCEEDED', 'COMPENSATED')
+             where bikesched_steps.type = 'STEP' and bikesched_steps.state not in ('SUCCEEDED', 'COMPENSATED')
             returning id, attempts"""
           .formatted(JOB_LOCKED);
 
@@ -78,14 +78,14 @@ public final class StepStore {
   // (see JobStore.COMPENSATE_SQL).
   private static final String COMPENSABLE_STEP =
       """
-            (state = 'SUCCEEDED' or kind = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT'))""";
+            (state = 'SUCCEEDED' or type = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT'))""";
 
   // A child job step keeps its child's outcome (child_end_state, last_error) when it is
   // compensated.
   private static final String COMPENSATE_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'COMPENSATED', last_error = case when kind = 'CHILD_JOB' and child_end_state is not null then last_error end
+               set state = 'COMPENSATED', last_error = case when type = 'CHILD_JOB' and child_end_state is not null then last_error end
              where id = ? and %s and %s"""
           .formatted(COMPENSABLE_STEP, JOB_LOCKED);
 
@@ -93,7 +93,7 @@ public final class StepStore {
   // (A child job step keeps the error of its ended child, the failure is in the history.)
   private static final String FAIL_COMPENSATION_SQL =
       """
-            update bikesched_steps set last_error = case when kind = 'CHILD_JOB' then last_error else ? end
+            update bikesched_steps set last_error = case when type = 'CHILD_JOB' then last_error else ? end
              where id = ? and %s and %s
             returning state"""
           .formatted(COMPENSABLE_STEP, JOB_LOCKED);
@@ -151,7 +151,7 @@ public final class StepStore {
   private static final String FIND_FAILING_STEP_SQL =
       """
             select id, coalesce(last_error, '') from bikesched_steps
-             where job_id = ? and name = ? and kind = ? and state = 'FAILING'""";
+             where job_id = ? and name = ? and type = ? and state = 'FAILING'""";
 
   private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED;
 
@@ -199,13 +199,13 @@ public final class StepStore {
   // A step of a job, for a sleep.
   private static final String FIND_SLEEP_STEP_SQL =
       """
-            select id, kind, state, wake_at, wake_at <= now()
+            select id, type, state, wake_at, wake_at <= now()
               from bikesched_steps where job_id = ? and name = ? for update""";
 
   // Starts a sleep: WAITING until wake_at, or SUCCEEDED right away if that has passed.
   private static final String START_SLEEP_SQL =
       """
-            insert into bikesched_steps (id, job_id, name, kind, state, attempts, wake_at, finished_at)
+            insert into bikesched_steps (id, job_id, name, type, state, attempts, wake_at, finished_at)
             select ?, ?, ?, 'SLEEP', case when t.at <= now() then 'SUCCEEDED' else 'WAITING' end, 1, t.at,
                    case when t.at <= now() then now() end
               from (select coalesce(?::timestamptz, now() + ? * interval '1 millisecond') as at) t
@@ -216,7 +216,7 @@ public final class StepStore {
   private static final String FIND_CHILD_WAIT_READ_ONLY_SQL =
       """
             select id, name, state, child_end_state, result::text, last_error, wake_at, wake_at <= now()
-              from bikesched_steps where job_id = ? and child_job_id = ? and kind = 'CHILD_JOB'""";
+              from bikesched_steps where job_id = ? and child_job_id = ? and type = 'CHILD_JOB'""";
 
   private static final String FIND_CHILD_WAIT_SQL = FIND_CHILD_WAIT_READ_ONLY_SQL + " for update";
 
@@ -233,7 +233,7 @@ public final class StepStore {
 
   private static final String FIND_CHILD_JOB_STEP_SQL =
       """
-            select id, kind, state, child_job_id, attempts from bikesched_steps where job_id = ? and name = ?""";
+            select id, type, state, child_job_id, attempts from bikesched_steps where job_id = ? and name = ?""";
 
   private static final String LOCK_STEP_SQL =
       """
@@ -247,14 +247,14 @@ public final class StepStore {
   // A step of a job, for a poll.
   private static final String FIND_POLL_STEP_SQL =
       """
-            select id, kind, state, result::text, attempts, wake_at, wake_at <= now(),
+            select id, type, state, result::text, attempts, wake_at, wake_at <= now(),
                    coalesce(last_error, '')
               from bikesched_steps where job_id = ? and name = ? for update""";
 
   // Starts the first check of a poll; its deadline (deadline_at) is null without a timeout.
   private static final String START_POLL_SQL =
       """
-            insert into bikesched_steps (id, job_id, name, kind, state, attempts, locked_by_node_id, deadline_at)
+            insert into bikesched_steps (id, job_id, name, type, state, attempts, locked_by_node_id, deadline_at)
             values (?, ?, ?, 'POLL', 'RUNNING', 1, ?, now() + ? * interval '1 millisecond')
             returning attempts""";
 
@@ -286,7 +286,7 @@ public final class StepStore {
    * A step as stored.
    *
    * @param step the step's id and name
-   * @param kind what the step does: {@code STEP}, {@code SLEEP}, {@code EVENT_WAIT}, {@code
+   * @param type what the step does: {@code STEP}, {@code SLEEP}, {@code EVENT_WAIT}, {@code
    *     EVENT_PUBLISH} or {@code CHILD_JOB}
    * @param state its state, e.g. {@code SUCCEEDED}, {@code WAITING} or {@code TIMED_OUT}
    * @param result its stored result (an event wait: a copy of the received event's payload) as JSON
@@ -296,7 +296,7 @@ public final class StepStore {
    */
   public record StoredStep(
       StepRef step,
-      StepKind kind,
+      StepType type,
       StepState state,
       String result,
       int attempts,
@@ -317,7 +317,7 @@ public final class StepStore {
                 row ->
                     new StoredStep(
                         new StepRef(row.uuid(1), name),
-                        row.enumValue(2, StepKind.class),
+                        row.enumValue(2, StepType.class),
                         row.enumValue(3, StepState.class),
                         row.string(4),
                         row.integer(5),
@@ -333,7 +333,7 @@ public final class StepStore {
    * A step that completed in an earlier attempt.
    *
    * @param step the step's id and name
-   * @param kind what the step does, see {@link StoredStep}
+   * @param type what the step does, see {@link StoredStep}
    * @param result its stored result as JSON text, may be {@code null}
    * @param compensated whether its compensation ran already
    * @param compensable whether it has a compensation; not for a step its failure handler resolved
@@ -341,7 +341,7 @@ public final class StepStore {
    */
   public record CompletedStep(
       StepRef step,
-      StepKind kind,
+      StepType type,
       @Nullable String result,
       boolean compensated,
       boolean compensable,
@@ -351,13 +351,13 @@ public final class StepStore {
    * A step of a job starting a child job.
    *
    * @param step the step's id and name
-   * @param kind what the step does, see {@link StoredStep}
+   * @param type what the step does, see {@link StoredStep}
    * @param state its state
    * @param childJobId the child it started, {@code null} unless the step is a {@code CHILD_JOB}
    * @param attempts its number of attempts (starts of a child)
    */
   public record ChildJobStep(
-      StepRef step, StepKind kind, StepState state, @Nullable UUID childJobId, int attempts) {}
+      StepRef step, StepType type, StepState state, @Nullable UUID childJobId, int attempts) {}
 
   /**
    * Looks up a step of a job, with the child job it started.
@@ -374,7 +374,7 @@ public final class StepStore {
                 row ->
                     new ChildJobStep(
                         new StepRef(row.uuid(1), name),
-                        row.enumValue(2, StepKind.class),
+                        row.enumValue(2, StepType.class),
                         row.enumValue(3, StepState.class),
                         row.uuid(4),
                         row.integer(5)),
@@ -568,7 +568,7 @@ public final class StepStore {
                       Optional.of(
                           new CompletedStep(
                               step.step(),
-                              step.kind(),
+                              step.type(),
                               step.result(),
                               false,
                               step.compensable(),
@@ -577,7 +577,7 @@ public final class StepStore {
                       Optional.of(
                           new CompletedStep(
                               step.step(),
-                              step.kind(),
+                              step.type(),
                               step.result(),
                               true,
                               step.compensable(),
@@ -954,11 +954,11 @@ public final class StepStore {
    *
    * @param jobId the job id
    * @param name the step name
-   * @param kind the kind of step, see {@link StoredStep}
+   * @param type the type of step, see {@link StoredStep}
    * @return the step with its stored error, or empty if it is not {@code FAILING} or of another
-   *     kind
+   *     type
    */
-  public Optional<StepError> findFailingStep(UUID jobId, String name, StepKind kind) {
+  public Optional<StepError> findFailingStep(UUID jobId, String name, StepType type) {
     return access.withConnection(
         db ->
             db.one(
@@ -966,7 +966,7 @@ public final class StepStore {
                 row -> new StepError(new StepRef(row.uuid(1), name), row.string(2)),
                 jobId,
                 name,
-                kind.name()),
+                type.name()),
         e ->
             new BikeschedException(
                 "Reading step '" + name + "' of bikesched job " + jobId + " failed", e));
@@ -1016,7 +1016,7 @@ public final class StepStore {
    * @param duration how long to sleep, counted from the first run; {@code null} if {@code until}
    * @param until when to wake up; {@code null} if {@code duration}
    * @return whether the sleep is over, and the wake-up time
-   * @throws IllegalStateException if the step name belongs to another kind of step
+   * @throws IllegalStateException if the step name belongs to another type of step
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public Sleep sleep(
@@ -1030,7 +1030,7 @@ public final class StepStore {
                   row ->
                       new SleepStep(
                           new StepRef(row.uuid(1), name),
-                          row.enumValue(2, StepKind.class),
+                          row.enumValue(2, StepType.class),
                           row.enumValue(3, StepState.class),
                           row.instant(4),
                           row.bool(5)),
@@ -1038,7 +1038,7 @@ public final class StepStore {
                   name);
           if (step.isPresent()) {
             SleepStep found = step.get();
-            StepKind.SLEEP.require(name, jobId, found.kind());
+            StepType.SLEEP.require(name, jobId, found.type());
             return switch (found.state()) {
               case SUCCEEDED -> new Sleep(found.step(), true, found.wakeUpAt());
               case WAITING -> {
@@ -1142,7 +1142,7 @@ public final class StepStore {
    * @param timeout how long to poll at most, counted from the first check; {@code null} for no
    *     limit
    * @return the poll
-   * @throws IllegalStateException if the step name belongs to another kind of step
+   * @throws IllegalStateException if the step name belongs to another type of step
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public PollStep startPoll(UUID jobId, JobLock lock, String name, @Nullable Duration timeout) {
@@ -1155,7 +1155,7 @@ public final class StepStore {
                   row ->
                       new StoredPoll(
                           new StepRef(row.uuid(1), name),
-                          row.enumValue(2, StepKind.class),
+                          row.enumValue(2, StepType.class),
                           row.enumValue(3, StepState.class),
                           row.string(4),
                           row.integer(5),
@@ -1179,7 +1179,7 @@ public final class StepStore {
             return new PollStep.CheckStarted(created, checks, false);
           }
           StoredPoll found = step.get();
-          StepKind.POLL.require(name, jobId, found.kind());
+          StepType.POLL.require(name, jobId, found.type());
           boolean waiting = found.state() == StepState.WAITING;
           return switch (found.state()) {
             case SUCCEEDED -> new PollStep.Ready(found.step(), found.result());
@@ -1308,7 +1308,7 @@ public final class StepStore {
   /** A row of {@code FIND_POLL_STEP_SQL}. */
   private record StoredPoll(
       StepRef step,
-      StepKind kind,
+      StepType type,
       StepState state,
       String result,
       int checks,
@@ -1503,7 +1503,7 @@ public final class StepStore {
 
   /** A row of {@code FIND_SLEEP_STEP_SQL}. */
   private record SleepStep(
-      StepRef step, StepKind kind, StepState state, Instant wakeUpAt, boolean due) {}
+      StepRef step, StepType type, StepState state, Instant wakeUpAt, boolean due) {}
 
   /**
    * After a fenced write changed nothing: throws if the job is no longer running on the node

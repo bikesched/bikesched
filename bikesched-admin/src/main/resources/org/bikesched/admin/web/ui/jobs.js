@@ -498,9 +498,9 @@ function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
 
   const { step, job, history } = data;
   const liveText = { loading: 'Loading…', live: 'Live', stopped: 'Job ended', lost: 'Connection lost, retrying' }[live];
-  const poll = step.kind === 'POLL';
+  const poll = step.type === 'POLL';
   const fields = [
-    ['Kind', step.kind],
+    ['Type', step.type],
     [poll ? 'Checks' : 'Attempts', step.attempts],
     ['Started', dateTime(step.startedAt)],
     ['Finished', dateTime(step.finishedAt)],
@@ -537,7 +537,7 @@ function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
         <span>Event <span class="mono">${step.eventName}</span> / <span class="mono">${step.eventKey}</span></span>
         ${step.eventId && html`<a class="button small" href=${toHash({ section: 'events', id: step.eventId })}>Open event</a>`}
       </div>`}
-      ${step.kind === 'CHILD_JOB' && step.childJobId && html`<div class="detail-note"><${ChildJob} step=${step} /></div>`}
+      ${step.type === 'CHILD_JOB' && step.childJobId && html`<div class="detail-note"><${ChildJob} step=${step} /></div>`}
       ${step.lastError && html`<pre class="error-box">${step.lastError}</pre>`}
       <div class="detail-body">
         <section aria-label="Result">
@@ -630,7 +630,7 @@ function Steps({ steps, ended, operator, stepHref: hrefOf }) {
             <div class="step-head">
               <div class="row">
                 <a class="mono strong" href=${hrefOf(step.id)} title="Step details">${step.name}</a>
-                <span class="tag">${step.kind}</span>
+                <span class="tag">${step.type}</span>
                 <${Badge} state=${step.state} />
                 ${!took && step.attempts > 1 && html`<span class="muted small">${step.attempts} attempts</span>`}
               </div>
@@ -644,10 +644,10 @@ function Steps({ steps, ended, operator, stepHref: hrefOf }) {
             ${step.eventName &&
             html`<div class="step-event small">
               <span>Event <span class="mono">${step.eventName}</span> / <span class="mono">${step.eventKey}</span></span>
-              ${operator && !ended && step.kind === 'EVENT_WAIT' && step.state === 'WAITING' &&
+              ${operator && !ended && step.type === 'EVENT_WAIT' && step.state === 'WAITING' &&
               html`<a class="button small" href=${publishHref(step)}>Publish event…</a>`}
             </div>`}
-            ${step.kind === 'CHILD_JOB' && step.childJobId && html`<${ChildJob} step=${step} />`}
+            ${step.type === 'CHILD_JOB' && step.childJobId && html`<${ChildJob} step=${step} />`}
             ${step.lastError && html`<pre class="error-box small">${step.lastError}</pre>`}
           </li>`;
       })}

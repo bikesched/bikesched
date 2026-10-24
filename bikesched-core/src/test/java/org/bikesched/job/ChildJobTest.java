@@ -174,7 +174,7 @@ class ChildJobTest extends AbstractBikeschedTest {
       assertThat(
               countSteps(
                   parentId,
-                  "name = 'start child-basic-child' and kind = 'CHILD_JOB' and state = 'SUCCEEDED'"
+                  "name = 'start child-basic-child' and type = 'CHILD_JOB' and state = 'SUCCEEDED'"
                       + " and child_end_state = 'SUCCEEDED' and child_job_id = '"
                       + childId
                       + "'"))
@@ -684,12 +684,12 @@ class ChildJobTest extends AbstractBikeschedTest {
 
       assertThat(bikesched.cancel(parentId, "stop")).isTrue();
       awaitState(parentId, "CANCELLED");
-      assertThat(countSteps(parentId, "kind = 'CHILD_JOB' and state = 'CANCELLED'")).isEqualTo(1);
+      assertThat(countSteps(parentId, "type = 'CHILD_JOB' and state = 'CANCELLED'")).isEqualTo(1);
       assertThat(count("id = '" + child.get() + "' and state = 'WAITING'")).isEqualTo(1);
 
       bikesched.newEvent("child-cancel-parent-go", "k").payload("\"go\"").publish();
       awaitState(child.get(), "SUCCEEDED");
-      assertThat(countSteps(parentId, "kind = 'CHILD_JOB' and state = 'CANCELLED'"))
+      assertThat(countSteps(parentId, "type = 'CHILD_JOB' and state = 'CANCELLED'"))
           .as("the child's end leaves the cancelled step as it is")
           .isEqualTo(1);
     }
@@ -725,7 +725,7 @@ class ChildJobTest extends AbstractBikeschedTest {
       awaitState(parentId, "CANCELLED");
       awaitState(child.get(), "CANCELLED");
       assertThat(compensated).containsExactly(child.get());
-      assertThat(countSteps(parentId, "kind = 'CHILD_JOB' and state = 'COMPENSATED'")).isEqualTo(1);
+      assertThat(countSteps(parentId, "type = 'CHILD_JOB' and state = 'COMPENSATED'")).isEqualTo(1);
       assertThat(count("id = '" + child.get() + "' and last_error = 'parent cancelled'"))
           .isEqualTo(1);
     }
@@ -754,7 +754,7 @@ class ChildJobTest extends AbstractBikeschedTest {
                   })
               .schedule();
       awaitState(parentId, "FAILED");
-      assertThat(countSteps(parentId, "kind = 'CHILD_JOB' and state = 'COMPENSATED'")).isEqualTo(1);
+      assertThat(countSteps(parentId, "type = 'CHILD_JOB' and state = 'COMPENSATED'")).isEqualTo(1);
 
       assertThat(bikesched.retry(parentId)).isTrue();
       awaitState(parentId, "SUCCEEDED");
@@ -763,7 +763,7 @@ class ChildJobTest extends AbstractBikeschedTest {
       assertThat(
               countSteps(
                   parentId,
-                  "kind = 'CHILD_JOB' and attempts = 2 and child_job_id = '"
+                  "type = 'CHILD_JOB' and attempts = 2 and child_job_id = '"
                       + childIds.get(1)
                       + "'"))
           .isEqualTo(1);
@@ -824,7 +824,7 @@ class ChildJobTest extends AbstractBikeschedTest {
       assertThat(
               countSteps(
                   parentId,
-                  "kind = 'CHILD_JOB' and state = 'TIMED_OUT'"
+                  "type = 'CHILD_JOB' and state = 'TIMED_OUT'"
                       + " and wake_at < started_at + interval '1 minute'"))
           .isEqualTo(1);
       assertThat(count("id = '" + child.get() + "' and state = 'WAITING'")).isEqualTo(1);
@@ -834,7 +834,7 @@ class ChildJobTest extends AbstractBikeschedTest {
 
       bikesched.newEvent("child-timeout-go", "k").payload("\"go\"").publish();
       awaitState(child.get(), "SUCCEEDED");
-      assertThat(countSteps(parentId, "kind = 'CHILD_JOB' and state = 'TIMED_OUT'"))
+      assertThat(countSteps(parentId, "type = 'CHILD_JOB' and state = 'TIMED_OUT'"))
           .as("the child's end leaves the timed-out step as it is")
           .isEqualTo(1);
       assertThat(bikesched.findJobHistory(parentId))
