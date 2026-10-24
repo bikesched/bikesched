@@ -1,9 +1,9 @@
 ---
-title: "58. Steps keyed by a time-ordered id"
-weight: 58
+title: "57. Steps keyed by a time-ordered id"
+weight: 57
 ---
 
-# 58. Steps keyed by a time-ordered id
+# 57. Steps keyed by a time-ordered id
 
 Date: 2026-10-23
 
@@ -43,9 +43,10 @@ attempt (`on conflict (job_id, name)`) and the lookups of a job's steps use.
   pages link to it.
 - The job history keeps naming the step (`step_name`): a step id per history row would grow the
   largest table, and the job id and step name identify the step there.
-- The identifying columns and the state lead their tables: `bikesched_jobs` starts with `id`,
-  `type` and `state`, `bikesched_steps` with `id`, `job_id`, `name`, `type` and `state`. What a step does was named `kind`; it
-  is now its `type` (`StepInfo.type()`, `EventStep.stepType()`), like a job's.
+- The identifying columns and the state lead their tables: `bikesched_jobs` starts with `id`, `type`
+  and `state`, `bikesched_steps` with `id`, `job_id`, `name`, `type` and `state`. What a step does
+  was named `kind`; it is now its `type` (`StepInfo.type()`, `EventStep.stepType()`), like a job's.
+  This amends the column order of [ADR 0056](0056-schema-naming-column-order-and-invariants.md).
 
 ## Consequences
 

@@ -67,4 +67,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0054](0054-time-ordered-ids.md) | Time-ordered ids (UUIDv7) | Accepted |
 | [0055](0055-byte-limits-for-names-and-keys.md) | Byte limits for names and keys | Accepted |
 | [0056](0056-schema-naming-column-order-and-invariants.md) | Schema naming, column order and invariants | Accepted |
-| [0058](0058-steps-keyed-by-a-time-ordered-id.md) | Steps keyed by a time-ordered id | Accepted |
+| [0057](0057-steps-keyed-by-a-time-ordered-id.md) | Steps keyed by a time-ordered id | Accepted |

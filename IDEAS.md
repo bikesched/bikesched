@@ -173,7 +173,7 @@ delivery id), so it can be looked up or shown without decoding the payload.
 ### Stable step id for external callbacks
 
 Every step has an id (`bikesched_steps.id`, a UUIDv7 kept across its attempts, see
-[ADR 0058](docs/decisions/0058-steps-keyed-by-a-time-ordered-id.md)), but only the store and the
+[ADR 0057](docs/decisions/0057-steps-keyed-by-a-time-ordered-id.md)), but only the store and the
 admin see it. Exposing it as `step.id()` would let application code hand a stable token to an
 external system (e.g. embedded in a callback URL) and have it call back with just that one value.
 
