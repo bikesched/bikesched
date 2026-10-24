@@ -248,13 +248,13 @@ public final class JobStore {
                set state = 'SCHEDULED', attempts = 0, compensation_end_state = null, compensation_attempts = 0,
                    failure_attempts = 0, cancel_requested_at = null, cancel_message = null,
                    scheduled_at = now(), finished_at = null, updated_at = now()
-             where id = ? and state = 'FAILED' and type = 'ONE_OFF'
+             where id = ? and state = 'FAILED' and type = 'SINGLE'
             returning state, attempts, name, scheduled_at""";
 
   private static final String FIND_NOT_RETRYABLE_SQL =
       """
             select name, type, parent_job_id from bikesched_jobs
-             where id = ? and type <> 'ONE_OFF'""";
+             where id = ? and type <> 'SINGLE'""";
 
   // Bikesched.cancel(jobId): marks the job; the node claiming it next cancels it instead of running
   // its handler. Scheduled and waiting jobs are due right away; a running job is cancelled after
@@ -501,7 +501,7 @@ public final class JobStore {
     return new Object[] {
       jobId,
       job.name(),
-      (job.recurrence() == null ? JobType.ONE_OFF : JobType.RECURRING).name(),
+      (job.recurrence() == null ? JobType.SINGLE : JobType.RECURRING).name(),
       job.payload(),
       job.scheduledAt(),
       job.priority(),

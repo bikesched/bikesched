@@ -33,7 +33,7 @@ only the column (code and schema would disagree).
   it the job name throughout: `newJob(name)`, `registerJobHandler(name, …)`, `Job.name()`,
   `JobInfo.name()`, `JobQuery.withName`, `Admin.findJobNames()`, the MDC key `bikesched.jobName`,
   the Micrometer tag `job.name`, the admin API's `api/job-names` and `name` parameters.
-- `bikesched_jobs.type` is the kind of job, the enum `JobType` with `ONE_OFF`, `RECURRING` and
+- `bikesched_jobs.type` is the kind of job, the enum `JobType` with `SINGLE`, `RECURRING` and
   `CHILD`, exposed as `JobInfo.type()` and `JobSummary.type()`. bikesched sets it when it stores
   the job; users never pass it. A check constraint ties it to the columns it implies
   (`recurrence` for `RECURRING`, `parent_job_id` for `CHILD`), and the recurring job index and

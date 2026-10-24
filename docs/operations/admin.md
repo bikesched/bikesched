@@ -135,7 +135,7 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   is their creation time and their end is random), with or without hyphens, and finds only
   jobs in the job list and only events in the event list. A single match opens its detail; the
   other filters are off while the search is active.
-- **Job detail**: all fields (the type says one-off, recurring or child job), the idempotency key,
+- **Job detail**: all fields (the type says single, recurring or child job), the idempotency key,
   the last error, retry and cancel, the steps with their duration (a child job step links to the
   child, a child job shows the path to its parents), the job history when recorded, and a Data tab
   with the payload above the result. A running or waiting step's duration counts up; a retried step

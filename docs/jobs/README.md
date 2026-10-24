@@ -9,7 +9,7 @@ A job is a unit of work with a *name* that selects its handler. A node claims on
 names it has handlers for, so different nodes can work on different jobs; scheduling a job needs a
 handler for its name on the scheduling node too.
 
-Each job also has a *type*, `JobType.ONE_OFF`, `RECURRING` (an occurrence of a [recurring
+Each job also has a *type*, `JobType.SINGLE`, `RECURRING` (an occurrence of a [recurring
 job](recurring-jobs.md)) or `CHILD` (started by a parent job, see [Child
 jobs](../multi-step-jobs/child-jobs.md)). bikesched sets it when the job is created.
 

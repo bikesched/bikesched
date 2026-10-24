@@ -313,7 +313,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
       bikesched.registerJobHandler(
           name, job -> childId.complete(job.newJob(name + "-child").schedule()));
 
-      UUID oneOff = bikesched.newJob(name).schedule();
+      UUID single = bikesched.newJob(name).schedule();
       UUID recurring =
           bikesched
               .newJob(name + "-recurring")
@@ -321,7 +321,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
               .schedule(Recurrence.every(Duration.ofHours(1)), Duration.ofHours(1));
       UUID child = childId.get(10, TimeUnit.SECONDS);
 
-      assertThat(bikesched.findJob(oneOff).orElseThrow().type()).isEqualTo(JobType.ONE_OFF);
+      assertThat(bikesched.findJob(single).orElseThrow().type()).isEqualTo(JobType.SINGLE);
       assertThat(bikesched.findJob(recurring).orElseThrow().type()).isEqualTo(JobType.RECURRING);
       JobInfo childInfo = bikesched.findJob(child).orElseThrow();
       assertThat(childInfo.type()).isEqualTo(JobType.CHILD);

@@ -33,7 +33,7 @@ const RETRY_MS = 10000;
 const SCHEDULE_PARAMS = ['schedName', 'from'];
 
 // How a job was started (its type), as shown in its detail.
-const JOB_TYPES = { ONE_OFF: 'One-off', RECURRING: 'Recurring', CHILD: 'Child job' };
+const JOB_TYPES = { SINGLE: 'Single', RECURRING: 'Recurring', CHILD: 'Child job' };
 const listParams = (params) =>
   Object.fromEntries(Object.entries(params).filter(([name]) => !SCHEDULE_PARAMS.includes(name)));
 

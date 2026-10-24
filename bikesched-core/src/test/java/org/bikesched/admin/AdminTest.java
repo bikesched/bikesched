@@ -61,7 +61,7 @@ class AdminTest extends AbstractBikeschedTest {
       assertThat(found).containsExactlyElementsOf(scheduled.reversed());
       JobSummary newest = admin.findJobs(JobQuery.newest(1).withName(type)).getFirst();
       assertThat(newest.name()).isEqualTo(type);
-      assertThat(newest.type()).isEqualTo(JobType.ONE_OFF);
+      assertThat(newest.type()).isEqualTo(JobType.SINGLE);
       assertThat(newest.state()).isEqualTo(JobState.SCHEDULED);
       assertThat(newest.maxAttempts()).isPositive();
       assertThat(newest.scheduledAt()).isAfter(newest.createdAt());

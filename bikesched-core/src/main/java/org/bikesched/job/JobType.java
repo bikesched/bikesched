@@ -5,7 +5,7 @@ package org.bikesched.job;
 public enum JobType {
 
   /** Scheduled on its own (by the application or the admin UI): runs once. */
-  ONE_OFF,
+  SINGLE,
 
   /** An occurrence of a recurring job: ending it schedules the next occurrence. */
   RECURRING,

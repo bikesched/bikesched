@@ -41,7 +41,7 @@ create table bikesched_nodes (
 -- A job with a failure handler that would end FAILED or COMPENSATION_FAILED is FAILING
 -- (failure_end_state: the state it ends in) until its failure handler ran (failure_attempts: its runs).
 -- The type tells how a job was started:
--- - ONE_OFF: scheduled by the application (or the admin UI), runs once.
+-- - SINGLE: scheduled by the application (or the admin UI), runs once.
 -- - RECURRING: an occurrence of a recurring job (recurrence and planned_run_at set); finishing it
 --   inserts the next occurrence.
 -- - CHILD: started by a step of its parent (parent_job_id set, step type CHILD_JOB); ending it
@@ -50,7 +50,7 @@ create table bikesched_nodes (
 create table bikesched_jobs (
     id                     uuid        not null,
     name                   text        not null,           -- identifies the handler that executes the job
-    type                   text        not null default 'ONE_OFF',
+    type                   text        not null default 'SINGLE',
     state                  text        not null default 'SCHEDULED',
     parent_job_id          uuid,                           -- the job that started this one as a child
     locked_by_node_id      uuid,
@@ -81,7 +81,7 @@ create table bikesched_jobs (
     constraint bikesched_jobs_locked_by_node_id_fkey
         foreign key (locked_by_node_id) references bikesched_nodes (id),
     constraint bikesched_jobs_type_check
-        check (type in ('ONE_OFF', 'RECURRING', 'CHILD')),
+        check (type in ('SINGLE', 'RECURRING', 'CHILD')),
     constraint bikesched_jobs_state_check
         check (state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'CANCELLED',
                          'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING')),

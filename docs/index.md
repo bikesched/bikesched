@@ -19,7 +19,7 @@ and without any coordinator besides PostgreSQL.
   due jobs and runs them on virtual threads, up to its concurrency limit. Nodes clean up after each
   other: the running jobs of a crashed node are released and retried elsewhere.
 - **Job**: a unit of work with a *name*, an optional JSON payload, a priority, a retry limit and a
-  timeout. A handler registered for the name runs it. Its *type* tells how it was started: one-off,
+  timeout. A handler registered for the name runs it. Its *type* tells how it was started: single,
   recurring or as a child job.
 - **Step**: a named, durable part of a job. A completed step is not executed again when the job is
   retried; its stored result is returned instead. Steps can declare a compensation that undoes them

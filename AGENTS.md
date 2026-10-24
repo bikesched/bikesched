@@ -139,7 +139,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - Results get their own type in the feature package (`job.JobHistoryEntry`); lookups return
   `Optional` of a minimal interface (`findJob` → `JobInfo` with a `JobState` enum).
 - A job's `name` selects its handler (`newJob(name)`, `registerJobHandler(name, …)`); its `type`
-  is the `JobType` enum (`ONE_OFF`, `RECURRING`, `CHILD`) bikesched derives from how it was started
+  is the `JobType` enum (`SINGLE`, `RECURRING`, `CHILD`) bikesched derives from how it was started
   (ADR 0059). Call the handler key a job name in code and docs, never a job type.
 - No exceptions for control flow: intent is a flag checked after the handler (`job.cancel()`,
   `job.fail()`), except suspending at an event wait (internal `Error`, see `JobSuspended`).

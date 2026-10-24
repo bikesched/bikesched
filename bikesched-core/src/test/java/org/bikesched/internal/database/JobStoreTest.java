@@ -118,10 +118,10 @@ class JobStoreTest extends AbstractStoreTest {
             + " planned_run_at) values"
             + " ('"
             + failed
-            + "', 'test', 'ONE_OFF', 'FAILED', 3, 'boom', now(), null, 0, now(), null, null),"
+            + "', 'test', 'SINGLE', 'FAILED', 3, 'boom', now(), null, 0, now(), null, null),"
             + " ('"
             + compensated
-            + "', 'test', 'ONE_OFF', 'FAILED', 3, 'boom', now(), 'FAILED', 1, null, null, null),"
+            + "', 'test', 'SINGLE', 'FAILED', 3, 'boom', now(), 'FAILED', 1, null, null, null),"
             + " ('"
             + occurrence
             + "', 'daily', 'RECURRING', 'FAILED', 3, 'boom', now(), null, 0, null, 'every PT1H', now()),"
@@ -129,7 +129,7 @@ class JobStoreTest extends AbstractStoreTest {
             + " now()),"
             + " ('"
             + succeeded
-            + "', 'test', 'ONE_OFF', 'SUCCEEDED', 1, null, now(), null, 0, null, null, null)");
+            + "', 'test', 'SINGLE', 'SUCCEEDED', 1, null, now(), null, 0, null, null, null)");
 
     assertThat(database.jobs().retryJob(failed)).isTrue();
     assertThat(database.jobs().retryJob(compensated)).isTrue();
