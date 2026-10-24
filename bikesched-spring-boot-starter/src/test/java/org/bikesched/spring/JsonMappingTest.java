@@ -70,7 +70,7 @@ class JsonMappingTest extends AbstractSpringTest {
 
     public static final List<String> handled = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "json-record")
+    @JobHandler(name = "json-record")
     public void handle(Job job, Item item) {
       handled.add(item.name() + ":" + item.quantity());
     }

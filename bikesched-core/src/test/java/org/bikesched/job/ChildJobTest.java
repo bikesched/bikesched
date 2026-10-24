@@ -28,7 +28,7 @@ class ChildJobTest extends AbstractBikeschedTest {
   /** Deletes the jobs left behind (waiting children, future jobs). */
   @AfterEach
   void deleteJobs() throws Exception {
-    execute("delete from bikesched_jobs where type like 'child-%'");
+    execute("delete from bikesched_jobs where name like 'child-%'");
   }
 
   // ---- Job results ----
@@ -202,7 +202,7 @@ class ChildJobTest extends AbstractBikeschedTest {
                   + parentId
                   + " started child job "
                   + childId
-                  + " of type child-basic-child",
+                  + " named child-basic-child",
               "Step start child-basic-child of job "
                   + parentId
                   + " waiting for job "
@@ -262,7 +262,7 @@ class ChildJobTest extends AbstractBikeschedTest {
               .schedule();
 
       awaitState(parentId, "FAILED");
-      assertThat(failure.get()).hasMessageContaining("Starting a child job");
+      assertThat(failure.get()).hasMessageContaining("Starting child job");
       assertThat(count("parent_job_id = '" + parentId + "'")).isZero();
       assertThat(countSteps(parentId, "true")).isZero();
     }
@@ -513,7 +513,7 @@ class ChildJobTest extends AbstractBikeschedTest {
 
       await().until(() -> failure.get() != null);
       assertThat(failure.get()).hasMessageContaining("cannot start child jobs");
-      assertThat(count("type = 'child-recurring-child'")).isZero();
+      assertThat(count("name = 'child-recurring-child'")).isZero();
     }
   }
 
@@ -542,7 +542,7 @@ class ChildJobTest extends AbstractBikeschedTest {
 
       awaitState(parentId, "SUCCEEDED");
       assertThat(failure.get())
-          .hasMessageContaining("cannot start a child job of type child-in-step-child while");
+          .hasMessageContaining("cannot start child job child-in-step-child while");
     }
   }
 
@@ -603,8 +603,7 @@ class ChildJobTest extends AbstractBikeschedTest {
       deleted.set(true);
       bikesched.newEvent("child-type-go", "k").payload("\"go\"").publish();
       awaitState(parentId, "SUCCEEDED");
-      assertThat(failure.get())
-          .hasMessageContaining("of type child-type-a, not of type child-type-b");
+      assertThat(failure.get()).hasMessageContaining("named child-type-a, not child-type-b");
     }
   }
 

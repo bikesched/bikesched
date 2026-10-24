@@ -76,7 +76,7 @@ class LoadTest {
           .until(
               () ->
                   database.queryLong(
-                          "select count(*) from bikesched_jobs where type = '"
+                          "select count(*) from bikesched_jobs where name = '"
                               + type
                               + "' and state = 'SUCCEEDED'")
                       == JOBS);

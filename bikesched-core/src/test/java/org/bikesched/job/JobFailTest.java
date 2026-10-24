@@ -81,7 +81,7 @@ class JobFailTest extends AbstractBikeschedTest {
                         .matches(
                             "Job "
                                 + jobId
-                                + " of type fail-later failed \\(attempt 1 of 3\\), it will be"
+                                + " named fail-later failed \\(attempt 1 of 3\\), it will be"
                                 + " retried at .*: not ready yet"))
         .hasSize(1);
   }
@@ -184,7 +184,7 @@ class JobFailTest extends AbstractBikeschedTest {
         .contains(
             "Job "
                 + thrown
-                + " of type fail-then-throw was failed by its handler, ignoring the exception"
+                + " named fail-then-throw was failed by its handler, ignoring the exception"
                 + " thrown afterwards");
   }
 

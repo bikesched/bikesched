@@ -15,12 +15,12 @@ import org.bikesched.PaymentJsonMapper;
 import org.bikesched.PaymentJsonMapper.Payment;
 import org.junit.jupiter.api.Test;
 
-/** Job types with a payload class: {@link JobType}, next to the string-based API. */
-class JobTypeTest extends AbstractBikeschedTest {
+/** Job names with a payload class: {@link TypedJob}, next to the string-based API. */
+class TypedJobTest extends AbstractBikeschedTest {
 
   @Test
   void typedHandlerReceivesTheMappedPayload() throws Exception {
-    JobType<Payment> payment = JobType.of(unique("payment"), Payment.class);
+    TypedJob<Payment> payment = TypedJob.of(unique("payment"), Payment.class);
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-job-type")) {
       bikesched.registerJobHandler(payment, (ignored, p) -> received.complete(p));
@@ -34,7 +34,7 @@ class JobTypeTest extends AbstractBikeschedTest {
 
   @Test
   void builderTakesATypedHandler() throws Exception {
-    JobType<Payment> payment = JobType.of(unique("payment-inline"), Payment.class);
+    TypedJob<Payment> payment = TypedJob.of(unique("payment-inline"), Payment.class);
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-job-type-inline")) {
       bikesched
@@ -47,9 +47,9 @@ class JobTypeTest extends AbstractBikeschedTest {
     }
   }
 
-  /** A handler class carrying its type, as registered from a DI container. */
-  record PaymentHandler(JobType<Payment> type, CompletableFuture<Payment> received)
-      implements JobTypeHandler<Payment> {
+  /** A handler class carrying its typed job, as registered from a DI container. */
+  record PaymentHandler(TypedJob<Payment> typedJob, CompletableFuture<Payment> received)
+      implements StandaloneJobHandler<Payment> {
     @Override
     public void handle(Job job, Payment payment) {
       received.complete(payment);
@@ -60,16 +60,16 @@ class JobTypeTest extends AbstractBikeschedTest {
   void handlerCarryingItsTypeIsRegisteredOnItsOwn() throws Exception {
     var first =
         new PaymentHandler(
-            JobType.of(unique("payment-a"), Payment.class), new CompletableFuture<>());
+            TypedJob.of(unique("payment-a"), Payment.class), new CompletableFuture<>());
     var second =
         new PaymentHandler(
-            JobType.of(unique("payment-b"), Payment.class), new CompletableFuture<>());
-    List<JobTypeHandler<?>> handlers = List.of(first, second);
+            TypedJob.of(unique("payment-b"), Payment.class), new CompletableFuture<>());
+    List<StandaloneJobHandler<?>> handlers = List.of(first, second);
     try (Bikesched bikesched = node("node-job-type-handler")) {
       handlers.forEach(bikesched::registerJobHandler);
 
-      bikesched.newJob(first.type()).payload(new Payment("order-a", 1)).schedule();
-      bikesched.newJob(second.type()).payload(new Payment("order-b", 2)).schedule();
+      bikesched.newJob(first.typedJob()).payload(new Payment("order-a", 1)).schedule();
+      bikesched.newJob(second.typedJob()).payload(new Payment("order-b", 2)).schedule();
 
       assertThat(first.received().get(10, TimeUnit.SECONDS)).isEqualTo(new Payment("order-a", 1));
       assertThat(second.received().get(10, TimeUnit.SECONDS)).isEqualTo(new Payment("order-b", 2));
@@ -81,7 +81,7 @@ class JobTypeTest extends AbstractBikeschedTest {
 
   @Test
   void jobWithoutPayloadPassesNull() throws Exception {
-    JobType<Payment> payment = JobType.of(unique("payment-none"), Payment.class);
+    TypedJob<Payment> payment = TypedJob.of(unique("payment-none"), Payment.class);
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-job-type-null")) {
       bikesched.registerJobHandler(payment, (ignored, p) -> received.complete(p));
@@ -93,9 +93,9 @@ class JobTypeTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void stringAndTypedApisShareTheJobType() throws Exception {
+  void stringAndTypedApisShareTheJobName() throws Exception {
     String name = unique("payment-mixed");
-    JobType<Payment> payment = JobType.of(name, Payment.class);
+    TypedJob<Payment> payment = TypedJob.of(name, Payment.class);
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-job-type-mixed")) {
       bikesched.registerJobHandler(payment, (ignored, p) -> received.complete(p));
@@ -110,43 +110,43 @@ class JobTypeTest extends AbstractBikeschedTest {
   void nameIsUsedWithOnePayloadClassOnly() throws Exception {
     String name = unique("payment-conflict");
     try (Bikesched bikesched = node("node-job-type-conflict")) {
-      bikesched.registerJobHandler(JobType.of(name, Payment.class), (ignored, ignored2) -> {});
+      bikesched.registerJobHandler(TypedJob.of(name, Payment.class), (ignored, ignored2) -> {});
 
-      assertThatThrownBy(() -> bikesched.newJob(JobType.of(name, String.class)))
+      assertThatThrownBy(() -> bikesched.newJob(TypedJob.of(name, String.class)))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage(
-              "Job type '"
+              "Job name '"
                   + name
                   + "' is already used with payload type org.bikesched.PaymentJsonMapper$Payment,"
                   + " not java.lang.String");
       // The same class again is fine, e.g. a constant per producer and consumer.
-      assertThat(bikesched.newJob(JobType.of(name, Payment.class))).isNotNull();
+      assertThat(bikesched.newJob(TypedJob.of(name, Payment.class))).isNotNull();
     }
   }
 
   @Test
   void typedRecurringJobCanBeRemovedByItsType() throws Exception {
-    JobType<Payment> payment = JobType.of(unique("payment-recurring"), Payment.class);
+    TypedJob<Payment> payment = TypedJob.of(unique("payment-recurring"), Payment.class);
     try (Bikesched bikesched = node("node-job-type-recurring")) {
       bikesched
           .newJob(payment)
           .payload(new Payment("monthly", 10))
           .handler((ignored, ignored2) -> {})
           .schedule(Recurrence.every(Duration.ofHours(1)), Duration.ofHours(1));
-      assertThat(count("type = '" + payment.name() + "' and state = 'SCHEDULED'")).isOne();
+      assertThat(count("name = '" + payment.name() + "' and state = 'SCHEDULED'")).isOne();
 
       assertThat(bikesched.removeRecurringJob(payment)).isTrue();
 
-      assertThat(count("type = '" + payment.name() + "'")).isZero();
+      assertThat(count("name = '" + payment.name() + "'")).isZero();
     }
   }
 
   @Test
   void jobTypeNeedsANameAndAPayloadClass() {
-    assertThatThrownBy(() -> JobType.of(" ", Payment.class))
+    assertThatThrownBy(() -> TypedJob.of(" ", Payment.class))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("job type must not be blank");
-    assertThatThrownBy(() -> JobType.of("payment", null))
+        .hasMessage("job name must not be blank");
+    assertThatThrownBy(() -> TypedJob.of("payment", null))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("payloadType");
   }

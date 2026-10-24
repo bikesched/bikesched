@@ -10,9 +10,9 @@ import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
 import org.bikesched.RetryBackoff;
 import org.bikesched.event.EventPublisher;
-import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
+import org.bikesched.event.TypedEvent;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -52,14 +52,14 @@ public interface Job extends EventPublisher {
   /**
    * Starts building a typed event that is published atomically with a durable step.
    *
-   * @param eventType event name and payload type
+   * @param typedEvent event name and payload type
    * @param eventKey event key
    * @param <T> payload type
    * @return a durable event builder
    */
   @Override
   <T extends @Nullable Object> StepEventBuilder<T> newEvent(
-      EventType<T> eventType, String eventKey);
+      TypedEvent<T> typedEvent, String eventKey);
 
   /**
    * Returns the job id.
@@ -69,11 +69,11 @@ public interface Job extends EventPublisher {
   UUID id();
 
   /**
-   * Returns the job type, which identifies the handler that executes the job.
+   * Returns the job name, which identifies the handler that executes the job.
    *
-   * @return the job type
+   * @return the job name
    */
-  String type();
+  String name();
 
   /**
    * Returns the number of attempts including the current one.
@@ -289,11 +289,11 @@ public interface Job extends EventPublisher {
       String stepName, String eventName, String eventKey, Class<T> payloadType);
 
   /**
-   * Waits for an event of an {@link EventType}, like {@link #waitForEvent(String, String, String,
+   * Waits for an event of a {@link TypedEvent}, like {@link #waitForEvent(String, String, String,
    * Class)} with the type's name and payload class:
    *
    * <pre>{@code
-   * static final EventType<Payment> PAYMENT_RECEIVED = EventType.of("payment-received", Payment.class);
+   * static final TypedEvent<Payment> PAYMENT_RECEIVED = TypedEvent.of("payment-received", Payment.class);
    *
    * Payment payment = job.waitForEvent("await-payment", PAYMENT_RECEIVED, order.id())
    *         .timeout(Duration.ofDays(3))                            // optional
@@ -301,10 +301,10 @@ public interface Job extends EventPublisher {
    *         .receive();
    * }</pre>
    *
-   * <p>Without a timeout, {@link #awaitEvent(String, EventType, String)} is shorter.
+   * <p>Without a timeout, {@link #awaitEvent(String, TypedEvent, String)} is shorter.
    *
    * @param stepName the step name, unique within the job, at most 200 characters
-   * @param eventType the event's name and payload class
+   * @param typedEvent the event's name and payload class
    * @param eventKey identifies the event instance waited for, e.g. an order id, at most 500
    *     characters
    * @param <T> the payload type
@@ -313,25 +313,25 @@ public interface Job extends EventPublisher {
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    */
   <T extends @Nullable Object> EventWait<T> waitForEvent(
-      String stepName, EventType<T> eventType, String eventKey);
+      String stepName, TypedEvent<T> typedEvent, String eventKey);
 
   /**
-   * Waits for an event of an {@link EventType} and returns its payload, mapped to the type's
+   * Waits for an event of a {@link TypedEvent} and returns its payload, mapped to the type's
    * payload class; short for {@code waitForEvent(stepName, eventType, eventKey).receive()}:
    *
    * <pre>{@code
    * Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, order.id());
    * }</pre>
    *
-   * <p>The wait is a durable step like with {@link #waitForEvent(String, EventType, String)}: if
+   * <p>The wait is a durable step like with {@link #waitForEvent(String, TypedEvent, String)}: if
    * the event has not been published yet, the job's attempt ends here (the method does not return)
    * and the job is suspended until it is; later runs of the handler return the payload stored with
    * the step. The node's {@link BikeschedBuilder#defaultEventTimeout(Duration) default event
    * timeout} applies, if any; for a timeout of its own or a fallback result, use {@link
-   * #waitForEvent(String, EventType, String)}.
+   * #waitForEvent(String, TypedEvent, String)}.
    *
    * @param stepName the step name, unique within the job, at most 200 characters
-   * @param eventType the event's name and payload class
+   * @param typedEvent the event's name and payload class
    * @param eventKey identifies the event instance waited for, e.g. an order id, at most 500
    *     characters
    * @param <T> the payload type
@@ -344,7 +344,7 @@ public interface Job extends EventPublisher {
    * @throws IllegalArgumentException if the step name is blank
    */
   <T extends @Nullable Object> @Nullable T awaitEvent(
-      String stepName, EventType<T> eventType, String eventKey);
+      String stepName, TypedEvent<T> typedEvent, String eventKey);
 
   /**
    * Sleeps for the given duration, as a durable step. On the first run the step stores its wake-up
@@ -478,31 +478,31 @@ public interface Job extends EventPublisher {
    * });
    * }</pre>
    *
-   * <p>The step's name defaults to {@code start <type>}. A parent may also end without waiting for
+   * <p>The step's name defaults to {@code start <name>}. A parent may also end without waiting for
    * its children. Cancelling the parent does not touch its children; give the step a {@link
    * StepJobBuilder#compensateWith(CompensationHandler) compensation} to cancel them. There is no
    * limit on the nesting depth or the number of children: a runaway job tree is a handler bug.
    *
-   * @param type the child's job type
+   * @param name the child's job name
    * @return a builder for the child
-   * @throws IllegalArgumentException if the type is blank
+   * @throws IllegalArgumentException if the name is blank
    * @throws IllegalStateException if this job is an occurrence of a recurring job, or if called
    *     while a step handler or compensation of the job runs
    */
-  StepJobBuilder<Object> newJob(String type);
+  StepJobBuilder<Object> newJob(String name);
 
   /**
-   * Starts building a child job of a {@link JobType}, like {@link #newJob(String)}, with its
+   * Starts building a child job of a {@link TypedJob}, like {@link #newJob(String)}, with its
    * payload of the type's payload class.
    *
-   * @param type the child's job type and payload class
+   * @param typedJob the child's job name and payload class
    * @param <T> the payload type
    * @return a builder for the child
-   * @throws IllegalArgumentException if the type's name is already used with another payload class
+   * @throws IllegalArgumentException if the name is already used with another payload class
    * @throws IllegalStateException if this job is an occurrence of a recurring job, or if called
    *     while a step handler or compensation of the job runs
    */
-  <T extends @Nullable Object> StepJobBuilder<T> newJob(JobType<T> type);
+  <T extends @Nullable Object> StepJobBuilder<T> newJob(TypedJob<T> typedJob);
 
   /**
    * Waits for a child job started with {@link #newJob(String)} to end and returns its outcome, with

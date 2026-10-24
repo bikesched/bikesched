@@ -47,7 +47,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
 
   @AfterEach
   void deleteJobs() throws SQLException {
-    execute("delete from bikesched_jobs where type like 'notify-%'");
+    execute("delete from bikesched_jobs where name like 'notify-%'");
   }
 
   private static BikeschedBuilder worker(String name) {
@@ -169,7 +169,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
       UUID closingId = closing.node().id().orElseThrow();
       UUID jobId = UUID.randomUUID();
       execute(
-          "insert into bikesched_jobs (id, type, state, locked_by_node_id, lock_token, locked_at)"
+          "insert into bikesched_jobs (id, name, state, locked_by_node_id, lock_token, locked_at)"
               + " values ('"
               + jobId
               + "', 'notify-released', 'RUNNING', '"

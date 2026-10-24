@@ -5,7 +5,7 @@ import java.io.Serial;
 
 /**
  * Thrown when a bean's {@code @JobHandler} methods cannot be registered: an invalid signature, or a
- * job type another bean (or the application) already handles. Fails the context at startup; {@link
+ * job name another bean (or the application) already handles. Fails the context at startup; {@link
  * HandlerRegistrationFailureAnalyzer} turns it into a message naming the bean.
  */
 public class HandlerRegistrationException extends IllegalArgumentException {

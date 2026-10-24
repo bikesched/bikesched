@@ -4,9 +4,9 @@ package org.bikesched.examples.taxi;
 import java.time.Duration;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.event.EventType;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.job.Job;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,16 +38,16 @@ public final class TaxiBooking {
 
   private static final Logger LOG = LoggerFactory.getLogger(TaxiBooking.class);
 
-  /** The job type of rides, with the ride request as payload. */
-  public static final JobType<RideRequest> JOB_TYPE = JobType.of("taxi-ride", RideRequest.class);
+  /** The job name of rides, with the ride request as payload. */
+  public static final TypedJob<RideRequest> JOB_NAME = TypedJob.of("taxi-ride", RideRequest.class);
 
   /** Event published when a driver accepted a ride, keyed by the ride id. */
-  public static final EventType<DriverOffer> DRIVER_ACCEPTED =
-      EventType.of("taxi-driver-accepted", DriverOffer.class);
+  public static final TypedEvent<DriverOffer> DRIVER_ACCEPTED =
+      TypedEvent.of("taxi-driver-accepted", DriverOffer.class);
 
   /** Event published when the customer accepted or declined the price, keyed by the ride id. */
-  public static final EventType<PriceDecision> PRICE_DECIDED =
-      EventType.of("taxi-price-decided", PriceDecision.class);
+  public static final TypedEvent<PriceDecision> PRICE_DECIDED =
+      TypedEvent.of("taxi-price-decided", PriceDecision.class);
 
   private final Bikesched bikesched;
   private final TaxiBroker broker;
@@ -91,7 +91,7 @@ public final class TaxiBooking {
       Duration priceTimeout) {
     var booking =
         new TaxiBooking(bikesched, broker, payments, notifications, driverTimeout, priceTimeout);
-    bikesched.registerJobHandler(JOB_TYPE, booking::book);
+    bikesched.registerJobHandler(JOB_NAME, booking::book);
     return booking;
   }
 
@@ -102,7 +102,7 @@ public final class TaxiBooking {
    * @return the id of the ride's job
    */
   public UUID requestRide(RideRequest ride) {
-    return bikesched.newJob(JOB_TYPE).payload(ride).maxAttempts(3).schedule();
+    return bikesched.newJob(JOB_NAME).payload(ride).maxAttempts(3).schedule();
   }
 
   /**

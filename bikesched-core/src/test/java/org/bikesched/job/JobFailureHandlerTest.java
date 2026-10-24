@@ -23,7 +23,7 @@ import org.bikesched.job.listener.JobClaim;
 import org.bikesched.job.listener.JobListener;
 import org.junit.jupiter.api.Test;
 
-/** Failure handlers of job types, see {@link JobFailureHandler}. */
+/** Failure handlers of job names, see {@link JobFailureHandler}. */
 class JobFailureHandlerTest extends AbstractBikeschedTest {
 
   /** Records what a failure handler received, e.g. {@code "FAILED: java.lang...: boom"}. */
@@ -49,7 +49,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
                             + failed.id()
                             + "' and state = 'RUNNING' and failure_end_state = 'FAILED'")
                     + "");
-            handled.add(failed.type() + " " + failed.payload() + " " + describe(failed));
+            handled.add(failed.name() + " " + failed.payload() + " " + describe(failed));
           });
       UUID jobId =
           bikesched
@@ -85,11 +85,11 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
           .contains(
               "Job "
                   + jobId
-                  + " of type "
+                  + " named "
                   + type
                   + " failed permanently after 2 attempt(s), running its failure handler:"
                   + " java.lang.IllegalStateException: boom",
-              "Job " + jobId + " of type " + type + " is FAILED: failure handler ran");
+              "Job " + jobId + " named " + type + " is FAILED: failure handler ran");
     }
   }
 
@@ -297,7 +297,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
           .contains(
               "Failure handler of job "
                   + givesUpId
-                  + " of type "
+                  + " named "
                   + givesUp
                   + " gave up after 2 run(s), the job ends FAILED");
     }
@@ -308,7 +308,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
     String type = unique("failure-handler-removed");
     UUID jobId = UUID.randomUUID();
     execute(
-        "insert into bikesched_jobs (id, type, state, failure_end_state, attempts, last_error) values ('"
+        "insert into bikesched_jobs (id, name, state, failure_end_state, attempts, last_error) values ('"
             + jobId
             + "', '"
             + type
@@ -323,7 +323,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
       assertThat(logs.messages())
           .anyMatch(
               message ->
-                  message.startsWith("No failure handler registered for job type " + type)
+                  message.startsWith("No failure handler registered for job name " + type)
                       && message.endsWith("job " + jobId + " ends FAILED without it"));
     }
   }
@@ -383,7 +383,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
           .schedule(Recurrence.every(Duration.ofHours(1)), Duration.ZERO);
 
       assertThat(handling.await(10, TimeUnit.SECONDS)).isTrue();
-      assertThat(count("type = '" + type + "'")).as("no next occurrence yet").isOne();
+      assertThat(count("name = '" + type + "'")).as("no next occurrence yet").isOne();
       release.countDown();
 
       await()
@@ -391,27 +391,27 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
               () ->
                   assertThat(
                           count(
-                              "type = '"
+                              "name = '"
                                   + type
                                   + "' and state = 'SCHEDULED' and scheduled_at > now()"))
                       .isOne());
-      assertThat(count("type = '" + type + "' and state = 'FAILED'")).isOne();
+      assertThat(count("name = '" + type + "' and state = 'FAILED'")).isOne();
       bikesched.removeRecurringJob(type);
     } finally {
-      execute("delete from bikesched_jobs where type = '" + type + "'");
+      execute("delete from bikesched_jobs where name = '" + type + "'");
     }
   }
 
   @Test
   void typedAndClassBasedFailureHandlersGetTheMappedPayload() throws Exception {
-    JobType<String> typed = JobType.of(unique("failure-handler-typed"), String.class);
-    JobType<String> classBased = JobType.of(unique("failure-handler-class"), String.class);
+    TypedJob<String> typed = TypedJob.of(unique("failure-handler-typed"), String.class);
+    TypedJob<String> classBased = TypedJob.of(unique("failure-handler-class"), String.class);
     List<String> handled = new CopyOnWriteArrayList<>();
     try (Bikesched bikesched = testNode("node-failure-handler-typed").build()) {
       bikesched.registerJobFailureHandler(
           typed, (failed, payload) -> handled.add("typed " + payload));
       var handler =
-          new JobTypeHandlerWithFailureHandler(
+          new StandaloneHandlerWithFailureHandler(
               classBased, payload -> handled.add("class " + payload));
       bikesched.registerJobHandler(handler).registerJobFailureHandler(handler);
       UUID withPayload =
@@ -437,9 +437,9 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
   }
 
   /** A class-based job handler that always fails, with its failure handler. */
-  private record JobTypeHandlerWithFailureHandler(
-      JobType<String> type, java.util.function.Consumer<String> onFailure)
-      implements JobTypeHandler<String>, JobTypeFailureHandler<String> {
+  private record StandaloneHandlerWithFailureHandler(
+      TypedJob<String> typedJob, java.util.function.Consumer<String> onFailure)
+      implements StandaloneJobHandler<String>, StandaloneJobFailureHandler<String> {
 
     @Override
     public void handle(Job job, String payload) {
@@ -479,7 +479,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
       assertThat(handled).containsExactlyInAnyOrder("first " + first, "first " + second);
       assertThatThrownBy(() -> bikesched.registerJobFailureHandler(type, ignored -> {}))
           .isInstanceOf(IllegalArgumentException.class)
-          .hasMessage("A failure handler for job type '" + type + "' is already registered");
+          .hasMessage("A failure handler for job name '" + type + "' is already registered");
     }
   }
 

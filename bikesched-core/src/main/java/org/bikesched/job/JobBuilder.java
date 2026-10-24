@@ -9,9 +9,9 @@ import org.bikesched.BikeschedException;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Builds and schedules a job of one type, obtained via {@link
+ * Builds and schedules a job of one name, obtained via {@link
  * org.bikesched.Bikesched#newJob(String)} or, with a typed payload, {@link
- * org.bikesched.Bikesched#newJob(JobType)}:
+ * org.bikesched.Bikesched#newJob(TypedJob)}:
  *
  * <pre>{@code
  * UUID id = bikesched.newJob("send-mail")
@@ -35,8 +35,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Every one-off {@code schedule} call stores a new job, so a builder can be reused to schedule
  * several jobs with the same settings. Not thread-safe.
  *
- * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
- *     of a {@link JobType}
+ * @param <P> the payload type: {@code Object} for a job name given as a string, the payload class
+ *     of a {@link TypedJob}
  */
 public interface JobBuilder<P extends @Nullable Object>
     extends JobHandlerSettings<JobBuilder<P>, P> {
@@ -71,11 +71,11 @@ public interface JobBuilder<P extends @Nullable Object>
   TransactionalJobBuilder<P> connection(Connection connection);
 
   /**
-   * Continues with a one-off job that has an idempotency key: while a job of this type has the key,
+   * Continues with a one-off job that has an idempotency key: while a job of this name has the key,
    * scheduling returns that job's id instead of storing another one. See {@link
    * IdempotentJobBuilder}.
    *
-   * @param idempotencyKey the key, unique per job type, not blank, at most 500 characters
+   * @param idempotencyKey the key, unique per job name, not blank, at most 500 characters
    * @return a builder with the settings made so far, scheduling the job unless the key is taken
    * @throws IllegalArgumentException if the key is blank or too long
    */
@@ -85,7 +85,7 @@ public interface JobBuilder<P extends @Nullable Object>
    * Schedules the job to run as soon as possible.
    *
    * @return the id of the scheduled job
-   * @throws IllegalArgumentException if no handler is set nor registered for the job type
+   * @throws IllegalArgumentException if no handler is set nor registered for the job name
    * @throws BikeschedException if the job cannot be stored, e.g. because the payload is not valid
    *     JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
@@ -97,7 +97,7 @@ public interface JobBuilder<P extends @Nullable Object>
    *
    * @param at the earliest time the job may run
    * @return the id of the scheduled job
-   * @throws IllegalArgumentException if no handler is set nor registered for the job type
+   * @throws IllegalArgumentException if no handler is set nor registered for the job name
    * @throws BikeschedException if the job cannot be stored, e.g. because the payload is not valid
    *     JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
@@ -110,7 +110,7 @@ public interface JobBuilder<P extends @Nullable Object>
    * @param delay how long to wait before the job may run, not negative
    * @return the id of the scheduled job
    * @throws IllegalArgumentException if the delay is negative or no handler is set nor registered
-   *     for the job type
+   *     for the job name
    * @throws BikeschedException if the job cannot be stored, e.g. because the payload is not valid
    *     JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
@@ -118,7 +118,7 @@ public interface JobBuilder<P extends @Nullable Object>
   UUID schedule(Duration delay);
 
   /**
-   * Registers a recurring job, identified by its job type, running according to the recurrence.
+   * Registers a recurring job, identified by its job name, running according to the recurrence.
    * Every node registering it runs the same code, typically on startup:
    *
    * <pre>{@code
@@ -144,7 +144,7 @@ public interface JobBuilder<P extends @Nullable Object>
    *
    * @param recurrence when the job runs
    * @return the id of the pending occurrence
-   * @throws IllegalArgumentException if no handler is set nor registered for the job type
+   * @throws IllegalArgumentException if no handler is set nor registered for the job name
    * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
    *     valid JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed or the
@@ -167,7 +167,7 @@ public interface JobBuilder<P extends @Nullable Object>
    * @param recurrence the recurrence expression, e.g. {@code PT1H}
    * @return the id of the pending occurrence
    * @throws IllegalArgumentException if not exactly one of the node's parsers supports the
-   *     expression, the expression is invalid, or no handler is set nor registered for the job type
+   *     expression, the expression is invalid, or no handler is set nor registered for the job name
    * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
    *     valid JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed or the
@@ -183,7 +183,7 @@ public interface JobBuilder<P extends @Nullable Object>
    * @param recurrence when the job runs
    * @param firstRun when a new first occurrence runs
    * @return the id of the pending occurrence
-   * @throws IllegalArgumentException if no handler is set nor registered for the job type
+   * @throws IllegalArgumentException if no handler is set nor registered for the job name
    * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
    *     valid JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
@@ -198,7 +198,7 @@ public interface JobBuilder<P extends @Nullable Object>
    * @param delay how long to wait before a new first occurrence runs, not negative
    * @return the id of the pending occurrence
    * @throws IllegalArgumentException if the delay is negative or no handler is set nor registered
-   *     for the job type
+   *     for the job name
    * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
    *     valid JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
@@ -214,7 +214,7 @@ public interface JobBuilder<P extends @Nullable Object>
    * @return the id of the pending occurrence
    * @throws IllegalArgumentException if not exactly one of the node's parsers supports the
    *     expression, the expression is invalid, the delay is negative or no handler is set nor
-   *     registered for the job type
+   *     registered for the job name
    * @throws BikeschedException if the occurrence cannot be stored, e.g. because the payload is not
    *     valid JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed or the

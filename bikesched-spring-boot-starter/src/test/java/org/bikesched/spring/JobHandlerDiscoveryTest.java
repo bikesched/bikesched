@@ -16,11 +16,11 @@ import org.bikesched.annotation.JobHandler;
 import org.bikesched.job.FailedJob;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
-import org.bikesched.job.JobTypeFailureHandler;
-import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.RecurrenceParser;
+import org.bikesched.job.StandaloneJobFailureHandler;
+import org.bikesched.job.StandaloneJobHandler;
+import org.bikesched.job.TypedJob;
 import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -33,7 +33,9 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-/** Discovery of {@code @JobHandler} methods and {@link JobTypeHandler} beans on the context. */
+/**
+ * Discovery of {@code @JobHandler} methods and {@link StandaloneJobHandler} beans on the context.
+ */
 class JobHandlerDiscoveryTest extends AbstractSpringTest {
 
   private ApplicationContextRunner runner() {
@@ -88,7 +90,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
   }
 
   @Test
-  void registersJobTypeHandlerBeans() {
+  void registersStandaloneJobHandlerBeans() {
     ReportHandler.handled.clear();
     runner()
         .withBean("dataSource", DataSource.class, () -> dataSource())
@@ -107,7 +109,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
   }
 
   @Test
-  void registersFailureHandlerMethodsAndJobTypeFailureHandlerBeans() {
+  void registersFailureHandlerMethodsAndStandaloneJobFailureHandlerBeans() {
     PaymentJobs.handled.clear();
     InvoiceHandler.handled.clear();
     runner()
@@ -247,7 +249,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
 
     public static final List<String> handled = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "millis-job", schedule = "every 100 ms")
+    @JobHandler(name = "millis-job", schedule = "every 100 ms")
     public void handle() {
       handled.add("ran");
     }
@@ -274,7 +276,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
 
     public record Mail(String to) {}
 
-    @JobHandler(type = "discover-mail")
+    @JobHandler(name = "discover-mail")
     public void sendMail(Job job, Mail mail) {
       handled.add(mail.to());
     }
@@ -285,7 +287,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
 
     public static final List<String> handled = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "cron-job", schedule = "*/1 * * * * *")
+    @JobHandler(name = "cron-job", schedule = "*/1 * * * * *")
     public void handle() {
       handled.add("ran");
     }
@@ -298,37 +300,37 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
 
     public static final List<String> handled = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "sig-both")
+    @JobHandler(name = "sig-both")
     public void both(Job job, Item item) {
       handled.add("both:" + item.value());
     }
 
-    @JobHandler(type = "sig-job")
+    @JobHandler(name = "sig-job")
     public void job(Job job) {
       handled.add("job:" + job.id());
     }
 
-    @JobHandler(type = "sig-payload")
+    @JobHandler(name = "sig-payload")
     public void payload(Item item) {
       handled.add("payload:" + item.value());
     }
 
-    @JobHandler(type = "sig-none")
+    @JobHandler(name = "sig-none")
     public void none() {
       handled.add("none");
     }
   }
 
-  /** A class-per-handler bean registered via {@link JobTypeHandler}. */
-  public static class ReportHandler implements JobTypeHandler<ReportHandler.Report> {
+  /** A class-per-handler bean registered via {@link StandaloneJobHandler}. */
+  public static class ReportHandler implements StandaloneJobHandler<ReportHandler.Report> {
 
     public record Report(String name) {}
 
     public static final List<String> handled = new CopyOnWriteArrayList<>();
 
     @Override
-    public JobType<Report> type() {
-      return JobType.of("type-handler-report", Report.class);
+    public TypedJob<Report> typedJob() {
+      return TypedJob.of("type-handler-report", Report.class);
     }
 
     @Override
@@ -344,12 +346,12 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
 
     public static final List<String> handled = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "discover-charge")
+    @JobHandler(name = "discover-charge")
     public void charge(Charge charge) {
       throw new IllegalStateException("declined");
     }
 
-    @JobFailureHandler(type = "discover-charge")
+    @JobFailureHandler(name = "discover-charge")
     public void chargeFailed(FailedJob failed, Charge charge) {
       handled.add(charge.orderId());
     }
@@ -357,17 +359,18 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
 
   /** A class-per-handler bean with its failure handler, registered via both interfaces. */
   public static class InvoiceHandler
-      implements JobTypeHandler<InvoiceHandler.Invoice>,
-          JobTypeFailureHandler<InvoiceHandler.Invoice> {
+      implements StandaloneJobHandler<InvoiceHandler.Invoice>,
+          StandaloneJobFailureHandler<InvoiceHandler.Invoice> {
 
     public record Invoice(String id) {}
 
-    static final JobType<Invoice> TYPE = JobType.of("type-failure-handler-invoice", Invoice.class);
+    static final TypedJob<Invoice> TYPE =
+        TypedJob.of("type-failure-handler-invoice", Invoice.class);
 
     public static final List<String> handled = new CopyOnWriteArrayList<>();
 
     @Override
-    public JobType<Invoice> type() {
+    public TypedJob<Invoice> typedJob() {
       return TYPE;
     }
 
@@ -394,27 +397,27 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
     public static final AtomicBoolean transactionActive = new AtomicBoolean();
 
     @Override
-    @JobHandler(type = "tx-proxy")
+    @JobHandler(name = "tx-proxy")
     @Transactional
     public void place(Job job, Order order) {
       transactionActive.set(TransactionSynchronizationManager.isActualTransactionActive());
     }
   }
 
-  /** Two beans handling the same job type. */
+  /** Two beans handling the same job name. */
   public static class DupA {
-    @JobHandler(type = "dup-type")
+    @JobHandler(name = "dup-type")
     public void handle() {}
   }
 
   public static class DupB {
-    @JobHandler(type = "dup-type")
+    @JobHandler(name = "dup-type")
     public void handle() {}
   }
 
   /** A handler with a signature {@link JobHandler} rejects. */
   public static class InvalidSignature {
-    @JobHandler(type = "invalid-sig")
+    @JobHandler(name = "invalid-sig")
     public String handle(Job job) {
       return "not void";
     }
@@ -427,7 +430,7 @@ class JobHandlerDiscoveryTest extends AbstractSpringTest {
 
     public static final List<String> handled = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "lazy-handler")
+    @JobHandler(name = "lazy-handler")
     public void handle(Item item) {
       handled.add(item.value());
     }

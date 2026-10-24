@@ -117,7 +117,7 @@ class HangingConnectionTest {
     return node;
   }
 
-  /** A node with a working network for the same job type, started by the test. */
+  /** A node with a working network for the same job name, started by the test. */
   private Bikesched otherNode(String type) {
     Bikesched node =
         StressNodes.node(database.dataSource(), "other").autoStartPolling(false).build();

@@ -10,7 +10,7 @@ import org.jspecify.annotations.Nullable;
  *
  * @param stepId the step id, see {@link StepInfo#id()}
  * @param jobId the step's job
- * @param jobType the job's type
+ * @param jobName the job's name
  * @param stepName the step name
  * @param eventName the event name it waits for
  * @param eventKey the event key it waits for
@@ -20,7 +20,7 @@ import org.jspecify.annotations.Nullable;
 public record WaitingStep(
     UUID stepId,
     UUID jobId,
-    String jobType,
+    String jobName,
     String stepName,
     String eventName,
     String eventKey,

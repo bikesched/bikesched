@@ -37,7 +37,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 /**
- * Claims due jobs of the registered types and runs them, while the node polls.
+ * Claims due jobs of the registered names and runs them, while the node polls.
  *
  * <p>Threads:
  *
@@ -45,7 +45,7 @@ import org.slf4j.MDC;
  *   <li>{@code bikesched-poller}: single scheduled thread claiming due jobs (skip locked) and
  *       handing them to the job executor
  *   <li>{@code bikesched-job-N}: one virtual thread per claimed job, processed by the {@link
- *       JobProcessor} (running the {@link JobHandler} registered for its type and recording the
+ *       JobProcessor} (running the {@link JobHandler} registered for its name and recording the
  *       outcome)
  *   <li>{@code bikesched-timeouts}: single scheduled thread interrupting job attempts that exceed
  *       their timeout ({@link JobBuilder#timeout(Duration)}, {@link
@@ -116,7 +116,7 @@ public final class JobPoller implements DueTimes {
    *
    * @param database the database
    * @param settings the node's settings
-   * @param registry the node's job types
+   * @param registry the node's job names
    * @param scheduler stores the child jobs the claimed jobs start
    */
   public JobPoller(
@@ -170,7 +170,7 @@ public final class JobPoller implements DueTimes {
         settings.listenForDueJobs()
             ? new JobNotificationListener(
                 database.jobs(),
-                registry::types,
+                registry::names,
                 this::pollNow,
                 this::wakeUpAndLookAhead,
                 settings.pollInterval(),
@@ -210,9 +210,9 @@ public final class JobPoller implements DueTimes {
   }
 
   @Override
-  public void dueNow(Set<String> types) {
-    for (String type : types) {
-      if (registry.types().contains(type)) {
+  public void dueNow(Set<String> names) {
+    for (String name : names) {
+      if (registry.names().contains(name)) {
         pollNow();
         return;
       }
@@ -220,8 +220,8 @@ public final class JobPoller implements DueTimes {
   }
 
   @Override
-  public void dueAt(String type, Instant dueAt) {
-    if (running == null || !registry.types().contains(type)) {
+  public void dueAt(String name, Instant dueAt) {
+    if (running == null || !registry.names().contains(name)) {
       return;
     }
     Instant now = Instant.now();
@@ -252,19 +252,19 @@ public final class JobPoller implements DueTimes {
   }
 
   /**
-   * Arms the timer for the earliest job of the node's types that becomes due within the next poll
+   * Arms the timer for the earliest job of the node's names that becomes due within the next poll
    * interval (the next interval poll looks further). Poller thread only, always right before a
    * poll: the query looks at jobs due after its start, the poll claims those due before its own, so
    * no job becomes due unseen in between.
    */
   private void armForNextDue() {
-    if (registry.types().isEmpty()) {
+    if (registry.names().isEmpty()) {
       return;
     }
     try {
       database
           .jobs()
-          .nextDueIn(registry.types(), settings.pollInterval())
+          .nextDueIn(registry.names(), settings.pollInterval())
           .ifPresent(delay -> timer.arm(Instant.now().plus(delay)));
     } catch (RuntimeException e) {
       LOG.warn(
@@ -384,7 +384,7 @@ public final class JobPoller implements DueTimes {
         LOG.debug("bikesched node {} ({}) is at capacity, skipping poll", nodeName, nodeId());
         return false;
       }
-      if (registry.types().isEmpty()) {
+      if (registry.names().isEmpty()) {
         // Avoids polling right after startup, before the application had a chance to register its
         // handlers.
         LOG.debug(
@@ -407,7 +407,7 @@ public final class JobPoller implements DueTimes {
       claiming.lock();
       try {
         jobs =
-            database.jobs().claimJobs(started.nodeId(), registry.types(), limit).stream()
+            database.jobs().claimJobs(started.nodeId(), registry.names(), limit).stream()
                 .map(
                     claimed ->
                         new DefaultJob(

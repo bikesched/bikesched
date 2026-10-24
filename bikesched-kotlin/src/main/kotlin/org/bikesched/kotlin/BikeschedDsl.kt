@@ -64,7 +64,7 @@ public class BikeschedSpec internal constructor() {
   public var listenForDueJobs: Boolean? = null
 
   /**
-   * How long the node collects due job types before notifying the other nodes (see
+   * How long the node collects due job names before notifying the other nodes (see
    * `BikeschedBuilder.notifyInterval`); defaults to 100 milliseconds.
    */
   public var notifyInterval: Duration? = null

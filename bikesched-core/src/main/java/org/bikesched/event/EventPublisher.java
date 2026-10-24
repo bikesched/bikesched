@@ -17,10 +17,10 @@ public interface EventPublisher {
   /**
    * Starts building an event with a typed payload.
    *
-   * @param eventType event name and payload type
+   * @param typedEvent event name and payload type
    * @param eventKey event key
    * @param <T> payload type
    * @return the event builder
    */
-  <T extends @Nullable Object> EventBuilder<T> newEvent(EventType<T> eventType, String eventKey);
+  <T extends @Nullable Object> EventBuilder<T> newEvent(TypedEvent<T> typedEvent, String eventKey);
 }

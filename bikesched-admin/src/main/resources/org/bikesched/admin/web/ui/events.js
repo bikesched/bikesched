@@ -227,7 +227,7 @@ function EventDetail({ eventId, onClose, onPublishSimilar }) {
 
   const jobLink = (step) => html`
     <li class="row">
-      <a class="mono" href=${jobHref(step.jobId)}>${step.jobType} ${shortId(step.jobId)}</a>
+      <a class="mono" href=${jobHref(step.jobId)}>${step.jobName} ${shortId(step.jobId)}</a>
       <${Badge} state=${step.jobState} />
       <span class="muted small">step <a class="mono" href=${stepHref(step.jobId, step.stepId)}>${step.stepName}</a></span>
     </li>`;
@@ -291,14 +291,14 @@ function WaitingJobs({ name, keyPrefix, reloadKey, onPublish }) {
       <div class="table-scroll">
         <table class="table">
           <thead>
-            <tr><th>Job</th><th>Type</th><th>Step</th><th>Key</th><${SortedTh} label="Waiting since" descending=${false} title="Longest waiting first" /><th>Timeout</th>${onPublish && html`<th><span class="sr-only">Publish</span></th>`}</tr>
+            <tr><th>Job</th><th>Name</th><th>Step</th><th>Key</th><${SortedTh} label="Waiting since" descending=${false} title="Longest waiting first" /><th>Timeout</th>${onPublish && html`<th><span class="sr-only">Publish</span></th>`}</tr>
           </thead>
           <tbody>
             ${(steps || []).map(
               (step) => html`
                 <tr key=${step.stepId}>
                   <td><a class="mono" href=${jobHref(step.jobId)}>${shortId(step.jobId)}</a></td>
-                  <td class="mono">${step.jobType}</td>
+                  <td class="mono">${step.jobName}</td>
                   <td class="mono"><a href=${stepHref(step.jobId, step.stepId)}>${step.stepName}</a></td>
                   <td class="mono">${step.eventKey}</td>
                   <td class="mono muted">${dateTime(step.since)}</td>

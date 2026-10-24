@@ -4,7 +4,7 @@ package org.bikesched.job;
 import org.bikesched.Bikesched;
 
 /**
- * Executes jobs of one type, registered via {@link Bikesched#registerJobHandler(String,
+ * Executes jobs of one name, registered via {@link Bikesched#registerJobHandler(String,
  * JobHandler)}. Like a {@link Runnable}, but it receives the job being executed.
  *
  * <p>Returning normally marks the job {@code SUCCEEDED}. Throwing marks it {@code FAILED} once its

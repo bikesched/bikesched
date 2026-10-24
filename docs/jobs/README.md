@@ -5,13 +5,17 @@ weight: 2
 
 # Jobs
 
-A job is a unit of work of a *type*. A node claims only due jobs of the types it has handlers for,
-so different nodes can work on different types; scheduling a job needs a handler for its type on
-the scheduling node too.
+A job is a unit of work with a *name* that selects its handler. A node claims only due jobs of the
+names it has handlers for, so different nodes can work on different jobs; scheduling a job needs a
+handler for its name on the scheduling node too.
+
+Each job also has a *type*, `JobType.SINGLE`, `RECURRING` (an occurrence of a [recurring
+job](recurring-jobs.md)) or `CHILD` (started by a parent job, see [Child
+jobs](../multi-step-jobs/child-jobs.md)). bikesched sets it when the job is created.
 
 ## Scheduling jobs
 
-`newJob(type)` returns a builder; all settings are optional:
+`newJob(name)` returns a builder; all settings are optional:
 
 ```java
 UUID id = bikesched.newJob("report")
@@ -25,9 +29,9 @@ UUID id = bikesched.newJob("report")
 
 A builder can be reused: every `schedule…` call stores a new job. `schedule(Recurrence)` and
 `schedule(String)` register a [recurring job](recurring-jobs.md) instead. Handlers can also be
-registered up front with `bikesched.registerJobHandler(type, handler)`. A job scheduled without a time is due
-immediately and starts right away on a node handling its type: the scheduling node notifies the
-others, see [Due jobs start right
+registered up front with `bikesched.registerJobHandler(name, handler)`. A job scheduled without a
+time is due immediately and starts right away on a node handling its name: the scheduling node
+notifies the others, see [Due jobs start right
 away](../getting-started/configuration.md#due-jobs-start-right-away).
 
 A payload that already is JSON text, e.g. a request body, goes in with `.payloadJson(body)`
@@ -37,17 +41,17 @@ a `String` into a JSON string). Invalid JSON fails `schedule()`.
 To check on a job later, look it up by its id:
 
 ```java
-Optional<JobInfo> job = bikesched.findJob(id);   // id(), type() and state(), e.g. JobState.SUCCEEDED
+Optional<JobInfo> job = bikesched.findJob(id);   // id(), name(), type() and state()
 boolean done = job.map(info -> info.state().isEnded()).orElse(false);
 ```
 
-### Typed job types
+### Typed jobs
 
-A `JobType` names a job type together with its payload class. Producer and handler share the
+A `TypedJob` pairs a job name with its payload class. Producer and handler share the
 constant, so the compiler checks the payload on both sides:
 
 ```java
-static final JobType<Order> ORDER = JobType.of("order", Order.class);
+static final TypedJob<Order> ORDER = TypedJob.of("order", Order.class);
 
 bikesched.registerJobHandler(ORDER, (job, order) -> shipping.ship(order));   // order is an Order
 UUID id = bikesched.newJob(ORDER).payload(order).schedule();                // payload(Order) only
@@ -55,10 +59,10 @@ UUID id = bikesched.newJob(ORDER).payload(order).schedule();                // p
 
 - The builder works as above (`priority`, `connection`, `recurring`, …); `handler((job, order) -> …)`
   sets a typed handler inline. `removeRecurringJob(ORDER)` stops a typed recurring job.
-- A handler class can carry its type by implementing `JobTypeHandler<T>` (`type()` plus
-  `handle(job, payload)`); `registerJobHandler(handler)` then needs no second argument, e.g.
+- A handler class can carry its typed job by implementing `StandaloneJobHandler<T>` (`typedJob()`
+  plus `handle(job, payload)`); `registerJobHandler(handler)` then needs no second argument, e.g.
   `handlers.forEach(bikesched::registerJobHandler)` for all handler beans of a DI container.
-  Return a shared constant from `type()`, so producers don't depend on the handler class.
+  Return a shared constant from `typedJob()`, so producers don't depend on the handler class.
 - Only the name is stored, so typed and string-based code work on the same jobs: `newJob("order")`
   schedules a job the `ORDER` handler receives, and vice versa.
 - A node rejects using one name with two payload classes (`IllegalArgumentException`).
@@ -106,15 +110,15 @@ UUID id = bikesched.newJob("process-payment")
         .schedule();                             // a retry with the same key returns the same id
 ```
 
-- The key is unique per job type for as long as the job exists: until the [job
+- The key is unique per job name for as long as the job exists: until the [job
   retention](#job-retention) deletes it after it ended, whatever its end state (`SUCCEEDED`,
   `FAILED`, `CANCELLED`). Another try after a definitive outcome needs a new key.
-- While a job of the type has the key, `schedule` returns that job's id and stores nothing; the
+- While a job with that name has the key, `schedule` returns that job's id and stores nothing; the
   duplicate's payload, due time and other settings are ignored. `findJob(id)` tells its state. A
   duplicate while the job runs returns its id right away.
 - Keys have 1 to 500 characters and at most 1500 bytes in UTF-8 (only characters of 4 bytes, like
-  emoji, count more than 3). They are scoped to the job type only, so keys taken from clients
-  need the tenant or user in the key if several of them share a type.
+  emoji, count more than 3). They are scoped to the job name only, so keys taken from clients
+  need the tenant or user in the key if several of them share a name.
 - `.connection(connection)` works before or after `idempotencyKey`. A duplicate in a concurrent
   transaction waits until the first transaction ends; if it rolls back, the key is free again.
 - Recurring jobs have no key (the builder has no `schedule(Recurrence)`): they have at most one
@@ -133,17 +137,17 @@ A handler receives the `Job` being executed:
 
 | Method | Purpose |
 |---|---|
-| `id()`, `type()` | identity, e.g. for idempotency keys and logging |
+| `id()`, `name()` | identity, e.g. for idempotency keys and logging |
 | `attempts()`, `maxAttempts()` | the current attempt (starting at 1) and the limit |
 | `payload()`, `payload(Class)` | the payload as raw JSON or mapped by the `JsonMapper` |
 | `step(name, Class, handler)` | run a durable step, see [Durable steps](../multi-step-jobs/steps.md#durable-steps) |
 | `newStep(name, Class)` | build a step with a compensation, see [Compensation](../multi-step-jobs/steps.md#compensation) |
-| `newEvent(name, key)`, `newEvent(eventType, key)` | publish once as a durable step, see [Publishing from jobs](../multi-step-jobs/events.md#publishing-from-jobs) |
-| `waitForEvent(step, name, key, Class)`, `waitForEvent(step, eventType, key)` | wait for an event, see [Events](../multi-step-jobs/events.md) |
-| `awaitEvent(step, eventType, key)` | wait for an event and return its typed payload, see [Typed events](../multi-step-jobs/events.md#typed-events) |
+| `newEvent(name, key)`, `newEvent(typedEvent, key)` | publish once as a durable step, see [Publishing from jobs](../multi-step-jobs/events.md#publishing-from-jobs) |
+| `waitForEvent(step, name, key, Class)`, `waitForEvent(step, typedEvent, key)` | wait for an event, see [Events](../multi-step-jobs/events.md) |
+| `awaitEvent(step, typedEvent, key)` | wait for an event and return its typed payload, see [Typed events](../multi-step-jobs/events.md#typed-events) |
 | `sleep(step, Duration)`, `sleepUntil(step, Instant)` | pause the job without holding a thread, see [Sleeping](../multi-step-jobs/steps.md#sleeping) |
 | `newPoll(step, Class, interval)…run(handler)` | check an external service until a result is ready, see [Polling](../multi-step-jobs/steps.md#polling) |
-| `newJob(type)`, `newJob(jobType)` | start a child job once as a durable step, see [Child jobs](../multi-step-jobs/child-jobs.md) |
+| `newJob(name)`, `newJob(typedJob)` | start a child job once as a durable step, see [Child jobs](../multi-step-jobs/child-jobs.md) |
 | `waitForJob(childId, Class)`, `waitForJob(childId, Class, timeout)` | wait for a child job without holding a thread and return its `JobResult`, see [Waiting for children](../multi-step-jobs/child-jobs.md#waiting-for-children) |
 | `complete(result)` | set the job's result, stored when it succeeds, see [Job results](../multi-step-jobs/child-jobs.md#job-results) |
 | `cancel()`, `cancel(message)` | cancel the job, see [Cancellation](#cancellation) |
@@ -226,20 +230,20 @@ the [rate-limit example](../../bikesched-examples/README.md#rate-limit) runs one
 
 ## Failure handlers
 
-A job type can have a failure handler. It runs before a job of the type ends `FAILED` or
+A job name can have a failure handler. It runs before a job with that name ends `FAILED` or
 `COMPENSATION_FAILED`, whatever made it fail: an exception or a timeout in the last attempt, an
 abandoned attempt, a dead node, `fail(…)` without remaining attempts, or failed compensations. Use
 it e.g. to move the job to a dead-letter table or to alert someone:
 
 ```java
 bikesched.registerJobFailureHandler("charge", failed ->
-    deadLetters.insert(failed.id(), failed.type(), failed.payload(), failed.error()));
+    deadLetters.insert(failed.id(), failed.name(), failed.payload(), failed.error()));
 
-bikesched.registerJobFailureHandler(CHARGE, (failed, charge) ->   // a JobType<Charge>
+bikesched.registerJobFailureHandler(CHARGE, (failed, charge) ->   // a TypedJob<Charge>
     deadLetters.insert(failed.id(), charge.orderId(), failed.error()));
 ```
 
-The handler gets a `FailedJob`: `id()`, `type()`, `payload()`/`payload(Class)`, `state()` (`FAILED`
+The handler gets a `FailedJob`: `id()`, `name()`, `payload()`/`payload(Class)`, `state()` (`FAILED`
 or `COMPENSATION_FAILED`, the state the job ends in) and `error()`, the stored `last_error`. It gets
 no exception: it runs in a claim of its own, possibly on another node.
 
@@ -252,13 +256,13 @@ no exception: it runs in a claim of its own, possibly on another node.
 - What happens when a job ends happens after the handler: the parent of a
   [child job](../multi-step-jobs/child-jobs.md) receives the outcome, the next occurrence of a
   recurring job is scheduled.
-- Register it on every node handling the type, like the job handler: the node failing a job decides
+- Register it on every node handling the name, like the job handler: the node failing a job decides
   by its own registration. A node claiming a `FAILING` job without one ends the job and logs a
-  warning. Registering a second one for a type throws.
-- Class-based: `JobTypeFailureHandler<T>` carries its `JobType`, like `JobTypeHandler`; one class can
-  implement both and is registered with `registerJobHandler(handler)` and
+  warning. Registering a second one for a name throws.
+- Class-based: `StandaloneJobFailureHandler<T>` carries its `TypedJob`, like `StandaloneJobHandler`;
+  one class can implement both and is registered with `registerJobHandler(handler)` and
   `registerJobFailureHandler(handler)`.
-- The job builders take one too, registered when the job is scheduled unless the type has one:
+- The job builders take one too, registered when the job is scheduled unless the name has one:
   `bikesched.newJob(CHARGE).handler(…).failureHandler((failed, charge) -> …).schedule()`.
 
 ## Cancellation

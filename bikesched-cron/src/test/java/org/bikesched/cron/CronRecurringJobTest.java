@@ -36,7 +36,7 @@ class CronRecurringJobTest {
   public static class EverySecondJobs {
     final List<String> calls = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "cron-annotated", schedule = "* * * * * *")
+    @JobHandler(name = "cron-annotated", schedule = "* * * * * *")
     public void tick() {
       calls.add("tick");
     }

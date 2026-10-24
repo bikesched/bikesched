@@ -11,10 +11,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.event.EventType;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * A human approval with a reminder and an escalation: an expense waits for the manager's decision;
@@ -29,12 +29,12 @@ import org.bikesched.job.JobType;
 public final class ApprovalExample {
 
   /** Gets an expense approved and paid out. */
-  public static final JobType<Expense> APPROVE_EXPENSE =
-      JobType.of("approve-expense", Expense.class);
+  public static final TypedJob<Expense> APPROVE_EXPENSE =
+      TypedJob.of("approve-expense", Expense.class);
 
   /** A decision on an expense, keyed by the expense id. */
-  public static final EventType<Decision> EXPENSE_DECIDED =
-      EventType.of("expense-decided", Decision.class);
+  public static final TypedEvent<Decision> EXPENSE_DECIDED =
+      TypedEvent.of("expense-decided", Decision.class);
 
   /** Who decides when the manager doesn't. */
   public static final String FINANCE_LEAD = "finance-lead";

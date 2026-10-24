@@ -68,7 +68,7 @@ class JobListenerTest extends AbstractBikeschedTest {
               () -> assertThat(listener.calls).containsExactly("claimed 1", "ended 1 SUCCEEDED"));
       JobClaim claim = listener.claims.getFirst();
       assertThat(claim.jobId()).isEqualTo(jobId);
-      assertThat(claim.jobType()).isEqualTo(type);
+      assertThat(claim.jobName()).isEqualTo(type);
       assertThat(claim.delay()).isGreaterThanOrEqualTo(Duration.ofSeconds(5));
       assertThat(listener.results.getFirst().duration()).isPositive();
     }

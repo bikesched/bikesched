@@ -9,12 +9,12 @@ import java.lang.annotation.Target;
 import org.bikesched.job.Job;
 
 /**
- * Declares a method as the handler of a job type, registered with {@link
+ * Declares a method as the handler of a job name, registered with {@link
  * JobHandlers#register(org.bikesched.Bikesched, Object)}:
  *
  * <pre>{@code
  * public class MailJobs {
- *     @JobHandler(type = "send-mail")
+ *     @JobHandler(name = "send-mail")
  *     public void sendMail(Job job, Mail mail) { … }
  * }
  * }</pre>
@@ -31,11 +31,11 @@ import org.bikesched.job.Job;
 public @interface JobHandler {
 
   /**
-   * The job type the method handles, at most 200 characters.
+   * The job name the method handles, at most 200 characters.
    *
-   * @return the job type
+   * @return the job name
    */
-  String type();
+  String name();
 
   /**
    * Optional recurring schedule: a recurrence expression, parsed when the handler is registered by
@@ -49,7 +49,7 @@ public @interface JobHandler {
 
   /**
    * Optional fixed delay: an ISO-8601 duration (e.g. {@code PT15M}), positive. The handler's job
-   * type becomes a recurring job whose next run is this long after the previous occurrence ended
+   * name becomes a recurring job whose next run is this long after the previous occurrence ended
    * ({@link org.bikesched.job.Recurrence#everyAfterEnd(java.time.Duration)}), like Spring's {@code
    * fixedDelay}. Not together with {@link #schedule()}.
    *

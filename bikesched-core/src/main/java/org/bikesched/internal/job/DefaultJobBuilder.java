@@ -22,8 +22,8 @@ public final class DefaultJobBuilder<P extends @Nullable Object>
     extends BaseJobBuilder<JobBuilder<P>, P> implements JobBuilder<P> {
 
   public DefaultJobBuilder(
-      String type, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
-    super(type, payloadType, jsonMapper, scheduler);
+      String name, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
+    super(name, payloadType, jsonMapper, scheduler);
   }
 
   @Override
@@ -106,6 +106,6 @@ public final class DefaultJobBuilder<P extends @Nullable Object>
 
   private RecurringJob recurringJob(Recurrence recurrence) {
     Objects.requireNonNull(recurrence, "recurrence");
-    return new RecurringJob(type, recurrence, payload, priority, maxAttempts, timeout);
+    return new RecurringJob(name, recurrence, payload, priority, maxAttempts, timeout);
   }
 }

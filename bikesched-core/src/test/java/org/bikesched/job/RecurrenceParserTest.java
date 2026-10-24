@@ -55,7 +55,7 @@ class RecurrenceParserTest extends AbstractBikeschedTest {
 
   @AfterEach
   void deleteOccurrences() throws Exception {
-    execute("delete from bikesched_jobs where type like 'parser-%'");
+    execute("delete from bikesched_jobs where name like 'parser-%'");
   }
 
   @Test

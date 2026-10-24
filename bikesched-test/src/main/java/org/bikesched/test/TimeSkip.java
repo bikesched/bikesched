@@ -28,11 +28,11 @@ final class TimeSkip {
   // The jobs a node may claim: unlocked, not ended.
   private static final String PENDING = "('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING')";
 
-  // The channel the nodes listen on for due jobs; a payload is the job type to poll for.
+  // The channel the nodes listen on for due jobs; a payload is the job name to poll for.
   private static final String CHANNEL = "bikesched_jobs";
 
   private static final String FIND_PENDING_JOBS_SQL =
-      "select id from bikesched_jobs where type = any(?) and state in " + PENDING;
+      "select id from bikesched_jobs where name = any(?) and state in " + PENDING;
 
   // Lock failures (SQLSTATE lock_not_available) are retried this often, this far apart.
   private static final int LOCK_ATTEMPTS = 100;
@@ -48,7 +48,7 @@ final class TimeSkip {
           + " for update nowait";
 
   // Shifts the jobs still pending by their shift in microseconds (selected by the given
-  // statement: id, micros) and returns their id, type and shift.
+  // statement: id, micros) and returns their id, name and shift.
   private static final String SHIFT_JOBS_SQL =
       """
             update bikesched_jobs j
@@ -56,7 +56,7 @@ final class TimeSkip {
                    planned_run_at = j.planned_run_at - s.micros * interval '1 microsecond'
               from (%s) s
              where j.id = s.id and j.state in %s
-            returning j.id, j.type, s.micros""";
+            returning j.id, j.name, s.micros""";
 
   // One job, shifted to its next due time; not one waiting without a deadline ('infinity').
   private static final String FAST_FORWARD_JOB_SQL =
@@ -91,7 +91,7 @@ final class TimeSkip {
     }
   }
 
-  static int advance(DataSource dataSource, Duration duration, List<String> types) {
+  static int advance(DataSource dataSource, Duration duration, List<String> names) {
     if (duration.isNegative()) {
       throw new IllegalArgumentException("duration must not be negative: " + duration);
     }
@@ -102,7 +102,7 @@ final class TimeSkip {
           () -> {
             var jobIds = new ArrayList<UUID>();
             try (var statement = connection.prepareStatement(FIND_PENDING_JOBS_SQL)) {
-              statement.setArray(1, connection.createArrayOf("text", types.toArray()));
+              statement.setArray(1, connection.createArrayOf("text", names.toArray()));
               try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
                   jobIds.add(rows.getObject(1, UUID.class));
@@ -112,14 +112,14 @@ final class TimeSkip {
             return shift(connection, jobIds, ADVANCE_JOBS_SQL, List.of(micros));
           });
     } catch (SQLException e) {
-      throw new BikeschedException("Advancing the time of " + types + " failed", e);
+      throw new BikeschedException("Advancing the time of " + names + " failed", e);
     }
   }
 
   /**
    * Locks the waiting steps of the jobs and the jobs, shifts the jobs that are still pending with
    * {@code shiftJobsSql} (its leading parameters, then the job ids), then their waiting steps by
-   * the same amount, and notifies their types. Returns the number of jobs shifted.
+   * the same amount, and notifies their names. Returns the number of jobs shifted.
    */
   private static int shift(
       Connection connection, List<UUID> jobIds, String shiftJobsSql, List<Object> parameters)
@@ -138,14 +138,14 @@ final class TimeSkip {
     }
     var shiftedIds = new ArrayList<UUID>();
     var shiftedMicros = new ArrayList<Long>();
-    var types = new LinkedHashSet<String>();
+    var names = new LinkedHashSet<String>();
     try (var statement = connection.prepareStatement(shiftJobsSql)) {
       int index = setAll(statement, parameters);
       statement.setArray(index, ids);
       try (var rows = statement.executeQuery()) {
         while (rows.next()) {
           shiftedIds.add(rows.getObject(1, UUID.class));
-          types.add(rows.getString(2));
+          names.add(rows.getString(2));
           shiftedMicros.add(rows.getLong(3));
         }
       }
@@ -159,9 +159,9 @@ final class TimeSkip {
       statement.executeUpdate();
     }
     try (var statement = connection.prepareStatement("select pg_notify(?, ?)")) {
-      for (String type : types) {
+      for (String name : names) {
         statement.setString(1, CHANNEL);
-        statement.setString(2, type);
+        statement.setString(2, name);
         statement.execute();
       }
     }

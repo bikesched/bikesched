@@ -14,7 +14,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobResult;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * Fan-out/fan-in with child jobs: importing a photo album starts one child job per photo, which
@@ -29,10 +29,10 @@ import org.bikesched.job.JobType;
 public final class FanOutExample {
 
   /** Imports an album: the parent job. */
-  public static final JobType<Album> IMPORT_ALBUM = JobType.of("import-album", Album.class);
+  public static final TypedJob<Album> IMPORT_ALBUM = TypedJob.of("import-album", Album.class);
 
   /** Resizes one photo: the child job. */
-  public static final JobType<Photo> RESIZE_PHOTO = JobType.of("resize-photo", Photo.class);
+  public static final TypedJob<Photo> RESIZE_PHOTO = TypedJob.of("resize-photo", Photo.class);
 
   /**
    * The parent's payload.

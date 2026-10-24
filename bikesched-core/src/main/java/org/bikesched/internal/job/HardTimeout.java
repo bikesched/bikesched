@@ -67,11 +67,11 @@ public final class HardTimeout {
     int running = abandonedThreads.incrementAndGet();
     try (var logContext = JobLogContext.open(nodeId, job)) {
       LOG.warn(
-          "Job {} of type {} did not stop within {} after its timeout of {} (attempt {} of {}),"
+          "Job {} named {} did not stop within {} after its timeout of {} (attempt {} of {}),"
               + " abandoning thread {} on bikesched node {} ({} abandoned thread(s) still"
               + " running); it is stuck at:{}",
           job.id(),
-          job.type(),
+          job.name(),
           grace,
           attempt.timeout(),
           job.attempts(),
@@ -112,11 +112,11 @@ public final class HardTimeout {
   String returned(DefaultJob job, @Nullable Exception failure) {
     int running = abandonedThreads.decrementAndGet();
     LOG.info(
-        "Abandoned attempt {} of job {} of type {} returned after all{}; its outcome is discarded"
+        "Abandoned attempt {} of job {} named {} returned after all{}; its outcome is discarded"
             + " ({} abandoned thread(s) still running)",
         job.attempts(),
         job.id(),
-        job.type(),
+        job.name(),
         failure == null ? "" : " with " + failure,
         running);
     return "abandoned after the hard timeout, outcome not recorded";

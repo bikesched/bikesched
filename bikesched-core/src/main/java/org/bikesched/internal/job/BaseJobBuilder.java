@@ -52,11 +52,11 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
     /** Parses a recurrence expression with the node's recurrence parsers. */
     Recurrence parseRecurrence(String expression);
 
-    /** Registers the handler if given and new; throws if the type has no handler then. */
-    void requireHandler(String type, @Nullable JobHandler handler);
+    /** Registers the handler if given and new; throws if the name has no handler then. */
+    void requireHandler(String name, @Nullable JobHandler handler);
   }
 
-  final String type;
+  final String name;
   final Class<P> payloadType;
   final JsonMapper jsonMapper;
   final Scheduler scheduler;
@@ -75,8 +75,8 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
   /** Set by the builders of one-off jobs scheduled through bikesched, otherwise {@code null}. */
   @Nullable String idempotencyKey;
 
-  BaseJobBuilder(String type, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
-    this.type = type;
+  BaseJobBuilder(String name, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
+    this.name = name;
     this.payloadType = payloadType;
     this.jsonMapper = jsonMapper;
     this.scheduler = scheduler;
@@ -84,7 +84,7 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
 
   /** Continues building with the settings of the given builder. */
   BaseJobBuilder(BaseJobBuilder<?, P> settings) {
-    this(settings.type, settings.payloadType, settings.jsonMapper, settings.scheduler);
+    this(settings.name, settings.payloadType, settings.jsonMapper, settings.scheduler);
     this.payload = settings.payload;
     this.handler = settings.handler;
     this.failureHandler = settings.failureHandler;
@@ -163,7 +163,7 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
   /** A one-off job with the current settings, running at or after the given time. */
   NewJob newJob(Instant at) {
     return new NewJob(
-        type, payload, at, priority, maxAttempts, timeout, null, null, idempotencyKey);
+        name, payload, at, priority, maxAttempts, timeout, null, null, idempotencyKey);
   }
 
   static Instant after(Duration delay) {

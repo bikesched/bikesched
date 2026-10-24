@@ -22,6 +22,7 @@ import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.UuidUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobState;
+import org.bikesched.job.JobType;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -45,40 +46,40 @@ public final class JobStore {
 
   private static final String INSERT_JOB_SQL =
       """
-            insert into bikesched_jobs (id, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, planned_run_at, idempotency_key)
-            values (?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)""";
+            insert into bikesched_jobs (id, name, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, planned_run_at, idempotency_key)
+            values (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)""";
 
-  // Inserts a job with an idempotency key unless a job of its type has the key (partial unique
+  // Inserts a job with an idempotency key unless a job of its name has the key (partial unique
   // index); FIND_KEYED_JOB_SQL then finds that job.
   private static final String INSERT_KEYED_JOB_SQL =
       INSERT_JOB_SQL
           + """
 
-            on conflict (type, idempotency_key) where idempotency_key is not null do nothing""";
+            on conflict (name, idempotency_key) where idempotency_key is not null do nothing""";
 
   private static final String FIND_KEYED_JOB_SQL =
-      "select id from bikesched_jobs where type = ? and idempotency_key = ?";
+      "select id from bikesched_jobs where name = ? and idempotency_key = ?";
 
   private static final String INSERT_CHILD_JOB_SQL =
       """
-            insert into bikesched_jobs (id, type, payload, scheduled_at, priority, max_attempts, timeout_millis, parent_job_id)
-            values (?, ?, ?::jsonb, ?, ?, ?, ?, ?)""";
+            insert into bikesched_jobs (id, name, type, payload, scheduled_at, priority, max_attempts, timeout_millis, parent_job_id)
+            values (?, ?, 'CHILD', ?::jsonb, ?, ?, ?, ?, ?)""";
 
   // The step of a job starting a child job.
   private static final String FIND_CHILD_JOB_STEP_SQL =
       """
-            select id, type, state, child_job_id, child_job_type
+            select id, type, state, child_job_id, child_job_name
               from bikesched_steps
              where job_id = ? and name = ?
                for update""";
 
   private static final String INSERT_CHILD_JOB_STEP_SQL =
       """
-            insert into bikesched_steps (id, job_id, name, type, state, attempts, child_job_id, child_job_type, compensable)
+            insert into bikesched_steps (id, job_id, name, type, state, attempts, child_job_id, child_job_name, compensable)
             values (?, ?, ?, 'CHILD_JOB', 'WAITING', 1, ?, ?, ?)""";
 
   // A compensated child job step runs again when its job is retried: it starts a new child of the
-  // same type.
+  // same name.
   private static final String RESTART_CHILD_JOB_STEP_SQL =
       """
             update bikesched_steps
@@ -109,14 +110,14 @@ public final class JobStore {
       """
             update bikesched_jobs set state = 'SCHEDULED', scheduled_at = now(), updated_at = now()
              where id = ? and state = 'WAITING'
-            returning state, attempts, type, scheduled_at""";
+            returning state, attempts, name, scheduled_at""";
 
   // Inserts an occurrence of a recurring job unless one is pending already (partial unique index).
   private static final String INSERT_OCCURRENCE_SQL =
       INSERT_JOB_SQL
           + """
 
-            on conflict (type) where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING')
+            on conflict (name) where type = 'RECURRING' and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING')
             do nothing""";
 
   // Moves a pending (not yet running) occurrence to a new recurrence; returns the old description.
@@ -125,7 +126,7 @@ public final class JobStore {
             update bikesched_jobs j
                set recurrence = ?, scheduled_at = ?, planned_run_at = ?, updated_at = now()
               from (select id, recurrence from bikesched_jobs
-                     where type = ? and recurrence is not null and state = 'SCHEDULED'
+                     where name = ? and type = 'RECURRING' and state = 'SCHEDULED'
                        and recurrence <> ?
                      for update) old
              where j.id = old.id
@@ -134,14 +135,14 @@ public final class JobStore {
   private static final String FIND_PENDING_OCCURRENCE_SQL =
       """
             select id, scheduled_at, state from bikesched_jobs
-             where type = ? and recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING')""";
+             where name = ? and type = 'RECURRING' and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING')""";
 
   // Running occurrences cannot be deleted; finishing them schedules no successor on nodes that no
   // longer have the recurring job registered.
   private static final String DELETE_PENDING_OCCURRENCES_SQL =
       """
             delete from bikesched_jobs
-             where type = ? and recurrence is not null and state in ('SCHEDULED', 'WAITING')
+             where name = ? and type = 'RECURRING' and state in ('SCHEDULED', 'WAITING')
             returning id, state, attempts""";
 
   // The jobs among the given ones whose poll waits for its next check.
@@ -155,11 +156,10 @@ public final class JobStore {
   // releases the row locks, so no other node can pick them up afterwards. Claiming a COMPENSATING
   // job counts a compensation attempt instead of an attempt (compensation_end_state stays set),
   // claiming
-  // a FAILING job a run of its failure handler (failure_end_state stays set). Only jobs of types
-  // the
-  // node has handlers for: during a rolling deploy, nodes of the old version leave
-  // jobs of new types to the new ones (the type is a key column of the polling index, so the filter
-  // is checked on index entries, in claim order, without visiting other rows).
+  // a FAILING job a run of its failure handler (failure_end_state stays set). Only jobs the node
+  // has handlers for: during a rolling deploy, nodes of the old version leave jobs of new names to
+  // the new ones (the name is a key column of the polling index, so the filter is checked on index
+  // entries, in claim order, without visiting other rows).
   private static final String CLAIM_JOBS_SQL =
       """
             update bikesched_jobs
@@ -176,11 +176,11 @@ public final class JobStore {
                    updated_at = now()
              where id in (select id from bikesched_jobs
                            where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING') and scheduled_at <= now()
-                             and type = any(?)
+                             and name = any(?)
                            order by priority desc, scheduled_at
                            limit ?
                            for update skip locked)
-            returning id, type, payload::text as payload, priority, scheduled_at, attempts, max_attempts,
+            returning id, name, payload::text as payload, priority, scheduled_at, attempts, max_attempts,
                       timeout_millis, recurrence, planned_run_at, compensation_end_state,
                       compensation_attempts, cancel_requested_at is not null as cancel_requested,
                       cancel_message,
@@ -189,7 +189,7 @@ public final class JobStore {
 
   private static final String FIND_JOB_SQL =
       """
-            select type, state, result::text as result, parent_job_id from bikesched_jobs where id = ?""";
+            select name, type, state, result::text as result, parent_job_id from bikesched_jobs where id = ?""";
 
   private static final String COMPLETE_JOB_SQL =
       """
@@ -223,7 +223,7 @@ public final class JobStore {
               from %s
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensation_end_state is null
                and j.failure_end_state is null
-            returning j.state, j.attempts, j.type, j.scheduled_at"""
+            returning j.state, j.attempts, j.name, j.scheduled_at"""
           .formatted(COMPENSATE_SQL);
 
   // The unfinished steps of a job being cancelled by this node (waiting for an event, or left
@@ -248,13 +248,13 @@ public final class JobStore {
                set state = 'SCHEDULED', attempts = 0, compensation_end_state = null, compensation_attempts = 0,
                    failure_attempts = 0, cancel_requested_at = null, cancel_message = null,
                    scheduled_at = now(), finished_at = null, updated_at = now()
-             where id = ? and state = 'FAILED' and recurrence is null and parent_job_id is null
-            returning state, attempts, type, scheduled_at""";
+             where id = ? and state = 'FAILED' and type = 'SINGLE'
+            returning state, attempts, name, scheduled_at""";
 
   private static final String FIND_NOT_RETRYABLE_SQL =
       """
-            select type, parent_job_id from bikesched_jobs
-             where id = ? and (recurrence is not null or parent_job_id is not null)""";
+            select name, type, parent_job_id from bikesched_jobs
+             where id = ? and type <> 'SINGLE'""";
 
   // Bikesched.cancel(jobId): marks the job; the node claiming it next cancels it instead of running
   // its handler. Scheduled and waiting jobs are due right away; a running job is cancelled after
@@ -267,10 +267,10 @@ public final class JobStore {
                    updated_at = now()
              where id = ? and state in ('SCHEDULED', 'WAITING', 'RUNNING') and compensation_end_state is null
                and failure_end_state is null
-            returning state, attempts, type, scheduled_at""";
+            returning state, attempts, name, scheduled_at""";
 
   // All compensations of a compensating job ran: it ends in the state it was compensated for, or
-  // is FAILING first if it failed and its type has a failure handler on this node (p.*).
+  // is FAILING first if it failed and it has a failure handler on this node (p.*).
   private static final String COMPLETE_COMPENSATION_SQL =
       """
             update bikesched_jobs j
@@ -284,11 +284,11 @@ public final class JobStore {
               from (values (?::boolean)) as p (failure_handler)
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensation_end_state is not null
                and j.failure_end_state is null
-            returning j.state, j.attempts, j.type, j.scheduled_at""";
+            returning j.state, j.attempts, j.name, j.scheduled_at""";
 
   // A failed compensation attempt: compensating again (after the delay, if any) while compensation
   // attempts remain (max_attempts applies to them as well), otherwise COMPENSATION_FAILED, or
-  // FAILING first if its type has a failure handler on this node.
+  // FAILING first if it has a failure handler on this node.
   private static final String FAIL_COMPENSATION_SQL =
       """
             update bikesched_jobs j
@@ -308,11 +308,11 @@ public final class JobStore {
               from (values (?::text, ?::bigint, ?::boolean)) as p (error, retry_after_millis, failure_handler)
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensation_end_state is not null
                and j.failure_end_state is null
-            returning j.state, j.max_attempts, j.scheduled_at, j.attempts, j.type""";
+            returning j.state, j.max_attempts, j.scheduled_at, j.attempts, j.name""";
 
   // A failed attempt: retried (back to SCHEDULED) while attempts remain, otherwise FAILED, or
-  // COMPENSATING first if it has steps to compensate, or FAILING first if its type has a failure
-  // handler on this node. The handler may set a new maximum number of
+  // COMPENSATING first if it has steps to compensate, or FAILING first if it has a failure handler
+  // on this node. The handler may set a new maximum number of
   // attempts and delay the next attempt (p.*); all expressions see the row's old values, hence the
   // coalesce for the effective maximum. A retry of a job whose cancellation was requested is due
   // right away (and then cancelled).
@@ -342,7 +342,7 @@ public final class JobStore {
                    %s
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.compensation_end_state is null
                and j.failure_end_state is null
-            returning j.state, j.max_attempts, j.scheduled_at, j.attempts, j.type"""
+            returning j.state, j.max_attempts, j.scheduled_at, j.attempts, j.name"""
           .formatted(COMPENSATE_SQL);
 
   // The failure handler of a FAILING job ran (or was given up, or has no handler on this node): the
@@ -353,7 +353,7 @@ public final class JobStore {
                set state = failure_end_state, failure_end_state = null, finished_at = now(),
                    locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
              where id = ? and lock_token = ? and state = 'RUNNING' and failure_end_state is not null
-            returning state, attempts, type, scheduled_at""";
+            returning state, attempts, name, scheduled_at""";
 
   // The failure handler of a FAILING job failed: it runs again (after the delay, if any). The job
   // keeps its last_error.
@@ -365,7 +365,7 @@ public final class JobStore {
                    locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
               from (values (?::bigint)) as p (retry_after_millis)
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING' and j.failure_end_state is not null
-            returning j.state, j.attempts, j.type, j.scheduled_at""";
+            returning j.state, j.attempts, j.name, j.scheduled_at""";
 
   private static final String RELEASE_JOBS_SQL =
       """
@@ -374,7 +374,7 @@ public final class JobStore {
                                 when compensation_end_state is null then 'SCHEDULED' else 'COMPENSATING' end,
                    locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
              where locked_by_node_id = ? and state = 'RUNNING'
-            returning id, state, attempts, type""";
+            returning id, state, attempts, name""";
 
   // Releases a node's own jobs whose attempt has ended in memory without recording an outcome.
   // Recently claimed and still-active jobs are excluded, so an attempt cannot be released while it
@@ -388,7 +388,7 @@ public final class JobStore {
              where locked_by_node_id = ? and state = 'RUNNING'
                and locked_at < now() - make_interval(secs => ?)
                and id <> all(?::uuid[])
-            returning id, state, attempts, type""";
+            returning id, state, attempts, name""";
 
   // Releases RUNNING jobs (back to SCHEDULED, or COMPENSATING) of nodes whose heartbeat is older
   // than the timeout (excluding the calling node); returns one row per released job with its dead
@@ -406,7 +406,7 @@ public final class JobStore {
                and n.id <> ?
                and n.last_heartbeat_at < now() - make_interval(secs => ?)
             returning n.id as node_id, n.name as node_name, j.id as job_id, j.state, j.attempts,
-                      j.type""";
+                      j.name""";
 
   /**
    * Jobs released from a dead node.
@@ -429,7 +429,7 @@ public final class JobStore {
           .thenComparing(ClaimedJob::scheduledAt);
 
   /**
-   * Inserts a new {@code SCHEDULED} job; with an idempotency key, only unless a job of its type has
+   * Inserts a new {@code SCHEDULED} job; with an idempotency key, only unless a job of its name has
    * the key.
    *
    * @param jobId the job id
@@ -439,9 +439,7 @@ public final class JobStore {
   public UUID insertJob(UUID jobId, NewJob job) {
     return history.change(
         db -> insertJob(db, jobId, job),
-        e ->
-            new BikeschedException(
-                "Scheduling bikesched job of type '" + job.type() + "' failed", e));
+        e -> new BikeschedException("Scheduling bikesched job '" + job.name() + "' failed", e));
   }
 
   /**
@@ -457,9 +455,7 @@ public final class JobStore {
     return access.onCallerConnection(
         connection,
         db -> insertJob(db, jobId, job),
-        e ->
-            new BikeschedException(
-                "Scheduling bikesched job of type '" + job.type() + "' failed", e));
+        e -> new BikeschedException("Scheduling bikesched job '" + job.name() + "' failed", e));
   }
 
   private UUID insertJob(Sql db, UUID jobId, NewJob job) throws SQLException {
@@ -475,7 +471,7 @@ public final class JobStore {
       }
       // A new statement: sees the conflicting job, also one committed while the insert waited.
       existing =
-          db.one(FIND_KEYED_JOB_SQL, row -> row.uuid("id"), job.type(), job.idempotencyKey());
+          db.one(FIND_KEYED_JOB_SQL, row -> row.uuid("id"), job.name(), job.idempotencyKey());
     }
     return existing.orElseThrow(
         () ->
@@ -484,7 +480,7 @@ public final class JobStore {
   }
 
   private UUID inserted(Sql db, UUID jobId, NewJob job) throws SQLException {
-    db.due(job.type(), job.scheduledAt());
+    db.due(job.name(), job.scheduledAt());
     history.record(db, created(jobId, job));
     return jobId;
   }
@@ -504,7 +500,8 @@ public final class JobStore {
   private static Object[] insertParameters(UUID jobId, NewJob job) {
     return new Object[] {
       jobId,
-      job.type(),
+      job.name(),
+      (job.recurrence() == null ? JobType.SINGLE : JobType.RECURRING).name(),
       job.payload(),
       job.scheduledAt(),
       job.priority(),
@@ -520,7 +517,7 @@ public final class JobStore {
    * Reads a job in a read-only transaction.
    *
    * @param jobId the job id
-   * @return the job's id, type and state; empty if there is no such job
+   * @return the job's id, name, type and state; empty if there is no such job
    */
   public Optional<DefaultJobInfo> findJob(UUID jobId) {
     return access.inReadOnlyTransaction(
@@ -530,7 +527,8 @@ public final class JobStore {
                 row ->
                     new DefaultJobInfo(
                         jobId,
-                        row.string("type"),
+                        row.string("name"),
+                        row.enumValue("type", JobType.class),
                         row.enumValue("state", JobState.class),
                         row.string("result"),
                         row.uuid("parent_job_id"),
@@ -540,15 +538,15 @@ public final class JobStore {
   }
 
   /**
-   * Claims up to {@code limit} due, scheduled jobs of the given types for a node using {@code FOR
+   * Claims up to {@code limit} due, scheduled jobs of the given names for a node using {@code FOR
    * UPDATE SKIP LOCKED} and marks them {@code RUNNING}.
    *
    * @param nodeId the claiming node
-   * @param jobTypes the job types the node has handlers for
+   * @param jobNames the job names the node has handlers for
    * @param limit maximum number of jobs to claim
    * @return the claimed jobs, highest priority and earliest scheduled first
    */
-  public List<ClaimedJob> claimJobs(UUID nodeId, Collection<String> jobTypes, int limit) {
+  public List<ClaimedJob> claimJobs(UUID nodeId, Collection<String> jobNames, int limit) {
     List<ClaimedJob> jobs =
         history.change(
             db -> {
@@ -557,7 +555,7 @@ public final class JobStore {
                       CLAIM_JOBS_SQL,
                       ClaimedJob::from,
                       nodeId,
-                      Sql.array("text", jobTypes.toArray()),
+                      Sql.array("text", jobNames.toArray()),
                       limit);
               Set<UUID> polling = waitingAtPoll(db, claimed);
               history.record(
@@ -680,7 +678,7 @@ public final class JobStore {
    * @param compensable whether the step has a compensation
    * @return the child's id, and whether it was started now
    * @throws IllegalStateException if the step name belongs to another type of step, or to a step
-   *     that started a child of another type
+   *     that started a child of another name
    * @throws JobLockLostException if the parent is no longer running on the node
    */
   public ChildJob startChildJob(
@@ -697,13 +695,13 @@ public final class JobStore {
                           row.enumValue("type", StepType.class),
                           row.enumValue("state", StepState.class),
                           row.uuid("child_job_id"),
-                          row.string("child_job_type")),
+                          row.string("child_job_name")),
                   parentJobId,
                   stepName);
           if (step.isPresent()) {
             ChildJobStep found = step.get();
             StepType.CHILD_JOB.require(stepName, parentJobId, found.type());
-            if (!found.childType().equals(child.type())) {
+            if (!found.childName().equals(child.name())) {
               throw new IllegalStateException(
                   "Step '"
                       + stepName
@@ -711,10 +709,10 @@ public final class JobStore {
                       + parentJobId
                       + " started job "
                       + found.childJobId()
-                      + " of type "
-                      + found.childType()
-                      + ", not of type "
-                      + child.type()
+                      + " named "
+                      + found.childName()
+                      + ", not "
+                      + child.name()
                       + "; step names must be unique within a job");
             }
             if (found.state() != StepState.COMPENSATED) {
@@ -725,14 +723,14 @@ public final class JobStore {
           db.update(
               INSERT_CHILD_JOB_SQL,
               childJobId,
-              child.type(),
+              child.name(),
               child.payload(),
               child.scheduledAt(),
               child.priority(),
               child.maxAttempts(),
               Sql.millis(child.timeout()),
               parentJobId);
-          db.due(child.type(), child.scheduledAt());
+          db.due(child.name(), child.scheduledAt());
           if (step.isPresent()) {
             db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, step.get().id());
           } else {
@@ -742,7 +740,7 @@ public final class JobStore {
                 parentJobId,
                 stepName,
                 childJobId,
-                child.type(),
+                child.name(),
                 compensable);
           }
           history.record(
@@ -769,8 +767,8 @@ public final class JobStore {
         },
         e ->
             new BikeschedException(
-                "Starting a child job of type '"
-                    + child.type()
+                "Starting child job '"
+                    + child.name()
                     + "' in step '"
                     + stepName
                     + "' of bikesched job "
@@ -787,9 +785,9 @@ public final class JobStore {
    */
   public record ChildJob(UUID id, boolean started) {}
 
-  /** A row of {@code FIND_CHILD_JOB_STEP_SQL}; {@code childType} is null for other types. */
+  /** A row of {@code FIND_CHILD_JOB_STEP_SQL}; {@code childName} is null for other types. */
   private record ChildJobStep(
-      UUID id, StepType type, StepState state, UUID childJobId, String childType) {}
+      UUID id, StepType type, StepState state, UUID childJobId, String childName) {}
 
   /**
    * After a job's state changed in the caller's transaction: once it ended, runs the claim's {@link
@@ -841,7 +839,7 @@ public final class JobStore {
             "job " + jobId + " ended " + completed.get().childState()));
     Optional<ChangedJob> resumed = db.one(RESUME_PARENT_SQL, ChangedJob::from, parent);
     if (resumed.isPresent()) {
-      db.dueNow(resumed.get().type());
+      db.dueNow(resumed.get().name());
       changes.add(
           Change.job(
               parent, "SCHEDULED", resumed.get().attempts(), null, "resumed by job " + jobId));
@@ -902,7 +900,7 @@ public final class JobStore {
           }
           JobState state = cancelled.get().state();
           if (state == JobState.COMPENSATING) {
-            db.dueAt(cancelled.get().type(), cancelled.get().scheduledAt());
+            db.dueAt(cancelled.get().name(), cancelled.get().scheduledAt());
           }
           history.record(
               db, Change.job(jobId, state, cancelled.get().attempts(), lock.nodeId(), message));
@@ -939,7 +937,7 @@ public final class JobStore {
                   jobId);
           if (job.isPresent()) {
             if (job.get().state() != JobState.RUNNING) {
-              db.dueNow(job.get().type()); // to be cancelled by the next claim
+              db.dueNow(job.get().name()); // to be cancelled by the next claim
             }
             history.record(
                 db,
@@ -967,7 +965,7 @@ public final class JobStore {
         db -> {
           Optional<ChangedJob> job = db.one(RETRY_JOB_SQL, ChangedJob::from, jobId);
           if (job.isPresent()) {
-            db.dueNow(job.get().type());
+            db.dueNow(job.get().name());
             history.record(
                 db, Change.job(jobId, job.get().state(), job.get().attempts(), null, "retried"));
             return true;
@@ -975,7 +973,7 @@ public final class JobStore {
           Optional<NotRetryable> notRetryable =
               db.one(
                   FIND_NOT_RETRYABLE_SQL,
-                  row -> new NotRetryable(row.string("type"), row.uuid("parent_job_id")),
+                  row -> new NotRetryable(row.string("name"), row.uuid("parent_job_id")),
                   jobId);
           if (notRetryable.isPresent() && notRetryable.get().parentJobId() != null) {
             throw new IllegalArgumentException(
@@ -991,7 +989,7 @@ public final class JobStore {
                 "Job "
                     + jobId
                     + " is an occurrence of recurring job "
-                    + notRetryable.get().type()
+                    + notRetryable.get().name()
                     + " and cannot be retried; its next occurrence runs as scheduled");
           }
           return false;
@@ -1000,16 +998,16 @@ public final class JobStore {
   }
 
   /** A row of {@code FIND_NOT_RETRYABLE_SQL}: an occurrence, or a child job. */
-  private record NotRetryable(String type, UUID parentJobId) {}
+  private record NotRetryable(String name, UUID parentJobId) {}
 
-  /** The state, attempt count, type and due time of a job after a change. */
-  private record ChangedJob(JobState state, int attempts, String type, Instant scheduledAt) {
+  /** The state, attempt count, name and due time of a job after a change. */
+  private record ChangedJob(JobState state, int attempts, String name, Instant scheduledAt) {
 
     static ChangedJob from(Sql.Row row) throws SQLException {
       return new ChangedJob(
           row.enumValue("state", JobState.class),
           row.integer("attempts"),
-          row.string("type"),
+          row.string("name"),
           row.instant("scheduled_at"));
     }
   }
@@ -1038,7 +1036,7 @@ public final class JobStore {
           }
           JobState state = ended.get().state();
           if (state == JobState.FAILING) {
-            db.dueAt(ended.get().type(), ended.get().scheduledAt());
+            db.dueAt(ended.get().name(), ended.get().scheduledAt());
           }
           history.record(
               db,
@@ -1106,7 +1104,7 @@ public final class JobStore {
         db -> insertOccurrence(db, occurrence),
         e ->
             new BikeschedException(
-                "Scheduling an occurrence of recurring job " + occurrence.type() + " failed", e));
+                "Scheduling an occurrence of recurring job " + occurrence.name() + " failed", e));
   }
 
   private boolean insertOccurrence(Sql db, NewJob occurrence) throws SQLException {
@@ -1114,7 +1112,7 @@ public final class JobStore {
     if (db.update(INSERT_OCCURRENCE_SQL, insertParameters(jobId, occurrence)) == 0) {
       return false;
     }
-    db.due(occurrence.type(), occurrence.scheduledAt());
+    db.due(occurrence.name(), occurrence.scheduledAt());
     history.record(db, created(jobId, occurrence));
     return true;
   }
@@ -1142,10 +1140,10 @@ public final class JobStore {
                       first.recurrence(),
                       first.scheduledAt(),
                       Sql.timestamp(first.plannedRunAt()),
-                      first.type(),
+                      first.name(),
                       first.recurrence());
           if (moved.isPresent()) {
-            db.dueAt(first.type(), first.scheduledAt());
+            db.dueAt(first.name(), first.scheduledAt());
             history.record(
                 db,
                 Change.job(
@@ -1170,14 +1168,14 @@ public final class JobStore {
                           row.string("state"),
                           created,
                           previousRecurrence),
-                  first.type())
+                  first.name())
               // Cannot happen within this transaction: the insert either succeeded or conflicted.
               .orElseThrow(
                   () ->
                       new IllegalStateException(
-                          "No pending occurrence of recurring job " + first.type()));
+                          "No pending occurrence of recurring job " + first.name()));
         },
-        e -> new BikeschedException("Registering recurring job " + first.type() + " failed", e));
+        e -> new BikeschedException("Registering recurring job " + first.name() + " failed", e));
   }
 
   /**
@@ -1203,10 +1201,10 @@ public final class JobStore {
   /**
    * Deletes the pending occurrences of a recurring job that are not running.
    *
-   * @param type the job type of the recurring job
+   * @param name the job name of the recurring job
    * @return the number of deleted occurrences
    */
-  public int deletePendingOccurrences(String type) {
+  public int deletePendingOccurrences(String name) {
     return history.change(
         db -> {
           List<Change> deleted =
@@ -1219,11 +1217,11 @@ public final class JobStore {
                           row.integer("attempts"),
                           null,
                           "deleted: recurring job removed"),
-                  type);
+                  name);
           history.record(db, deleted);
           return deleted.size();
         },
-        e -> new BikeschedException("Removing recurring job " + type + " failed", e));
+        e -> new BikeschedException("Removing recurring job " + name + " failed", e));
   }
 
   /**
@@ -1347,7 +1345,7 @@ public final class JobStore {
           if (failing.isEmpty()) {
             return Optional.<Instant>empty();
           }
-          db.dueAt(failing.get().type(), failing.get().scheduledAt());
+          db.dueAt(failing.get().name(), failing.get().scheduledAt());
           history.record(
               db,
               Change.job(
@@ -1376,7 +1374,7 @@ public final class JobStore {
    * @param maxAttempts its maximum number of (compensation) attempts
    * @param scheduledAt when it runs next (only meaningful unless it ended)
    * @param attempts its number of attempts
-   * @param type its job type
+   * @param name its job name
    * @param nextOccurrenceScheduled whether the next occurrence of its recurring job was inserted
    */
   public record FailedJob(
@@ -1384,7 +1382,7 @@ public final class JobStore {
       int maxAttempts,
       Instant scheduledAt,
       int attempts,
-      String type,
+      String name,
       boolean nextOccurrenceScheduled) {
 
     /** Maps a row of {@code FAIL_JOB_SQL} or {@code FAIL_COMPENSATION_SQL}. */
@@ -1394,12 +1392,12 @@ public final class JobStore {
           row.integer("max_attempts"),
           row.instant("scheduled_at"),
           row.integer("attempts"),
-          row.string("type"),
+          row.string("name"),
           false);
     }
 
     FailedJob withNextOccurrence(boolean scheduled) {
-      return new FailedJob(state, maxAttempts, scheduledAt, attempts, type, scheduled);
+      return new FailedJob(state, maxAttempts, scheduledAt, attempts, name, scheduled);
     }
 
     /**
@@ -1408,7 +1406,7 @@ public final class JobStore {
      */
     void reportDue(Sql db) {
       if (!state.isEnded()) {
-        db.dueAt(type, scheduledAt);
+        db.dueAt(name, scheduledAt);
       }
     }
   }
@@ -1426,7 +1424,7 @@ public final class JobStore {
               db.list(
                   RELEASE_JOBS_SQL,
                   row -> {
-                    db.dueNow(row.string("type"));
+                    db.dueNow(row.string("name"));
                     return Change.job(
                         row.uuid("id"),
                         row.string("state"),
@@ -1456,7 +1454,7 @@ public final class JobStore {
               db.list(
                   RELEASE_INACTIVE_JOBS_SQL,
                   row -> {
-                    db.dueNow(row.string("type"));
+                    db.dueNow(row.string("name"));
                     return Change.job(
                         row.uuid("id"),
                         row.string("state"),
@@ -1488,7 +1486,7 @@ public final class JobStore {
               db.list(
                   RELEASE_JOBS_OF_DEAD_NODES_SQL,
                   row -> {
-                    db.dueNow(row.string("type"));
+                    db.dueNow(row.string("name"));
                     return new ReleasedJob(
                         row.uuid("node_id"),
                         row.string("node_name"),
@@ -1520,19 +1518,19 @@ public final class JobStore {
   }
 
   /**
-   * The channel on which nodes announce job types with jobs due now (the payload is the type), see
+   * The channel on which nodes announce job names with jobs due now (the payload is the name), see
    * {@link DueJobs#dueNow}.
    */
   public static final String CHANNEL = "bikesched_jobs";
 
-  // One notification per type; PostgreSQL also merges equal notifications of a transaction. Sent
+  // One notification per name; PostgreSQL also merges equal notifications of a transaction. Sent
   // by the notifier in an auto-commit statement of its own (a transaction issuing NOTIFY takes a
   // database-wide lock at commit, so job writes never notify), and inside a caller's transaction
   // for writes on the caller's connection (sent on commit).
   static final String NOTIFY_DUE_SQL =
       "select pg_notify('" + CHANNEL + "', t) from unnest(?::text[]) t";
 
-  // How long until the earliest job of the types is due, within the window only: bounded, the
+  // How long until the earliest job of the names is due, within the window only: bounded, the
   // lookup reads the poll index entries of the window instead of all delayed jobs. The database
   // computes the delay, so the nodes' clocks don't matter.
   private static final String NEXT_DUE_SQL =
@@ -1541,32 +1539,32 @@ public final class JobStore {
               from bikesched_jobs
              where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING')
                and scheduled_at > now() and scheduled_at <= now() + ? * interval '1 millisecond'
-               and type = any(?)""";
+               and name = any(?)""";
 
   /**
-   * Notifies all listening nodes that jobs of these types are due now, in an auto-commit statement
+   * Notifies all listening nodes that jobs of these names are due now, in an auto-commit statement
    * of its own.
    *
-   * @param types the job types (any text: nodes ignore types they don't handle)
+   * @param names the job names (any text: nodes ignore names they don't handle)
    */
-  public void notifyDue(Collection<String> types) {
+  public void notifyDue(Collection<String> names) {
     access.withConnection(
         db -> {
-          db.execute(NOTIFY_DUE_SQL, Sql.array("text", types.toArray()));
+          db.execute(NOTIFY_DUE_SQL, Sql.array("text", names.toArray()));
           return null;
         },
         e -> new BikeschedException("Notifying due jobs failed", e));
   }
 
   /**
-   * How long until the earliest job of the given types becomes due, if one does within the window
+   * How long until the earliest job of the given names becomes due, if one does within the window
    * (jobs due already don't count).
    *
-   * @param types the job types
+   * @param names the job names
    * @param window how far to look ahead
-   * @return the delay, empty if no job of the types becomes due within the window
+   * @return the delay, empty if no job of the names becomes due within the window
    */
-  public Optional<Duration> nextDueIn(Collection<String> types, Duration window) {
+  public Optional<Duration> nextDueIn(Collection<String> names, Duration window) {
     return access
         .withConnection(
             db ->
@@ -1574,7 +1572,7 @@ public final class JobStore {
                     NEXT_DUE_SQL,
                     row -> Optional.ofNullable(row.millis("due_in")),
                     window.toMillis(),
-                    Sql.array("text", types.toArray())),
+                    Sql.array("text", names.toArray())),
             e -> new BikeschedException("Looking up the next due job failed", e))
         .flatMap(delay -> delay);
   }
@@ -1642,7 +1640,7 @@ public final class JobStore {
    * A job claimed for execution, as stored; becomes a {@code DefaultJob} on the claiming node.
    *
    * @param id the job id
-   * @param type the job type
+   * @param name the job name
    * @param payload the payload as JSON text, may be {@code null}
    * @param priority its priority
    * @param scheduledAt when it was due
@@ -1658,7 +1656,7 @@ public final class JobStore {
    */
   public record ClaimedJob(
       UUID id,
-      String type,
+      String name,
       @Nullable String payload,
       int priority,
       Instant scheduledAt,
@@ -1687,7 +1685,7 @@ public final class JobStore {
       }
       return new ClaimedJob(
           row.uuid("id"),
-          row.string("type"),
+          row.string("name"),
           row.string("payload"),
           row.integer("priority"),
           row.instant("scheduled_at"),

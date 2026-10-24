@@ -10,8 +10,8 @@ holding a thread. Jobs can have a result, which the waiting parent receives with
 outcome.
 
 ```java
-static final JobType<Payment> CHARGE = JobType.of("charge", Payment.class);
-static final JobType<Items> PACK = JobType.of("pack", Items.class);
+static final TypedJob<Payment> CHARGE = TypedJob.of("charge", Payment.class);
+static final TypedJob<Items> PACK = TypedJob.of("pack", Items.class);
 
 bikesched.registerJobHandler(CHARGE, (job, payment) -> job.complete(payments.charge(payment)));
 bikesched.registerJobHandler(PACK, (job, items) -> job.complete(warehouse.pack(items)));
@@ -52,26 +52,27 @@ bikesched.registerJobHandler("fulfil-order", job -> {
 
 ## Starting children
 
-`job.newJob(type)` and `job.newJob(jobType)` return a `StepJobBuilder` with the usual settings
+`job.newJob(name)` and `job.newJob(typedJob)` return a `StepJobBuilder` with the usual settings
 (`payload`, `priority`, `maxAttempts`, `timeout`) plus:
 
 | Method | Purpose |
 |---|---|
-| `stepName(name)` | the step's name, default `start <type>`; set it when a job starts several children of one type |
+| `stepName(name)` | the step's name, default `start <job name>`; set it when a job starts several children with one name |
 | `compensateWith((step, childId) -> …)` | undo starting the child if the parent is cancelled or fails permanently, e.g. `bikesched.cancel(childId, "order cancelled")` |
 | `schedule()`, `schedule(Instant)`, `schedule(Duration)` | start the child and return its id |
 
-- The first run stores the child (with `parent_job_id`) and a `CHILD_JOB` step of the parent in one
-  transaction, fenced by the parent's lock: either both exist or neither does. Later runs find the
-  step and return the same child's id without scheduling again; a step that started a child of
-  another type is rejected (the step stores the child's type, so also after the child was deleted).
+- The first run stores the child (type `CHILD`, with `parent_job_id`) and a `CHILD_JOB` step of the
+  parent in one transaction, fenced by the parent's lock: either both exist or neither does. Later
+  runs find the step and return the same child's id without scheduling again; a step that started a
+  child with another name is rejected (the step stores the child's name, so also after the child was
+  deleted).
 - There is no `connection(…)` (the parent's step transaction is the transaction) and no
   `schedule(Recurrence)`: children are never recurring. Occurrences of recurring jobs cannot start
   children (`IllegalStateException`): the next occurrence replaces them, so nobody waits for their
   children.
 - Starting a child is rejected inside a step handler, like any nested step.
-- The child's type needs a handler registered on the parent's node. There is no `handler(…)`:
-  children connect job types registered on their own; code that runs inline belongs in a
+- The child's name needs a handler registered on the parent's node. There is no `handler(…)`:
+  children connect jobs registered on their own; code that runs inline belongs in a
   [step](steps.md).
 
 ## Waiting for children

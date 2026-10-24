@@ -16,61 +16,61 @@ class JobHandlersScanTest {
   public record Mail(String to) {}
 
   public static class ValidHandlers {
-    @JobHandler(type = "job-and-payload")
+    @JobHandler(name = "job-and-payload")
     public void jobAndPayload(Job job, Mail mail) {}
 
-    @JobHandler(type = "payload-and-job")
+    @JobHandler(name = "payload-and-job")
     public void payloadAndJob(Mail mail, Job job) {}
 
-    @JobHandler(type = "payload")
+    @JobHandler(name = "payload")
     public void payload(Mail mail) {}
 
-    @JobHandler(type = "job")
+    @JobHandler(name = "job")
     public void job(Job job) {}
 
-    @JobHandler(type = "none")
+    @JobHandler(name = "none")
     public void none() {}
 
     public void notAnnotated(Mail mail) {}
   }
 
   public static class RecurringHandlers {
-    @JobHandler(type = "recurring", schedule = "PT5M")
+    @JobHandler(name = "recurring", schedule = "PT5M")
     public void recurring() {}
   }
 
   public static class FixedDelayHandlers {
-    @JobHandler(type = "fixed-delay", fixedDelay = "PT15M", initialDelay = "PT0S")
+    @JobHandler(name = "fixed-delay", fixedDelay = "PT15M", initialDelay = "PT0S")
     public void recurring() {}
   }
 
   public static class ScheduleAndFixedDelay {
-    @JobHandler(type = "x", schedule = "PT5M", fixedDelay = "PT5M")
+    @JobHandler(name = "x", schedule = "PT5M", fixedDelay = "PT5M")
     public void recurring() {}
   }
 
   public static class InvalidFixedDelay {
-    @JobHandler(type = "x", fixedDelay = "15 minutes")
+    @JobHandler(name = "x", fixedDelay = "15 minutes")
     public void recurring() {}
   }
 
   public static class ZeroFixedDelay {
-    @JobHandler(type = "x", fixedDelay = "PT0S")
+    @JobHandler(name = "x", fixedDelay = "PT0S")
     public void recurring() {}
   }
 
   public static class NegativeInitialDelay {
-    @JobHandler(type = "x", schedule = "PT5M", initialDelay = "-PT1M")
+    @JobHandler(name = "x", schedule = "PT5M", initialDelay = "-PT1M")
     public void recurring() {}
   }
 
   public static class InitialDelayWithoutSchedule {
-    @JobHandler(type = "x", initialDelay = "PT1M")
+    @JobHandler(name = "x", initialDelay = "PT1M")
     public void oneOff() {}
   }
 
   public static class UnsupportedSchedule {
-    @JobHandler(type = "unsupported", schedule = "every 5 minutes")
+    @JobHandler(name = "unsupported", schedule = "every 5 minutes")
     public void recurring() {}
   }
 
@@ -126,7 +126,7 @@ class JobHandlersScanTest {
     List<AnnotatedJobHandler> handlers = JobHandlers.scan(new ValidHandlers());
 
     assertThat(handlers)
-        .extracting(AnnotatedJobHandler::type)
+        .extracting(AnnotatedJobHandler::name)
         .containsExactly("job", "job-and-payload", "none", "payload", "payload-and-job");
     assertThat(handlers)
         .extracting(handler -> handler.payloadType().map(Class::getSimpleName).orElse("-"))
@@ -139,7 +139,7 @@ class JobHandlersScanTest {
   }
 
   public static class Base {
-    @JobHandler(type = "inherited")
+    @JobHandler(name = "inherited")
     public void inherited(Mail mail) {}
   }
 
@@ -148,62 +148,62 @@ class JobHandlersScanTest {
   @Test
   void findsInheritedMethods() {
     assertThat(JobHandlers.scan(new Sub()))
-        .extracting(AnnotatedJobHandler::type)
+        .extracting(AnnotatedJobHandler::name)
         .containsExactly("inherited");
   }
 
   public static class ThreeParameters {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public void handle(Job job, Mail mail, String extra) {}
   }
 
   public static class TwoPayloads {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public void handle(Mail mail, String other) {}
   }
 
   public static class TwoJobs {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public void handle(Job job, Job other) {}
   }
 
   public static class ReturnsValue {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public String handle(Mail mail) {
       return mail.to();
     }
   }
 
   public static class NotPublic {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     void handle(Mail mail) {}
   }
 
   public static class Static {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public static void handle(Mail mail) {}
   }
 
   public static class GenericPayload {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public void handle(List<Mail> mails) {}
   }
 
   public static class PrimitivePayload {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public void handle(int count) {}
   }
 
   public static class BlankType {
-    @JobHandler(type = " ")
+    @JobHandler(name = " ")
     public void handle() {}
   }
 
   public static class SameTypeTwice {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public void first() {}
 
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public void second() {}
   }
 
@@ -213,7 +213,7 @@ class JobHandlersScanTest {
 
   /** Implements an interface, so the class can be proxied with a JDK dynamic proxy. */
   public static class MailJobsApi implements MailApi {
-    @JobHandler(type = "fallback-type")
+    @JobHandler(name = "fallback-type")
     public void send(Mail mail) {}
   }
 
@@ -222,7 +222,7 @@ class JobHandlersScanTest {
     List<AnnotatedJobHandler> handlers = JobHandlers.scan(ValidHandlers.class);
 
     assertThat(handlers)
-        .extracting(AnnotatedJobHandler::type)
+        .extracting(AnnotatedJobHandler::name)
         .containsExactly("job", "job-and-payload", "none", "payload", "payload-and-job");
     assertThat(handlers).allMatch(handler -> !handler.isBound());
     assertThat(handlers)
@@ -240,7 +240,7 @@ class JobHandlersScanTest {
 
     assertThat(JobHandlers.scan(proxy.getClass())).as("the proxy class").isEmpty();
     assertThat(JobHandlers.scan(MailJobsApi.class))
-        .extracting(AnnotatedJobHandler::type)
+        .extracting(AnnotatedJobHandler::name)
         .containsExactly("fallback-type");
     assertThat(JobHandlers.hasAnnotatedMethods(MailJobsApi.class)).isTrue();
     assertThat(JobHandlers.hasAnnotatedMethods(MailApi.class)).isFalse();
@@ -256,35 +256,35 @@ class JobHandlersScanTest {
 
     assertThat(unbound.isBound()).as("the scanned handler is unchanged").isFalse();
     assertThat(bound.isBound()).isTrue();
-    assertThat(bound.type()).isEqualTo(unbound.type());
+    assertThat(bound.name()).isEqualTo(unbound.name());
     assertThat(bound.method()).isEqualTo(unbound.method());
   }
 
   public static class FailureHandlers {
-    @JobHandler(type = "charge")
+    @JobHandler(name = "charge")
     public void charge(Mail mail) {}
 
-    @JobFailureHandler(type = "charge")
+    @JobFailureHandler(name = "charge")
     public void chargeFailed(FailedJob failed, Mail mail) {}
 
-    @JobFailureHandler(type = "payload-and-failed")
+    @JobFailureHandler(name = "payload-and-failed")
     public void payloadAndFailed(Mail mail, FailedJob failed) {}
 
-    @JobFailureHandler(type = "none")
+    @JobFailureHandler(name = "none")
     public void none() {}
   }
 
   public static class FailureHandlersFirst {
-    @JobFailureHandler(type = "a")
+    @JobFailureHandler(name = "a")
     public void aFailed() {}
 
-    @JobFailureHandler(type = "b")
+    @JobFailureHandler(name = "b")
     public void bFailed() {}
 
-    @JobHandler(type = "c")
+    @JobHandler(name = "c")
     public void c() {}
 
-    @JobHandler(type = "b")
+    @JobHandler(name = "b")
     public void b() {}
   }
 
@@ -293,43 +293,43 @@ class JobHandlersScanTest {
     List<AnnotatedJobHandler> handlers = JobHandlers.scan(FailureHandlers.class);
 
     assertThat(handlers)
-        .extracting(handler -> handler.type() + (handler.isFailureHandler() ? " failed" : ""))
+        .extracting(handler -> handler.name() + (handler.isFailureHandler() ? " failed" : ""))
         .containsExactly("charge", "charge failed", "none failed", "payload-and-failed failed");
     assertThat(handlers.get(1).payloadType()).contains(Mail.class);
     assertThat(handlers.get(1).schedule()).isEmpty();
     // Job handlers first, then failure handlers, each ordered by type.
     assertThat(JobHandlers.scan(FailureHandlersFirst.class))
-        .extracting(handler -> handler.type() + (handler.isFailureHandler() ? " failed" : ""))
+        .extracting(handler -> handler.name() + (handler.isFailureHandler() ? " failed" : ""))
         .containsExactly("b", "c", "a failed", "b failed");
     assertThat(JobHandlers.hasAnnotatedMethods(FailureHandlers.class)).isTrue();
   }
 
   public static class BothAnnotations {
-    @JobHandler(type = "x")
-    @JobFailureHandler(type = "x")
+    @JobHandler(name = "x")
+    @JobFailureHandler(name = "x")
     public void handle() {}
   }
 
   public static class FailureHandlerWithJob {
-    @JobFailureHandler(type = "x")
+    @JobFailureHandler(name = "x")
     public void handle(Job job) {}
   }
 
   public static class HandlerWithFailedJob {
-    @JobHandler(type = "x")
+    @JobHandler(name = "x")
     public void handle(FailedJob job) {}
   }
 
   public static class TwoFailedJobs {
-    @JobFailureHandler(type = "x")
+    @JobFailureHandler(name = "x")
     public void handle(FailedJob job, FailedJob other) {}
   }
 
   public static class SameFailureTypeTwice {
-    @JobFailureHandler(type = "x")
+    @JobFailureHandler(name = "x")
     public void first() {}
 
-    @JobFailureHandler(type = "x")
+    @JobFailureHandler(name = "x")
     public void second() {}
   }
 
@@ -351,7 +351,7 @@ class JobHandlersScanTest {
         .hasMessageEndingWith("has two FailedJob parameters");
     assertThatThrownBy(() -> JobHandlers.scan(new SameFailureTypeTwice()))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Failed jobs of type 'x' are handled by two methods");
+        .hasMessageStartingWith("Failed jobs named 'x' are handled by two methods");
   }
 
   @Test
@@ -364,10 +364,10 @@ class JobHandlersScanTest {
     assertInvalid(new Static(), "is static");
     assertInvalid(new GenericPayload(), "has a generic payload parameter");
     assertInvalid(new PrimitivePayload(), "has a primitive payload parameter");
-    assertInvalid(new BlankType(), "has no job type");
+    assertInvalid(new BlankType(), "has no job name");
     assertThatThrownBy(() -> JobHandlers.scan(new SameTypeTwice()))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Job type 'x' is handled by two methods");
+        .hasMessageStartingWith("Job name 'x' is handled by two methods");
   }
 
   private static void assertInvalid(Object target, String problem) {

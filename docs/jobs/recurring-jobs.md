@@ -5,7 +5,7 @@ weight: 1
 
 # Recurring jobs
 
-A recurring job is a job type with a `Recurrence`. Every node registers it on startup; bikesched
+A recurring job is a job name with a `Recurrence`. Every node registers it on startup; bikesched
 keeps exactly one run pending at a time. It is scheduled like a one-off job, with a `Recurrence`
 instead of a time:
 
@@ -121,14 +121,14 @@ bikesched.newJob("report")
 
 ## Occurrences
 
-- The job type identifies the recurring job. Each run is an *occurrence*, a regular job with its
-  own retries, timeout, steps and events. At most one occurrence is pending at a time, enforced by
-  a partial unique index.
+- The job name identifies the recurring job. Each run is an *occurrence*, a regular job of type
+  `RECURRING` with its own retries, timeout, steps and events. At most one occurrence is pending at
+  a time, enforced by a partial unique index.
 - When an occurrence ends (succeeded, permanently failed, or cancelled, which cancels only that
   occurrence), the next one is inserted in the same transaction. Runs missed while no node was up
   are skipped.
 - Registering a recurring job recreates a missing occurrence; a node also checks all its recurring
   jobs once when it starts polling, retried every `nodeCleanUpInterval` if that fails.
-- `bikesched.removeRecurringJob(type)` stops a recurring job that is no longer registered anywhere.
+- `bikesched.removeRecurringJob(name)` stops a recurring job that is no longer registered anywhere.
 - `connection(...)` leads to a builder without `schedule(Recurrence)`, so a recurring job can't be
   scheduled in the caller's transaction.

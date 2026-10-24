@@ -27,13 +27,13 @@ import org.bikesched.job.listener.JobListener;
  * <table>
  *   <caption>Meters</caption>
  *   <tr><th>Name</th><th>Type</th><th>Tags</th><th>Measures</th></tr>
- *   <tr><td>{@code bikesched.job.claim.delay}</td><td>timer</td><td>{@code job.type}</td>
+ *   <tr><td>{@code bikesched.job.claim.delay}</td><td>timer</td><td>{@code job.name}</td>
  *       <td>how long after they were due jobs were claimed</td></tr>
- *   <tr><td>{@code bikesched.job.attempts}</td><td>timer</td><td>{@code job.type}, {@code
+ *   <tr><td>{@code bikesched.job.attempts}</td><td>timer</td><td>{@code job.name}, {@code
  *       outcome}</td><td>attempts by recorded outcome (lower case, e.g. {@code succeeded}, {@code
  *       retrying}, {@code failed}) and their duration</td></tr>
  *   <tr><td>{@code bikesched.job.attempts.abandoned}</td><td>counter</td><td>{@code
- *       job.type}</td><td>attempts abandoned by the hard timeout</td></tr>
+ *       job.name}</td><td>attempts abandoned by the hard timeout</td></tr>
  *   <tr><td>{@code bikesched.jobs.active}</td><td>gauge</td><td></td><td>attempts being
  *       processed</td></tr>
  *   <tr><td>{@code bikesched.jobs.abandoned}</td><td>gauge</td><td></td><td>abandoned
@@ -84,7 +84,7 @@ public final class MicrometerJobListener implements JobListener {
     Timer.builder("bikesched.job.claim.delay")
         .description("How long after they were due jobs were claimed")
         .tags(tags)
-        .tag("job.type", claim.jobType())
+        .tag("job.name", claim.jobName())
         .register(registry)
         .record(claim.delay());
   }
@@ -92,11 +92,11 @@ public final class MicrometerJobListener implements JobListener {
   @Override
   public void onAttemptEnded(JobAttemptResult result) {
     active.decrementAndGet();
-    String type = result.claim().jobType();
+    String name = result.claim().jobName();
     Timer.builder("bikesched.job.attempts")
         .description("Job attempts by recorded outcome")
         .tags(tags)
-        .tag("job.type", type)
+        .tag("job.name", name)
         .tag("outcome", result.outcome().name().toLowerCase(Locale.ROOT))
         .register(registry)
         .record(result.duration());
@@ -105,7 +105,7 @@ public final class MicrometerJobListener implements JobListener {
       Counter.builder("bikesched.job.attempts.abandoned")
           .description("Job attempts abandoned by the hard timeout")
           .tags(tags)
-          .tag("job.type", type)
+          .tag("job.name", name)
           .register(registry)
           .increment();
     }

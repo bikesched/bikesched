@@ -41,10 +41,10 @@ public final class JobHandlers {
    * @param bikesched the node
    * @param target the object declaring the methods
    * @return the registered handlers: the job handlers, then the failure handlers, each ordered by
-   *     job type
+   *     job name
    * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler} and
-   *     {@link JobFailureHandler}), two methods handle the same type, the node already has a
-   *     handler (or failure handler) for one of the types, or a schedule is not supported by
+   *     {@link JobFailureHandler}), two methods handle the same name, the node already has a
+   *     handler (or failure handler) for one of the names, or a schedule is not supported by
    *     exactly one of the node's {@code RecurrenceParser}s
    */
   public static List<AnnotatedJobHandler> register(Bikesched bikesched, Object target) {
@@ -63,10 +63,10 @@ public final class JobHandlers {
    * @param bean the instance the methods are invoked on
    * @param targetClass the class declaring the annotated methods, e.g. the target class of a proxy
    * @return the registered handlers: the job handlers, then the failure handlers, each ordered by
-   *     job type
+   *     job name
    * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler} and
-   *     {@link JobFailureHandler}), two methods handle the same type, the node already has a
-   *     handler (or failure handler) for one of the types, or a schedule is not supported by
+   *     {@link JobFailureHandler}), two methods handle the same name, the node already has a
+   *     handler (or failure handler) for one of the names, or a schedule is not supported by
    *     exactly one of the node's {@code RecurrenceParser}s
    */
   public static List<AnnotatedJobHandler> register(
@@ -83,10 +83,10 @@ public final class JobHandlers {
    * methods of the object (declared by its class or a superclass) without registering them.
    *
    * @param target the object declaring the methods
-   * @return its job handlers, then its failure handlers, each ordered by job type; empty if it has
+   * @return its job handlers, then its failure handlers, each ordered by job name; empty if it has
    *     no annotated methods
    * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler} and
-   *     {@link JobFailureHandler}) or two methods handle the same type
+   *     {@link JobFailureHandler}) or two methods handle the same name
    */
   public static List<AnnotatedJobHandler> scan(Object target) {
     Objects.requireNonNull(target, "target");
@@ -100,10 +100,10 @@ public final class JobHandlers {
    * proxy: pass the class that declares the annotations, not the proxy class.
    *
    * @param targetClass the class declaring the methods
-   * @return its job handlers, then its failure handlers, each ordered by job type; empty if it has
+   * @return its job handlers, then its failure handlers, each ordered by job name; empty if it has
    *     no annotated methods
    * @throws IllegalArgumentException if an annotated method is invalid (see {@link JobHandler} and
-   *     {@link JobFailureHandler}) or two methods handle the same type
+   *     {@link JobFailureHandler}) or two methods handle the same name
    */
   public static List<AnnotatedJobHandler> scan(Class<?> targetClass) {
     Objects.requireNonNull(targetClass, "targetClass");
@@ -127,43 +127,43 @@ public final class JobHandlers {
               jobHandlers,
               handler(
                   method,
-                  annotation.type(),
+                  annotation.name(),
                   annotation.schedule(),
                   annotation.fixedDelay(),
                   annotation.initialDelay(),
                   false),
-              "Job type '%s' is handled by two methods: %s and %s");
+              "Job name '%s' is handled by two methods: %s and %s");
         } else if (failureAnnotation != null) {
           add(
               failureHandlers,
-              handler(method, failureAnnotation.type(), "", "", "", true),
-              "Failed jobs of type '%s' are handled by two methods: %s and %s");
+              handler(method, failureAnnotation.name(), "", "", "", true),
+              "Failed jobs named '%s' are handled by two methods: %s and %s");
         }
       }
     }
     var handlers = new ArrayList<AnnotatedJobHandler>();
-    handlers.addAll(byType(jobHandlers));
-    handlers.addAll(byType(failureHandlers));
+    handlers.addAll(byName(jobHandlers));
+    handlers.addAll(byName(failureHandlers));
     return List.copyOf(handlers);
   }
 
   /**
    * Adds a handler found while walking up the class hierarchy, unless a subclass method found
-   * earlier overrides it; two methods for the same type fail with the formatted {@code duplicate}
-   * message (type, first method, second method).
+   * earlier overrides it; two methods for the same name fail with the formatted {@code duplicate}
+   * message (name, first method, second method).
    */
   private static void add(
       Map<String, AnnotatedJobHandler> handlers, AnnotatedJobHandler handler, String duplicate) {
-    AnnotatedJobHandler other = handlers.putIfAbsent(handler.type(), handler);
+    AnnotatedJobHandler other = handlers.putIfAbsent(handler.name(), handler);
     if (other != null && !overrides(other.method(), handler.method())) {
       throw new IllegalArgumentException(
-          duplicate.formatted(handler.type(), other.method(), handler.method()));
+          duplicate.formatted(handler.name(), other.method(), handler.method()));
     }
   }
 
-  private static List<AnnotatedJobHandler> byType(Map<String, AnnotatedJobHandler> handlers) {
+  private static List<AnnotatedJobHandler> byName(Map<String, AnnotatedJobHandler> handlers) {
     return handlers.values().stream()
-        .sorted(Comparator.comparing(AnnotatedJobHandler::type))
+        .sorted(Comparator.comparing(AnnotatedJobHandler::name))
         .toList();
   }
 
@@ -198,15 +198,15 @@ public final class JobHandlers {
   /** Validates an annotated method and describes it; the handler is not bound to an instance. */
   private static AnnotatedJobHandler handler(
       Method method,
-      String type,
+      String name,
       String schedule,
       String fixedDelay,
       String initialDelay,
       boolean failureHandler) {
     String annotation = failureHandler ? "@JobFailureHandler" : "@JobHandler";
     Class<?> contextType = failureHandler ? FailedJob.class : Job.class;
-    if (type == null || type.isBlank()) {
-      throw invalid(annotation, method, "has no job type");
+    if (name == null || name.isBlank()) {
+      throw invalid(annotation, method, "has no job name");
     }
     int modifiers = method.getModifiers();
     if (!Modifier.isPublic(modifiers)) {
@@ -281,7 +281,7 @@ public final class JobHandlers {
       throw invalid(annotation, method, "has an initialDelay but no schedule or fixedDelay");
     }
     return new AnnotatedJobHandler(
-        type,
+        name,
         payloadIndex < 0 ? null : parameters[payloadIndex],
         schedule.isBlank() ? null : schedule,
         delay,

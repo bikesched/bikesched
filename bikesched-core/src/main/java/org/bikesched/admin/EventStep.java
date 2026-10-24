@@ -9,14 +9,14 @@ import org.bikesched.job.JobState;
  *
  * @param stepId the step id, see {@link StepInfo#id()}
  * @param jobId the step's job
- * @param jobType the job's type
+ * @param jobName the job's name
  * @param jobState the job's current state
  * @param stepName the step name
  * @param stepType {@code EVENT_PUBLISH} if the step published the event, {@code EVENT_WAIT} if it
  *     received it
  */
 public record EventStep(
-    UUID stepId, UUID jobId, String jobType, JobState jobState, String stepName, String stepType) {
+    UUID stepId, UUID jobId, String jobName, JobState jobState, String stepName, String stepType) {
 
   /**
    * Returns whether the step published the event.

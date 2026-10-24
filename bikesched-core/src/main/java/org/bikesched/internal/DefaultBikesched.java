@@ -18,8 +18,8 @@ import org.bikesched.BikeschedLogContext;
 import org.bikesched.Node;
 import org.bikesched.admin.Admin;
 import org.bikesched.event.EventBuilder;
-import org.bikesched.event.EventType;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.event.listener.EventPublication;
 import org.bikesched.event.listener.EventSource;
 import org.bikesched.internal.database.Database;
@@ -49,7 +49,7 @@ import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobInfo;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
 import org.jspecify.annotations.Nullable;
@@ -78,7 +78,7 @@ import org.slf4j.MDC;
  *       jobs this node's writes made due
  * </ul>
  *
- * <p>The job types the node knows (handlers, recurring jobs, payload classes) are in its {@link
+ * <p>The job names the node knows (handlers, recurring jobs, payload classes) are in its {@link
  * JobRegistry}.
  */
 public final class DefaultBikesched implements Bikesched {
@@ -111,7 +111,7 @@ public final class DefaultBikesched implements Bikesched {
     this.node = new DefaultNode(nodeName);
     this.admin =
         new DefaultAdmin(
-            database.admin(), settings.nodeTimeout(), this::ensureReady, registry.types());
+            database.admin(), settings.nodeTimeout(), this::ensureReady, registry.names());
     this.jobScheduler =
         new JobScheduler(
             database,
@@ -244,57 +244,59 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public Bikesched registerJobHandler(String type, JobHandler handler) {
-    requireValidType(type);
+  public Bikesched registerJobHandler(String name, JobHandler handler) {
+    requireValidName(name);
     Objects.requireNonNull(handler, "handler");
-    if (!registry.register(type, handler)) {
+    if (!registry.register(name, handler)) {
       throw new IllegalArgumentException(
-          "A handler for job type '" + type + "' is already registered");
+          "A handler for job name '" + name + "' is already registered");
     }
-    LOG.debug("bikesched node {} registered handler for job type {}", nodeName, type);
+    LOG.debug("bikesched node {} registered handler for job name {}", nodeName, name);
     return this;
   }
 
   @Override
   public <T extends @Nullable Object> Bikesched registerJobHandler(
-      JobType<T> type, TypedJobHandler<? super T> handler) {
+      TypedJob<T> typedJob, TypedJobHandler<? super T> handler) {
     Objects.requireNonNull(handler, "handler");
-    registry.requirePayloadType(type);
-    Class<T> payloadType = type.payloadType();
-    return registerJobHandler(type.name(), job -> handler.handle(job, job.payload(payloadType)));
+    registry.requirePayloadType(typedJob);
+    Class<T> payloadType = typedJob.payloadType();
+    return registerJobHandler(
+        typedJob.name(), job -> handler.handle(job, job.payload(payloadType)));
   }
 
   @Override
-  public Bikesched registerJobFailureHandler(String type, JobFailureHandler handler) {
-    requireValidType(type);
+  public Bikesched registerJobFailureHandler(String name, JobFailureHandler handler) {
+    requireValidName(name);
     Objects.requireNonNull(handler, "handler");
-    if (!registry.registerFailureHandler(type, handler)) {
+    if (!registry.registerFailureHandler(name, handler)) {
       throw new IllegalArgumentException(
-          "A failure handler for job type '" + type + "' is already registered");
+          "A failure handler for job name '" + name + "' is already registered");
     }
-    LOG.debug("bikesched node {} registered failure handler for job type {}", nodeName, type);
+    LOG.debug("bikesched node {} registered failure handler for job name {}", nodeName, name);
     return this;
   }
 
   @Override
   public <T extends @Nullable Object> Bikesched registerJobFailureHandler(
-      JobType<T> type, TypedJobFailureHandler<? super T> handler) {
+      TypedJob<T> typedJob, TypedJobFailureHandler<? super T> handler) {
     Objects.requireNonNull(handler, "handler");
-    registry.requirePayloadType(type);
-    return registerJobFailureHandler(type.name(), JobRegistry.typed(handler, type.payloadType()));
+    registry.requirePayloadType(typedJob);
+    return registerJobFailureHandler(
+        typedJob.name(), JobRegistry.typed(handler, typedJob.payloadType()));
   }
 
   @Override
-  public JobBuilder<Object> newJob(String type) {
-    requireValidType(type);
-    return new DefaultJobBuilder<>(type, Object.class, database.jsonMapper(), jobScheduler);
+  public JobBuilder<Object> newJob(String name) {
+    requireValidName(name);
+    return new DefaultJobBuilder<>(name, Object.class, database.jsonMapper(), jobScheduler);
   }
 
   @Override
-  public <T extends @Nullable Object> JobBuilder<T> newJob(JobType<T> type) {
-    registry.requirePayloadType(type);
+  public <T extends @Nullable Object> JobBuilder<T> newJob(TypedJob<T> typedJob) {
+    registry.requirePayloadType(typedJob);
     return new DefaultJobBuilder<>(
-        type.name(), type.payloadType(), database.jsonMapper(), jobScheduler);
+        typedJob.name(), typedJob.payloadType(), database.jsonMapper(), jobScheduler);
   }
 
   @Override
@@ -315,9 +317,9 @@ public final class DefaultBikesched implements Bikesched {
   }
 
   @Override
-  public boolean removeRecurringJob(String type) {
-    requireValidType(type);
-    return jobScheduler.removeRecurringJob(type);
+  public boolean removeRecurringJob(String name) {
+    requireValidName(name);
+    return jobScheduler.removeRecurringJob(name);
   }
 
   @Override
@@ -329,11 +331,11 @@ public final class DefaultBikesched implements Bikesched {
 
   @Override
   public <T extends @Nullable Object> NodeEventBuilder<T> newEvent(
-      EventType<T> eventType, String eventKey) {
-    Objects.requireNonNull(eventType, "eventType");
+      TypedEvent<T> typedEvent, String eventKey) {
+    Objects.requireNonNull(typedEvent, "typedEvent");
     ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultEventBuilder<>(
-        eventType.name(), eventKey, database.jsonMapper(), this::publish);
+        typedEvent.name(), eventKey, database.jsonMapper(), this::publish);
   }
 
   @Override
@@ -525,7 +527,7 @@ public final class DefaultBikesched implements Bikesched {
         TimeUnit.MILLISECONDS);
   }
 
-  private static void requireValidType(String type) {
-    ValidationUtil.requireName(type, "job type");
+  private static void requireValidName(String name) {
+    ValidationUtil.requireName(name, "job name");
   }
 }

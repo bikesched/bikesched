@@ -53,7 +53,7 @@ class NodeTest extends AbstractBikeschedTest {
                   + id
                   + ") was removed after missing heartbeats, registered it again");
     }
-    execute("delete from bikesched_jobs where type = 'after-removal'");
+    execute("delete from bikesched_jobs where name = 'after-removal'");
   }
 
   @Test
@@ -86,7 +86,7 @@ class NodeTest extends AbstractBikeschedTest {
             .build()) {
       // Scheduling needs no registration (the handler is never run: the node does not poll).
       bikesched.newJob("not-polling").handler(job -> {}).schedule();
-      execute("delete from bikesched_jobs where type = 'not-polling'");
+      execute("delete from bikesched_jobs where name = 'not-polling'");
 
       assertThat(bikesched.node().name()).isEqualTo("node-registers-later");
       assertThat(bikesched.node().id()).isEmpty();
@@ -152,7 +152,7 @@ class NodeTest extends AbstractBikeschedTest {
     // poller does not execute it right after the release).
     execute("insert into bikesched_nodes (id, name) values ('" + staleId + "', 'node-restarted')");
     execute(
-        "insert into bikesched_jobs (id, type, state, locked_by_node_id, lock_token, locked_at,"
+        "insert into bikesched_jobs (id, name, state, locked_by_node_id, lock_token, locked_at,"
             + " scheduled_at) values (gen_random_uuid(), 'orphan-restart', 'RUNNING', '"
             + staleId
             + "', gen_random_uuid(), now(), now() + interval '1 hour')");
@@ -168,13 +168,13 @@ class NodeTest extends AbstractBikeschedTest {
               () -> {
                 assertThat(
                         count(
-                            "type = 'orphan-restart' and state = 'SCHEDULED' and locked_by_node_id is null"))
+                            "name = 'orphan-restart' and state = 'SCHEDULED' and locked_by_node_id is null"))
                     .as("released by the node clean-up once the stale entry timed out")
                     .isEqualTo(1);
                 assertThat(nodeName(staleId)).isNull();
               });
     }
-    execute("delete from bikesched_jobs where type = 'orphan-restart'");
+    execute("delete from bikesched_jobs where name = 'orphan-restart'");
   }
 
   @Test
@@ -198,7 +198,7 @@ class NodeTest extends AbstractBikeschedTest {
               + deadNode
               + "', 'node-dead', now() - interval '1 minute')");
       execute(
-          "insert into bikesched_jobs (id, type, state, locked_by_node_id, lock_token, locked_at)"
+          "insert into bikesched_jobs (id, name, state, locked_by_node_id, lock_token, locked_at)"
               + " select gen_random_uuid(), 'orphan', 'RUNNING', '"
               + deadNode
               + "', gen_random_uuid(), now() from generate_series(1, 2)");
@@ -208,7 +208,7 @@ class NodeTest extends AbstractBikeschedTest {
       await()
           .untilAsserted(
               () -> {
-                assertThat(count("type = 'orphan' and state = 'SUCCEEDED'")).isEqualTo(2);
+                assertThat(count("name = 'orphan' and state = 'SUCCEEDED'")).isEqualTo(2);
                 assertThat(nodeName(deadNode)).isNull();
               });
     }

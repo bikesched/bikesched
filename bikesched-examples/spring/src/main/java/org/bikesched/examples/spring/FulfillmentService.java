@@ -5,7 +5,7 @@ import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
-import org.bikesched.event.EventType;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.spring.BikeschedTransactions;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -18,8 +18,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class FulfillmentService {
 
-  public static final EventType<FulfillmentFinished> FULFILLMENT_FINISHED =
-      EventType.of("fulfillment-finished", FulfillmentFinished.class);
+  public static final TypedEvent<FulfillmentFinished> FULFILLMENT_FINISHED =
+      TypedEvent.of("fulfillment-finished", FulfillmentFinished.class);
 
   private final FulfillmentRepository fulfillments;
   private final Bikesched bikesched;

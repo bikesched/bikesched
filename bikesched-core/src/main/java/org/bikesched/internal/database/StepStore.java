@@ -173,7 +173,7 @@ public final class StepStore {
               from bikesched_steps s
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING'
                and s.id = ? and s.job_id = j.id
-            returning j.state, s.wake_at, j.attempts, j.type,
+            returning j.state, s.wake_at, j.attempts, j.name,
                       case when j.scheduled_at < 'infinity' then j.scheduled_at end as due_at""";
 
   // Job.postpone in a step's handler: the step keeps no result and gives its attempt back, so the
@@ -195,7 +195,7 @@ public final class StepStore {
                                        then now() + ? * interval '1 millisecond' else now() end,
                    attempts = attempts - 1, locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
              where id = ? and lock_token = ? and state = 'RUNNING'
-            returning scheduled_at, attempts, type, cancel_requested_at is not null as cancel_requested""";
+            returning scheduled_at, attempts, name, cancel_requested_at is not null as cancel_requested""";
 
   // A step of a job, for a sleep.
   private static final String FIND_SLEEP_STEP_SQL =
@@ -1403,7 +1403,7 @@ public final class StepStore {
                     row.enumValue("state", JobState.class),
                     row.instant("wake_at"),
                     row.integer("attempts"),
-                    row.string("type"),
+                    row.string("name"),
                     row.instant("due_at")),
             jobId,
             lock.token(),
@@ -1414,7 +1414,7 @@ public final class StepStore {
     Suspension suspension = suspended.get();
     if (suspension.dueAt() != null) {
       // Due again at the deadline or wake-up time, or right away: the node wakes itself up.
-      db.dueAt(suspension.type(), suspension.dueAt());
+      db.dueAt(suspension.name(), suspension.dueAt());
     }
     boolean waiting = suspension.state() == JobState.WAITING;
     if (!recorded && waiting) {
@@ -1474,7 +1474,7 @@ public final class StepStore {
                       new Postponement(
                           row.instant("scheduled_at"),
                           row.integer("attempts"),
-                          row.string("type"),
+                          row.string("name"),
                           row.bool("cancel_requested")),
                   Sql.millis(delay),
                   jobId,
@@ -1484,7 +1484,7 @@ public final class StepStore {
           }
           Postponement postponement = job.get();
           // Due again after the delay, or right away: the node wakes itself up.
-          db.dueAt(postponement.type(), postponement.scheduledAt());
+          db.dueAt(postponement.name(), postponement.scheduledAt());
           String until = "until " + postponement.scheduledAt();
           if (step != null) {
             changes.add(Change.step(jobId, step.name(), "POSTPONED", lock.nodeId(), until));
@@ -1509,11 +1509,11 @@ public final class StepStore {
 
   /** A row of {@code POSTPONE_JOB_SQL}. */
   private record Postponement(
-      Instant scheduledAt, int attempts, String type, boolean cancelRequested) {}
+      Instant scheduledAt, int attempts, String name, boolean cancelRequested) {}
 
   /** A row of {@code SUSPEND_JOB_SQL}. */
   private record Suspension(
-      JobState state, Instant waitUntil, int attempts, String type, Instant dueAt) {}
+      JobState state, Instant waitUntil, int attempts, String name, Instant dueAt) {}
 
   /** A row of {@code FIND_SLEEP_STEP_SQL}. */
   private record SleepStep(

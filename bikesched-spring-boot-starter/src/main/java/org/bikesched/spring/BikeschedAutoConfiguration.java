@@ -8,9 +8,9 @@ import org.bikesched.Bikesched;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.jackson.JacksonJsonMapper;
-import org.bikesched.job.JobTypeFailureHandler;
-import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.RecurrenceParser;
+import org.bikesched.job.StandaloneJobFailureHandler;
+import org.bikesched.job.StandaloneJobHandler;
 import org.bikesched.job.listener.JobListener;
 import org.bikesched.micrometer.MicrometerEventListener;
 import org.bikesched.micrometer.MicrometerJobListener;
@@ -31,13 +31,13 @@ import org.springframework.core.env.Environment;
 /**
  * Creates the {@link Bikesched} node of a Spring Boot application from its {@code DataSource} and
  * the {@code bikesched.*} properties, registers the {@code @JobHandler} and
- * {@code @JobFailureHandler} methods of the context's beans (and its {@code JobTypeHandler} and
- * {@code JobTypeFailureHandler} beans) and starts polling with the application.
+ * {@code @JobFailureHandler} methods of the context's beans (and its {@code StandaloneJobHandler}
+ * and {@code StandaloneJobFailureHandler} beans) and starts polling with the application.
  *
  * <pre>{@code
  * @Component
  * class InvoiceJobs {
- *   @JobHandler(type = "send-invoice")
+ *   @JobHandler(name = "send-invoice")
  *   public void sendInvoice(Job job, Invoice invoice) { invoiceService.send(invoice); }
  * }
  * }</pre>
@@ -114,9 +114,9 @@ public class BikeschedAutoConfiguration {
    * @param customizers customizers, applied after the properties in {@code @Order}
    * @param listeners the {@link JobListener} beans, composed into one
    * @param eventListeners the {@link EventListener} beans, composed into one
-   * @param jobTypeHandlers the {@link JobTypeHandler} beans, registered as handlers
-   * @param jobTypeFailureHandlers the {@link JobTypeFailureHandler} beans, registered as failure
-   *     handlers
+   * @param standaloneHandlers the {@link StandaloneJobHandler} beans, registered as handlers
+   * @param standaloneFailureHandlers the {@link StandaloneJobFailureHandler} beans, registered as
+   *     failure handlers
    * @param jsonMapper the JSON mapper to use, if the application or bikesched-jackson provides one
    * @return the node
    */
@@ -131,8 +131,8 @@ public class BikeschedAutoConfiguration {
       ObjectProvider<BikeschedCustomizer> customizers,
       ObjectProvider<JobListener> listeners,
       ObjectProvider<EventListener> eventListeners,
-      ObjectProvider<JobTypeHandler<?>> jobTypeHandlers,
-      ObjectProvider<JobTypeFailureHandler<?>> jobTypeFailureHandlers,
+      ObjectProvider<StandaloneJobHandler<?>> standaloneHandlers,
+      ObjectProvider<StandaloneJobFailureHandler<?>> standaloneFailureHandlers,
       ObjectProvider<JsonMapper> jsonMapper) {
     var builder =
         Bikesched.builder()
@@ -167,8 +167,8 @@ public class BikeschedAutoConfiguration {
 
     Bikesched node = builder.build();
     int handlers = jobHandlerBeans.registerAll(node);
-    jobTypeHandlers.orderedStream().forEach(node::registerJobHandler);
-    jobTypeFailureHandlers.orderedStream().forEach(node::registerJobFailureHandler);
+    standaloneHandlers.orderedStream().forEach(node::registerJobHandler);
+    standaloneFailureHandlers.orderedStream().forEach(node::registerJobFailureHandler);
     LOG.info(
         "bikesched node {} is ready: {} @JobHandler/@JobFailureHandler method(s), {} job"
             + " listener(s), {} event listener(s), {} (polling is started with the application)",

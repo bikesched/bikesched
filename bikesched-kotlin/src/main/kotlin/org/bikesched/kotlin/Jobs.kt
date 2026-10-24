@@ -68,7 +68,7 @@ public inline fun <reified T> Job.step(
 /**
  * Reads a job, see `Bikesched.findJob(UUID)`.
  *
- * @return the job's id, type and state; `null` if there is no such job
+ * @return the job's id, name, type and state; `null` if there is no such job
  */
 public fun Bikesched.findJobOrNull(jobId: UUID): JobInfo? = findJob(jobId).orElse(null)
 

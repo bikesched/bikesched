@@ -11,11 +11,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.event.EventType;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
 import org.bikesched.job.Poll;
+import org.bikesched.job.TypedJob;
 
 /**
  * A webhook with a polling fallback: the job creates a payment, waits a short time for the
@@ -30,11 +30,11 @@ import org.bikesched.job.Poll;
 public final class PollExample {
 
   /** Takes a payment for an order. */
-  public static final JobType<Payment> TAKE_PAYMENT = JobType.of("take-payment", Payment.class);
+  public static final TypedJob<Payment> TAKE_PAYMENT = TypedJob.of("take-payment", Payment.class);
 
   /** The provider's webhook for a settled payment, keyed by the payment id. */
-  public static final EventType<PaymentSettled> PAYMENT_SETTLED =
-      EventType.of("payment-settled", PaymentSettled.class);
+  public static final TypedEvent<PaymentSettled> PAYMENT_SETTLED =
+      TypedEvent.of("payment-settled", PaymentSettled.class);
 
   /** How long the job waits for the webhook before it polls. */
   static final Duration WEBHOOK_TIMEOUT = Duration.ofSeconds(2);

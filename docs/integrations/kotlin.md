@@ -29,36 +29,35 @@ bikesched.handleJobs<Order>("order") { order ->    // this: Job, order: the mapp
     publishEvent(name = "order-shipped", key = order.id, payload = shipment)
 }
 
-bikesched.createJob(type = "order", payload = Order("o-1", 100))
+bikesched.createJob(name = "order", payload = Order("o-1", 100))
 bikesched.publishEvent(name = "payment-received", key = "o-1", payload = payment)
-bikesched.createRecurringJob(type = "cleanup", recurrence = every(1.hours)) { cleanup.run() }
+bikesched.createRecurringJob(name = "cleanup", recurrence = every(1.hours)) { cleanup.run() }
 ```
 
 ## Functions
 
 `createJob`, `createRecurringJob`, `publishEvent`, `waitForEvent` and `startJob` take named
-arguments. Only the
-type (resp. step, name and key) and the recurrence are required; omitted options keep the builder
-defaults:
+arguments. Only the job name (resp. step, event name and key) and the recurrence are required;
+omitted options keep the builder defaults:
 
 | Function | Arguments |
 |---|---|
-| `handleJobs<T>(type) { payload -> }`, `handleJobs(type) { }` | registers the handler; the `Job` is the receiver |
-| `handleJobFailures<T>(type) { payload -> }`, `handleJobFailures(type) { }` | registers the [failure handler](../jobs/README.md#failure-handlers); the `FailedJob` is the receiver |
-| `createJob(type, payload, at, delay, priority, maxAttempts, timeout, connection, idempotencyKey, onFailure) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id; with an [`idempotencyKey`](../jobs/README.md#idempotency-keys), the id of the existing job with the key |
-| `createJob(jobType, payload, at, delay, priority, maxAttempts, timeout, connection, idempotencyKey, onFailure) { … }` | the same for a `JobType<T>`: the payload has the type's payload class, the optional handlers get it as `T` |
-| `createRecurringJob(type, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout, onFailure) { … }` | registers a recurring job and returns the id of its pending occurrence |
+| `handleJobs<T>(name) { payload -> }`, `handleJobs(name) { }` | registers the handler; the `Job` is the receiver |
+| `handleJobFailures<T>(name) { payload -> }`, `handleJobFailures(name) { }` | registers the [failure handler](../jobs/README.md#failure-handlers); the `FailedJob` is the receiver |
+| `createJob(name, payload, at, delay, priority, maxAttempts, timeout, connection, idempotencyKey, onFailure) { … }` | schedules a job (`at` or `delay`, otherwise due now; `connection` joins the caller's transaction) and returns its id; with an [`idempotencyKey`](../jobs/README.md#idempotency-keys), the id of the existing job with the key |
+| `createJob(typedJob, payload, at, delay, priority, maxAttempts, timeout, connection, idempotencyKey, onFailure) { … }` | the same for a `TypedJob<T>`: the payload has the typed job's payload class, the optional handlers get it as `T` |
+| `createRecurringJob(name, recurrence, payload, firstRun, delay, priority, maxAttempts, timeout, onFailure) { … }` | registers a recurring job and returns the id of its pending occurrence |
 | `Bikesched.publishEvent(name, key, payload, retention, connection, idempotencyKey)` | publishes an event and returns its id; with an [`idempotencyKey`](../multi-step-jobs/events.md#idempotency-keys), the id of the earlier event with the key while it is kept |
 | `Job.publishEvent(name, key, payload, retention, stepName)` | publishes once as a durable job step and returns the event's id, the same on every run |
 | `waitForEvent<T>(step, name, key, timeout, onFailure)` (in a handler) | waits for an event and returns its payload; once the `timeout` (or the default event timeout) passes, the job fails, unless `onFailure = { failing -> … }` resolves the wait with a fallback (e.g. `waitForEvent<Payment?>(…, timeout = 3.days, onFailure = { it.resolve(null) })`) |
 | `step<T>(name, compensation, retryBackoff, onFailure) { … }` (in a handler) | runs a durable step; the optional `compensation = { step, result -> … }` undoes it if the job is cancelled or fails permanently; `onFailure = { failing -> … }` handles its failure in the job's last attempt and may `failing.resolve(x)` it with a fallback |
-| `startJob(type, payload, stepName, at, delay, priority, maxAttempts, timeout, compensation)` (in a handler) | starts a [child job](../multi-step-jobs/child-jobs.md) once as a durable step and returns its id, the same on every run; the optional `compensation = { step, childId -> … }` e.g. cancels it |
+| `startJob(name, payload, stepName, at, delay, priority, maxAttempts, timeout, compensation)` (in a handler) | starts a [child job](../multi-step-jobs/child-jobs.md) once as a durable step and returns its id, the same on every run; the optional `compensation = { step, childId -> … }` e.g. cancels it |
 | `poll<T>(name, interval, timeout, onFailure) { step -> … }` (in a handler) | polls until the trailing handler returns `Poll.ready(value)`, checking every `interval` (a `Duration` or a `RetryBackoff`); once the optional `timeout` passes, the job fails with a `PollTimeoutException`, unless `onFailure = { failing -> … }` resolves the poll (it also handles a check failing in the last attempt); a `poll<Unit>` stores no value |
 | `awaitJob<T>(childJobId, timeout)` (in a handler) | waits for a child job and returns its `JobResult<T>`; `JobResult.TimedOut` once the optional `timeout` passed |
 
-The optional trailing handler of `createJob` and `createRecurringJob` is registered for the type
+The optional trailing handler of `createJob` and `createRecurringJob` is registered for the name
 unless it already has one; with a `payload` it gets the payload as its type, otherwise only the
-`Job`. `onFailure = { payload -> … }` (with the `FailedJob` as receiver) registers the type's
+`Job`. `onFailure = { payload -> … }` (with the `FailedJob` as receiver) registers the name's
 failure handler the same way.
 
 ## Helpers for the Java API

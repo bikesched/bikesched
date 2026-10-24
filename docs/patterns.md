@@ -52,7 +52,7 @@ UUID jobId = bikesched.newJob(ANSWER_MESSAGE)
 ```
 
 - Concurrent deliveries are deduplicated too: the second waits for the first transaction.
-- A key stays taken while the job exists (its retention). Keys are unique per job type, so add the
+- A key stays taken while the job exists (its retention). Keys are unique per job name, so add the
   tenant to keys from several tenants.
 
 Example: [Chat](../bikesched-examples/README.md#chat). Details:

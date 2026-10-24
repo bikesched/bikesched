@@ -46,7 +46,7 @@ class AdminExampleTest {
             await()
                 .atMost(Duration.ofSeconds(30))
                 .until(
-                    () -> get(client, base + "api/jobs?type=send-invoice&state=FAILED"),
+                    () -> get(client, base + "api/jobs?name=send-invoice&state=FAILED"),
                     body -> body.contains("SMTP timeout while sending invoice 4"));
 
         // The node records the job history, so a failed invoice's detail has its entries.
@@ -63,7 +63,7 @@ class AdminExampleTest {
                         get(
                             client,
                             base
-                                + "api/jobs?type="
+                                + "api/jobs?name="
                                 + AdminExample.SYNC_INVENTORY
                                 + "&state=SUCCEEDED"),
                     body -> body.contains("\"state\":\"SUCCEEDED\""));

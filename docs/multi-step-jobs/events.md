@@ -137,11 +137,11 @@ same durable behavior.
 
 ## Typed events
 
-An `EventType` names an event together with its payload class, shared by the publisher and the
+An `TypedEvent` names an event together with its payload class, shared by the publisher and the
 waiting jobs:
 
 ```java
-static final EventType<Payment> PAYMENT_RECEIVED = EventType.of("payment-received", Payment.class);
+static final TypedEvent<Payment> PAYMENT_RECEIVED = TypedEvent.of("payment-received", Payment.class);
 
 Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, order.id());
 

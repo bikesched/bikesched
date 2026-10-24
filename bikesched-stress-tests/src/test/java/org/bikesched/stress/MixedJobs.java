@@ -10,7 +10,7 @@ import org.bikesched.Bikesched;
  * job runs a step, starts a child job, waits for an event, sleeps, waits for the child and runs a
  * last step. The child's first attempt exceeds its timeout and is retried.
  *
- * <p>Each instance uses job types and an event name of its own. Step bodies and child attempts are
+ * <p>Each instance uses job names and an event name of its own. Step bodies and child attempts are
  * recorded in {@link #executions()} ({@code one}, {@code two}, {@code child-attempt-<n>}).
  */
 final class MixedJobs {
@@ -26,7 +26,7 @@ final class MixedJobs {
   private final String eventName = "mixed-event-" + UUID.randomUUID();
   private final Executions executions = new Executions();
 
-  /** Registers the handlers of both job types on the node. */
+  /** Registers the handlers of both job names on the node. */
   void register(Bikesched node) {
     node.registerJobHandler(
         parentType,
@@ -81,7 +81,7 @@ final class MixedJobs {
   }
 
   private static String count(String type, String state) {
-    return "select count(*) from bikesched_jobs where type = '"
+    return "select count(*) from bikesched_jobs where name = '"
         + type
         + "' and state = '"
         + state

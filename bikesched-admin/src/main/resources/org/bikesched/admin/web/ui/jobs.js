@@ -30,15 +30,18 @@ const POLL_MS = 3000;
 const RETRY_MS = 10000;
 
 // The route of the schedule form is #/jobs/new; these parameters only prefill it.
-const SCHEDULE_PARAMS = ['schedType', 'from'];
+const SCHEDULE_PARAMS = ['schedName', 'from'];
+
+// How a job was started (its type), as shown in its detail.
+const JOB_TYPES = { SINGLE: 'Single', RECURRING: 'Recurring', CHILD: 'Child job' };
 const listParams = (params) =>
   Object.fromEntries(Object.entries(params).filter(([name]) => !SCHEDULE_PARAMS.includes(name)));
 
-export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChanged, onScheduled }) {
+export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onChanged, onScheduled }) {
   const canSchedule = me?.level === 'OPERATE';
-  // An id search (route.params.id) replaces the type and state filters.
+  // An id search (route.params.id) replaces the name and state filters.
   const id = route.params.id || '';
-  const type = id ? '' : route.params.type || '';
+  const jobName = id ? '' : route.params.name || '';
   const state = id ? '' : route.params.state || '';
   const selected = state ? state.split(',') : [];
   const [jobs, setJobs] = useState([]);
@@ -49,7 +52,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
   const load = async (before) => {
     setLoading(true);
     try {
-      const params = id ? { id, limit: PAGE_SIZE } : { type, state, before, limit: PAGE_SIZE };
+      const params = id ? { id, limit: PAGE_SIZE } : { name: jobName, state, before, limit: PAGE_SIZE };
       const body = await getBody(`api/jobs${query(params)}`);
       setJobs((previous) => (before ? [...previous, ...body.jobs] : body.jobs));
       setNext(body.next);
@@ -68,22 +71,22 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
     setJobs([]);
     setNext(null);
     load();
-  }, [id, type, state, reloadKey]);
+  }, [id, jobName, state, reloadKey]);
 
   const counts = {};
-  for (const summary of types) {
-    if (!type || summary.type === type) {
+  for (const summary of jobNames) {
+    if (!jobName || summary.name === jobName) {
       for (const [name, count] of Object.entries(summary.counts)) {
         counts[name] = (counts[name] || 0) + count;
       }
     }
   }
 
-  // Handled types without jobs are only offered by the schedule form.
-  const listedTypes = types.filter((summary) => summary.total > 0);
-  const typeItems = listedTypes.map((summary) => {
+  // Handled names without jobs are only offered by the schedule form.
+  const listedNames = jobNames.filter((summary) => summary.total > 0);
+  const nameItems = listedNames.map((summary) => {
     const failed = (summary.counts.FAILED || 0) + (summary.counts.COMPENSATION_FAILED || 0);
-    const item = { name: summary.type, count: summary.total, recurring: Boolean(summary.recurrence) };
+    const item = { name: summary.name, count: summary.total, recurring: Boolean(summary.recurrence) };
     if (failed > 0) return { ...item, sub: `${failed} failed`, subClass: 'sub-failed' };
     if (summary.recurrence) return { ...item, sub: summary.recurrence };
     return item;
@@ -110,10 +113,10 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
 
   return html`
     <div class="view-head">
-      <h1>${id ? `Job id ${id}` : type || 'All jobs'}</h1>
+      <h1>${id ? `Job id ${id}` : jobName || 'All jobs'}</h1>
       <div class="row">
         ${canSchedule &&
-        html`<button type="button" class="button primary" onClick=${() => schedule({ schedType: type })}>
+        html`<button type="button" class="button primary" onClick=${() => schedule({ schedName: jobName })}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
             stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
           Schedule job
@@ -123,18 +126,18 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
     <div class="toolbar">
       <div class="field picker-field">
         <div class="field-head">
-          <span class="field-label">Job type</span>
-          <span class="muted">${plural(listedTypes.length, 'job type', 'job types')}</span>
+          <span class="field-label">Job name</span>
+          <span class="muted">${plural(listedNames.length, 'job name', 'job names')}</span>
         </div>
-        <${Picker} label="Job type" allLabel="All job types" placeholder="Search job types"
-          items=${typeItems} selected=${type || null}
-          onSelect=${(next) => navigate({ section: 'jobs', params: { type: next, state } })} />
+        <${Picker} label="Job name" allLabel="All job names" placeholder="Search job names"
+          items=${nameItems} selected=${jobName || null}
+          onSelect=${(next) => navigate({ section: 'jobs', params: { name: next, state } })} />
       </div>
       <${IdSearch} kind="job" value=${id} onSearch=${search} />
     </div>
     ${id
       ? html`<${IdSearchChip} kind="job" value=${id} onClear=${() => search('')}
-          note="Type and state filters are off while searching by id." />`
+          note="Name and state filters are off while searching by id." />`
       : html`<div class="chips" role="group" aria-label="Filter by state">
       <button type="button" class="chip" aria-pressed=${selected.length === 0} onClick=${() => setStates([])}>
         All states
@@ -155,7 +158,7 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
           <table class="table">
             <thead>
               <tr>
-                <th>Job</th><th>Type</th><th>State</th><th>Attempts</th>
+                <th>Job</th><th>Name</th><th>State</th><th>Attempts</th>
                 <${SortedTh} label="Created" descending=${true} title="Newest first" />
                 <th>Scheduled</th><th>Updated</th><th>Last error</th>
               </tr>
@@ -166,10 +169,10 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
                   <tr key=${job.id} class=${job.id === route.id ? 'selected' : ''} onClick=${() => open(job.id)}>
                     <td><a class="mono" href=${href(job.id)}>${shortId(job.id)}</a></td>
                     <td class="mono">
-                      ${job.type}${job.recurrence && html` <${RecurringIcon} />`}
+                      ${job.name}${job.recurrence && html` <${RecurringIcon} />`}
                       ${job.recurrence && html`<div class="sub">${job.recurrence}</div>`}
                       ${job.parentJobId &&
-                      html`<div class="sub">child of ${job.parentJobType || shortId(job.parentJobId)}</div>`}
+                      html`<div class="sub">child of ${job.parentJobName || shortId(job.parentJobId)}</div>`}
                     </td>
                     <td><${Badge} state=${job.state} /></td>
                     <td class="mono">${job.attempts}/${job.maxAttempts}</td>
@@ -191,8 +194,8 @@ export function JobsView({ route, navigate, types, me, nodes, reloadKey, onChang
       ${route.id === 'new'
         ? canSchedule
           ? html`<${ScheduleForm} key=${SCHEDULE_PARAMS.map((p) => route.params[p] || '').join('/')}
-            types=${types} payloadsShown=${me.payloadsShown}
-            prefill=${{ from: route.params.from, type: route.params.schedType }}
+            jobNames=${jobNames} payloadsShown=${me.payloadsShown}
+            prefill=${{ from: route.params.from, name: route.params.schedName }}
             onClose=${closeForm}
             onScheduled=${(jobId) => {
               navigate({ section: 'jobs', id: jobId, params: listParams(route.params) });
@@ -335,6 +338,7 @@ export function JobDetail({ jobId, me, nodes, stepHref, onUpdate, onChanged, onC
   }[live];
 
   const fields = [
+    ['Type', JOB_TYPES[job.type] || job.type],
     ['Attempts', `${job.attempts}/${job.maxAttempts}`],
     ['Priority', job.priority],
     ['Scheduled', dateTime(job.scheduledAt)],
@@ -359,7 +363,7 @@ export function JobDetail({ jobId, me, nodes, stepHref, onUpdate, onChanged, onC
   return html`
     <aside class="panel detail" aria-label="Job details">
       ${ancestors.length > 0 && html`<${AncestorPath} ancestors=${ancestors} job=${job} />`}
-      <${DetailHead} title=${job.type} state=${job.state} id=${job.id} onClose=${onClose}>
+      <${DetailHead} title=${job.name} state=${job.state} id=${job.id} onClose=${onClose}>
         <span role="status" class=${`live live-${live}`}><span class="live-dot"></span>${liveText}</span>
       <//>
       <dl class="meta">
@@ -372,7 +376,7 @@ export function JobDetail({ jobId, me, nodes, stepHref, onUpdate, onChanged, onC
         <span>
           Child job of
           ${parent.exists
-            ? html` <a class="mono" href=${jobHref(parent.id)}>${parent.type} ${shortId(parent.id)}</a>`
+            ? html` <a class="mono" href=${jobHref(parent.id)}>${parent.name} ${shortId(parent.id)}</a>`
             : html` <span class="mono">${shortId(parent.id)} (deleted)</span>`}.
           Its outcome completes the parent's step${parent.stepName && html` <code>${parent.stepName}</code>`}.
         </span>
@@ -519,7 +523,7 @@ function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
     <aside class="panel detail" aria-label="Step details">
       <nav class="path" aria-label="Job">
         ${job
-          ? html`<a class="mono" href=${backHref}>${job.type} ${shortId(job.id)}</a>`
+          ? html`<a class="mono" href=${backHref}>${job.name} ${shortId(job.id)}</a>`
           : html`<span class="mono muted">${shortId(step.jobId)}</span>`}
         <span class="path-sep">›</span>
         <span class="mono strong">${step.name}</span>
@@ -586,13 +590,13 @@ function AncestorPath({ ancestors, job }) {
           ? html`<span class="path-sep">…</span>`
           : html`
               ${item.ancestor.exists
-                ? html`<a class="mono" href=${jobHref(item.ancestor.id)}>${item.ancestor.type}</a>`
+                ? html`<a class="mono" href=${jobHref(item.ancestor.id)}>${item.ancestor.name}</a>`
                 : html`<span class="mono muted">${shortId(item.ancestor.id)} (deleted)</span>`}
               <span class="path-sep">›</span>
               ${item.ancestor.stepName &&
               html`<span class="mono muted">${item.ancestor.stepName}</span><span class="path-sep">›</span>`}`,
       )}
-      <span class="mono strong">${job.type}</span>
+      <span class="mono strong">${job.name}</span>
     </nav>`;
 }
 
@@ -668,7 +672,7 @@ function Recurrence({ job }) {
     let stopped = false;
     const load = () => {
       if (document.hidden) return;
-      getBody(`api/recurring-runs${query({ type: job.type, limit: RECURRING_RUNS })}`).then(
+      getBody(`api/recurring-runs${query({ name: job.name, limit: RECURRING_RUNS })}`).then(
         (body) => !stopped && (setRuns(body), setError(null)),
         (e) => !stopped && setError(e.message),
       );
@@ -681,7 +685,7 @@ function Recurrence({ job }) {
       clearInterval(poll);
       clearInterval(tick);
     };
-  }, [job.type]);
+  }, [job.name]);
   if (error) return html`<p class="error-text">${error}</p>`;
   if (!runs) return html`<p class="muted">Loading…</p>`;
 
@@ -719,7 +723,7 @@ function Recurrence({ job }) {
           ? html`<p class="muted">No previous runs yet.</p>`
           : html`<ol class="runs">${previous.map((other) => run(other, elapsed(other.scheduledAt, other.finishedAt)))}</ol>`}
       </section>
-      <a href=${toHash({ section: 'jobs', params: { type: job.type } })}>All ${job.type} jobs in the list</a>
+      <a href=${toHash({ section: 'jobs', params: { name: job.name } })}>All ${job.name} jobs in the list</a>
     </div>`;
 }
 
@@ -727,7 +731,7 @@ function ChildJob({ step }) {
   return html`
     <div class="child">
       <span class="muted small">Child</span>
-      <span class="mono">${step.childJobType}</span>
+      <span class="mono">${step.childJobName}</span>
       <span class="mono muted">${shortId(step.childJobId)}</span>
       ${step.childJobState && html`<${Badge} state=${step.childJobState} />`}
       ${step.childJobExists

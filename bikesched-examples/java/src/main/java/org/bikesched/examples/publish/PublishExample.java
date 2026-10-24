@@ -8,10 +8,10 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.bikesched.Bikesched;
-import org.bikesched.event.EventType;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * A job publishes an event exactly once as a durable step ({@code job.newEvent(…).publish()}), and
@@ -29,15 +29,15 @@ import org.bikesched.job.JobType;
 public final class PublishExample {
 
   /** Ships an order and publishes {@link #ORDER_SHIPPED}. */
-  public static final JobType<ShipOrder> SHIP_ORDER = JobType.of("ship-order", ShipOrder.class);
+  public static final TypedJob<ShipOrder> SHIP_ORDER = TypedJob.of("ship-order", ShipOrder.class);
 
   /** Waits for {@link #ORDER_SHIPPED} and mails the customer. */
-  public static final JobType<NotifyCustomer> NOTIFY_CUSTOMER =
-      JobType.of("notify-customer", NotifyCustomer.class);
+  public static final TypedJob<NotifyCustomer> NOTIFY_CUSTOMER =
+      TypedJob.of("notify-customer", NotifyCustomer.class);
 
   /** Published by the shipping job, keyed by the order id. */
-  public static final EventType<OrderShipped> ORDER_SHIPPED =
-      EventType.of("order-shipped", OrderShipped.class);
+  public static final TypedEvent<OrderShipped> ORDER_SHIPPED =
+      TypedEvent.of("order-shipped", OrderShipped.class);
 
   /**
    * The payload of the shipping job.

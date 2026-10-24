@@ -7,7 +7,7 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Validates the names and keys stored in {@code text} columns: node names, job types, step names,
+ * Validates the names and keys stored in {@code text} columns: node names, job names, step names,
  * event names, event keys and recurrence descriptions. The limits keep index entries below
  * PostgreSQL's B-tree maximum of 2704 bytes and match the CHECK constraints in the schema, so
  * callers get an {@link IllegalArgumentException} naming the parameter instead of an SQL error.
@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
 public final class ValidationUtil {
 
   /**
-   * The maximum length of a node name, job type, step name, event name or recurrence description.
+   * The maximum length of a node name, job name, step name, event name or recurrence description.
    */
   public static final int MAX_NAME_LENGTH = 200;
 
@@ -48,7 +48,7 @@ public final class ValidationUtil {
    * #MAX_NAME_BYTES} bytes in UTF-8.
    *
    * @param name the name to check
-   * @param what what the name is, for the messages, e.g. {@code "job type"}
+   * @param what what the name is, for the messages, e.g. {@code "job name"}
    * @return the name
    * @throws NullPointerException if the name is null
    * @throws IllegalArgumentException if the name is blank or too long

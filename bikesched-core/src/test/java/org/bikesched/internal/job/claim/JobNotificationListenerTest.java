@@ -28,7 +28,7 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
 
   @AfterEach
   void deleteJobs() throws SQLException {
-    execute("delete from bikesched_jobs where type like 'listener-%'");
+    execute("delete from bikesched_jobs where name like 'listener-%'");
   }
 
   @Test

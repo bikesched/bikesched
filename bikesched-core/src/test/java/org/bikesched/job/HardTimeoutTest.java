@@ -82,7 +82,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
                   m.startsWith(
                           "Job "
                               + jobId
-                              + " of type "
+                              + " named "
                               + type
                               + " did not stop within PT0.3S after its timeout of PT0.2S"
                               + " (attempt 1 of 2), abandoning thread")
@@ -112,7 +112,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
           .isOne();
     } finally {
       release.set(true);
-      execute("delete from bikesched_jobs where type = '" + type + "'");
+      execute("delete from bikesched_jobs where name = '" + type + "'");
     }
   }
 
@@ -141,7 +141,7 @@ class HardTimeoutTest extends AbstractBikeschedTest {
           .isOne();
     } finally {
       release.set(true);
-      execute("delete from bikesched_jobs where type = '" + type + "'");
+      execute("delete from bikesched_jobs where name = '" + type + "'");
     }
   }
 

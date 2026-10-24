@@ -18,12 +18,13 @@ and without any coordinator besides PostgreSQL.
 - **Node**: a `Bikesched` instance. It registers in `bikesched_nodes`, sends heartbeats, polls for
   due jobs and runs them on virtual threads, up to its concurrency limit. Nodes clean up after each
   other: the running jobs of a crashed node are released and retried elsewhere.
-- **Job**: a unit of work of a *type*, with an optional JSON payload, a priority, a retry limit and
-  a timeout. A handler registered for the type runs it.
+- **Job**: a unit of work with a *name*, an optional JSON payload, a priority, a retry limit and a
+  timeout. A handler registered for the name runs it. Its *type* tells how it was started: single,
+  recurring or as a child job.
 - **Step**: a named, durable part of a job. A completed step is not executed again when the job is
   retried; its stored result is returned instead. Steps can declare a compensation that undoes them
   if the job is cancelled or fails (a saga).
-- **Recurring job**: a job type with a `Recurrence`; each run is a regular job (an *occurrence*).
+- **Recurring job**: a job name with a `Recurrence`; each run is a regular job (an *occurrence*).
 - **Event**: a message with a name and a key. A job can wait for an event as a step; it is
   suspended without holding a thread until the event is published, then resumes.
 - **Child job**: a job started exactly once as a step of its parent. The parent can wait for it

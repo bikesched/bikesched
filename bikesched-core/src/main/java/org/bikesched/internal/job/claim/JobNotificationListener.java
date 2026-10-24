@@ -19,7 +19,7 @@ import org.slf4j.MDC;
 
 /**
  * Receives the notifications of due jobs ({@link JobStore#notifyDue}, sent by every node's {@code
- * DueJobsNotifier}) on the {@code bikesched-listener} thread, and wakes the poller for the types
+ * DueJobsNotifier}) on the {@code bikesched-listener} thread, and wakes the poller for the names
  * the node handles.
  *
  * <ul>
@@ -46,7 +46,7 @@ final class JobNotificationListener {
   private static final Logger LOG = LoggerFactory.getLogger(JobNotificationListener.class);
 
   private final JobStore store;
-  private final Supplier<Set<String>> types;
+  private final Supplier<Set<String>> names;
   private final Runnable wakeUp;
   private final Runnable connected;
   private final Duration retryDelay;
@@ -58,8 +58,8 @@ final class JobNotificationListener {
 
   /**
    * @param store listens and sends the self-check
-   * @param types the job types the node handles
-   * @param wakeUp polls now, for a notification of a handled type
+   * @param names the job names the node handles
+   * @param wakeUp polls now, for a notification of a handled name
    * @param connected polls now and runs the next-due query, after each (re)connect
    * @param retryDelay how long to wait before reconnecting
    * @param nodeName the node's name, for logging
@@ -67,14 +67,14 @@ final class JobNotificationListener {
    */
   JobNotificationListener(
       JobStore store,
-      Supplier<Set<String>> types,
+      Supplier<Set<String>> names,
       Runnable wakeUp,
       Runnable connected,
       Duration retryDelay,
       String nodeName,
       UUID nodeId) {
     this.store = store;
-    this.types = types;
+    this.names = names;
     this.wakeUp = wakeUp;
     this.connected = connected;
     this.retryDelay = retryDelay;
@@ -193,7 +193,7 @@ final class JobNotificationListener {
         if (payload.equals(token)) {
           checkUntil = null;
           LOG.debug("bikesched node {} ({}) received its self-check", nodeName, nodeId);
-        } else if (types.get().contains(payload)) {
+        } else if (names.get().contains(payload)) {
           handled = true;
         }
       }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // A select box with a search field: typing filters the entries by substring, so hundreds of job
-// types or event names stay usable.
+// names or event names stay usable.
 import { RecurringIcon } from './format.js';
 import { html, useEffect, useRef, useState } from './html.js';
 

@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>due now: this node's {@link DueTimes} right away, and all listening nodes through one
  *       batched notification ({@link JobStore#notifyDue}) per {@code notifyInterval}: the first
- *       type of an empty batch schedules the flush on the {@code bikesched-notifier} thread, so an
+ *       name of an empty batch schedules the flush on the {@code bikesched-notifier} thread, so an
  *       idle node sends nothing and a busy one at most one notifying commit per interval
  *   <li>due later: only this node's {@link DueTimes} (the other nodes find such jobs with their
  *       next-due query)
@@ -72,12 +72,12 @@ public final class DueJobsNotifier implements DueJobs, AutoCloseable {
 
   @Override
   @SuppressWarnings("FutureReturnValueIgnored") // flush() never throws
-  public void dueNow(Set<String> types) {
-    local.dueNow(types);
+  public void dueNow(Set<String> names) {
+    local.dueNow(names);
     if (!notifying) {
       return;
     }
-    batch.addAll(types);
+    batch.addAll(names);
     if (flushScheduled.compareAndSet(false, true)) {
       try {
         executor.schedule(this::flush, notifyInterval.toMillis(), TimeUnit.MILLISECONDS);
@@ -88,8 +88,8 @@ public final class DueJobsNotifier implements DueJobs, AutoCloseable {
   }
 
   @Override
-  public void dueAt(String type, Instant dueAt) {
-    local.dueAt(type, dueAt);
+  public void dueAt(String name, Instant dueAt) {
+    local.dueAt(name, dueAt);
   }
 
   @Override
@@ -99,20 +99,20 @@ public final class DueJobsNotifier implements DueJobs, AutoCloseable {
 
   /** Sends the batch; never throws (it runs on the notifier thread and in {@link #close()}). */
   private void flush() {
-    // Cleared before draining: a type added from now on is either drained below or schedules the
+    // Cleared before draining: a name added from now on is either drained below or schedules the
     // next flush.
     flushScheduled.set(false);
-    List<String> types = new ArrayList<>();
+    List<String> names = new ArrayList<>();
     for (Iterator<String> pending = batch.iterator(); pending.hasNext(); ) {
-      types.add(pending.next());
+      names.add(pending.next());
       pending.remove();
     }
-    if (types.isEmpty()) {
+    if (names.isEmpty()) {
       return;
     }
     try {
-      store.notifyDue(types);
-      LOG.debug("bikesched node {} notified due jobs of type(s) {}", nodeName, types);
+      store.notifyDue(names);
+      LOG.debug("bikesched node {} notified due jobs named {}", nodeName, names);
       if (failing) {
         failing = false;
         LOG.info("bikesched node {} notifies due jobs again", nodeName);
@@ -121,10 +121,10 @@ public final class DueJobsNotifier implements DueJobs, AutoCloseable {
       if (!failing) {
         failing = true;
         LOG.warn(
-            "bikesched node {} could not notify due jobs of type(s) {}; other nodes start them on"
+            "bikesched node {} could not notify due jobs named {}; other nodes start them on"
                 + " their next poll",
             nodeName,
-            types,
+            names,
             e);
       }
     }

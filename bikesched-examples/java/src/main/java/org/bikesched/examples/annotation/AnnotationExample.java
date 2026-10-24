@@ -11,7 +11,7 @@ import org.bikesched.annotation.JobHandlers;
 import org.bikesched.examples.annotation.MailJobs.Mail;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * Job handlers declared with {@code @JobHandler} (module {@code bikesched-annotations}): {@link
@@ -36,8 +36,8 @@ public final class AnnotationExample {
   public List<UUID> scheduleJobs() {
     var mail = new Mail("alice@example.com", "Welcome");
     return List.of(
-        bikesched.newJob(JobType.of(MailJobs.SEND_MAIL, Mail.class)).payload(mail).schedule(),
-        bikesched.newJob(JobType.of(MailJobs.ARCHIVE_MAIL, Mail.class)).payload(mail).schedule(),
+        bikesched.newJob(TypedJob.of(MailJobs.SEND_MAIL, Mail.class)).payload(mail).schedule(),
+        bikesched.newJob(TypedJob.of(MailJobs.ARCHIVE_MAIL, Mail.class)).payload(mail).schedule(),
         bikesched.newJob(MailJobs.CHECK_MAILBOX).schedule());
   }
 

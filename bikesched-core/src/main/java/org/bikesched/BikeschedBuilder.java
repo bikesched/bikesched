@@ -189,7 +189,7 @@ public final class BikeschedBuilder {
 
   /**
    * Sets how often this node runs a failure handler before giving up on it (optional, default 3):
-   * the {@link org.bikesched.job.JobFailureHandler failure handler of a job type} and the {@link
+   * the {@link org.bikesched.job.JobFailureHandler failure handler of a job name} and the {@link
    * org.bikesched.job.StepBuilder#onFailure(org.bikesched.job.StepFailureHandler) failure handler
    * of a step}. A run counts once it started, so a handler that crashes the node counts too. Once
    * given up, the job ends ({@code FAILED} or {@code COMPENSATION_FAILED}), or the step is {@code
@@ -462,7 +462,7 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * How long a node collects the job types it made due now before it notifies the other nodes in
+   * How long a node collects the job names it made due now before it notifies the other nodes in
    * one statement; defaults to 100 milliseconds. It is the extra latency of such jobs on other
    * nodes, and limits the notifying commits of a node to one per interval (they are serialized
    * database-wide). An idle node sends nothing.

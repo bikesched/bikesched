@@ -6,24 +6,24 @@ import org.bikesched.job.JobState;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The jobs of one type, see {@link Admin#findJobTypes()}.
+ * The jobs of one name, see {@link Admin#findJobNames()}.
  *
- * @param type the job type
+ * @param name the job name
  * @param counts the number of jobs per state; states without jobs are missing
- * @param recurrence the recurrence of a recurring job type (from its pending occurrence); {@code
- *     null} for other types
- * @param handled whether this node has a handler for the type, so it can schedule jobs of it
+ * @param recurrence the recurrence of a recurring job (from its pending occurrence); {@code null}
+ *     for other names
+ * @param handled whether this node has a handler for the name, so it can schedule jobs of it
  */
-public record JobTypeSummary(
-    String type, Map<JobState, Integer> counts, @Nullable String recurrence, boolean handled) {
+public record JobNameSummary(
+    String name, Map<JobState, Integer> counts, @Nullable String recurrence, boolean handled) {
 
   /** Copies the counts. */
-  public JobTypeSummary {
+  public JobNameSummary {
     counts = Map.copyOf(counts);
   }
 
   /**
-   * Returns the number of jobs of this type.
+   * Returns the number of jobs of this name.
    *
    * @return the sum of all counts
    */
@@ -32,7 +32,7 @@ public record JobTypeSummary(
   }
 
   /**
-   * Returns the number of jobs of this type in the given state.
+   * Returns the number of jobs of this name in the given state.
    *
    * @param state the state
    * @return the count, {@code 0} if there are none

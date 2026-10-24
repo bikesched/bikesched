@@ -7,6 +7,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedException;
@@ -33,25 +35,25 @@ class JobSchedulingTest extends AbstractBikeschedTest {
               count(
                   "id = '"
                       + jobId
-                      + "' and state = 'SUCCEEDED' and type = 'print' "
+                      + "' and state = 'SUCCEEDED' and name = 'print' "
                       + "and payload = '{\"greeting\": \"hello\"}'::jsonb"))
           .isEqualTo(1);
     }
   }
 
   @Test
-  void schedulingUnknownJobTypeFails() {
+  void schedulingUnknownJobNameFails() {
     try (Bikesched bikesched = testNode("node-unknown").build()) {
       bikesched.registerJobHandler("known", () -> {});
 
       assertThatThrownBy(() -> bikesched.newJob("unknown").schedule())
           .isInstanceOf(IllegalArgumentException.class)
-          .hasMessage("Unknown job type 'unknown': no handler registered (known types: [known])");
+          .hasMessage("Unknown job name 'unknown': no handler registered (known names: [known])");
     }
   }
 
   @Test
-  void handlerCanOnlyBeRegisteredOncePerType() {
+  void handlerCanOnlyBeRegisteredOncePerName() {
     try (Bikesched bikesched = testNode("node-duplicate").build()) {
       bikesched.registerJobHandler("once", () -> {});
 
@@ -71,7 +73,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
           bikesched.newJob("inline").payload("{\"x\": 1}").handler(received::complete).schedule();
 
       assertThat(received.get(10, java.util.concurrent.TimeUnit.SECONDS).id()).isEqualTo(jobId);
-      // The handler is registered under the job type now: scheduling by name works as well.
+      // The handler is registered under the job name now: scheduling by name works as well.
       assertThat(bikesched.newJob("inline").schedule()).isNotNull();
       assertThatThrownBy(() -> bikesched.registerJobHandler("inline", () -> {}))
           .hasMessageContaining("already registered");
@@ -113,7 +115,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
 
       Job job = received.get(10, java.util.concurrent.TimeUnit.SECONDS);
       assertThat(job.id()).isEqualTo(jobId);
-      assertThat(job.type()).isEqualTo("built");
+      assertThat(job.name()).isEqualTo("built");
       assertThat(job.payload()).isEqualTo("{\"x\": 1}");
       assertThat(count("id = '" + jobId + "' and priority = 7"))
           .as("priority is stored, not exposed to handlers")
@@ -150,7 +152,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
                       + "' and state = 'SCHEDULED' "
                       + "and scheduled_at between now() + interval '119 minutes' and now() + interval '121 minutes'"))
           .isEqualTo(1);
-      execute("delete from bikesched_jobs where type = 'later'");
+      execute("delete from bikesched_jobs where name = 'later'");
     }
   }
 
@@ -166,7 +168,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
           .hasMessageContaining("delay must not be negative");
       assertThatThrownBy(() -> bikesched.newJob("no-handler").schedule())
           .isInstanceOf(IllegalArgumentException.class)
-          .hasMessageStartingWith("Unknown job type 'no-handler'");
+          .hasMessageStartingWith("Unknown job name 'no-handler'");
     }
   }
 
@@ -198,7 +200,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
       bikesched.registerJobHandler("print", () -> {});
       assertThatThrownBy(() -> bikesched.newJob("print").payload("not json").schedule())
           .isInstanceOf(BikeschedException.class)
-          .hasMessageContaining("Scheduling bikesched job of type 'print' failed");
+          .hasMessageContaining("Scheduling bikesched job 'print' failed");
       assertThatThrownBy(() -> bikesched.newJob(" ")).isInstanceOf(IllegalArgumentException.class);
     }
   }
@@ -246,7 +248,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
               countRows("bikesched_nodes", "id = '" + otherNodeId + "' and name = 'node-tx-other'"))
           .as("node committed")
           .isEqualTo(1);
-      assertThat(count("id = '" + jobId + "' and type = 'tx'")).as("job committed").isEqualTo(1);
+      assertThat(count("id = '" + jobId + "' and name = 'tx'")).as("job committed").isEqualTo(1);
       assertThat(ran.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(jobId);
       execute("delete from bikesched_nodes where id = '" + otherNodeId + "'");
     }
@@ -291,7 +293,7 @@ class JobSchedulingTest extends AbstractBikeschedTest {
                       .connection(connection)
                       .schedule())
           .isInstanceOf(BikeschedException.class)
-          .hasMessage("Scheduling bikesched job of type 'tx-invalid' failed");
+          .hasMessage("Scheduling bikesched job 'tx-invalid' failed");
 
       assertThat(connection.isClosed()).isFalse();
       connection.rollback(); // the caller decides; the connection is usable again
@@ -299,6 +301,32 @@ class JobSchedulingTest extends AbstractBikeschedTest {
           var rs = statement.executeQuery("select 1")) {
         assertThat(rs.next()).isTrue();
       }
+    }
+  }
+
+  @Test
+  void jobTypeTellsHowAJobWasStarted() throws Exception {
+    String name = "type-" + UUID.randomUUID();
+    try (Bikesched bikesched = testNode("node-job-types").build()) {
+      var childId = new CompletableFuture<UUID>();
+      bikesched.registerJobHandler(name + "-child", ignored -> {});
+      bikesched.registerJobHandler(
+          name, job -> childId.complete(job.newJob(name + "-child").schedule()));
+
+      UUID single = bikesched.newJob(name).schedule();
+      UUID recurring =
+          bikesched
+              .newJob(name + "-recurring")
+              .handler(ignored -> {})
+              .schedule(Recurrence.every(Duration.ofHours(1)), Duration.ofHours(1));
+      UUID child = childId.get(10, TimeUnit.SECONDS);
+
+      assertThat(bikesched.findJob(single).orElseThrow().type()).isEqualTo(JobType.SINGLE);
+      assertThat(bikesched.findJob(recurring).orElseThrow().type()).isEqualTo(JobType.RECURRING);
+      JobInfo childInfo = bikesched.findJob(child).orElseThrow();
+      assertThat(childInfo.type()).isEqualTo(JobType.CHILD);
+      assertThat(childInfo.name()).isEqualTo(name + "-child");
+      bikesched.removeRecurringJob(name + "-recurring");
     }
   }
 }

@@ -9,7 +9,7 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * Testing support for applications using bikesched: a node factory with sensible test defaults,
@@ -84,7 +84,7 @@ public final class BikeschedTest {
   }
 
   /**
-   * Advances the time of the pending jobs of the given types by {@code duration}, as if that much
+   * Advances the time of the pending jobs of the given names by {@code duration}, as if that much
    * time had passed: their stored times (scheduled runs, retries, recurring occurrences, sleeps,
    * polls and deadlines of their waiting steps) move back by {@code duration}, so whatever was due
    * within it runs now and the rest keeps waiting, closer by {@code duration}. Running and ended
@@ -93,39 +93,42 @@ public final class BikeschedTest {
    *
    * @param dataSource the database of the jobs
    * @param duration how far to advance, not negative
-   * @param type a job type
-   * @param moreTypes further job types
+   * @param name a job name
+   * @param moreNames further job names
    * @return the number of jobs moved
    */
   public static int advanceTime(
-      DataSource dataSource, Duration duration, String type, String... moreTypes) {
+      DataSource dataSource, Duration duration, String name, String... moreNames) {
     Objects.requireNonNull(dataSource, "dataSource");
     Objects.requireNonNull(duration, "duration");
-    var types = new ArrayList<String>();
-    types.add(Objects.requireNonNull(type, "type"));
-    for (String moreType : moreTypes) {
-      types.add(Objects.requireNonNull(moreType, "moreTypes"));
+    var names = new ArrayList<String>();
+    names.add(Objects.requireNonNull(name, "name"));
+    for (String moreName : moreNames) {
+      names.add(Objects.requireNonNull(moreName, "moreNames"));
     }
-    return TimeSkip.advance(dataSource, duration, types);
+    return TimeSkip.advance(dataSource, duration, names);
   }
 
   /**
-   * Like {@link #advanceTime(DataSource, Duration, String, String...)} with the names of typed job
-   * types.
+   * Like {@link #advanceTime(DataSource, Duration, String, String...)} with the names of typed
+   * jobs.
    *
    * @param dataSource the database of the jobs
    * @param duration how far to advance, not negative
-   * @param type a job type
-   * @param moreTypes further job types
+   * @param typedJob a typed job
+   * @param moreTypedJobs further typed jobs
    * @return the number of jobs moved
    */
   public static int advanceTime(
-      DataSource dataSource, Duration duration, JobType<?> type, JobType<?>... moreTypes) {
-    Objects.requireNonNull(type, "type");
+      DataSource dataSource,
+      Duration duration,
+      TypedJob<?> typedJob,
+      TypedJob<?>... moreTypedJobs) {
+    Objects.requireNonNull(typedJob, "typedJob");
     List<String> more = new ArrayList<>();
-    for (JobType<?> moreType : moreTypes) {
-      more.add(Objects.requireNonNull(moreType, "moreTypes").name());
+    for (TypedJob<?> moreTypedJob : moreTypedJobs) {
+      more.add(Objects.requireNonNull(moreTypedJob, "moreTypedJobs").name());
     }
-    return advanceTime(dataSource, duration, type.name(), more.toArray(String[]::new));
+    return advanceTime(dataSource, duration, typedJob.name(), more.toArray(String[]::new));
   }
 }

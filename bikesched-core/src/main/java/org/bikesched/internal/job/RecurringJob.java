@@ -11,10 +11,10 @@ import org.bikesched.job.Recurrence;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A recurring job registered on this node (via {@link JobBuilder#schedule(Recurrence)}): its type
+ * A recurring job registered on this node (via {@link JobBuilder#schedule(Recurrence)}): its name
  * (the identity of the recurring job), its recurrence and the attributes of its occurrences.
  *
- * @param type the job type
+ * @param name the job name
  * @param recurrence when it runs
  * @param payload the payload of each occurrence as JSON text, may be {@code null}
  * @param priority the priority of each occurrence
@@ -22,7 +22,7 @@ import org.jspecify.annotations.Nullable;
  * @param timeout the timeout of each occurrence's attempts, {@code null} for the node default
  */
 public record RecurringJob(
-    String type,
+    String name,
     Recurrence recurrence,
     @Nullable String payload,
     int priority,
@@ -40,7 +40,7 @@ public record RecurringJob(
   /** An occurrence running at the given time. */
   public NewJob occurrence(Instant at) {
     return new NewJob(
-        type, payload, at, priority, maxAttempts, timeout, recurrence.description(), at);
+        name, payload, at, priority, maxAttempts, timeout, recurrence.description(), at);
   }
 
   /** The next run after an occurrence that ended now, see {@link #nextRunAfterEnd}. */
@@ -96,7 +96,7 @@ public record RecurringJob(
           "Recurrence '"
               + recurrence.description()
               + "' of recurring job "
-              + type
+              + name
               + " returned "
               + next
               + " as the run after "

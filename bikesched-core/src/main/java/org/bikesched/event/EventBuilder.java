@@ -10,7 +10,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Builds and publishes an event, obtained via {@link org.bikesched.Bikesched#newEvent(String,
- * String)} or, with a typed payload, {@link org.bikesched.Bikesched#newEvent(EventType, String)}:
+ * String)} or, with a typed payload, {@link org.bikesched.Bikesched#newEvent(TypedEvent, String)}:
  *
  * <pre>{@code
  * UUID eventId = bikesched.newEvent("payment-received", orderId)
@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
  * that starts waiting for it later still receives it. Not thread-safe.
  *
  * @param <P> the payload type: {@code Object} for an event name given as a string, the payload
- *     class of an {@link EventType}
+ *     class of a {@link TypedEvent}
  */
 public interface EventBuilder<P extends @Nullable Object> {
 

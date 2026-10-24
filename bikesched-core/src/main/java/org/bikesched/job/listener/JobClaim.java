@@ -9,7 +9,7 @@ import java.util.UUID;
  * A job claimed by a node, reported to a {@link org.bikesched.job.listener.JobListener}.
  *
  * @param jobId the job's id
- * @param jobType the job's type
+ * @param jobName the job's name
  * @param attempt the attempt (counted separately for compensation and for the failure handler)
  * @param compensation whether the job's steps are being compensated
  * @param failing whether the job's failure handler runs (the job is {@code FAILING})
@@ -17,7 +17,7 @@ import java.util.UUID;
  */
 public record JobClaim(
     UUID jobId,
-    String jobType,
+    String jobName,
     int attempt,
     boolean compensation,
     boolean failing,
@@ -26,7 +26,7 @@ public record JobClaim(
   /** Checks the components. */
   public JobClaim {
     Objects.requireNonNull(jobId, "jobId");
-    Objects.requireNonNull(jobType, "jobType");
+    Objects.requireNonNull(jobName, "jobName");
     Objects.requireNonNull(delay, "delay");
   }
 }

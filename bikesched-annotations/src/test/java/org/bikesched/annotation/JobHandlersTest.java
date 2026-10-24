@@ -16,9 +16,9 @@ import org.bikesched.jackson.JacksonJsonMapper;
 import org.bikesched.job.FailedJob;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.RecurrenceParser;
+import org.bikesched.job.TypedJob;
 import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
@@ -44,22 +44,22 @@ class JobHandlersTest {
   public static class MailJobs {
     final List<String> calls = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "send-mail")
+    @JobHandler(name = "send-mail")
     public void sendMail(Job job, Mail mail) {
       calls.add("send-mail " + mail.to() + " attempt " + job.attempts());
     }
 
-    @JobHandler(type = "log-mail")
+    @JobHandler(name = "log-mail")
     public void logMail(Mail mail) {
       calls.add("log-mail " + mail.to());
     }
 
-    @JobHandler(type = "ping")
+    @JobHandler(name = "ping")
     public void ping() {
       calls.add("ping");
     }
 
-    @JobHandler(type = "flaky")
+    @JobHandler(name = "flaky")
     public void flaky(Job job) throws Exception {
       if (job.attempts() == 1) {
         throw new java.io.IOException("server down");
@@ -73,17 +73,17 @@ class JobHandlersTest {
     var jobs = new MailJobs();
     try (Bikesched bikesched = node()) {
       assertThat(JobHandlers.register(bikesched, jobs))
-          .extracting(AnnotatedJobHandler::type)
+          .extracting(AnnotatedJobHandler::name)
           .containsExactly("flaky", "log-mail", "ping", "send-mail");
 
       List<UUID> ids =
           List.of(
               bikesched
-                  .newJob(JobType.of("send-mail", Mail.class))
+                  .newJob(TypedJob.of("send-mail", Mail.class))
                   .payload(new Mail("a@x"))
                   .schedule(),
               bikesched
-                  .newJob(JobType.of("log-mail", Mail.class))
+                  .newJob(TypedJob.of("log-mail", Mail.class))
                   .payload(new Mail("b@x"))
                   .schedule(),
               bikesched.newJob("ping").schedule(),
@@ -100,22 +100,22 @@ class JobHandlersTest {
   public static class PaymentJobs {
     final List<String> calls = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "annotated-charge")
+    @JobHandler(name = "annotated-charge")
     public void charge(Mail mail) {
       throw new IllegalStateException("declined");
     }
 
-    @JobFailureHandler(type = "annotated-charge")
+    @JobFailureHandler(name = "annotated-charge")
     public void chargeFailed(Mail mail, FailedJob failed) {
       calls.add("failed " + mail.to() + ": " + failed.error());
     }
 
-    @JobHandler(type = "annotated-ping-failing")
+    @JobHandler(name = "annotated-ping-failing")
     public void ping() {
       throw new IllegalStateException("down");
     }
 
-    @JobFailureHandler(type = "annotated-ping-failing")
+    @JobFailureHandler(name = "annotated-ping-failing")
     public void pingFailed() {
       calls.add("ping failed");
     }
@@ -130,7 +130,7 @@ class JobHandlersTest {
       List<UUID> ids =
           List.of(
               bikesched
-                  .newJob(JobType.of("annotated-charge", Mail.class))
+                  .newJob(TypedJob.of("annotated-charge", Mail.class))
                   .payload(new Mail("a@x"))
                   .maxAttempts(1)
                   .schedule(),
@@ -151,7 +151,7 @@ class JobHandlersTest {
   public static class RecurringJobs {
     final List<String> calls = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "recurring-ping", schedule = "PT0.1S")
+    @JobHandler(name = "recurring-ping", schedule = "PT0.1S")
     public void ping() {
       calls.add("ping");
     }
@@ -170,7 +170,7 @@ class JobHandlersTest {
   public static class FixedDelayJobs {
     final List<String> calls = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "fixed-delay-sync", fixedDelay = "PT1H", initialDelay = "PT0S")
+    @JobHandler(name = "fixed-delay-sync", fixedDelay = "PT1H", initialDelay = "PT0S")
     public void sync() {
       calls.add("sync");
     }
@@ -198,7 +198,7 @@ class JobHandlersTest {
   }
 
   public static class InitialDelayJobs {
-    @JobHandler(type = "initial-delay-report", schedule = "PT1H", initialDelay = "PT0S")
+    @JobHandler(name = "initial-delay-report", schedule = "PT1H", initialDelay = "PT0S")
     public void report() {}
   }
 
@@ -222,7 +222,7 @@ class JobHandlersTest {
   public static class CustomScheduleJobs {
     final List<String> calls = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "custom-schedule-ping", schedule = "every 100 ms")
+    @JobHandler(name = "custom-schedule-ping", schedule = "every 100 ms")
     public void ping() {
       calls.add("ping");
     }
@@ -268,7 +268,7 @@ class JobHandlersTest {
   public static class ProxiedMailJobs implements MailApi {
     final List<String> calls = new CopyOnWriteArrayList<>();
 
-    @JobHandler(type = "proxied-mail")
+    @JobHandler(name = "proxied-mail")
     public void send(Mail mail) {
       calls.add("send " + mail.to());
     }
@@ -289,12 +289,12 @@ class JobHandlersTest {
                 });
     try (Bikesched bikesched = node()) {
       assertThat(JobHandlers.register(bikesched, proxy, ProxiedMailJobs.class))
-          .extracting(AnnotatedJobHandler::type)
+          .extracting(AnnotatedJobHandler::name)
           .containsExactly("proxied-mail");
 
       UUID jobId =
           bikesched
-              .newJob(JobType.of("proxied-mail", Mail.class))
+              .newJob(TypedJob.of("proxied-mail", Mail.class))
               .payload(new Mail("c@x"))
               .schedule();
       BikeschedTest.awaitJob(bikesched, jobId).timeout(Duration.ofSeconds(15)).untilSucceeded();
@@ -338,7 +338,7 @@ class JobHandlersTest {
     try (Bikesched bikesched = node()) {
       JobHandlers.register(bikesched, new MailJobs());
 
-      assertThatThrownBy(() -> bikesched.newJob(JobType.of("send-mail", String.class)))
+      assertThatThrownBy(() -> bikesched.newJob(TypedJob.of("send-mail", String.class)))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("already used with payload type");
       assertThatThrownBy(() -> JobHandlers.register(bikesched, new MailJobs()))

@@ -9,17 +9,16 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.bikesched.event.EventType;
-import org.bikesched.job.JobType;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.TypedJob;
 import org.junit.jupiter.api.Test;
 
 /**
- * Text lengths: names (node names, job types, step and event names, recurrence descriptions) have
- * at most 200 characters, event keys and idempotency keys 500. The longest allowed values work end
- * to end (including the unique and lookup indexes), longer ones are rejected before reaching the
- * database, and the schema enforces the same limits. Error and cancel messages are truncated
- * instead.
+ * Text lengths: names (node names, job, step and event names, recurrence descriptions) have at most
+ * 200 characters, event keys and idempotency keys 500. The longest allowed values work end to end
+ * (including the unique and lookup indexes), longer ones are rejected before reaching the database,
+ * and the schema enforces the same limits. Error and cancel messages are truncated instead.
  */
 class TextLengthTest extends AbstractBikeschedTest {
 
@@ -66,17 +65,17 @@ class TextLengthTest extends AbstractBikeschedTest {
   @Test
   void tooLongNamesAreRejected() throws Exception {
     String tooLong = "x".repeat(201);
-    assertThatThrownBy(() -> JobType.of(tooLong, String.class))
+    assertThatThrownBy(() -> TypedJob.of(tooLong, String.class))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("job type must have at most 200 characters, but has 201");
-    assertThatThrownBy(() -> EventType.of(tooLong, String.class))
+        .hasMessage("job name must have at most 200 characters, but has 201");
+    assertThatThrownBy(() -> TypedEvent.of(tooLong, String.class))
         .hasMessage("event name must have at most 200 characters, but has 201");
     assertThatThrownBy(() -> Bikesched.builder().nodeName(tooLong))
         .hasMessage("node name must have at most 200 characters, but has 201");
 
     try (Bikesched bikesched = testNode("node-too-long").autoStartPolling(false).build()) {
       assertThatThrownBy(() -> bikesched.newJob(tooLong))
-          .hasMessage("job type must have at most 200 characters, but has 201");
+          .hasMessage("job name must have at most 200 characters, but has 201");
       assertThatThrownBy(() -> bikesched.newEvent(tooLong, "key"))
           .hasMessage("event name must have at most 200 characters, but has 201");
       assertThatThrownBy(() -> bikesched.newEvent("event", "k".repeat(501)))
@@ -179,7 +178,7 @@ class TextLengthTest extends AbstractBikeschedTest {
   @Test
   void lengthIsCountedInCharactersLikePostgres() {
     // 150 emoji: 300 UTF-16 chars, but 150 characters for Java's code points and Postgres.
-    assertThat(JobType.of("\uD83D\uDEB2".repeat(150), String.class).name()).hasSize(300);
+    assertThat(TypedJob.of("\uD83D\uDEB2".repeat(150), String.class).name()).hasSize(300);
   }
 
   @Test
@@ -197,7 +196,7 @@ class TextLengthTest extends AbstractBikeschedTest {
           .isEqualTo(job);
       execute("delete from bikesched_jobs where id = '" + job + "'");
     }
-    assertThatThrownBy(() -> JobType.of("\uD83D\uDEB2".repeat(151), String.class))
+    assertThatThrownBy(() -> TypedJob.of("\uD83D\uDEB2".repeat(151), String.class))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("at most 600 bytes in UTF-8");
   }
@@ -207,11 +206,11 @@ class TextLengthTest extends AbstractBikeschedTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_jobs (id, type) values (gen_random_uuid(), '"
+                    "insert into bikesched_jobs (id, name) values (gen_random_uuid(), '"
                         + "x".repeat(201)
                         + "')"))
         .isInstanceOf(SQLException.class)
-        .hasMessageContaining("bikesched_jobs_type_check");
+        .hasMessageContaining("bikesched_jobs_name_check");
     assertThatThrownBy(
             () ->
                 execute(
@@ -224,15 +223,15 @@ class TextLengthTest extends AbstractBikeschedTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_jobs (id, type, planned_run_at, recurrence)"
-                        + " values (gen_random_uuid(), 'x', now(), '"
+                    "insert into bikesched_jobs (id, name, type, planned_run_at, recurrence)"
+                        + " values (gen_random_uuid(), 'x', 'RECURRING', now(), '"
                         + "d".repeat(201)
                         + "')"))
         .hasMessageContaining("bikesched_jobs_recurrence_check");
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_jobs (id, type, idempotency_key)"
+                    "insert into bikesched_jobs (id, name, idempotency_key)"
                         + " values (gen_random_uuid(), 'x', '"
                         + "k".repeat(501)
                         + "')"))
@@ -246,11 +245,11 @@ class TextLengthTest extends AbstractBikeschedTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_jobs (id, type) values (gen_random_uuid(), repeat(chr("
+                    "insert into bikesched_jobs (id, name) values (gen_random_uuid(), repeat(chr("
                         + 0x1F6B2
                         + "), 151))"))
         .as("over 600 bytes")
-        .hasMessageContaining("bikesched_jobs_type_check");
+        .hasMessageContaining("bikesched_jobs_name_check");
   }
 
   /** The prefix padded with {@code x} to exactly the given length. */

@@ -260,7 +260,7 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
                 <ul class="links">
                   ${receivers.map(
                     (step) => html`<li class="row">
-                      <a class="mono" href=${jobHref(step.jobId)}>${step.jobType} ${shortId(step.jobId)}</a>
+                      <a class="mono" href=${jobHref(step.jobId)}>${step.jobName} ${shortId(step.jobId)}</a>
                       <span class="muted small">step <span class="mono">${step.stepName}</span></span>
                     </li>`,
                   )}

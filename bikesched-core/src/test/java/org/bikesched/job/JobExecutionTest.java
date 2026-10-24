@@ -32,17 +32,17 @@ class JobExecutionTest extends AbstractBikeschedTest {
                   (Thread.currentThread().isVirtual() ? "virtual " : "platform ")
                       + Thread.currentThread().getName()
                       + " "
-                      + job.type()
+                      + job.name()
                       + " "
                       + job.payload()));
       execute(
-          "insert into bikesched_jobs (id, type, payload) "
+          "insert into bikesched_jobs (id, name, payload) "
               + "select gen_random_uuid(), 'print-batch', jsonb_build_object('n', n) from generate_series(1, 25) n");
 
       await()
           .untilAsserted(
               () ->
-                  assertThat(count("type = 'print-batch' and state = 'SUCCEEDED'")).isEqualTo(25));
+                  assertThat(count("name = 'print-batch' and state = 'SUCCEEDED'")).isEqualTo(25));
     }
 
     assertThat(handled)
@@ -57,7 +57,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
                 e.getLevel() == ch.qos.logback.classic.Level.DEBUG
                     && e.getFormattedMessage()
                         .matches(
-                            "Executing job .* of type print-batch \\(attempt 1 of 3\\) "
+                            "Executing job .* named print-batch \\(attempt 1 of 3\\) "
                                 + "on bikesched node node-worker \\(.*\\)"))
         .as("debug log before each job execution, on the job's virtual thread")
         .hasSize(25)
@@ -96,7 +96,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
     try {
       try (Bikesched old = testNode("node-old-version").build()) {
         old.registerJobHandler("handled-here", () -> {});
-        execute("insert into bikesched_jobs (id, type) values ('" + jobId + "', '" + type + "')");
+        execute("insert into bikesched_jobs (id, name) values ('" + jobId + "', '" + type + "')");
         Thread.sleep(500); // several polls
         assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED' and attempts = 0"))
             .as("not claimed without a handler")
@@ -108,7 +108,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
         assertThat(count("id = '" + jobId + "' and attempts = 1")).isOne();
       }
     } finally {
-      execute("delete from bikesched_jobs where type = '" + type + "'");
+      execute("delete from bikesched_jobs where name = '" + type + "'");
     }
   }
 
@@ -176,7 +176,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
                 e.getLevel() == ch.qos.logback.classic.Level.INFO
                     && e.getFormattedMessage()
                         .matches(
-                            "Job .* of type cancel-me cancelled by its handler "
+                            "Job .* named cancel-me cancelled by its handler "
                                 + "\\(attempt 2 of 5\\): customer deleted"))
         .hasSize(1);
   }
@@ -234,7 +234,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
                         .equals(
                             "Job "
                                 + jobId
-                                + " of type cancel-throw was cancelled, "
+                                + " named cancel-throw was cancelled, "
                                 + "ignoring the exception thrown by its handler afterwards"))
         .singleElement()
         .satisfies(e -> assertThat(e.getThrowableProxy().getMessage()).isEqualTo("cleanup failed"));
@@ -259,7 +259,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
           .as("visible inside the job handler")
           .containsEntry(BikeschedLogContext.NODE_ID, nodeId.toString())
           .containsEntry(BikeschedLogContext.JOB_ID, jobId.toString())
-          .containsEntry(BikeschedLogContext.JOB_TYPE, "mdc");
+          .containsEntry(BikeschedLogContext.JOB_NAME, "mdc");
     }
 
     assertThat(logs.events())
@@ -270,7 +270,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
                 assertThat(e.getMDCPropertyMap())
                     .containsEntry(BikeschedLogContext.NODE_ID, nodeId.toString())
                     .containsEntry(BikeschedLogContext.JOB_ID, jobId.toString())
-                    .containsEntry(BikeschedLogContext.JOB_TYPE, "mdc"));
+                    .containsEntry(BikeschedLogContext.JOB_NAME, "mdc"));
     assertThat(logs.events())
         .filteredOn(e -> e.getThreadName().equals("bikesched-poller"))
         .as("poller logs carry the node id but no job")
@@ -279,6 +279,6 @@ class JobExecutionTest extends AbstractBikeschedTest {
             e ->
                 assertThat(e.getMDCPropertyMap())
                     .containsEntry(BikeschedLogContext.NODE_ID, nodeId.toString())
-                    .doesNotContainKeys(BikeschedLogContext.JOB_ID, BikeschedLogContext.JOB_TYPE));
+                    .doesNotContainKeys(BikeschedLogContext.JOB_ID, BikeschedLogContext.JOB_NAME));
   }
 }

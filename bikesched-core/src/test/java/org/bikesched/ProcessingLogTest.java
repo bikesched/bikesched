@@ -49,10 +49,10 @@ class ProcessingLogTest extends AbstractBikeschedTest {
     }
 
     assertThat(processed(logs, succeeded))
-        .matches("Processed job .* of type outcome-ok \\(attempt 1\\) in \\d+ ms: SUCCEEDED");
+        .matches("Processed job .* named outcome-ok \\(attempt 1\\) in \\d+ ms: SUCCEEDED");
     assertThat(processed(logs, rescheduled))
         .matches(
-            "Processed job .* of type outcome-retry \\(attempt 1\\) in \\d+ ms:"
+            "Processed job .* named outcome-retry \\(attempt 1\\) in \\d+ ms:"
                 + " RESCHEDULED for attempt 2 of 3 at \\d{4}-.*Z");
     assertThat(processed(logs, failed)).endsWith(": FAILED");
     assertThat(processed(logs, cancelled)).endsWith(": CANCELLED");

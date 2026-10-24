@@ -27,7 +27,7 @@ class PollTest extends AbstractBikeschedTest {
   /** Deletes the polling jobs left behind, so later tests' nodes don't claim them. */
   @AfterEach
   void deleteJobs() throws Exception {
-    execute("delete from bikesched_jobs where type like 'poll-%'");
+    execute("delete from bikesched_jobs where name like 'poll-%'");
   }
 
   @Test

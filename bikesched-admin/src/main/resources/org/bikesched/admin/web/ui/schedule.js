@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Scheduling a job: the form in the job detail panel (route #/jobs/new), with the job types this
-// node handles, a prefill from the latest job of a type or from a job ("Schedule similar") and
+// Scheduling a job: the form in the job detail panel (route #/jobs/new), with the job names this
+// node handles, a prefill from the latest job of a name or from a job ("Schedule similar") and
 // the time it becomes due.
 import { getBody, postForm, query } from './api.js';
 import { dateTime, plural, shortId } from './format.js';
@@ -36,7 +36,7 @@ export function takeScheduled(jobId) {
 const pretty = (payload) => (payload === undefined || payload === null ? '' : JSON.stringify(payload, null, 2));
 const failedCount = (summary) => (summary.counts.FAILED || 0) + (summary.counts.COMPENSATION_FAILED || 0);
 
-function typeSub(summary) {
+function nameSub(summary) {
   const parts = [];
   const failed = failedCount(summary);
   if (failed > 0) parts.push(`${failed} failed`);
@@ -49,11 +49,11 @@ function typeSub(summary) {
 const isoDelay = (amount, unit) => (unit === 'D' ? `P${amount}D` : `PT${amount}${unit}`);
 
 /**
- * The form. types: the job types (only the handled ones are offered); prefill: {from} (a job id:
- * "Schedule similar") or {type}, or nothing. onScheduled(id) is called after scheduling.
+ * The form. jobNames: the job names (only the handled ones are offered); prefill: {from} (a job
+ * id: "Schedule similar") or {name}, or nothing. onScheduled(id) is called after scheduling.
  */
-export function ScheduleForm({ types, prefill, payloadsShown, onClose, onScheduled }) {
-  const [type, setType] = useState(prefill.type || '');
+export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onScheduled }) {
+  const [name, setName] = useState(prefill.name || '');
   const [payload, setPayload] = useState('');
   const [when, setWhen] = useState('now');
   const [amount, setAmount] = useState('10');
@@ -67,13 +67,13 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
   const [sending, setSending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  const handled = types.filter((summary) => summary.handled);
-  const summary = handled.find((candidate) => candidate.type === type);
+  const handled = jobNames.filter((summary) => summary.handled);
+  const summary = handled.find((candidate) => candidate.name === name);
 
   // Copies the payload from a job; with settings (Schedule similar) also priority and attempts.
   const copyFrom = async (jobId, settings) => {
     const data = await getBody(`api/jobs/${jobId}`);
-    setType(data.job.type);
+    setName(data.job.name);
     setPayload(data.payloadsShown ? pretty(data.payload) : '');
     if (settings) {
       setPriority(String(data.job.priority));
@@ -81,8 +81,8 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
     }
     setSource(data.job);
   };
-  const copyLatest = async (jobType) => {
-    const body = await getBody(`api/jobs${query({ type: jobType, limit: 1 })}`);
+  const copyLatest = async (jobName) => {
+    const body = await getBody(`api/jobs${query({ name: jobName, limit: 1 })}`);
     if (body.jobs.length > 0) {
       await copyFrom(body.jobs[0].id, false);
     } else {
@@ -94,11 +94,11 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
   useEffect(() => {
     const start = prefill.from
       ? copyFrom(prefill.from, true)
-      : prefill.type
-        ? copyLatest(prefill.type)
+      : prefill.name
+        ? copyLatest(prefill.name)
         : Promise.resolve();
     start.catch((e) => setError(e.message));
-  }, [prefill.from, prefill.type]);
+  }, [prefill.from, prefill.name]);
 
   // Keeps the due time of "In" current while the form is open.
   useEffect(() => {
@@ -123,8 +123,8 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
     when === 'in' && !amountError ? new Date(now + Number(amount) * UNITS.find(([u]) => u === unit)[2] * 1000) : null;
   const ready = summary && !jsonError && !amountError && !priorityError && !attemptsError && !sending;
 
-  const pickType = (picked) => {
-    setType(picked);
+  const pickName = (picked) => {
+    setName(picked);
     copyLatest(picked).catch((e) => setError(e.message));
   };
   const clear = () => {
@@ -138,7 +138,7 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
     setError(null);
     try {
       const result = await postForm('api/jobs', {
-        type,
+        name,
         payload: payload.trim(),
         delay: when === 'in' ? isoDelay(Number(amount), unit) : '',
         priority: priority.trim() === '0' ? '' : priority.trim(),
@@ -163,9 +163,9 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
 
   const whenText = when === 'now' ? 'now' : due ? `at ${dateTime(due.toISOString())}` : 'later';
   const items = handled.map((entry) => ({
-    name: entry.type,
+    name: entry.name,
     count: entry.total,
-    sub: typeSub(entry),
+    sub: nameSub(entry),
     subClass: failedCount(entry) > 0 ? 'sub-failed' : undefined,
     recurring: Boolean(entry.recurrence),
   }));
@@ -176,14 +176,14 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
       <form class="publish" onSubmit=${submit}>
         ${source &&
         html`<div class="prefill-note" role="status">
-          <span>${prefill.from ? 'Copied from' : 'Payload copied from the latest'} <span class="mono">${source.type}</span> job, <a class="mono" href=${`#/jobs/${source.id}`}>${shortId(source.id)}</a> (${dateTime(source.createdAt)}).</span>
+          <span>${prefill.from ? 'Copied from' : 'Payload copied from the latest'} <span class="mono">${source.name}</span> job, <a class="mono" href=${`#/jobs/${source.id}`}>${shortId(source.id)}</a> (${dateTime(source.createdAt)}).</span>
           <button type="button" class="link-button" onClick=${clear}>Clear</button>
         </div>`}
         <div class="form-grid">
           <div class="field">
-            <span class="field-label">Type</span>
-            <${Picker} label="Job type" placeholder="Search job types" emptyLabel="Pick a job type"
-              items=${items} selected=${type || null} onSelect=${pickType} />
+            <span class="field-label">Name</span>
+            <${Picker} label="Job name" placeholder="Search job names" emptyLabel="Pick a job name"
+              items=${items} selected=${name || null} onSelect=${pickName} />
             ${summary?.recurrence && html`<span class="muted small">Recurring: this adds one run, the recurrence stays as it is.</span>`}
           </div>
           <div class="field">
@@ -245,18 +245,18 @@ export function ScheduleForm({ types, prefill, payloadsShown, onClose, onSchedul
               <label class="field-label" for="schedule-idempotency">Idempotency key</label>
               <input id="schedule-idempotency" class="input mono" type="text" placeholder="optional" value=${idempotencyKey}
                 onInput=${(event) => setIdempotencyKey(event.target.value)} />
-              <span class="muted small">A job of the type with this key is not scheduled twice.</span>
+              <span class="muted small">A job of the name with this key is not scheduled twice.</span>
             </div>
           </div>
         </details>
         ${summary &&
         html`<div class="preview" role="status">
-          <strong>Runs as a new ${summary.type} job ${whenText}</strong>
+          <strong>Runs as a new ${summary.name} job ${whenText}</strong>
           <span class="muted">
-            Any node with a ${summary.type} handler and a free slot claims it.
+            Any node with a ${summary.name} handler and a free slot claims it.
             ${summary.total > 0
-              ? ` ${plural(summary.total, 'job', 'jobs')} of this type so far${failedCount(summary) > 0 ? `, ${failedCount(summary)} failed` : ''}.`
-              : ' It is the first job of this type.'}
+              ? ` ${plural(summary.total, 'job', 'jobs')} of this name so far${failedCount(summary) > 0 ? `, ${failedCount(summary)} failed` : ''}.`
+              : ' It is the first job of this name.'}
           </span>
         </div>`}
         ${error && html`<div class="banner banner-error" role="alert">${error}</div>`}

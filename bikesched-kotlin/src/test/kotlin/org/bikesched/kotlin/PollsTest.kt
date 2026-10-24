@@ -28,7 +28,7 @@ class PollsTest {
           }
         sleep("replay", 50.milliseconds)
       }
-      val jobId = bikesched.createJob(type = type)
+      val jobId = bikesched.createJob(name = type)
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
@@ -67,7 +67,7 @@ class PollsTest {
           }
         results.addAll(listOf(unit, report))
       }
-      val jobId = bikesched.createJob(type = type)
+      val jobId = bikesched.createJob(name = type)
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
@@ -97,7 +97,7 @@ class PollsTest {
             error("status service down")
           }
       }
-      val jobId = bikesched.createJob(type = type, maxAttempts = 1)
+      val jobId = bikesched.createJob(name = type, maxAttempts = 1)
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)

@@ -10,36 +10,36 @@ import org.jspecify.annotations.Nullable;
  * the name and the jobs waiting for them:
  *
  * <pre>{@code
- * static final EventType<Payment> PAYMENT_RECEIVED = EventType.of("payment-received", Payment.class);
+ * static final TypedEvent<Payment> PAYMENT_RECEIVED = TypedEvent.of("payment-received", Payment.class);
  *
  * Payment payment = job.awaitEvent("await-payment", PAYMENT_RECEIVED, order.id());
  * bikesched.newEvent(PAYMENT_RECEIVED, order.id()).payload(payment).publish();
  * }</pre>
  *
- * <p>Only the name is stored with the event, so an {@code EventType} is a compile-time contract:
+ * <p>Only the name is stored with the event, so a {@code TypedEvent} is a compile-time contract:
  * events of the name can also be published and received with the string-based API.
  *
  * @param name the event name stored with each event, not blank, at most 200 characters
  * @param payloadType the class payloads are mapped to and from by the {@code JsonMapper}
  * @param <T> the payload type
  */
-public record EventType<T extends @Nullable Object>(String name, Class<T> payloadType) {
+public record TypedEvent<T extends @Nullable Object>(String name, Class<T> payloadType) {
 
-  /** Validates the type. */
-  public EventType {
+  /** Validates the name. */
+  public TypedEvent {
     ValidationUtil.requireName(name, "event name");
     Objects.requireNonNull(payloadType, "payloadType");
   }
 
   /**
-   * Creates an event type.
+   * Creates a typed event.
    *
    * @param name the event name stored with each event, not blank, at most 200 characters
    * @param payloadType the class payloads are mapped to and from
    * @param <T> the payload type
-   * @return the event type
+   * @return the typed event
    */
-  public static <T extends @Nullable Object> EventType<T> of(String name, Class<T> payloadType) {
-    return new EventType<>(name, payloadType);
+  public static <T extends @Nullable Object> TypedEvent<T> of(String name, Class<T> payloadType) {
+    return new TypedEvent<>(name, payloadType);
   }
 }

@@ -9,11 +9,11 @@ import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import org.bikesched.Bikesched;
 import org.bikesched.admin.web.BikeschedAdmin;
-import org.bikesched.event.EventType;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobResult;
-import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.TypedJob;
 
 /**
  * The admin UI next to a few demo jobs: invoices (some fail), orders with a child job and a wait
@@ -34,14 +34,14 @@ public final class AdminExample {
 
   public record Payment(int amount) {}
 
-  public static final JobType<Invoice> SEND_INVOICE = JobType.of("send-invoice", Invoice.class);
+  public static final TypedJob<Invoice> SEND_INVOICE = TypedJob.of("send-invoice", Invoice.class);
 
-  public static final JobType<Order> FULFIL_ORDER = JobType.of("fulfil-order", Order.class);
+  public static final TypedJob<Order> FULFIL_ORDER = TypedJob.of("fulfil-order", Order.class);
 
-  public static final JobType<Parcel> SHIP_PARCEL = JobType.of("ship-parcel", Parcel.class);
+  public static final TypedJob<Parcel> SHIP_PARCEL = TypedJob.of("ship-parcel", Parcel.class);
 
-  public static final EventType<Payment> PAYMENT_RECEIVED =
-      EventType.of("payment-received", Payment.class);
+  public static final TypedEvent<Payment> PAYMENT_RECEIVED =
+      TypedEvent.of("payment-received", Payment.class);
 
   /** The recurring job's type: two steps, no waits. */
   public static final String SYNC_INVENTORY = "sync-inventory";

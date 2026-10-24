@@ -32,7 +32,7 @@ public class Application { public static void main(String[] args) { SpringApplic
 
 @Component
 class InvoiceJobs {
-  @JobHandler(type = "send-invoice")
+  @JobHandler(name = "send-invoice")
   public void sendInvoice(Job job, Invoice invoice) { mailer.send(invoice); }
 }
 ```
@@ -46,27 +46,27 @@ publishing with two services that share no data.
 
 ## Handlers
 
-Discovery finds every bean with `@JobHandler` or `@JobFailureHandler` methods — including AOP-proxied ones (`@Transactional`,
-`@Cacheable`, …) — and invokes them **through the proxy**, so the advice applies. Beans implementing
-`JobTypeHandler` or `JobTypeFailureHandler` are registered the same way (plain `JobHandler` and
-`JobFailureHandler` beans carry no job type and are ignored). Registration happens before polling starts, so a node
-never claims a job it cannot run; a bean created later (`@Lazy`, prototype) registers when it is
-created. Duplicates fail startup with a message naming the bean and the method — there is no way to
-downgrade this to a warning, and none intended. See [Annotations](annotations.md) for the method
-signature rules.
+Discovery finds every bean with `@JobHandler` or `@JobFailureHandler` methods — including
+AOP-proxied ones (`@Transactional`, `@Cacheable`, …) — and invokes them **through the proxy**, so
+the advice applies. Beans implementing `StandaloneJobHandler` or `StandaloneJobFailureHandler` are
+registered the same way (plain `JobHandler` and `JobFailureHandler` beans carry no job name and are
+ignored). Registration happens before polling starts, so a node never claims a job it cannot run; a
+bean created later (`@Lazy`, prototype) registers when it is created. Duplicates fail startup with a
+message naming the bean and the method — there is no way to downgrade this to a warning, and none
+intended. See [Annotations](annotations.md) for the method signature rules.
 
 **Recurring handlers**: the starter configures the node's
 [recurrence parsers](../jobs/recurring-jobs.md#recurrence-expressions) with ISO-8601 durations and
-Spring's six-field `CronExpression` syntax, so a handler can declare its schedule next to its type:
+Spring's six-field `CronExpression` syntax, so a handler can declare its schedule next to its name:
 
 ```java
-@JobHandler(type = "purge-expired-sessions", schedule = "0 0 */6 * * *")
+@JobHandler(name = "purge-expired-sessions", schedule = "0 0 */6 * * *")
 public void purgeExpiredSessions() { … }
 ```
 
 The schedule is evaluated in UTC and uses the expression itself as its stable recurrence
-description. ISO-8601 durations, e.g. `@JobHandler(type = "refresh-cache", schedule = "PT15M")`,
-run at a fixed rate. The same expressions work in `newJob(type).schedule("PT15M")`.
+description. ISO-8601 durations, e.g. `@JobHandler(name = "refresh-cache", schedule = "PT15M")`,
+run at a fixed rate. The same expressions work in `newJob(name).schedule("PT15M")`.
 
 Spring's `@Scheduled` attributes map to `@JobHandler` like this: `fixedRate` to `schedule` with an
 ISO-8601 duration, `cron` to `schedule` with a cron expression, `fixedDelay` to `fixedDelay` (a

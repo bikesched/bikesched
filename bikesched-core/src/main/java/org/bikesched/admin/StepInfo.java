@@ -31,7 +31,7 @@ import org.jspecify.annotations.Nullable;
  * @param eventId the event an event wait received or an event step published; {@code null} until
  *     then and for other types
  * @param childJobId the child job a {@code CHILD_JOB} step started; {@code null} for other types
- * @param childJobType the child job's type, kept after the child was deleted
+ * @param childJobName the child job's name, kept after the child was deleted
  * @param childJobState the child's current state, or its final state once it ended; {@code null}
  *     for other types
  * @param childJobExists whether the child job still exists (it is deleted after the job retention)
@@ -55,6 +55,6 @@ public record StepInfo(
     @Nullable String eventKey,
     @Nullable UUID eventId,
     @Nullable UUID childJobId,
-    @Nullable String childJobType,
+    @Nullable String childJobName,
     @Nullable JobState childJobState,
     boolean childJobExists) {}

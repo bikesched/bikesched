@@ -63,7 +63,7 @@ abstract class AbstractStoreTest {
   static List<JobStore.ClaimedJob> claimJobs(UUID node, int limit) {
     List<String> types = new ArrayList<>();
     try (var connection = dataSource.getConnection();
-        var select = connection.prepareStatement("select distinct type from bikesched_jobs");
+        var select = connection.prepareStatement("select distinct name from bikesched_jobs");
         var rows = select.executeQuery()) {
       while (rows.next()) {
         types.add(rows.getString(1));
@@ -76,7 +76,7 @@ abstract class AbstractStoreTest {
 
   static void insertRunningJobs(UUID node, int count) throws SQLException {
     execute(
-        "insert into bikesched_jobs (id, type, state, locked_by_node_id, lock_token, locked_at) select"
+        "insert into bikesched_jobs (id, name, state, locked_by_node_id, lock_token, locked_at) select"
             + " gen_random_uuid(), 'test', 'RUNNING', '"
             + node
             + "', gen_random_uuid(), now() from generate_series(1, "
@@ -125,7 +125,7 @@ abstract class AbstractStoreTest {
 
   static void insertJobs(int count, int priority, String scheduledAt) throws SQLException {
     execute(
-        "insert into bikesched_jobs (id, type, priority, scheduled_at) select gen_random_uuid(), 'test', "
+        "insert into bikesched_jobs (id, name, priority, scheduled_at) select gen_random_uuid(), 'test', "
             + priority
             + ", "
             + scheduledAt
