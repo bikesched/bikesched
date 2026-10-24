@@ -1,6 +1,6 @@
 # Specification: fixed-delay recurrences
 
-Status: **implemented** ([ADR 0057](../decisions/0057-fixed-delay-recurrences-and-planned-runs.md);
+Status: **implemented** ([ADR 0058](../decisions/0058-fixed-delay-recurrences-and-planned-runs.md);
 user docs: [Fixed delay](../jobs/recurring-jobs.md#fixed-delay),
 [Annotations](../integrations/annotations.md)).
 

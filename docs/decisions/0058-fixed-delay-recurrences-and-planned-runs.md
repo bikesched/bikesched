@@ -1,9 +1,9 @@
 ---
-title: "57. Fixed-delay recurrences and a planned run on every occurrence"
-weight: 57
+title: "58. Fixed-delay recurrences and a planned run on every occurrence"
+weight: 58
 ---
 
-# 57. Fixed-delay recurrences and a planned run on every occurrence
+# 58. Fixed-delay recurrences and a planned run on every occurrence
 
 Date: 2026-10-23
 
