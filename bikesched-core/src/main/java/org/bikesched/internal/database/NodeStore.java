@@ -119,7 +119,9 @@ public final class NodeStore {
         db ->
             db.list(
                 DELETE_DEAD_NODES_SQL,
-                row -> new DeletedNode(row.uuid(1), row.string(2), row.instant(3)),
+                row ->
+                    new DeletedNode(
+                        row.uuid("id"), row.string("name"), row.instant("last_heartbeat_at")),
                 callingNodeId,
                 Sql.seconds(olderThan)),
         e -> new BikeschedException("Deleting dead bikesched nodes failed", e));

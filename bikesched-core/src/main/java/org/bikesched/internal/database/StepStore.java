@@ -48,7 +48,8 @@ public final class StepStore {
 
   private static final String FIND_STEP_SQL =
       """
-            select id, type, state, result::text, attempts, compensable from bikesched_steps where job_id = ? and name = ?""";
+            select id, type, state, result::text as result, attempts, compensable
+              from bikesched_steps where job_id = ? and name = ?""";
 
   // Starts an attempt of a regular step that has not succeeded yet; returns its id (the one given
   // on
@@ -150,10 +151,10 @@ public final class StepStore {
 
   private static final String FIND_FAILING_STEP_SQL =
       """
-            select id, coalesce(last_error, '') from bikesched_steps
+            select id, coalesce(last_error, '') as last_error from bikesched_steps
              where job_id = ? and name = ? and type = ? and state = 'FAILING'""";
 
-  private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED;
+  private static final String IS_JOB_LOCKED_SQL = "select " + JOB_LOCKED + " as locked";
 
   // Ends a RUNNING attempt whose handler suspended at a waiting step (an event wait, a sleep or a
   // wait for a child job): WAITING until the event arrives (the child ends) or wake_at
@@ -173,7 +174,7 @@ public final class StepStore {
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING'
                and s.id = ? and s.job_id = j.id
             returning j.state, s.wake_at, j.attempts, j.type,
-                      case when j.scheduled_at < 'infinity' then j.scheduled_at end""";
+                      case when j.scheduled_at < 'infinity' then j.scheduled_at end as due_at""";
 
   // Job.postpone in a step's handler: the step keeps no result and gives its attempt back, so the
   // next attempt starts it again (START_STEP_SQL) with the same attempt number.
@@ -194,12 +195,12 @@ public final class StepStore {
                                        then now() + ? * interval '1 millisecond' else now() end,
                    attempts = attempts - 1, locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
              where id = ? and lock_token = ? and state = 'RUNNING'
-            returning scheduled_at, attempts, type, cancel_requested_at is not null""";
+            returning scheduled_at, attempts, type, cancel_requested_at is not null as cancel_requested""";
 
   // A step of a job, for a sleep.
   private static final String FIND_SLEEP_STEP_SQL =
       """
-            select id, type, state, wake_at, wake_at <= now()
+            select id, type, state, wake_at, wake_at <= now() as due
               from bikesched_steps where job_id = ? and name = ? for update""";
 
   // Starts a sleep: WAITING until wake_at, or SUCCEEDED right away if that has passed.
@@ -215,7 +216,8 @@ public final class StepStore {
   // the child's end (JobStore) updates the same row, so a wait serializes with it.
   private static final String FIND_CHILD_WAIT_READ_ONLY_SQL =
       """
-            select id, name, state, child_end_state, result::text, last_error, wake_at, wake_at <= now()
+            select id, name, state, child_end_state, result::text as result, last_error, wake_at,
+                   wake_at <= now() as deadline_passed
               from bikesched_steps where job_id = ? and child_job_id = ? and type = 'CHILD_JOB'""";
 
   private static final String FIND_CHILD_WAIT_SQL = FIND_CHILD_WAIT_READ_ONLY_SQL + " for update";
@@ -247,8 +249,8 @@ public final class StepStore {
   // A step of a job, for a poll.
   private static final String FIND_POLL_STEP_SQL =
       """
-            select id, type, state, result::text, attempts, wake_at, wake_at <= now(),
-                   coalesce(last_error, '')
+            select id, type, state, result::text as result, attempts, wake_at,
+                   wake_at <= now() as due, coalesce(last_error, '') as last_error
               from bikesched_steps where job_id = ? and name = ? for update""";
 
   // Starts the first check of a poll; its deadline (deadline_at) is null without a timeout.
@@ -316,12 +318,12 @@ public final class StepStore {
                 FIND_STEP_SQL,
                 row ->
                     new StoredStep(
-                        new StepRef(row.uuid(1), name),
-                        row.enumValue(2, StepType.class),
-                        row.enumValue(3, StepState.class),
-                        row.string(4),
-                        row.integer(5),
-                        row.bool(6)),
+                        new StepRef(row.uuid("id"), name),
+                        row.enumValue("type", StepType.class),
+                        row.enumValue("state", StepState.class),
+                        row.string("result"),
+                        row.integer("attempts"),
+                        row.bool("compensable")),
                 jobId,
                 name),
         e ->
@@ -373,11 +375,11 @@ public final class StepStore {
                 FIND_CHILD_JOB_STEP_SQL,
                 row ->
                     new ChildJobStep(
-                        new StepRef(row.uuid(1), name),
-                        row.enumValue(2, StepType.class),
-                        row.enumValue(3, StepState.class),
-                        row.uuid(4),
-                        row.integer(5)),
+                        new StepRef(row.uuid("id"), name),
+                        row.enumValue("type", StepType.class),
+                        row.enumValue("state", StepState.class),
+                        row.uuid("child_job_id"),
+                        row.integer("attempts")),
                 jobId,
                 name),
         e ->
@@ -425,19 +427,22 @@ public final class StepStore {
   private record ChildWaitStep(ChildWait childWait, boolean deadlinePassed) {
 
     static ChildWaitStep from(Sql.Row row) throws SQLException {
-      StepRef step = new StepRef(row.uuid(1), row.string(2));
-      StepState state = row.enumValue(3, StepState.class);
+      StepRef step = new StepRef(row.uuid("id"), row.string("name"));
+      StepState state = row.enumValue("state", StepState.class);
       ChildWait wait =
           switch (state) {
             case SUCCEEDED ->
                 new ChildWait.ChildEnded(
-                    step, row.enumValue(4, JobState.class), row.string(5), row.string(6));
+                    step,
+                    row.enumValue("child_end_state", JobState.class),
+                    row.string("result"),
+                    row.string("last_error"));
             case TIMED_OUT -> new ChildWait.ChildTimedOut(step);
-            case WAITING -> new ChildWait.ChildWaiting(step, row.instant(7));
+            case WAITING -> new ChildWait.ChildWaiting(step, row.instant("wake_at"));
             case RUNNING, FAILING, FAILED, COMPENSATED, CANCELLED, POSTPONED ->
                 new ChildWait.NotWaiting(step, state);
           };
-      return new ChildWaitStep(wait, row.bool(8));
+      return new ChildWaitStep(wait, row.bool("deadline_passed"));
     }
   }
 
@@ -478,7 +483,7 @@ public final class StepStore {
             Instant deadline =
                 db.one(
                         SET_CHILD_WAIT_DEADLINE_SQL,
-                        row -> row.instant(1),
+                        row -> row.instant("wake_at"),
                         Sql.millis(timeout),
                         waiting.id())
                     .orElseThrow();
@@ -545,7 +550,7 @@ public final class StepStore {
       UUID jobId, JobLock lock, StepRef step, UUID childJobId) {
     return access.inTransaction(
         db -> {
-          db.one(LOCK_STEP_SQL, row -> row.string(1), step.id());
+          db.one(LOCK_STEP_SQL, row -> row.string("state"), step.id());
           return suspend(db, history, jobId, lock, step, "waiting for job " + childJobId);
         },
         e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
@@ -612,7 +617,8 @@ public final class StepStore {
           Optional<StepAttempt> attempt =
               db.one(
                   START_STEP_SQL,
-                  row -> new StepAttempt(new StepRef(row.uuid(1), name), row.integer(2)),
+                  row ->
+                      new StepAttempt(new StepRef(row.uuid("id"), name), row.integer("attempts")),
                   UuidUtil.timeOrdered(),
                   jobId,
                   name,
@@ -741,7 +747,7 @@ public final class StepStore {
           Optional<String> state =
               db.one(
                   FAIL_COMPENSATION_SQL,
-                  row -> row.string(1),
+                  row -> row.string("state"),
                   message,
                   step.id(),
                   jobId,
@@ -893,7 +899,11 @@ public final class StepStore {
         db -> {
           Optional<Integer> run =
               db.one(
-                  START_FAILURE_HANDLER_SQL, row -> row.integer(1), step.id(), jobId, lock.token());
+                  START_FAILURE_HANDLER_SQL,
+                  row -> row.integer("failure_attempts"),
+                  step.id(),
+                  jobId,
+                  lock.token());
           if (run.isEmpty()) {
             requireJobLock(db, jobId, lock);
           }
@@ -963,7 +973,7 @@ public final class StepStore {
         db ->
             db.one(
                 FIND_FAILING_STEP_SQL,
-                row -> new StepError(new StepRef(row.uuid(1), name), row.string(2)),
+                row -> new StepError(new StepRef(row.uuid("id"), name), row.string("last_error")),
                 jobId,
                 name,
                 type.name()),
@@ -1029,11 +1039,11 @@ public final class StepStore {
                   FIND_SLEEP_STEP_SQL,
                   row ->
                       new SleepStep(
-                          new StepRef(row.uuid(1), name),
-                          row.enumValue(2, StepType.class),
-                          row.enumValue(3, StepState.class),
-                          row.instant(4),
-                          row.bool(5)),
+                          new StepRef(row.uuid("id"), name),
+                          row.enumValue("type", StepType.class),
+                          row.enumValue("state", StepState.class),
+                          row.instant("wake_at"),
+                          row.bool("due")),
                   jobId,
                   name);
           if (step.isPresent()) {
@@ -1061,8 +1071,8 @@ public final class StepStore {
                       row ->
                           new Sleep(
                               created,
-                              row.enumValue(1, StepState.class) == StepState.SUCCEEDED,
-                              row.instant(2)),
+                              row.enumValue("state", StepState.class) == StepState.SUCCEEDED,
+                              row.instant("wake_at")),
                       created.id(),
                       jobId,
                       name,
@@ -1154,14 +1164,14 @@ public final class StepStore {
                   FIND_POLL_STEP_SQL,
                   row ->
                       new StoredPoll(
-                          new StepRef(row.uuid(1), name),
-                          row.enumValue(2, StepType.class),
-                          row.enumValue(3, StepState.class),
-                          row.string(4),
-                          row.integer(5),
-                          row.instant(6),
-                          row.bool(7),
-                          row.string(8)),
+                          new StepRef(row.uuid("id"), name),
+                          row.enumValue("type", StepType.class),
+                          row.enumValue("state", StepState.class),
+                          row.string("result"),
+                          row.integer("attempts"),
+                          row.instant("wake_at"),
+                          row.bool("due"),
+                          row.string("last_error")),
                   jobId,
                   name);
           if (step.isEmpty()) {
@@ -1169,7 +1179,7 @@ public final class StepStore {
             int checks =
                 db.one(
                         START_POLL_SQL,
-                        row -> row.integer(1),
+                        row -> row.integer("attempts"),
                         created.id(),
                         jobId,
                         name,
@@ -1192,7 +1202,7 @@ public final class StepStore {
               int checks =
                   db.one(
                           RESTART_POLL_SQL,
-                          row -> row.integer(1),
+                          row -> row.integer("attempts"),
                           lock.nodeId(),
                           Sql.millis(timeout),
                           found.step().id())
@@ -1266,9 +1276,9 @@ public final class StepStore {
                   WAIT_POLL_SQL,
                   row ->
                       new PollWait(
-                          row.enumValue(1, StepState.class) == StepState.TIMED_OUT,
-                          row.instant(2),
-                          row.integer(3)),
+                          row.enumValue("state", StepState.class) == StepState.TIMED_OUT,
+                          row.instant("wake_at"),
+                          row.integer("attempts")),
                   Sql.millis(delay),
                   step.id(),
                   lock.nodeId(),
@@ -1390,11 +1400,11 @@ public final class StepStore {
             SUSPEND_JOB_SQL,
             row ->
                 new Suspension(
-                    row.enumValue(1, JobState.class),
-                    row.instant(2),
-                    row.integer(3),
-                    row.string(4),
-                    row.instant(5)),
+                    row.enumValue("state", JobState.class),
+                    row.instant("wake_at"),
+                    row.integer("attempts"),
+                    row.string("type"),
+                    row.instant("due_at")),
             jobId,
             lock.token(),
             step.id());
@@ -1461,7 +1471,11 @@ public final class StepStore {
               db.one(
                   POSTPONE_JOB_SQL,
                   row ->
-                      new Postponement(row.instant(1), row.integer(2), row.string(3), row.bool(4)),
+                      new Postponement(
+                          row.instant("scheduled_at"),
+                          row.integer("attempts"),
+                          row.string("type"),
+                          row.bool("cancel_requested")),
                   Sql.millis(delay),
                   jobId,
                   lock.token());
@@ -1512,7 +1526,7 @@ public final class StepStore {
    * @throws JobLockLostException if the job is no longer running on the node
    */
   static void requireJobLock(Sql db, UUID jobId, JobLock lock) throws SQLException {
-    if (!db.one(IS_JOB_LOCKED_SQL, row -> row.bool(1), jobId, lock.token()).orElse(false)) {
+    if (!db.one(IS_JOB_LOCKED_SQL, row -> row.bool("locked"), jobId, lock.token()).orElse(false)) {
       throw new JobLockLostException(jobId, lock.nodeId());
     }
   }

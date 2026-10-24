@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
 public record DeletedBatch(int count, @Nullable Instant last, Instant cutoff) {
 
   static final Sql.RowMapper<DeletedBatch> MAPPER =
-      row -> new DeletedBatch(row.integer(1), row.instant(2), row.instant(3));
+      row -> new DeletedBatch(row.integer("count"), row.instant("last"), row.instant("cutoff"));
 
   /** Deletes one batch. */
   @FunctionalInterface
