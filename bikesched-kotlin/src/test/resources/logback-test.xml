@@ -3,7 +3,7 @@
         <encoder>
             <!-- Logging context keys are only printed when set: each " key=value" pair is dropped by
                  %replace if its value is empty (e.g. no job id on the poller, no step outside steps). -->
-            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread]%replace( node=%X{bikesched.nodeId}){' node=$', ''}%replace( job=%X{bikesched.jobId}){' job=$', ''}%replace( type=%X{bikesched.jobType}){' type=$', ''}%replace( step=%X{bikesched.stepName}){' step=$', ''} %logger{36} - %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread]%replace( node=%X{bikesched.nodeId}){' node=$', ''}%replace( job=%X{bikesched.jobId}){' job=$', ''}%replace( name=%X{bikesched.jobName}){' name=$', ''}%replace( step=%X{bikesched.stepName}){' step=$', ''} %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 

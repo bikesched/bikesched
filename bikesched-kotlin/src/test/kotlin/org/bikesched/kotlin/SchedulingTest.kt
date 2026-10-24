@@ -11,7 +11,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.awaitility.Awaitility.await
 import org.bikesched.job.JobState
-import org.bikesched.job.JobType
+import org.bikesched.job.TypedJob
 import org.junit.jupiter.api.Test
 
 /**
@@ -31,7 +31,7 @@ class SchedulingTest {
     testNode("job").use { bikesched ->
       val reportId =
         bikesched.createJob(
-          type = reports,
+          name = reports,
           payload = Report("sales"),
           priority = 5,
           maxAttempts = 1,
@@ -39,7 +39,7 @@ class SchedulingTest {
           ran += "${report.name} ${attempts()}/${maxAttempts()}"
         }
       val cleanupId =
-        bikesched.createJob(type = cleanups, timeout = 1.minutes) { ran += "cleanup ${id()}" }
+        bikesched.createJob(name = cleanups, timeout = 1.minutes) { ran += "cleanup ${id()}" }
 
       await().untilAsserted {
         assertThat(ran).containsExactlyInAnyOrder("sales 1/1", "cleanup $cleanupId")
@@ -48,7 +48,7 @@ class SchedulingTest {
         assertThat(bikesched.findJobOrNull(reportId)?.state()).isEqualTo(JobState.SUCCEEDED)
       }
       // The handler is registered under the type now: further jobs need none.
-      bikesched.createJob(type = cleanups)
+      bikesched.createJob(name = cleanups)
       await().untilAsserted { assertThat(ran).hasSize(3) }
     }
   }
@@ -56,13 +56,13 @@ class SchedulingTest {
   @Test
   fun `idempotency key schedules a job and publishes an event once`() {
     val reports = unique("idempotent")
-    val typed = JobType.of(unique("idempotent-typed"), Report::class.java)
+    val typed = TypedJob.of(unique("idempotent-typed"), Report::class.java)
     val inTransaction = unique("idempotent-tx")
     val event = unique("idempotent-event")
     testNode("idempotent").use { bikesched ->
       val first =
-        bikesched.createJob(type = reports, payload = Report("a"), idempotencyKey = "k") {}
-      assertThat(bikesched.createJob(type = reports, payload = Report("b"), idempotencyKey = "k"))
+        bikesched.createJob(name = reports, payload = Report("a"), idempotencyKey = "k") {}
+      assertThat(bikesched.createJob(name = reports, payload = Report("b"), idempotencyKey = "k"))
         .isEqualTo(first)
 
       val firstTyped = bikesched.createJob(typed, Report("a"), idempotencyKey = "k") {}
@@ -73,12 +73,12 @@ class SchedulingTest {
         connection.autoCommit = false
         val stored =
           bikesched.createJob(
-            type = inTransaction,
+            name = inTransaction,
             connection = connection,
             idempotencyKey = "k",
           ) {}
         assertThat(
-            bikesched.createJob(type = inTransaction, connection = connection, idempotencyKey = "k")
+            bikesched.createJob(name = inTransaction, connection = connection, idempotencyKey = "k")
           )
           .isEqualTo(stored)
         connection.commit()
@@ -102,7 +102,7 @@ class SchedulingTest {
     val runs = CopyOnWriteArrayList<String>()
     testNode("postpone").use { bikesched ->
       val id =
-        bikesched.createJob(type = unique("postpone"), maxAttempts = 1) {
+        bikesched.createJob(name = unique("postpone"), maxAttempts = 1) {
           runs += "job"
           if (runs.size == 1) postpone(100.milliseconds)
           step<String>("charge") {
@@ -124,7 +124,7 @@ class SchedulingTest {
     val seen = CopyOnWriteArrayList<String>()
     testNode("step-on-failure").use { bikesched ->
       val id =
-        bikesched.createJob(type = unique("step-on-failure"), maxAttempts = 1) {
+        bikesched.createJob(name = unique("step-on-failure"), maxAttempts = 1) {
           val report =
             step<Report>(
               "fetch",
@@ -164,10 +164,10 @@ class SchedulingTest {
       bikesched.handleJobFailures(pings) { handled += "ping ${state()}" }
       val ids =
         listOf(
-          bikesched.createJob(type = reports, payload = Report("sales"), maxAttempts = 1),
-          bikesched.createJob(type = pings, maxAttempts = 1),
+          bikesched.createJob(name = reports, payload = Report("sales"), maxAttempts = 1),
+          bikesched.createJob(name = pings, maxAttempts = 1),
           bikesched.createJob(
-            type = created,
+            name = created,
             payload = Report("stock"),
             maxAttempts = 1,
             onFailure = { report -> handled += "created ${report.name}" },
@@ -195,7 +195,7 @@ class SchedulingTest {
     val ran = CopyOnWriteArrayList<String>()
     testNode("sleep").use { bikesched ->
       val id =
-        bikesched.createJob(type = unique("sleep")) {
+        bikesched.createJob(name = unique("sleep")) {
           ran += "before"
           sleep("nap", 200.milliseconds)
           ran += "after"
@@ -214,7 +214,7 @@ class SchedulingTest {
 
     testNode("handle").use { bikesched ->
       bikesched.handleJobs(type) { ids += id() }
-      val jobId = bikesched.createJob(type = type)
+      val jobId = bikesched.createJob(name = type)
 
       await().untilAsserted { assertThat(ids).containsExactly(jobId) }
     }
@@ -227,12 +227,12 @@ class SchedulingTest {
     testNode("due").use { bikesched ->
       bikesched.handleJobs(type) {}
       val at = Instant.now().plusSeconds(3600)
-      val atId = bikesched.createJob(type = type, at = at)
-      val delayedId = bikesched.createJob(type = type, delay = 1.hours)
+      val atId = bikesched.createJob(name = type, at = at)
+      val delayedId = bikesched.createJob(name = type, delay = 1.hours)
 
       assertThat(bikesched.findJobOrNull(atId)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(bikesched.findJobOrNull(delayedId)?.state()).isEqualTo(JobState.SCHEDULED)
-      assertThatThrownBy { bikesched.createJob(type = type, at = at, delay = 1.hours) }
+      assertThatThrownBy { bikesched.createJob(name = type, at = at, delay = 1.hours) }
         .isInstanceOf(IllegalArgumentException::class.java)
         .hasMessage("at and delay are mutually exclusive")
       listOf(atId, delayedId).forEach { bikesched.cancel(it) }
@@ -248,14 +248,14 @@ class SchedulingTest {
       val rolledBack =
         TestDatabase.dataSource.connection.use { connection ->
           connection.autoCommit = false
-          val id = bikesched.createJob(type = type, connection = connection, delay = 1.hours)
+          val id = bikesched.createJob(name = type, connection = connection, delay = 1.hours)
           connection.rollback()
           id
         }
       val committed =
         TestDatabase.dataSource.connection.use { connection ->
           connection.autoCommit = false
-          val id = bikesched.createJob(type = type, connection = connection, delay = 1.hours)
+          val id = bikesched.createJob(name = type, connection = connection, delay = 1.hours)
           connection.commit()
           id
         }
@@ -275,7 +275,7 @@ class SchedulingTest {
     testNode("recurring-job").use { bikesched ->
       val reportOccurrence =
         bikesched.createRecurringJob(
-          type = typed,
+          name = typed,
           recurrence = every(1.hours),
           payload = Report("daily"),
           delay = 1.hours,
@@ -285,19 +285,19 @@ class SchedulingTest {
       val firstRun = Instant.now().plusSeconds(7200)
       val cleanupOccurrence =
         bikesched.createRecurringJob(
-          type = plain,
+          name = plain,
           recurrence = every(1.hours),
           firstRun = firstRun,
         ) {}
       val syncOccurrence =
-        bikesched.createRecurringJob(type = synced, recurrence = everyAfterEnd(15.minutes)) {}
+        bikesched.createRecurringJob(name = synced, recurrence = everyAfterEnd(15.minutes)) {}
 
       assertThat(bikesched.findJobOrNull(reportOccurrence)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(bikesched.findJobOrNull(cleanupOccurrence)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(bikesched.findJobOrNull(syncOccurrence)?.state()).isEqualTo(JobState.SCHEDULED)
       assertThat(
           bikesched.createRecurringJob(
-            type = plain,
+            name = plain,
             recurrence = every(1.hours),
             firstRun = firstRun,
           )
@@ -330,7 +330,7 @@ class SchedulingTest {
           )
         results += "$answer / $late"
       }
-      val jobId = bikesched.createJob(type = type, payload = Report("r-1"))
+      val jobId = bikesched.createJob(name = type, payload = Report("r-1"))
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.WAITING)
       }
@@ -358,7 +358,7 @@ class SchedulingTest {
           TypedEventTest.Payment("", 100)
         }
       }
-      val jobId = bikesched.createJob(type = type)
+      val jobId = bikesched.createJob(name = type)
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.FAILED)
@@ -379,7 +379,7 @@ class SchedulingTest {
         publishEvent(name = "${eventName}-published", key = "event", payload = Report("shipped"))
         received += waitForEvent<Report?>("without-payload", eventName, "b")
       }
-      val jobId = bikesched.createJob(type = type)
+      val jobId = bikesched.createJob(name = type)
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.WAITING)
       }

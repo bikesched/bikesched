@@ -8,7 +8,7 @@ import org.bikesched.annotation.JobFailureHandler;
 import org.bikesched.annotation.JobHandler;
 import org.bikesched.job.FailedJob;
 import org.bikesched.job.Job;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 import org.bikesched.spring.BikeschedTransactions;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,8 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderService {
 
-  public static final JobType<FulfillOrder> FULFILL_ORDER =
-      JobType.of("fulfill-order", FulfillOrder.class);
+  public static final TypedJob<FulfillOrder> FULFILL_ORDER =
+      TypedJob.of("fulfill-order", FulfillOrder.class);
 
   private final OrderRepository orders;
   private final FulfillmentService fulfillment;
@@ -54,7 +54,7 @@ public class OrderService {
         .schedule();
   }
 
-  @JobHandler(type = "fulfill-order")
+  @JobHandler(name = "fulfill-order")
   public void fulfill(Job job, FulfillOrder command) throws Exception {
     Order order = orders.findById(command.orderId()).orElseThrow();
     UUID fulfillmentId =
@@ -68,7 +68,7 @@ public class OrderService {
     System.out.println("Order " + order.getId() + " fulfilled (" + finished.fulfillmentId() + ")");
   }
 
-  @JobFailureHandler(type = "fulfill-order")
+  @JobFailureHandler(name = "fulfill-order")
   public void fulfillmentFailed(FailedJob failed, FulfillOrder command) {
     Order order = orders.findById(command.orderId()).orElseThrow();
     order.markFailed();

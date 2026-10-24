@@ -21,7 +21,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.examples.util.DatabaseUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * A provider's rate limit with <a href="https://github.com/bucket4j/bucket4j">Bucket4j</a> and
@@ -38,7 +38,7 @@ import org.bikesched.job.JobType;
 public final class RateLimitExample {
 
   /** Sends one SMS. */
-  public static final JobType<Sms> SEND_SMS = JobType.of("send-sms", Sms.class);
+  public static final TypedJob<Sms> SEND_SMS = TypedJob.of("send-sms", Sms.class);
 
   /**
    * The job payload.

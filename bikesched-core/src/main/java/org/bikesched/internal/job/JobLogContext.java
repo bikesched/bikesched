@@ -14,7 +14,7 @@ public final class JobLogContext implements AutoCloseable {
   private JobLogContext() {}
 
   /**
-   * Puts the node id, job id and job type into the logging context.
+   * Puts the node id, job id and job name into the logging context.
    *
    * @param nodeId the node running the job
    * @param job the job
@@ -23,7 +23,7 @@ public final class JobLogContext implements AutoCloseable {
   public static JobLogContext open(Object nodeId, Job job) {
     MDC.put(BikeschedLogContext.NODE_ID, String.valueOf(nodeId));
     MDC.put(BikeschedLogContext.JOB_ID, job.id().toString());
-    MDC.put(BikeschedLogContext.JOB_TYPE, job.type());
+    MDC.put(BikeschedLogContext.JOB_NAME, job.name());
     return new JobLogContext();
   }
 
@@ -31,6 +31,6 @@ public final class JobLogContext implements AutoCloseable {
   public void close() {
     MDC.remove(BikeschedLogContext.NODE_ID);
     MDC.remove(BikeschedLogContext.JOB_ID);
-    MDC.remove(BikeschedLogContext.JOB_TYPE);
+    MDC.remove(BikeschedLogContext.JOB_NAME);
   }
 }

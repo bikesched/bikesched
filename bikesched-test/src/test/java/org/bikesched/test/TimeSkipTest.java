@@ -12,9 +12,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.Bikesched;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
 import org.bikesched.job.Poll;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.TypedJob;
 import org.junit.jupiter.api.Test;
 
 /** Tests {@link BikeschedTest#fastForward} and {@link BikeschedTest#advanceTime}. */
@@ -185,7 +185,7 @@ class TimeSkipTest extends AbstractTestModuleTest {
   @Test
   void advanceTimeLeavesOtherTypesAlone() throws SQLException {
     try (Bikesched bikesched = buildNode("time-skip")) {
-      var advanced = JobType.of(uniqueType("advanced"), Object.class);
+      var advanced = TypedJob.of(uniqueType("advanced"), Object.class);
       String other = uniqueType("other");
       bikesched.registerJobHandler(advanced.name(), job -> {});
       bikesched.registerJobHandler(other, job -> {});
@@ -240,7 +240,7 @@ class TimeSkipTest extends AbstractTestModuleTest {
 
   private static void deleteJobs(String type) throws SQLException {
     try (var connection = DATA_SOURCE.getConnection();
-        var statement = connection.prepareStatement("delete from bikesched_jobs where type = ?")) {
+        var statement = connection.prepareStatement("delete from bikesched_jobs where name = ?")) {
       statement.setString(1, type);
       statement.execute();
     }

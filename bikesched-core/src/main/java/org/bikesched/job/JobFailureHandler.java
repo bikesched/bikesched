@@ -2,7 +2,7 @@
 package org.bikesched.job;
 
 /**
- * Handles a job of one type that failed permanently, before it ends {@code FAILED} or {@code
+ * Handles a job of one name that failed permanently, before it ends {@code FAILED} or {@code
  * COMPENSATION_FAILED}, e.g. to move it to a dead-letter table or to alert someone; registered via
  * {@link org.bikesched.Bikesched#registerJobFailureHandler(String, JobFailureHandler)}.
  *

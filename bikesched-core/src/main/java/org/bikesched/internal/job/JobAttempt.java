@@ -129,9 +129,9 @@ final class JobAttempt {
     }
     try (var logContext = JobLogContext.open(nodeId, job)) {
       LOG.warn(
-          "Job {} of type {} exceeded its timeout of {} (attempt {} of {}), interrupting it",
+          "Job {} named {} exceeded its timeout of {} (attempt {} of {}), interrupting it",
           job.id(),
-          job.type(),
+          job.name(),
           exceeded,
           job.attempts(),
           job.maxAttempts());

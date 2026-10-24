@@ -28,8 +28,8 @@ final class DefaultFailedJob implements FailedJob {
   }
 
   @Override
-  public String type() {
-    return job.type();
+  public String name() {
+    return job.name();
   }
 
   @Override
@@ -56,8 +56,8 @@ final class DefaultFailedJob implements FailedJob {
   public String toString() {
     return "FailedJob[id="
         + job.id()
-        + ", type="
-        + job.type()
+        + ", name="
+        + job.name()
         + ", state="
         + state
         + ", error="

@@ -25,7 +25,7 @@ class JobSleepTest extends AbstractBikeschedTest {
   /** Deletes the sleeping jobs left behind, so later tests' nodes don't claim them. */
   @AfterEach
   void deleteJobs() throws Exception {
-    execute("delete from bikesched_jobs where type like 'sleep-%'");
+    execute("delete from bikesched_jobs where name like 'sleep-%'");
   }
 
   @Test

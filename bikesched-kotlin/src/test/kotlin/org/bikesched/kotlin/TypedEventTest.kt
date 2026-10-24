@@ -25,7 +25,7 @@ class TypedEventTest {
       bikesched.handleJobs<Order>(order) { order ->
         payments += waitForEvent<Payment>("await-payment", paymentReceived, order.id)
       }
-      val jobId = bikesched.createJob(type = order, payload = Order("o-1", 100))
+      val jobId = bikesched.createJob(name = order, payload = Order("o-1", 100))
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.WAITING)
       }
@@ -65,7 +65,7 @@ class TypedEventTest {
           )
         results += "$payment / $fallback"
       }
-      val jobId = bikesched.createJob(type = order, payload = Order("o-2", 50))
+      val jobId = bikesched.createJob(name = order, payload = Order("o-2", 50))
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)

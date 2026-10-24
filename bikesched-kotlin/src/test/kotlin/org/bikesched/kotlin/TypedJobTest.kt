@@ -27,7 +27,7 @@ class TypedJobTest {
     testNode("typed").use { bikesched ->
       bikesched.handleJobs<SendMail>(sendMail) { mail -> received += this to mail }
       val jobId =
-        bikesched.createJob(type = sendMail, payload = SendMail("a@b.de", "Hi"), priority = 5)
+        bikesched.createJob(name = sendMail, payload = SendMail("a@b.de", "Hi"), priority = 5)
 
       await().untilAsserted { assertThat(received).hasSize(1) }
       val (job, mail) = received.single()
@@ -47,7 +47,7 @@ class TypedJobTest {
 
     testNode("no-payload").use { bikesched ->
       bikesched.handleJobs<SendMail>(sendMail) { called = true }
-      val jobId = bikesched.createJob(type = sendMail, maxAttempts = 1)
+      val jobId = bikesched.createJob(name = sendMail, maxAttempts = 1)
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.FAILED)
@@ -63,8 +63,8 @@ class TypedJobTest {
 
     testNode("optional-payload").use { bikesched ->
       bikesched.handleJobs<SendMail?>(type) { mail -> received += mail?.to ?: "none" }
-      bikesched.createJob(type = type)
-      bikesched.createJob(type = type, payload = SendMail("a@b.de", "Hi"))
+      bikesched.createJob(name = type)
+      bikesched.createJob(name = type, payload = SendMail("a@b.de", "Hi"))
 
       await().untilAsserted { assertThat(received).containsExactlyInAnyOrder("none", "a@b.de") }
     }
@@ -105,7 +105,7 @@ class TypedJobTest {
         receipts.add(receipt)
         if (attempts() == 1) fail("retry once").retryAfter(10.milliseconds)
       }
-      val jobId = bikesched.createJob(type = order, payload = SendMail("a@b.de", "Order"))
+      val jobId = bikesched.createJob(name = order, payload = SendMail("a@b.de", "Order"))
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
@@ -139,7 +139,7 @@ class TypedJobTest {
         step<Unit>("notify", compensation = { _, _ -> compensated += "recall notification" }) {}
         if (!isCompensating) cancel("customer cancelled")
       }
-      val jobId = bikesched.createJob(type = booking, payload = SendMail("a@b.de", "Booking"))
+      val jobId = bikesched.createJob(name = booking, payload = SendMail("a@b.de", "Booking"))
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.CANCELLED)

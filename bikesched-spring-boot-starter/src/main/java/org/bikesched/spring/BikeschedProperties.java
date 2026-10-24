@@ -35,7 +35,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param maxConcurrentJobs how many jobs the node executes at the same time
  * @param pollInterval delay between two polls for due jobs
  * @param listenForDueJobs whether the node listens for due jobs and notifies the other nodes
- * @param notifyInterval how long the node collects due job types before notifying them
+ * @param notifyInterval how long the node collects due job names before notifying them
  * @param heartbeatInterval interval between the heartbeats the node writes
  * @param nodeTimeout time without heartbeat after which a node is considered dead
  * @param defaultJobTimeout timeout for jobs scheduled without one

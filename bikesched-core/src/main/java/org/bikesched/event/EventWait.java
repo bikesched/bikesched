@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * A wait for an event as a durable step of a job, obtained via {@link
  * org.bikesched.job.Job#waitForEvent(String, String, String, Class)} or {@link
- * org.bikesched.job.Job#waitForEvent(String, EventType, String)}: an optional timeout and failure
+ * org.bikesched.job.Job#waitForEvent(String, TypedEvent, String)}: an optional timeout and failure
  * handler, then {@link #receive()}:
  *
  * <pre>{@code

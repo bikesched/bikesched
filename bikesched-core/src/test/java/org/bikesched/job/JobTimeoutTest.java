@@ -71,7 +71,7 @@ class JobTimeoutTest extends AbstractBikeschedTest {
                         .equals(
                             "Job "
                                 + jobId
-                                + " of type hanging exceeded its timeout of PT0.2S (attempt 1 of 2), interrupting it"))
+                                + " named hanging exceeded its timeout of PT0.2S (attempt 1 of 2), interrupting it"))
         .singleElement()
         .satisfies(
             e ->

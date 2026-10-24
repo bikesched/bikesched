@@ -75,13 +75,13 @@ public final class DatabaseAccess {
 
   /** Passes on the jobs the committed work made due; never throws, the work is committed. */
   private void report(Sql sql) {
-    if (sql.dueNowTypes().isEmpty() && sql.dueAtTimes().isEmpty()) {
+    if (sql.dueNowNames().isEmpty() && sql.dueAtTimes().isEmpty()) {
       return;
     }
     DueJobs target = dueJobs;
     try {
-      if (!sql.dueNowTypes().isEmpty()) {
-        target.dueNow(Set.copyOf(sql.dueNowTypes()));
+      if (!sql.dueNowNames().isEmpty()) {
+        target.dueNow(Set.copyOf(sql.dueNowNames()));
       }
       sql.dueAtTimes().forEach(target::dueAt);
     } catch (RuntimeException e) {
@@ -181,10 +181,10 @@ public final class DatabaseAccess {
     try {
       Sql sql = sql(connection);
       T result = work.run(sql);
-      if (!sql.dueNowTypes().isEmpty() && dueJobs.isNotifying()) {
-        sql.execute(JobStore.NOTIFY_DUE_SQL, Sql.array("text", sql.dueNowTypes().toArray()));
+      if (!sql.dueNowNames().isEmpty() && dueJobs.isNotifying()) {
+        sql.execute(JobStore.NOTIFY_DUE_SQL, Sql.array("text", sql.dueNowNames().toArray()));
       }
-      sql.dueNowTypes().clear(); // not committed yet: due-later times only arm this node's timer
+      sql.dueNowNames().clear(); // not committed yet: due-later times only arm this node's timer
       report(sql);
       return result;
     } catch (SQLException e) {

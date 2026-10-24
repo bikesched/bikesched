@@ -21,11 +21,11 @@ final class DefaultStepJobBuilder<P extends @Nullable Object>
 
   DefaultStepJobBuilder(
       DefaultJob parent,
-      String type,
+      String name,
       Class<P> payloadType,
       JsonMapper jsonMapper,
       Scheduler scheduler) {
-    super(type, payloadType, jsonMapper, scheduler);
+    super(name, payloadType, jsonMapper, scheduler);
     this.parent = parent;
   }
 
@@ -55,7 +55,7 @@ final class DefaultStepJobBuilder<P extends @Nullable Object>
   @Override
   public UUID schedule(Instant at) {
     Objects.requireNonNull(at, "at");
-    scheduler.requireHandler(type, null);
+    scheduler.requireHandler(name, null);
     return parent.startChildJob(stepName, newJob(at), compensation);
   }
 

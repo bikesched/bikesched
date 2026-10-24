@@ -17,6 +17,7 @@ final class AdminJson {
   static Json.Obj job(JobSummary job) {
     return Json.object()
         .put("id", job.id())
+        .put("name", job.name())
         .put("type", job.type())
         .put("state", job.state())
         .put("attempts", job.attempts())
@@ -28,7 +29,7 @@ final class AdminJson {
         .put("finishedAt", job.finishedAt())
         .put("lastError", job.lastError())
         .put("parentJobId", job.parentJobId())
-        .put("parentJobType", job.parentJobType())
+        .put("parentJobName", job.parentJobName())
         .put("recurrence", job.recurrence())
         .put("idempotencyKey", job.idempotencyKey())
         .put("nodeId", job.nodeId())
@@ -55,7 +56,7 @@ final class AdminJson {
         .put("eventKey", step.eventKey())
         .put("eventId", step.eventId())
         .put("childJobId", step.childJobId())
-        .put("childJobType", step.childJobType())
+        .put("childJobName", step.childJobName())
         .put("childJobState", step.childJobState())
         .put("childJobExists", step.childJobExists());
   }
@@ -86,7 +87,7 @@ final class AdminJson {
     return Json.object()
         .put("stepId", step.stepId())
         .put("jobId", step.jobId())
-        .put("jobType", step.jobType())
+        .put("jobName", step.jobName())
         .put("jobState", step.jobState())
         .put("stepName", step.stepName())
         .put("stepType", step.stepType())
@@ -97,7 +98,7 @@ final class AdminJson {
     return Json.object()
         .put("stepId", step.stepId())
         .put("jobId", step.jobId())
-        .put("jobType", step.jobType())
+        .put("jobName", step.jobName())
         .put("stepName", step.stepName())
         .put("eventName", step.eventName())
         .put("eventKey", step.eventKey())

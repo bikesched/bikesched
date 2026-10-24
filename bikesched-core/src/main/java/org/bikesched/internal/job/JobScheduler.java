@@ -10,8 +10,8 @@ import org.bikesched.internal.util.UuidUtil;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
-import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.TypedJob;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +33,7 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
 
   /**
    * @param database the database
-   * @param registry the node's job types
+   * @param registry the node's job names
    * @param nodeName the node's name, for logging
    * @param recurrenceParsers the node's recurrence parsers
    * @param beforeDatabaseAccess runs first in every operation; throws if the node is closed
@@ -52,7 +52,7 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
   }
 
   /**
-   * Stores a job built by a {@link JobBuilder}, unless a job of its type has its idempotency key;
+   * Stores a job built by a {@link JobBuilder}, unless a job of its name has its idempotency key;
    * registers its handler first if given and new.
    *
    * @return the id of the new job, or of the existing job with the idempotency key
@@ -64,9 +64,9 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
       @Nullable JobFailureHandler failureHandler,
       @Nullable Connection connection) {
     beforeDatabaseAccess.run();
-    String type = job.type();
-    requireHandler(type, handler);
-    registerFailureHandler(type, failureHandler);
+    String name = job.name();
+    requireHandler(name, handler);
+    registerFailureHandler(name, failureHandler);
     UUID jobId = UuidUtil.timeOrdered();
     UUID stored =
         connection == null
@@ -74,16 +74,16 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
             : database.jobs().insertJob(connection, jobId, job);
     if (!stored.equals(jobId)) {
       LOG.debug(
-          "Job {} of type {} has idempotency key {}, not scheduling another one",
+          "Job {} named {} has idempotency key {}, not scheduling another one",
           stored,
-          type,
+          name,
           job.idempotencyKey());
       return stored;
     }
     LOG.debug(
-        "Scheduled job {} of type {} at {} (priority {}, max {} attempt(s), timeout {}){}",
+        "Scheduled job {} named {} at {} (priority {}, max {} attempt(s), timeout {}){}",
         jobId,
-        type,
+        name,
         job.scheduledAt(),
         job.priority(),
         job.maxAttempts(),
@@ -93,13 +93,13 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
   }
 
   /**
-   * Remembers the payload class of a typed job type, see {@link JobRegistry#requirePayloadType}.
+   * Remembers the payload class of a typed job name, see {@link JobRegistry#requirePayloadType}.
    *
-   * @param type the typed job type
+   * @param typedJob the job name and its payload class
    * @throws IllegalArgumentException if the name is already used with another payload class
    */
-  public void requirePayloadType(JobType<?> type) {
-    registry.requirePayloadType(type);
+  public void requirePayloadType(TypedJob<?> typedJob) {
+    registry.requirePayloadType(typedJob);
   }
 
   @Override
@@ -115,9 +115,9 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
       @Nullable JobFailureHandler failureHandler,
       @Nullable Instant firstRun) {
     beforeDatabaseAccess.run();
-    String type = job.type();
-    requireHandler(type, handler);
-    registerFailureHandler(type, failureHandler);
+    String name = job.name();
+    requireHandler(name, handler);
+    registerFailureHandler(name, failureHandler);
     Instant now = Instant.now();
     Instant first = firstRun != null ? firstRun : job.nextRun(now, now);
     var registration = database.jobs().registerRecurringJob(job.occurrence(first));
@@ -126,20 +126,20 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
     if (registration.created()) {
       LOG.info(
           "Registered recurring job {} ({}), first occurrence at {}",
-          type,
+          name,
           recurrence,
           registration.scheduledAt());
     } else if (registration.previousRecurrence() != null) {
       LOG.info(
           "Recurrence of recurring job {} changed from '{}' to '{}', next occurrence moved to {}",
-          type,
+          name,
           registration.previousRecurrence(),
           recurrence,
           registration.scheduledAt());
     } else {
       LOG.info(
           "Registered recurring job {} ({}), pending occurrence {} at {}",
-          type,
+          name,
           recurrence,
           registration.state(),
           registration.scheduledAt());
@@ -150,49 +150,49 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
   /**
    * Removes a recurring job from this node and deletes its pending occurrence.
    *
-   * @param type the recurring job's type
+   * @param name the recurring job's name
    * @return whether a pending occurrence was deleted
    */
-  public boolean removeRecurringJob(String type) {
+  public boolean removeRecurringJob(String name) {
     beforeDatabaseAccess.run();
-    boolean registered = registry.removeRecurringJob(type);
-    int deleted = database.jobs().deletePendingOccurrences(type);
+    boolean registered = registry.removeRecurringJob(name);
+    int deleted = database.jobs().deletePendingOccurrences(name);
     LOG.info(
         "Removed recurring job {}{}{}",
-        type,
+        name,
         registered ? " from this node" : "",
         deleted > 0 ? ", deleted its pending occurrence" : ", no pending occurrence to delete");
     return deleted > 0;
   }
 
   /**
-   * Checks that the job type has a handler, registering the given one first if it has none.
+   * Checks that the job name has a handler, registering the given one first if it has none.
    *
-   * @param type the job type
+   * @param name the job name
    * @param handler the handler set on the builder, {@code null} if none
-   * @throws IllegalArgumentException if the type has no handler
+   * @throws IllegalArgumentException if the name has no handler
    */
   @Override
-  public void requireHandler(String type, @Nullable JobHandler handler) {
+  public void requireHandler(String name, @Nullable JobHandler handler) {
     if (handler != null) {
-      if (registry.register(type, handler)) {
-        LOG.info("bikesched node {} registered handler for job type {}", nodeName, type);
+      if (registry.register(name, handler)) {
+        LOG.info("bikesched node {} registered handler for job name {}", nodeName, name);
       } else {
-        LOG.debug("Handler for job type {} already registered, keeping it", type);
+        LOG.debug("Handler for job name {} already registered, keeping it", name);
       }
     }
-    registry.requireHandler(type);
+    registry.requireHandler(name);
   }
 
-  /** Registers a builder's failure handler, if given, unless the type has one. */
-  private void registerFailureHandler(String type, @Nullable JobFailureHandler failureHandler) {
+  /** Registers a builder's failure handler, if given, unless the name has one. */
+  private void registerFailureHandler(String name, @Nullable JobFailureHandler failureHandler) {
     if (failureHandler == null) {
       return;
     }
-    if (registry.registerFailureHandler(type, failureHandler)) {
-      LOG.info("bikesched node {} registered failure handler for job type {}", nodeName, type);
+    if (registry.registerFailureHandler(name, failureHandler)) {
+      LOG.info("bikesched node {} registered failure handler for job name {}", nodeName, name);
     } else {
-      LOG.debug("Failure handler for job type {} already registered, keeping it", type);
+      LOG.debug("Failure handler for job name {} already registered, keeping it", name);
     }
   }
 }

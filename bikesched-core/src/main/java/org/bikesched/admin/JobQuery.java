@@ -13,12 +13,12 @@ import org.jspecify.annotations.Nullable;
  * starts after the last job of the previous one ({@link #after(JobSummary)}).
  *
  * <pre>{@code
- * JobQuery query = JobQuery.newest(50).withType("send-email").withStates(JobState.FAILED);
+ * JobQuery query = JobQuery.newest(50).withName("send-email").withStates(JobState.FAILED);
  * List<JobSummary> page = admin.findJobs(query);
  * List<JobSummary> next = admin.findJobs(query.after(page.getLast()));
  * }</pre>
  *
- * @param type only jobs of this type; {@code null} for every type
+ * @param name only jobs of this name; {@code null} for every name
  * @param states only jobs in one of these states; empty for every state
  * @param nodeId only jobs this node is running now; {@code null} for every job
  * @param beforeId only jobs after this one in the order, i.e. with a smaller id (job ids are
@@ -26,7 +26,7 @@ import org.jspecify.annotations.Nullable;
  * @param limit the maximum number of jobs, between 1 and {@link #MAX_LIMIT}
  */
 public record JobQuery(
-    @Nullable String type,
+    @Nullable String name,
     Set<JobState> states,
     @Nullable UUID nodeId,
     @Nullable UUID beforeId,
@@ -56,13 +56,13 @@ public record JobQuery(
   }
 
   /**
-   * Returns this query restricted to one job type.
+   * Returns this query restricted to one job name.
    *
-   * @param type the job type; {@code null} for every type
+   * @param name the job name; {@code null} for every name
    * @return a new query
    */
-  public JobQuery withType(@Nullable String type) {
-    return new JobQuery(type, states, nodeId, beforeId, limit);
+  public JobQuery withName(@Nullable String name) {
+    return new JobQuery(name, states, nodeId, beforeId, limit);
   }
 
   /**
@@ -82,7 +82,7 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withStates(Set<JobState> states) {
-    return new JobQuery(type, states, nodeId, beforeId, limit);
+    return new JobQuery(name, states, nodeId, beforeId, limit);
   }
 
   /**
@@ -92,7 +92,7 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withNode(@Nullable UUID nodeId) {
-    return new JobQuery(type, states, nodeId, beforeId, limit);
+    return new JobQuery(name, states, nodeId, beforeId, limit);
   }
 
   /**
@@ -103,7 +103,7 @@ public record JobQuery(
    */
   public JobQuery after(JobSummary last) {
     Objects.requireNonNull(last, "last");
-    return new JobQuery(type, states, nodeId, last.id(), limit);
+    return new JobQuery(name, states, nodeId, last.id(), limit);
   }
 
   static void requireLimit(int limit) {

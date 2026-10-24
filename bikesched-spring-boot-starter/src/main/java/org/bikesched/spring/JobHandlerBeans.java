@@ -82,8 +82,8 @@ final class JobHandlerBeans {
         bound.registerOn(node);
         LOG.debug(
             "bikesched registered {} {} from bean '{}' method {}",
-            bound.isFailureHandler() ? "the failure handler of job type" : "job type",
-            bound.type(),
+            bound.isFailureHandler() ? "the failure handler of job name" : "job name",
+            bound.name(),
             beanName,
             bound.method());
       }

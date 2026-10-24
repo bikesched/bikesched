@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
  * <pre>{@code
  * Admin admin = bikesched.admin();
  * admin.findJobs(JobQuery.newest(50).withStates(JobState.FAILED))
- *     .forEach(job -> log.warn("{} {} failed: {}", job.type(), job.id(), job.lastError()));
+ *     .forEach(job -> log.warn("{} {} failed: {}", job.name(), job.id(), job.lastError()));
  * }</pre>
  *
  * <p>Payloads and results are only read by {@link #findJobData(UUID)} and {@link
@@ -53,14 +53,14 @@ public interface Admin {
   Optional<JobSummary> findJob(UUID jobId);
 
   /**
-   * Looks up the job of a type with an idempotency key, the one scheduling with that key returns
+   * Looks up the job of a name with an idempotency key, the one scheduling with that key returns
    * instead of a new job.
    *
-   * @param type the job type
+   * @param name the job name
    * @param idempotencyKey the idempotency key
-   * @return the job; empty if no job of the type has the key
+   * @return the job; empty if no job of the name has the key
    */
-  Optional<JobSummary> findJob(String type, String idempotencyKey);
+  Optional<JobSummary> findJob(String name, String idempotencyKey);
 
   /**
    * Reads a job's payload and result as JSON text.
@@ -97,23 +97,23 @@ public interface Admin {
   Optional<String> findStepResult(UUID stepId);
 
   /**
-   * Counts the jobs of every type in the table by state. Types this node has a handler for are
-   * listed even without any job yet, see {@link JobTypeSummary#handled()}.
+   * Counts the jobs of every name in the table by state. Names this node has a handler for are
+   * listed even without any job yet, see {@link JobNameSummary#handled()}.
    *
-   * @return one entry per job type, by type name
+   * @return one entry per job name, by name
    */
-  List<JobTypeSummary> findJobTypes();
+  List<JobNameSummary> findJobNames();
 
   /**
    * Reads the runs of a recurring job: its pending occurrence and the latest ended ones. Jobs of
-   * the type scheduled without a recurrence are not runs and left out.
+   * the name scheduled without a recurrence are not runs and left out.
    *
-   * @param type the job type of the recurring job
+   * @param name the job name of the recurring job
    * @param limit the maximum number of ended runs, between 1 and {@link JobQuery#MAX_LIMIT}
    * @return the pending run, if any, and at most {@code limit} ended runs, newest first; both empty
-   *     if the type has no recurring runs
+   *     if the name has no recurring runs
    */
-  RecurringJobRuns findRecurringJobRuns(String type, int limit);
+  RecurringJobRuns findRecurringJobRuns(String name, int limit);
 
   /**
    * Finds unexpired events matching the query, newest first (by publication time, then id).

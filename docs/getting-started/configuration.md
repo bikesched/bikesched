@@ -28,7 +28,7 @@ afterwards (see `autoStartPolling` below).
 | `autoStartPolling(boolean)` | `true` | with `false`, call `start()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated (or validated with `migrateSchema(false)`) on first use (`start()`, scheduling a job, publishing an event), and retried on the next one if that fails |
 | `pollInterval(Duration)` | 10 seconds | delay between two polls for due jobs. While nodes [listen for due jobs](#due-jobs-start-right-away), it is the safety net for missed notifications and bounds how late a delayed job scheduled by another node starts; without listening, every job made due by another node starts within one interval, so lower it (e.g. 5 seconds or less) |
 | `listenForDueJobs(boolean)` | `true` | with `false`, the node neither listens for due jobs nor notifies other nodes, and holds no extra connection; set it the same on all nodes, see [Due jobs start right away](#due-jobs-start-right-away) |
-| `notifyInterval(Duration)` | 100 ms | how long a node collects the job types it made due before notifying the other nodes in one statement: the extra latency of such jobs on other nodes, and at most one notifying commit per node and interval |
+| `notifyInterval(Duration)` | 100 ms | how long a node collects the job names it made due before notifying the other nodes in one statement: the extra latency of such jobs on other nodes, and at most one notifying commit per node and interval |
 | `heartbeatInterval(Duration)` | 5 seconds | interval between the node's heartbeats; at most half the `nodeTimeout` |
 | `nodeTimeout(Duration)` | 30 seconds | time without heartbeat after which other nodes consider the node dead and release its jobs; the builder rejects a value shorter than twice the `heartbeatInterval` |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
@@ -53,8 +53,8 @@ afterwards (see `autoStartPolling` below).
 
 A node sends a heartbeat (every 5 seconds) and polls for due jobs (every 10 seconds), claiming up
 to `maxConcurrentJobs` at a time; see [Builder options](#builder-options) and [Due jobs start right
-away](#due-jobs-start-right-away) for the exact timing. It only claims jobs of types it has
-handlers for, so during a rolling deploy old nodes leave new job types to new nodes.
+away](#due-jobs-start-right-away) for the exact timing. It only claims jobs with names it has
+handlers for, so during a rolling deploy old nodes leave new jobs to new nodes.
 
 A node without a heartbeat for 30 seconds (`nodeTimeout`) is considered dead: other nodes release
 its running jobs for retry on their next node clean-up and remove it after another 30 seconds. A
@@ -112,13 +112,13 @@ types that become due before its next interval poll, e.g. delayed jobs scheduled
 - **All nodes alike.** Set `listenForDueJobs` the same on all nodes and clients (instances with
   `autoStartPolling(false)` notify but don't listen): the jobs a node made due without notifying
   reach the others only on their next interval poll.
-- **Every node gets every notification.** A notification carries the job type only; nodes ignore
-  types they don't handle, and all nodes handling the type poll (all but one claim nothing). Several
+- **Every node gets every notification.** A notification carries the job name only; nodes ignore
+  names they don't handle, and all nodes handling the name poll (all but one claim nothing). Several
   bikesched schemas in one database share the channel `bikesched_jobs`, which only costs an extra
   poll.
 - **Monitoring.** A full notification queue (8 GB by default) makes notifying commits fail;
   `select pg_notification_queue_usage()` shows how full it is. Notifications are short (one per
-  type and batch) and consumed right away by the listening nodes.
+  job name and batch) and consumed right away by the listening nodes.
 
 ## Statement timeout
 
@@ -199,7 +199,7 @@ bikesched.newJob(IMPORT_CUSTOMERS).payload(new ImportCustomers(ids)).schedule();
   `record ImportCustomers(List<CustomerId> customerIds, boolean sendWelcomeMail)`; a bare list or
   string cannot.
 - **Generic collections** like `List<CustomerId>` can't be described by a `Class` (the `JsonMapper`
-  and `JobType` only take one), so wrapping them in an object is needed for typed payloads anyway.
+  and `TypedJob` only take one), so wrapping them in an object is needed for typed payloads anyway.
 - The same applies to step results, which are replayed after a retry or resume.
 
 Make new properties optional (nullable, or a primitive whose zero value is a sensible default), so
@@ -211,7 +211,7 @@ during a rolling deploy, old and new code can read each other's payloads.
 
 bikesched logs through the SLF4J API under the logger names `org.bikesched.*`; bring your own
 binding. On its own threads it fills the logging context with the keys from `BikeschedLogContext`:
-`bikesched.nodeId`, `bikesched.jobId`, `bikesched.jobType` and `bikesched.stepName`, each only where
+`bikesched.nodeId`, `bikesched.jobId`, `bikesched.jobName` and `bikesched.stepName`, each only where
 it applies. With Logback:
 
 ```xml

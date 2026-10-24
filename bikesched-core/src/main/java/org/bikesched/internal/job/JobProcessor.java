@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Processes the jobs claimed by a node, one call of {@link #process(DefaultJob, JobSlot)} per job
- * on the job's own thread: runs the {@link JobHandler} registered for the job's type within the
+ * on the job's own thread: runs the {@link JobHandler} registered for the job's name within the
  * job's timeout and records the outcome in the database.
  *
  * <p>Outcomes, by precedence when a handler does several things:
@@ -55,7 +55,7 @@ import org.slf4j.LoggerFactory;
  * or permanently failed job with completed compensable steps becomes {@code COMPENSATING} instead
  * of ending; when claimed again, its handler is replayed in compensation mode and the registered
  * compensations run, ending the job (or retrying the compensation, see {@link Job#newStep(String,
- * Class)}). A job that would end {@code FAILED} or {@code COMPENSATION_FAILED} and whose type has a
+ * Class)}). A job that would end {@code FAILED} or {@code COMPENSATION_FAILED} and whose name has a
  * {@link JobFailureHandler} on this node becomes {@code FAILING} instead; when claimed again, only
  * the failure handler runs (again after a failure, up to {@code failureHandlerAttempts} runs), then
  * the job ends.
@@ -177,11 +177,11 @@ public final class JobProcessor {
    * @param database the database
    * @param nodeId the node the jobs were claimed by
    * @param nodeName its name, for logging
-   * @param handlers looks up the handler of a job type, {@code null} if none is registered
-   * @param failureHandlers looks up the failure handler of a job type, {@code null} if none is
+   * @param handlers looks up the handler of a job name, {@code null} if none is registered
+   * @param failureHandlers looks up the failure handler of a job name, {@code null} if none is
    *     registered
    * @param failureHandlerAttempts how often a failure handler runs before it is given up
-   * @param recurringJobs looks up the recurring job registered on this node for a job type, {@code
+   * @param recurringJobs looks up the recurring job registered on this node for a job name, {@code
    *     null} if none
    * @param timeoutExecutor runs the timers interrupting attempts that exceed their timeout
    * @param defaultJobTimeout timeout of jobs without one of their own, {@code null} for none
@@ -304,11 +304,11 @@ public final class JobProcessor {
    */
   private Reported abandon(DefaultJob job, @Nullable Exception failure) {
     LOG.warn(
-        "Job {} of type {} is no longer running on bikesched node {} ({}): it was released, e.g."
+        "Job {} named {} is no longer running on bikesched node {} ({}): it was released, e.g."
             + " after missed heartbeats, and may run on another node; abandoning attempt {}"
             + " without recording it",
         job.id(),
-        job.type(),
+        job.name(),
         nodeName,
         nodeId,
         job.attempts(),
@@ -340,9 +340,9 @@ public final class JobProcessor {
         }
       }
       LOG.debug(
-          "Processed job {} of type {} (attempt {}) in {} ms: {}",
+          "Processed job {} named {} (attempt {}) in {} ms: {}",
           job.id(),
-          job.type(),
+          job.name(),
           job.attempts(),
           elapsed.toMillis(),
           outcome.description());
@@ -354,7 +354,7 @@ public final class JobProcessor {
     JobPhase phase = job.phase();
     return new JobClaim(
         job.id(),
-        job.type(),
+        job.name(),
         phase.attempt(),
         phase instanceof JobPhase.Compensate,
         phase instanceof JobPhase.HandleFailure,
@@ -385,17 +385,17 @@ public final class JobProcessor {
   }
 
   /**
-   * The handler registered for the job's type, verified here because claiming is not filtered by
-   * job type.
+   * The handler registered for the job's name, verified here because claiming is not filtered by
+   * job name.
    *
    * @param doing what cannot be done without it, for the log
    */
   private Optional<JobHandler> handler(DefaultJob job, String doing) {
-    JobHandler handler = handlers.apply(job.type());
+    JobHandler handler = handlers.apply(job.name());
     if (handler == null) {
       LOG.error(
-          "No handler registered for job type {} on bikesched node {} ({}), cannot {} job {}",
-          job.type(),
+          "No handler registered for job name {} on bikesched node {} ({}), cannot {} job {}",
+          job.name(),
           nodeName,
           nodeId,
           doing,
@@ -406,7 +406,7 @@ public final class JobProcessor {
 
   private BikeschedException noHandler(DefaultJob job) {
     return new BikeschedException(
-        "No handler registered for job type '" + job.type() + "' on bikesched node " + nodeName);
+        "No handler registered for job name '" + job.name() + "' on bikesched node " + nodeName);
   }
 
   /** Runs the handler in one attempt and records what it did, see {@link #recordOutcome}. */
@@ -418,9 +418,9 @@ public final class JobProcessor {
     AttemptBody body =
         () -> {
           LOG.debug(
-              "Executing job {} of type {} (attempt {} of {}) on bikesched node {} ({})",
+              "Executing job {} named {} (attempt {} of {}) on bikesched node {} ({})",
               job.id(),
-              job.type(),
+              job.name(),
               job.attempts(),
               job.maxAttempts(),
               nodeName,
@@ -486,25 +486,25 @@ public final class JobProcessor {
       case Verdict.Cancelled ignored ->
           // The handler's decision to cancel wins over the failure: no retry.
           LOG.warn(
-              "Job {} of type {} was cancelled, ignoring the exception thrown by its handler afterwards",
+              "Job {} named {} was cancelled, ignoring the exception thrown by its handler afterwards",
               job.id(),
-              job.type(),
+              job.name(),
               thrown);
       case Verdict.FailedByHandler ignored ->
           // The handler's explicit failure (and its retry settings) wins over the exception.
           LOG.warn(
-              "Job {} of type {} was failed by its handler, ignoring the exception thrown afterwards",
+              "Job {} named {} was failed by its handler, ignoring the exception thrown afterwards",
               job.id(),
-              job.type(),
+              job.name(),
               thrown);
       case Verdict.Suspended(JobSuspended.Suspension suspension) ->
           // The handler caught the suspension and threw afterwards: the wait (or postponement)
           // wins.
           LOG.warn(
-              "Job {} of type {} was suspended {}, ignoring the exception thrown by its handler"
+              "Job {} named {} was suspended {}, ignoring the exception thrown by its handler"
                   + " afterwards",
               job.id(),
-              job.type(),
+              job.name(),
               suspension,
               thrown);
       case Verdict.TimedOut ignored -> {}
@@ -590,9 +590,9 @@ public final class JobProcessor {
         },
         () ->
             LOG.warn(
-                "Job {} of type {} was postponed but was no longer running in this attempt's claim",
+                "Job {} named {} was postponed but was no longer running in this attempt's claim",
                 job.id(),
-                job.type()));
+                job.name()));
   }
 
   private Reported recordSuspension(DefaultJob job, JobSuspended.Wait suspension) {
@@ -626,10 +626,10 @@ public final class JobProcessor {
                     : "RESCHEDULED, " + rescheduledOutcome(suspension)),
         () ->
             LOG.warn(
-                "Job {} of type {} waits in step {} but was no longer running in this attempt's"
+                "Job {} named {} waits in step {} but was no longer running in this attempt's"
                     + " claim",
                 job.id(),
-                job.type(),
+                job.name(),
                 suspension.stepName()));
   }
 
@@ -681,9 +681,9 @@ public final class JobProcessor {
         cancelled -> {
           boolean compensating = cancelled.state() == JobState.COMPENSATING;
           LOG.info(
-              "Job {} of type {} cancelled {}{}{}",
+              "Job {} named {} cancelled {}{}{}",
               job.id(),
-              job.type(),
+              job.name(),
               byHandler
                   ? "by its handler (attempt " + job.attempts() + " of " + job.maxAttempts() + ")"
                   : "on request",
@@ -697,9 +697,9 @@ public final class JobProcessor {
         },
         () ->
             LOG.warn(
-                "Job {} of type {} was cancelled but no longer running in this attempt's claim",
+                "Job {} named {} was cancelled but no longer running in this attempt's claim",
                 job.id(),
-                job.type()));
+                job.name()));
   }
 
   private Reported recordFailure(DefaultJob job, Exception failure) {
@@ -721,10 +721,10 @@ public final class JobProcessor {
     AttemptBody body =
         () -> {
           LOG.debug(
-              "Compensating job {} of type {} (compensation attempt {} of {}) on bikesched node {}"
+              "Compensating job {} named {} (compensation attempt {} of {}) on bikesched node {}"
                   + " ({})",
               job.id(),
-              job.type(),
+              job.name(),
               compensating.attempt(),
               job.maxAttempts(),
               nodeName,
@@ -784,9 +784,9 @@ public final class JobProcessor {
         () -> database.jobs().completeCompensation(end),
         ended -> {
           LOG.info(
-              "Job {} of type {} compensated {} step(s), it is {}",
+              "Job {} named {} compensated {} step(s), it is {}",
               job.id(),
-              job.type(),
+              job.name(),
               compensated,
               ended.state());
           return switch (ended.state()) {
@@ -831,10 +831,10 @@ public final class JobProcessor {
             switch (failed.state()) {
               case FAILING -> {
                 LOG.error(
-                    "Compensating job {} of type {} failed permanently after {} compensation"
+                    "Compensating job {} named {} failed permanently after {} compensation"
                         + " attempt(s), running its failure handler: {}",
                     job.id(),
-                    job.type(),
+                    job.name(),
                     attempt,
                     error,
                     failure);
@@ -843,10 +843,10 @@ public final class JobProcessor {
               }
               case COMPENSATION_FAILED, FAILED -> {
                 LOG.error(
-                    "Compensating job {} of type {} failed permanently after {} compensation"
+                    "Compensating job {} named {} failed permanently after {} compensation"
                         + " attempt(s): {}",
                     job.id(),
-                    job.type(),
+                    job.name(),
                     attempt,
                     error,
                     failure);
@@ -859,10 +859,10 @@ public final class JobProcessor {
                 String when =
                     retryAfter == null ? "as soon as possible" : "at " + failed.scheduledAt();
                 LOG.warn(
-                    "Compensating job {} of type {} failed (compensation attempt {} of {}),"
+                    "Compensating job {} named {} failed (compensation attempt {} of {}),"
                         + " compensating again {}: {}",
                     job.id(),
-                    job.type(),
+                    job.name(),
                     attempt,
                     failed.maxAttempts(),
                     when,
@@ -882,17 +882,17 @@ public final class JobProcessor {
             },
         () ->
             LOG.warn(
-                "Compensating job {} of type {} failed and it was no longer compensating in this"
+                "Compensating job {} named {} failed and it was no longer compensating in this"
                     + " attempt's claim: {}",
                 job.id(),
-                job.type(),
+                job.name(),
                 error,
                 failure));
   }
 
-  /** Whether the job's type has a failure handler on this node: then it fails into FAILING. */
+  /** Whether the job's name has a failure handler on this node: then it fails into FAILING. */
   private boolean hasFailureHandler(DefaultJob job) {
-    return failureHandlers.apply(job.type()) != null;
+    return failureHandlers.apply(job.name()) != null;
   }
 
   /**
@@ -902,12 +902,12 @@ public final class JobProcessor {
    */
   private Outcome runFailureHandler(
       DefaultJob job, JobPhase.HandleFailure failing, JobSlot slot, Started started) {
-    JobFailureHandler handler = failureHandlers.apply(job.type());
+    JobFailureHandler handler = failureHandlers.apply(job.name());
     if (handler == null) {
       LOG.warn(
-          "No failure handler registered for job type {} on bikesched node {} ({}), job {} ends {}"
+          "No failure handler registered for job name {} on bikesched node {} ({}), job {} ends {}"
               + " without it",
-          job.type(),
+          job.name(),
           nodeName,
           nodeId,
           job.id(),
@@ -918,10 +918,10 @@ public final class JobProcessor {
     AttemptBody body =
         () -> {
           LOG.debug(
-              "Running the failure handler of job {} of type {} (run {} of {}) on bikesched node {}"
+              "Running the failure handler of job {} named {} (run {} of {}) on bikesched node {}"
                   + " ({})",
               job.id(),
-              job.type(),
+              job.name(),
               failing.attempt(),
               failureHandlerAttempts,
               nodeName,
@@ -955,9 +955,9 @@ public final class JobProcessor {
     int run = failing.attempt();
     if (run >= failureHandlerAttempts) {
       LOG.error(
-          "Failure handler of job {} of type {} gave up after {} run(s), the job ends {}",
+          "Failure handler of job {} named {} gave up after {} run(s), the job ends {}",
           job.id(),
-          job.type(),
+          job.name(),
           run,
           failing.endState(),
           failure);
@@ -975,9 +975,9 @@ public final class JobProcessor {
                 .retryFailureHandler(job.id(), job.lock(), failure.toString(), retryAfter),
         again -> {
           LOG.warn(
-              "Failure handler of job {} of type {} failed (run {} of {}), it runs again at {}",
+              "Failure handler of job {} named {} failed (run {} of {}), it runs again at {}",
               job.id(),
-              job.type(),
+              job.name(),
               run,
               failureHandlerAttempts,
               again,
@@ -993,10 +993,10 @@ public final class JobProcessor {
         },
         () ->
             LOG.warn(
-                "Failure handler of job {} of type {} failed and the job was no longer failing in"
+                "Failure handler of job {} named {} failed and the job was no longer failing in"
                     + " this attempt's claim",
                 job.id(),
-                job.type(),
+                job.name(),
                 failure));
   }
 
@@ -1009,7 +1009,7 @@ public final class JobProcessor {
         null,
         () -> database.jobs().endFailing(end, detail),
         ended -> {
-          LOG.info("Job {} of type {} is {}: {}", job.id(), job.type(), ended.state(), detail);
+          LOG.info("Job {} named {} is {}: {}", job.id(), job.name(), ended.state(), detail);
           JobAttemptOutcome kind =
               switch (ended.state()) {
                 case COMPENSATION_FAILED -> JobAttemptOutcome.COMPENSATION_FAILED;
@@ -1025,9 +1025,9 @@ public final class JobProcessor {
         },
         () ->
             LOG.warn(
-                "Job {} of type {} was no longer failing in this attempt's claim when ending it",
+                "Job {} named {} was no longer failing in this attempt's claim when ending it",
                 job.id(),
-                job.type()));
+                job.name()));
   }
 
   /** The ending claim of the job: who holds it and what follows from its end. */
@@ -1053,12 +1053,12 @@ public final class JobProcessor {
    * when it starts polling) or its recurrence fails.
    */
   private Optional<NewJob> nextOccurrence(DefaultJob job) {
-    RecurringJob recurring = recurringJobs.apply(job.type());
+    RecurringJob recurring = recurringJobs.apply(job.name());
     if (recurring == null) {
       LOG.debug(
           "Recurring job {} is not registered on bikesched node {} ({}), not scheduling its next"
               + " occurrence",
-          job.type(),
+          job.name(),
           nodeName,
           nodeId);
       return Optional.empty();
@@ -1066,7 +1066,7 @@ public final class JobProcessor {
     try {
       return Optional.of(recurring.occurrence(recurring.nextRun(job, Instant.now())));
     } catch (RuntimeException e) {
-      LOG.warn("Computing the next occurrence of recurring job {} failed", job.type(), e);
+      LOG.warn("Computing the next occurrence of recurring job {} failed", job.name(), e);
       return Optional.empty();
     }
   }
@@ -1140,9 +1140,9 @@ public final class JobProcessor {
         failed -> recordedFailure(job, error, cause, retryIn, end, failed),
         () ->
             LOG.warn(
-                "Job {} of type {} failed and was no longer running in this attempt's claim: {}",
+                "Job {} named {} failed and was no longer running in this attempt's claim: {}",
                 job.id(),
-                job.type(),
+                job.name(),
                 error,
                 cause));
   }
@@ -1157,9 +1157,9 @@ public final class JobProcessor {
     return switch (failed.state()) {
       case COMPENSATING -> {
         LOG.error(
-            "Job {} of type {} failed permanently after {} attempt(s), compensating its steps: {}",
+            "Job {} named {} failed permanently after {} attempt(s), compensating its steps: {}",
             job.id(),
-            job.type(),
+            job.name(),
             job.attempts(),
             error,
             cause);
@@ -1168,10 +1168,10 @@ public final class JobProcessor {
       }
       case FAILING -> {
         LOG.error(
-            "Job {} of type {} failed permanently after {} attempt(s), running its failure handler:"
+            "Job {} named {} failed permanently after {} attempt(s), running its failure handler:"
                 + " {}",
             job.id(),
-            job.type(),
+            job.name(),
             job.attempts(),
             error,
             cause);
@@ -1179,9 +1179,9 @@ public final class JobProcessor {
       }
       case FAILED -> {
         LOG.error(
-            "Job {} of type {} failed permanently after {} attempt(s): {}",
+            "Job {} named {} failed permanently after {} attempt(s): {}",
             job.id(),
-            job.type(),
+            job.name(),
             job.attempts(),
             error,
             cause);
@@ -1192,9 +1192,9 @@ public final class JobProcessor {
       case SCHEDULED -> {
         String when = retryIn == null ? "as soon as possible" : "at " + failed.scheduledAt();
         LOG.warn(
-            "Job {} of type {} failed (attempt {} of {}), it will be retried {}: {}",
+            "Job {} named {} failed (attempt {} of {}), it will be retried {}: {}",
             job.id(),
-            job.type(),
+            job.name(),
             job.attempts(),
             failed.maxAttempts(),
             when,

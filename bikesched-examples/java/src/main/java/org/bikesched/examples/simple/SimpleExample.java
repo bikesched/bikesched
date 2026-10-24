@@ -8,7 +8,7 @@ import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * The smallest bikesched setup: registers one job handler and schedules one job, against the
@@ -19,8 +19,8 @@ import org.bikesched.job.JobType;
  */
 public final class SimpleExample {
 
-  /** The job type: its name and payload class. */
-  public static final JobType<JobPayload> JOB_TYPE = JobType.of("simple-job", JobPayload.class);
+  /** The typed job: its name and payload class. */
+  public static final TypedJob<JobPayload> JOB_NAME = TypedJob.of("simple-job", JobPayload.class);
 
   /** The job payload: a simple record with a UUID. */
   public record JobPayload(UUID id) {}
@@ -32,11 +32,11 @@ public final class SimpleExample {
 
     // Register a job handler.
     bikesched.registerJobHandler(
-        JOB_TYPE, (job, payload) -> System.out.println("Job " + job.id() + ": " + payload));
+        JOB_NAME, (job, payload) -> System.out.println("Job " + job.id() + ": " + payload));
   }
 
   public UUID scheduleJob() {
-    return bikesched.newJob(JOB_TYPE).payload(new JobPayload(UUID.randomUUID())).schedule();
+    return bikesched.newJob(JOB_NAME).payload(new JobPayload(UUID.randomUUID())).schedule();
   }
 
   static void main() {

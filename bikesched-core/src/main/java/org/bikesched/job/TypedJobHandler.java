@@ -4,7 +4,7 @@ package org.bikesched.job;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Handles jobs of a {@link JobType}, receiving the payload already mapped to the type's payload
+ * Handles jobs of a {@link TypedJob}, receiving the payload already mapped to the type's payload
  * class. Like a {@link JobHandler}, it is called for every attempt (and replay) of the job.
  *
  * @param <T> the payload type

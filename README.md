@@ -81,7 +81,7 @@ modelling and no orchestration across services. If that's what you're after, hav
   suspended between checks
 - **Child jobs**: jobs start other jobs exactly once and wait for their outcome and result without
   holding a thread
-- Optional typed `JobType`/`EventType` constants, next to plain string names
+- Optional typed `TypedJob`/`TypedEvent` constants, next to plain string names
 - A null-marked API ([JSpecify](https://jspecify.dev/)): IDEs, NullAway and Kotlin see which
   values may be `null`
 - Crash recovery: jobs of dead nodes are released and retried by others; a node that lost a job
@@ -102,10 +102,10 @@ try (Bikesched bikesched = Bikesched.builder()
         .nodeName("worker-1")              // optional, defaults to the host name
         .build()) {                    // migrates the schema, registers the node, starts polling
 
-    // Register a handler for a job type ...
+    // Register a handler for a job name ...
     bikesched.registerJobHandler("send-mail", job -> mailer.send(job.payload()));
 
-    // ... and schedule jobs of that type
+    // ... and schedule jobs with that name
     bikesched.newJob("send-mail").payload("{\"to\": \"alice@example.com\"}").schedule();
 }
 ```
@@ -168,11 +168,11 @@ The [documentation](docs/index.md) covers the concepts in detail:
 ## Examples
 
 Runnable examples with tests — a taxi booking saga with event waits and compensation, a cinema
-ticket order with a `JobTypeHandler`, a webhook with a polling fallback, a provider's rate limit
-with Bucket4j, chat messages deduplicated by idempotency keys, an approval with a reminder and an
-escalation, a fan-out with child jobs, a recurring job on two nodes, and a Spring Boot
-application whose node and handlers are
-wired by the starter — live in the [`bikesched-examples`](bikesched-examples/README.md) modules.
+ticket order with a `StandaloneJobHandler`, a webhook with a polling fallback, a provider's rate
+limit with Bucket4j, chat messages deduplicated by idempotency keys, an approval with a reminder and
+an escalation, a fan-out with child jobs, a recurring job on two nodes, and a Spring Boot
+application whose node and handlers are wired by the starter — live in the
+[`bikesched-examples`](bikesched-examples/README.md) modules.
 
 ## Building
 

@@ -7,13 +7,15 @@ import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobState;
+import org.bikesched.job.JobType;
 import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link JobInfo} implementation.
  *
  * @param id the job id
- * @param type the job type
+ * @param name the job name
+ * @param type how the job was started
  * @param state the job's state when it was read
  * @param resultJson the job's result as JSON text, {@code null} if none
  * @param parent the parent job's id, {@code null} if the job is not a child
@@ -21,7 +23,8 @@ import org.jspecify.annotations.Nullable;
  */
 public record DefaultJobInfo(
     UUID id,
-    String type,
+    String name,
+    JobType type,
     JobState state,
     @Nullable String resultJson,
     @Nullable UUID parent,
@@ -47,6 +50,8 @@ public record DefaultJobInfo(
   public String toString() {
     return "JobInfo[id="
         + id
+        + ", name="
+        + name
         + ", type="
         + type
         + ", state="

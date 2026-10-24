@@ -515,7 +515,7 @@ class EventTest extends AbstractBikeschedTest {
           .atMost(Duration.ofSeconds(20))
           .untilAsserted(
               () ->
-                  assertThat(count("type = 'event-race' and state = 'SUCCEEDED'")).isEqualTo(jobs));
+                  assertThat(count("name = 'event-race' and state = 'SUCCEEDED'")).isEqualTo(jobs));
     } finally {
       nodes.forEach(Bikesched::close);
     }

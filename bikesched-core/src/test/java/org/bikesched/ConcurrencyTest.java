@@ -63,19 +63,19 @@ class ConcurrencyTest extends AbstractBikeschedTest {
 
   @Test
   void immediatelyPollsAgainAfterFillingABatch() throws Exception {
-    String jobType = "full-batch-" + java.util.UUID.randomUUID();
+    String jobName = "full-batch-" + java.util.UUID.randomUUID();
     var completed = new java.util.concurrent.atomic.AtomicInteger();
     try (Bikesched bikesched =
         Bikesched.builder()
             .dataSource(dataSource)
-            .nodeName("node-" + jobType)
+            .nodeName("node-" + jobName)
             .pollInterval(Duration.ofSeconds(1))
             .maxConcurrentJobs(20)
             .autoStartPolling(false)
             .build()) {
-      bikesched.registerJobHandler(jobType, ignored -> completed.incrementAndGet());
+      bikesched.registerJobHandler(jobName, ignored -> completed.incrementAndGet());
       for (int i = 0; i < 20; i++) {
-        bikesched.newJob(jobType).schedule();
+        bikesched.newJob(jobName).schedule();
       }
 
       bikesched.start();
@@ -86,14 +86,14 @@ class ConcurrencyTest extends AbstractBikeschedTest {
     }
   }
 
-  private static int runSlowJobs(String jobType, int count, Integer maxConcurrentJobs)
+  private static int runSlowJobs(String jobName, int count, Integer maxConcurrentJobs)
       throws Exception {
     var running = new java.util.concurrent.atomic.AtomicInteger();
     var peak = new java.util.concurrent.atomic.AtomicInteger();
     var builder =
         Bikesched.builder()
             .dataSource(dataSource)
-            .nodeName("node-" + jobType)
+            .nodeName("node-" + jobName)
             .pollInterval(Duration.ofMillis(20))
             // Polling starts once all jobs are scheduled: with a full queue the node fills its
             // slots right away, independent of how fast the jobs can be scheduled.
@@ -103,7 +103,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
     }
     try (Bikesched bikesched = builder.build()) {
       bikesched.registerJobHandler(
-          jobType,
+          jobName,
           () -> {
             peak.accumulateAndGet(running.incrementAndGet(), Math::max);
             try {
@@ -114,7 +114,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
               running.decrementAndGet();
             }
           });
-      JobBuilder<Object> slowJob = bikesched.newJob(jobType);
+      JobBuilder<Object> slowJob = bikesched.newJob(jobName);
       for (int i = 0; i < count; i++) {
         slowJob.schedule();
       }
@@ -123,7 +123,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
           .atMost(Duration.ofSeconds(20))
           .untilAsserted(
               () ->
-                  assertThat(count("type = '" + jobType + "' and state = 'SUCCEEDED'"))
+                  assertThat(count("name = '" + jobName + "' and state = 'SUCCEEDED'"))
                       .isEqualTo(count));
     }
     return peak.get();

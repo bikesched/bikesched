@@ -10,8 +10,8 @@ import java.util.Objects;
 import java.util.Optional;
 import org.bikesched.Bikesched;
 import org.bikesched.job.JobBuilder;
-import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.TypedJob;
 
 /**
  * A job handler found on a {@link JobHandler @JobHandler} method, or a failure handler found on a
@@ -24,7 +24,7 @@ import org.bikesched.job.Recurrence;
  */
 public final class AnnotatedJobHandler {
 
-  private final String type;
+  private final String name;
   private final Class<?> payloadType;
   private final String schedule; // null for a one-off handler or a fixed delay
   private final Duration fixedDelay; // null unless a fixed delay
@@ -39,7 +39,7 @@ public final class AnnotatedJobHandler {
       invoker; // bound to target and adapted to (Job or FailedJob, Object); null while unbound
 
   AnnotatedJobHandler(
-      String type,
+      String name,
       Class<?> payloadType,
       String schedule,
       Duration fixedDelay,
@@ -51,7 +51,7 @@ public final class AnnotatedJobHandler {
       boolean failureHandler,
       Object target,
       MethodHandle invoker) {
-    this.type = Objects.requireNonNull(type, "type");
+    this.name = Objects.requireNonNull(name, "name");
     this.payloadType = payloadType;
     this.schedule = schedule;
     this.fixedDelay = fixedDelay;
@@ -76,12 +76,12 @@ public final class AnnotatedJobHandler {
   }
 
   /**
-   * The job type the method handles.
+   * The job name the method handles.
    *
-   * @return the job type
+   * @return the job name
    */
-  public String type() {
-    return type;
+  public String name() {
+    return name;
   }
 
   /**
@@ -168,7 +168,7 @@ public final class AnnotatedJobHandler {
           "Job handler method " + invocable + " is not accessible", e);
     }
     return new AnnotatedJobHandler(
-        type,
+        name,
         payloadType,
         schedule,
         fixedDelay,
@@ -193,14 +193,14 @@ public final class AnnotatedJobHandler {
 
   /**
    * Registers this handler on the node: with a payload parameter as the handler of {@code
-   * JobType.of(type, payloadType)}, so the node rejects the type with another payload class;
-   * otherwise as the handler of the job type name. A failure handler is registered as the type's
-   * failure handler the same way. With a schedule, it also registers the recurring job, parsing the
+   * TypedJob.of(name, payloadType)}, so the node rejects the name with another payload class;
+   * otherwise as the handler of the job name. A failure handler is registered as the name's failure
+   * handler the same way. With a schedule, it also registers the recurring job, parsing the
    * schedule with the node's {@code RecurrenceParser}s.
    *
    * @param bikesched the node
    * @throws IllegalStateException if the handler is not bound, see {@link #bindTo(Object)}
-   * @throws IllegalArgumentException if the node already has a handler for the type, or the
+   * @throws IllegalArgumentException if the node already has a handler for the name, or the
    *     schedule is not supported by exactly one of the node's recurrence parsers
    */
   public void registerOn(Bikesched bikesched) {
@@ -211,33 +211,33 @@ public final class AnnotatedJobHandler {
     }
     if (failureHandler) {
       if (payloadType == null) {
-        bikesched.registerJobFailureHandler(type, failed -> invoke(failed, null));
+        bikesched.registerJobFailureHandler(name, failed -> invoke(failed, null));
       } else {
-        registerTypedFailureHandler(bikesched, JobType.of(type, payloadType));
+        registerTypedFailureHandler(bikesched, TypedJob.of(name, payloadType));
       }
       return;
     }
     if (payloadType == null) {
-      bikesched.registerJobHandler(type, job -> invoke(job, null));
+      bikesched.registerJobHandler(name, job -> invoke(job, null));
     } else {
-      registerTyped(bikesched, JobType.of(type, payloadType));
+      registerTyped(bikesched, TypedJob.of(name, payloadType));
     }
     if (schedule != null || fixedDelay != null) {
       scheduleOn(
           payloadType == null
-              ? bikesched.newJob(type)
-              : bikesched.newJob(JobType.of(type, payloadType)));
+              ? bikesched.newJob(name)
+              : bikesched.newJob(TypedJob.of(name, payloadType)));
     }
   }
 
   /**
    * Registers this handler on the node like {@link #registerOn(Bikesched)}, naming {@code source}
-   * (e.g. the bean declaring the method) when the node already has a handler for the type.
+   * (e.g. the bean declaring the method) when the node already has a handler for the name.
    *
    * @param bikesched the node
    * @param source what declares the method, for the error message, e.g. {@code "bean mailJobs"}
    * @throws IllegalStateException if the handler is not bound, see {@link #bindTo(Object)}
-   * @throws IllegalArgumentException if the node already has a handler for the type
+   * @throws IllegalArgumentException if the node already has a handler for the name
    */
   public void registerOn(Bikesched bikesched, String source) {
     Objects.requireNonNull(source, "source");
@@ -248,12 +248,12 @@ public final class AnnotatedJobHandler {
     }
   }
 
-  private <T> void registerTyped(Bikesched bikesched, JobType<T> jobType) {
-    bikesched.registerJobHandler(jobType, this::invoke);
+  private <T> void registerTyped(Bikesched bikesched, TypedJob<T> typedJob) {
+    bikesched.registerJobHandler(typedJob, this::invoke);
   }
 
-  private <T> void registerTypedFailureHandler(Bikesched bikesched, JobType<T> jobType) {
-    bikesched.registerJobFailureHandler(jobType, this::invoke);
+  private <T> void registerTypedFailureHandler(Bikesched bikesched, TypedJob<T> typedJob) {
+    bikesched.registerJobFailureHandler(typedJob, this::invoke);
   }
 
   /** Registers the recurring job declared by the annotation. */
@@ -305,8 +305,8 @@ public final class AnnotatedJobHandler {
 
   @Override
   public String toString() {
-    return "AnnotatedJobHandler[type="
-        + type
+    return "AnnotatedJobHandler[name="
+        + name
         + (failureHandler ? ", failure handler" : "")
         + ", method="
         + method

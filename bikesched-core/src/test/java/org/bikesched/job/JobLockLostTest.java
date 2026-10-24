@@ -61,7 +61,7 @@ class JobLockLostTest extends AbstractBikeschedTest {
                   assertThat(logs.messages())
                       .anyMatch(
                           m ->
-                              m.startsWith("Job " + jobId + " of type " + type)
+                              m.startsWith("Job " + jobId + " named " + type)
                                   && m.endsWith("abandoning attempt 1 without recording it")));
       assertThat(secondStepFailure.get())
           .hasMessageContaining("is no longer running in this attempt's claim");
@@ -72,7 +72,7 @@ class JobLockLostTest extends AbstractBikeschedTest {
           .as("only the first step")
           .isEqualTo(1);
     } finally {
-      execute("delete from bikesched_jobs where type = '" + type + "'");
+      execute("delete from bikesched_jobs where name = '" + type + "'");
     }
   }
 

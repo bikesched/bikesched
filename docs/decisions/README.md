@@ -14,7 +14,7 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0002](0002-own-sql-migrations.md) | Own SQL migrations instead of a migration framework | Accepted |
 | [0003](0003-internal-packages-enforced-by-archunit.md) | Implementation in internal packages, enforced by ArchUnit | Accepted |
-| [0004](0004-typed-job-and-event-types.md) | Typed job and event types next to the string-based API | Accepted |
+| [0004](0004-typed-job-and-event-types.md) | Typed job and event types next to the string-based API | Accepted, renamed by [0059](0059-job-name-and-job-type.md) |
 | [0005](0005-recurring-jobs-via-schedule-recurrence.md) | Recurring jobs via schedule(Recurrence) | Accepted |
 | [0006](0006-text-columns-with-length-checks.md) | Text columns with length checks; messages truncated | Accepted |
 | [0007](0007-job-history-in-separate-table.md) | Job history in a separate, opt-in table | Accepted |
@@ -69,3 +69,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0056](0056-schema-naming-column-order-and-invariants.md) | Schema naming, column order and invariants | Accepted |
 | [0057](0057-steps-keyed-by-a-time-ordered-id.md) | Steps keyed by a time-ordered id | Accepted |
 | [0058](0058-fixed-delay-recurrences-and-planned-runs.md) | Fixed-delay recurrences and a planned run on every occurrence | Accepted |
+| [0059](0059-job-name-and-job-type.md) | Job name and job type | Accepted |

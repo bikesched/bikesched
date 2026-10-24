@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
  *     are released
  * @param pollInterval interval between job polls
  * @param listenForDueJobs whether the node listens for due jobs and notifies the other nodes
- * @param notifyInterval how long the node collects due job types before notifying them
+ * @param notifyInterval how long the node collects due job names before notifying them
  * @param maxConcurrentJobs maximum number of jobs executed at the same time on this node
  * @param autoStartPolling whether job polling starts when the node is built; otherwise it starts
  *     with {@link Bikesched#start()}

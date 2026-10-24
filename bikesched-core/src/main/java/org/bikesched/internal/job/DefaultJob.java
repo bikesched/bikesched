@@ -15,9 +15,9 @@ import org.bikesched.BikeschedException;
 import org.bikesched.BikeschedLogContext;
 import org.bikesched.RetryBackoff;
 import org.bikesched.event.EventTimeoutException;
-import org.bikesched.event.EventType;
 import org.bikesched.event.EventWait;
 import org.bikesched.event.StepEventBuilder;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.event.listener.EventPublication;
 import org.bikesched.event.listener.EventSource;
@@ -39,7 +39,6 @@ import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobFailure;
 import org.bikesched.job.JobResult;
-import org.bikesched.job.JobType;
 import org.bikesched.job.Poll;
 import org.bikesched.job.PollBuilder;
 import org.bikesched.job.PollHandler;
@@ -49,6 +48,7 @@ import org.bikesched.job.StepBuilder;
 import org.bikesched.job.StepFailureHandler;
 import org.bikesched.job.StepHandler;
 import org.bikesched.job.StepJobBuilder;
+import org.bikesched.job.TypedJob;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,7 +78,7 @@ public final class DefaultJob implements Job {
   /** The lock of this claim: the attempt's writes are fenced by it. */
   private final JobLock lock;
 
-  private final String type;
+  private final String name;
   private final @Nullable String payload;
   private final int priority;
   private final Instant scheduledAt;
@@ -140,7 +140,7 @@ public final class DefaultJob implements Job {
     this.failureHandlerAttempts = failureHandlerAttempts;
     this.id = claimed.id();
     this.lock = claimed.lock();
-    this.type = claimed.type();
+    this.name = claimed.name();
     this.payload = claimed.payload();
     this.priority = claimed.priority();
     this.scheduledAt = claimed.scheduledAt();
@@ -172,11 +172,11 @@ public final class DefaultJob implements Job {
 
   @Override
   public <T extends @Nullable Object> StepEventBuilder<T> newEvent(
-      EventType<T> eventType, String eventKey) {
-    Objects.requireNonNull(eventType, "eventType");
+      TypedEvent<T> typedEvent, String eventKey) {
+    Objects.requireNonNull(typedEvent, "typedEvent");
     ValidationUtil.requireKey(eventKey, "event key");
     return new DefaultStepEventBuilder<>(
-        eventType.name(), eventKey, database.jsonMapper(), this::publishEventStep);
+        typedEvent.name(), eventKey, database.jsonMapper(), this::publishEventStep);
   }
 
   private UUID publishEventStep(
@@ -249,8 +249,8 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public String type() {
-    return type;
+  public String name() {
+    return name;
   }
 
   @Override
@@ -421,29 +421,29 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public StepJobBuilder<Object> newJob(String type) {
-    ValidationUtil.requireName(type, "job type");
-    requireChildrenAllowed(type);
-    return new DefaultStepJobBuilder<>(this, type, Object.class, database.jsonMapper(), scheduler);
+  public StepJobBuilder<Object> newJob(String name) {
+    ValidationUtil.requireName(name, "job name");
+    requireChildrenAllowed(name);
+    return new DefaultStepJobBuilder<>(this, name, Object.class, database.jsonMapper(), scheduler);
   }
 
   @Override
-  public <T extends @Nullable Object> StepJobBuilder<T> newJob(JobType<T> type) {
-    Objects.requireNonNull(type, "type");
-    requireChildrenAllowed(type.name());
-    scheduler.requirePayloadType(type);
+  public <T extends @Nullable Object> StepJobBuilder<T> newJob(TypedJob<T> typedJob) {
+    Objects.requireNonNull(typedJob, "typedJob");
+    requireChildrenAllowed(typedJob.name());
+    scheduler.requirePayloadType(typedJob);
     return new DefaultStepJobBuilder<>(
-        this, type.name(), type.payloadType(), database.jsonMapper(), scheduler);
+        this, typedJob.name(), typedJob.payloadType(), database.jsonMapper(), scheduler);
   }
 
-  private void requireChildrenAllowed(String type) {
-    stepGuard.requireNoneRunning("start a child job of type " + type);
+  private void requireChildrenAllowed(String name) {
+    stepGuard.requireNoneRunning("start child job " + name);
     if (origin instanceof JobOrigin.Occurrence) {
       throw new IllegalStateException(
           "Job "
               + id
               + " is an occurrence of recurring job "
-              + this.type
+              + this.name
               + " and cannot start child jobs: the next occurrence replaces it, so no single caller"
               + " waits for its children");
     }
@@ -453,7 +453,7 @@ public final class DefaultJob implements Job {
    * Starts a child job as a step, see {@link JobStore#startChildJob}; built by {@link
    * DefaultStepJobBuilder}.
    *
-   * @param requestedStepName the step name, {@code null} for the default {@code start <type>}
+   * @param requestedStepName the step name, {@code null} for the default {@code start <name>}
    * @param child the child's attributes
    * @param compensation the step's compensation, receiving the child's id; {@code null} if none
    * @return the child's id, the same on every run
@@ -463,7 +463,7 @@ public final class DefaultJob implements Job {
       NewJob child,
       @Nullable CompensationHandler<? super UUID> compensation) {
     String stepName =
-        stepName(requestedStepName, "start " + child.type(), "Default child job step name");
+        stepName(requestedStepName, "start " + child.name(), "Default child job step name");
     stepGuard.requireNoneRunning("start a child job as step '" + stepName + "'");
     if (!childJobSteps.add(stepName)) {
       throw new IllegalStateException(
@@ -483,11 +483,11 @@ public final class DefaultJob implements Job {
               () -> database.jobs().startChildJob(id, lock, stepName, child, compensation != null));
       if (started.started()) {
         LOG.debug(
-            "Step {} of job {} started child job {} of type {}",
+            "Step {} of job {} started child job {} named {}",
             stepName,
             id,
             started.id(),
-            child.type());
+            child.name());
       } else {
         LOG.debug("Step {} of job {} already started child job {}", stepName, id, started.id());
       }
@@ -774,15 +774,15 @@ public final class DefaultJob implements Job {
 
   @Override
   public <T extends @Nullable Object> EventWait<T> waitForEvent(
-      String stepName, EventType<T> eventType, String eventKey) {
-    Objects.requireNonNull(eventType, "eventType");
-    return waitForEvent(stepName, eventType.name(), eventKey, eventType.payloadType());
+      String stepName, TypedEvent<T> typedEvent, String eventKey) {
+    Objects.requireNonNull(typedEvent, "typedEvent");
+    return waitForEvent(stepName, typedEvent.name(), eventKey, typedEvent.payloadType());
   }
 
   @Override
   public <T extends @Nullable Object> @Nullable T awaitEvent(
-      String stepName, EventType<T> eventType, String eventKey) {
-    return waitForEvent(stepName, eventType, eventKey).receive();
+      String stepName, TypedEvent<T> typedEvent, String eventKey) {
+    return waitForEvent(stepName, typedEvent, eventKey).receive();
   }
 
   @Override
@@ -1399,8 +1399,8 @@ public final class DefaultJob implements Job {
   public String toString() {
     return "Job[id="
         + id
-        + ", type="
-        + type
+        + ", name="
+        + name
         + ", payload="
         + payload
         + ", priority="

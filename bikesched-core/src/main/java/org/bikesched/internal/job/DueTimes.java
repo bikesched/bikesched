@@ -12,18 +12,18 @@ import java.util.Set;
 public interface DueTimes {
 
   /**
-   * Jobs of these types are due now; the node polls if it handles one of them.
+   * Jobs of these names are due now; the node polls if it handles one of them.
    *
-   * @param types the job types
+   * @param names the job names
    */
-  void dueNow(Set<String> types);
+  void dueNow(Set<String> names);
 
   /**
-   * A job of this type is due at the given time (possibly already); the node polls then if it
-   * handles the type.
+   * A job of this name is due at the given time (possibly already); the node polls then if it
+   * handles the name.
    *
-   * @param type the job type
+   * @param name the job name
    * @param dueAt when the job is due
    */
-  void dueAt(String type, Instant dueAt);
+  void dueAt(String name, Instant dueAt);
 }

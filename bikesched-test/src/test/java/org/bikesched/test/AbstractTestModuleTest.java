@@ -23,7 +23,7 @@ abstract class AbstractTestModuleTest {
   }
 
   /**
-   * A job type unique to the calling test, to isolate it from the others on the shared database.
+   * A job name unique to the calling test, to isolate it from the others on the shared database.
    */
   static String uniqueType(String prefix) {
     return prefix + "-" + java.util.UUID.randomUUID();

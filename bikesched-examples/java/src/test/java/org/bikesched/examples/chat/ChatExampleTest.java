@@ -49,7 +49,7 @@ class ChatExampleTest {
         var statement =
             connection.prepareStatement(
                 "select count(*) from bikesched_jobs"
-                    + " where type = 'answer-chat-message' and idempotency_key = ?")) {
+                    + " where name = 'answer-chat-message' and idempotency_key = ?")) {
       statement.setString(1, key);
       try (var rows = statement.executeQuery()) {
         rows.next();

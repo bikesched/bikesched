@@ -28,10 +28,10 @@ public final class CinemaExample {
   static void main() {
     try (Bikesched bikesched = BikeschedUtil.bikesched("cinema-example")) {
 
-      // The handler carries its job type: no separate type argument.
+      // The handler carries its typed job: no separate name argument.
       bikesched.registerJobHandler(new TicketOrderHandler());
 
-      // Ordering uses the shared job type constant, not the handler class.
+      // Ordering uses the shared typed job constant, not the handler class.
       UUID alice =
           bikesched
               .newJob(CinemaJobs.TICKET_ORDER)

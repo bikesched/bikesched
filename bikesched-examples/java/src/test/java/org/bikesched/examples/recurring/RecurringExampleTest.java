@@ -56,7 +56,7 @@ class RecurringExampleTest {
         var rows =
             statement.executeQuery(
                 "select extract(epoch from finished_at - lag(finished_at) over (order by finished_at))"
-                    + " * 1000 from bikesched_jobs where type = '"
+                    + " * 1000 from bikesched_jobs where name = '"
                     + RecurringExample.CLEAN_UP_SESSIONS
                     + "' and state = 'SUCCEEDED' order by finished_at")) {
       while (rows.next()) {
@@ -74,7 +74,7 @@ class RecurringExampleTest {
         var statement = connection.createStatement();
         var rows =
             statement.executeQuery(
-                "select count(*) from bikesched_jobs where type = '"
+                "select count(*) from bikesched_jobs where name = '"
                     + RecurringExample.CLEAN_UP_SESSIONS
                     + "' and state = 'SCHEDULED'")) {
       rows.next();

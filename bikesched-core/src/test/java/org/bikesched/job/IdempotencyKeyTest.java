@@ -17,7 +17,7 @@ import org.bikesched.Bikesched;
 import org.junit.jupiter.api.Test;
 
 /**
- * Idempotency keys of jobs ({@link JobBuilder#idempotencyKey(String)}): unique per job type for as
+ * Idempotency keys of jobs ({@link JobBuilder#idempotencyKey(String)}): unique per job name for as
  * long as the job exists, so scheduling again returns the existing job.
  */
 class IdempotencyKeyTest extends AbstractBikeschedTest {
@@ -42,7 +42,7 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
               .schedule();
 
       assertThat(again).isEqualTo(first);
-      assertThat(count("type = '" + type + "'")).isOne();
+      assertThat(count("name = '" + type + "'")).isOne();
       assertThat(count("id = '" + first + "' and payload = '\"first\"' and priority = 0"))
           .as("the duplicate's settings are ignored")
           .isOne();
@@ -57,7 +57,7 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void keyIsUniquePerJobType() throws Exception {
+  void keyIsUniquePerJobName() throws Exception {
     String type = unique("idempotent-a");
     String other = unique("idempotent-b");
     try (Bikesched bikesched = node("node-idempotent-types")) {
@@ -81,7 +81,7 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
           bikesched.newJob(type).handler(() -> {}).idempotencyKey("k");
 
       assertThat(builder.schedule(Duration.ofHours(1))).isEqualTo(builder.schedule());
-      assertThat(count("type = '" + type + "'")).isOne();
+      assertThat(count("name = '" + type + "'")).isOne();
     } finally {
       deleteJobs(type);
     }
@@ -152,7 +152,7 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
       assertThat(bikesched.newJob(type).idempotencyKey("k").schedule()).isEqualTo(first);
       release.countDown();
       awaitState(first, "SUCCEEDED");
-      assertThat(count("type = '" + type + "'")).isOne();
+      assertThat(count("name = '" + type + "'")).isOne();
     } finally {
       release.countDown();
       deleteJobs(type);
@@ -176,7 +176,7 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
       connection.commit();
 
       assertThat(again).isEqualTo(first);
-      assertThat(count("type = '" + type + "'")).isOne();
+      assertThat(count("name = '" + type + "'")).isOne();
     } finally {
       deleteJobs(type);
     }
@@ -206,7 +206,7 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
 
       assertThat(secondId.get(10, TimeUnit.SECONDS)).isEqualTo(firstId);
       second.commit();
-      assertThat(count("type = '" + type + "'")).isOne();
+      assertThat(count("name = '" + type + "'")).isOne();
     } finally {
       deleteJobs(type);
     }
@@ -236,8 +236,8 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
       UUID stored = secondId.get(10, TimeUnit.SECONDS);
       second.commit();
       assertThat(stored).isNotEqualTo(firstId);
-      assertThat(count("type = '" + type + "' and id = '" + stored + "'")).isOne();
-      assertThat(count("type = '" + type + "'")).isOne();
+      assertThat(count("name = '" + type + "' and id = '" + stored + "'")).isOne();
+      assertThat(count("name = '" + type + "'")).isOne();
     } finally {
       deleteJobs(type);
     }
@@ -273,10 +273,10 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
   private static void deleteJobs(String type) throws Exception {
     execute(
         "delete from bikesched_job_history where job_id in"
-            + " (select id from bikesched_jobs where type = '"
+            + " (select id from bikesched_jobs where name = '"
             + type
             + "')");
-    execute("delete from bikesched_jobs where type = '" + type + "'");
+    execute("delete from bikesched_jobs where name = '" + type + "'");
   }
 
   private static String unique(String name) {

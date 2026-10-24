@@ -17,14 +17,15 @@ import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.EventStep;
 import org.bikesched.admin.EventSummary;
 import org.bikesched.admin.JobData;
+import org.bikesched.admin.JobNameSummary;
 import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
-import org.bikesched.admin.JobTypeSummary;
 import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.job.JobState;
+import org.bikesched.job.JobType;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -44,20 +45,20 @@ public final class AdminStore {
   // reads as null.
   private static final String JOB_COLUMNS =
       """
-            select j.id, j.type, j.state, j.attempts, j.max_attempts, j.priority,
+            select j.id, j.name, j.type, j.state, j.attempts, j.max_attempts, j.priority,
                    nullif(j.scheduled_at, 'infinity') as scheduled_at, j.created_at, j.updated_at,
-                   j.finished_at, j.last_error, j.parent_job_id, p.type as parent_job_type,
+                   j.finished_at, j.last_error, j.parent_job_id, p.name as parent_job_name,
                    j.recurrence, j.idempotency_key, n.id as node_id, n.name as node_name
               from %s j
               left join bikesched_jobs p on p.id = j.parent_job_id
               left join bikesched_nodes n on n.id = j.locked_by_node_id""";
 
   // One page of jobs, newest first by their time-ordered ids, read along the primary key (or
-  // bikesched_jobs_type_id_idx with a type, or bikesched_jobs_short_id_idx for an id search);
+  // bikesched_jobs_name_id_idx with a name, or bikesched_jobs_short_id_idx for an id search);
   // parents and nodes are joined to the page only.
   private static final String JOB_PAGE =
       """
-            (select id, type, state, attempts, max_attempts, priority, scheduled_at, created_at,
+            (select id, name, type, state, attempts, max_attempts, priority, scheduled_at, created_at,
                     updated_at, finished_at, last_error, parent_job_id, recurrence,
                     idempotency_key, locked_by_node_id
                from bikesched_jobs%s
@@ -67,24 +68,24 @@ public final class AdminStore {
   private static final String FIND_JOB_SQL =
       JOB_COLUMNS.formatted("bikesched_jobs") + "\n where j.id = ?";
 
-  // Along the partial unique index on (type, idempotency_key).
+  // Along the partial unique index on (name, idempotency_key).
   private static final String FIND_KEYED_JOB_SQL =
-      JOB_COLUMNS.formatted("bikesched_jobs") + "\n where j.type = ? and j.idempotency_key = ?";
+      JOB_COLUMNS.formatted("bikesched_jobs") + "\n where j.name = ? and j.idempotency_key = ?";
 
   // The occurrences of a recurring job: the pending one along bikesched_jobs_recurring_idx, the
-  // ended ones as a page along bikesched_jobs_type_id_idx.
+  // ended ones as a page along bikesched_jobs_name_id_idx.
   private static final String RECURRING_STATES =
       "('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING')";
 
   private static final String FIND_PENDING_RUN_SQL =
       JOB_COLUMNS.formatted("bikesched_jobs")
-          + "\n where j.type = ? and j.recurrence is not null and j.state in "
+          + "\n where j.name = ? and j.type = 'RECURRING' and j.state in "
           + RECURRING_STATES;
 
   private static final String FIND_ENDED_RUNS_SQL =
       JOB_COLUMNS.formatted(
               JOB_PAGE.formatted(
-                  "\n              where type = ? and recurrence is not null and state not in "
+                  "\n              where name = ? and type = 'RECURRING' and state not in "
                       + RECURRING_STATES))
           + "\n order by j.id desc";
 
@@ -98,7 +99,7 @@ public final class AdminStore {
             select s.id, s.job_id, s.name, s.type, s.state, s.attempts, s.failure_attempts,
                    s.compensable, s.last_error, s.started_at, s.finished_at,
                    nullif(s.wake_at, 'infinity') as wake_at, s.deadline_at, s.locked_by_node_id,
-                   s.event_name, s.event_key, s.event_id, s.child_job_id, s.child_job_type,
+                   s.event_name, s.event_key, s.event_id, s.child_job_id, s.child_job_name,
                    coalesce(c.state, s.child_end_state) as child_job_state,
                    c.id is not null as child_job_exists
               from bikesched_steps s
@@ -113,10 +114,10 @@ public final class AdminStore {
   private static final String FIND_STEP_RESULT_SQL =
       "select coalesce(result::text, 'null') as result from bikesched_steps where id = ?";
 
-  private static final String FIND_JOB_TYPES_SQL =
+  private static final String FIND_JOB_NAMES_SQL =
       """
-            select type, state, count(*) as count, max(recurrence) as recurrence
-              from bikesched_jobs group by type, state order by type, state""";
+            select name, state, count(*) as count, max(recurrence) as recurrence
+              from bikesched_jobs group by name, state order by name, state""";
 
   // The columns of an EventSummary: receivers counted via bikesched_steps_event_id_idx; the
   // newest unexpired event of a name and key is the one a new wait receives.
@@ -159,7 +160,7 @@ public final class AdminStore {
 
   private static final String FIND_EVENT_STEPS_SQL =
       """
-            select s.id, s.job_id, j.type as job_type, j.state as job_state, s.name, s.type
+            select s.id, s.job_id, j.name as job_name, j.state as job_state, s.name, s.type
               from bikesched_steps s
               join bikesched_jobs j on j.id = s.job_id
              where s.event_id = ? and s.type in ('EVENT_PUBLISH', 'EVENT_WAIT')
@@ -168,7 +169,7 @@ public final class AdminStore {
   // Uses bikesched_steps_waiting_idx (event_name, event_key).
   private static final String FIND_WAITING_STEPS_SQL =
       """
-            select s.id, s.job_id, j.type as job_type, s.name, s.event_name, s.event_key,
+            select s.id, s.job_id, j.name as job_name, s.name, s.event_name, s.event_key,
                    s.started_at, nullif(s.wake_at, 'infinity') as wake_at
               from bikesched_steps s
               join bikesched_jobs j on j.id = s.job_id
@@ -191,9 +192,9 @@ public final class AdminStore {
     // from reading the page along an index.
     List<String> conditions = new ArrayList<>();
     List<Object> parameters = new ArrayList<>();
-    if (query.type() != null) {
-      conditions.add("type = ?");
-      parameters.add(query.type());
+    if (query.name() != null) {
+      conditions.add("name = ?");
+      parameters.add(query.name());
     }
     if (!query.states().isEmpty()) {
       conditions.add("state = any(?)");
@@ -229,16 +230,16 @@ public final class AdminStore {
         e -> new BikeschedException("Finding bikesched jobs by id failed", e));
   }
 
-  public RecurringJobRuns findRecurringJobRuns(String type, int limit) {
+  public RecurringJobRuns findRecurringJobRuns(String name, int limit) {
     return access.inReadOnlyTransaction(
         db ->
             new RecurringJobRuns(
-                type,
-                db.list(FIND_PENDING_RUN_SQL, AdminStore::jobSummary, type).stream()
+                name,
+                db.list(FIND_PENDING_RUN_SQL, AdminStore::jobSummary, name).stream()
                     .findFirst()
                     .orElse(null),
-                db.list(FIND_ENDED_RUNS_SQL, AdminStore::jobSummary, type, limit)),
-        e -> new BikeschedException("Finding the runs of recurring job " + type + " failed", e));
+                db.list(FIND_ENDED_RUNS_SQL, AdminStore::jobSummary, name, limit)),
+        e -> new BikeschedException("Finding the runs of recurring job " + name + " failed", e));
   }
 
   public Optional<JobSummary> findJob(UUID jobId) {
@@ -247,9 +248,9 @@ public final class AdminStore {
         e -> new BikeschedException("Reading bikesched job " + jobId + " failed", e));
   }
 
-  public Optional<JobSummary> findJob(String type, String idempotencyKey) {
+  public Optional<JobSummary> findJob(String name, String idempotencyKey) {
     return access.inReadOnlyTransaction(
-        db -> db.one(FIND_KEYED_JOB_SQL, AdminStore::jobSummary, type, idempotencyKey),
+        db -> db.one(FIND_KEYED_JOB_SQL, AdminStore::jobSummary, name, idempotencyKey),
         e -> new BikeschedException("Reading bikesched job by idempotency key failed", e));
   }
 
@@ -303,40 +304,40 @@ public final class AdminStore {
         row.string("event_key"),
         row.uuid("event_id"),
         row.uuid("child_job_id"),
-        row.string("child_job_type"),
+        row.string("child_job_name"),
         row.enumValue("child_job_state", JobState.class),
         row.bool("child_job_exists"));
   }
 
-  public List<JobTypeSummary> findJobTypes() {
-    record Count(String type, JobState state, int count, String recurrence) {}
+  public List<JobNameSummary> findJobNames() {
+    record Count(String name, JobState state, int count, String recurrence) {}
     List<Count> counts =
         access.inReadOnlyTransaction(
             db ->
                 db.list(
-                    FIND_JOB_TYPES_SQL,
+                    FIND_JOB_NAMES_SQL,
                     row ->
                         new Count(
-                            row.string("type"),
+                            row.string("name"),
                             row.enumValue("state", JobState.class),
                             row.integer("count"),
                             row.string("recurrence"))),
             e -> new BikeschedException("Counting bikesched jobs failed", e));
-    Map<String, Map<JobState, Integer>> byType = new LinkedHashMap<>();
+    Map<String, Map<JobState, Integer>> byName = new LinkedHashMap<>();
     Map<String, String> recurrences = new LinkedHashMap<>();
     for (Count count : counts) {
-      byType
-          .computeIfAbsent(count.type(), type -> new EnumMap<>(JobState.class))
+      byName
+          .computeIfAbsent(count.name(), name -> new EnumMap<>(JobState.class))
           .put(count.state(), count.count());
       if (count.recurrence() != null) {
-        recurrences.putIfAbsent(count.type(), count.recurrence());
+        recurrences.putIfAbsent(count.name(), count.recurrence());
       }
     }
-    List<JobTypeSummary> types = new ArrayList<>(byType.size());
-    byType.forEach(
-        (type, byState) ->
-            types.add(new JobTypeSummary(type, byState, recurrences.get(type), false)));
-    return types;
+    List<JobNameSummary> names = new ArrayList<>(byName.size());
+    byName.forEach(
+        (name, byState) ->
+            names.add(new JobNameSummary(name, byState, recurrences.get(name), false)));
+    return names;
   }
 
   public List<EventSummary> findEvents(EventQuery query) {
@@ -410,7 +411,7 @@ public final class AdminStore {
                     new EventStep(
                         row.uuid("id"),
                         row.uuid("job_id"),
-                        row.string("job_type"),
+                        row.string("job_name"),
                         row.enumValue("job_state", JobState.class),
                         row.string("name"),
                         row.string("type")),
@@ -432,7 +433,7 @@ public final class AdminStore {
                     new WaitingStep(
                         row.uuid("id"),
                         row.uuid("job_id"),
-                        row.string("job_type"),
+                        row.string("job_name"),
                         row.string("name"),
                         row.string("event_name"),
                         row.string("event_key"),
@@ -487,7 +488,8 @@ public final class AdminStore {
   private static JobSummary jobSummary(Sql.Row row) throws SQLException {
     return new JobSummary(
         row.uuid("id"),
-        row.string("type"),
+        row.string("name"),
+        row.enumValue("type", JobType.class),
         row.enumValue("state", JobState.class),
         row.integer("attempts"),
         row.integer("max_attempts"),
@@ -498,7 +500,7 @@ public final class AdminStore {
         row.instant("finished_at"),
         row.string("last_error"),
         row.uuid("parent_job_id"),
-        row.string("parent_job_type"),
+        row.string("parent_job_name"),
         row.string("recurrence"),
         row.string("idempotency_key"),
         row.uuid("node_id"),

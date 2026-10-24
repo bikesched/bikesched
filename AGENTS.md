@@ -57,7 +57,7 @@ what the library does; this file covers how to change it.
 | `bikesched-annotations` | `@JobHandler` and `JobHandlers` (Java only, package `org.bikesched.annotation`): job handlers declared as annotated methods, invoked via `MethodHandle`; depends on core only (`api`; tests use bikesched-jackson) |
 | `bikesched-cron` | `CronRecurrence` and `CronRecurrenceParser` (Java only, package `org.bikesched.cron`): cron expressions parsed with cron-utils; depends on core and `cron-utils` only (both `api`, cron-utils is an automatic module; tests use bikesched-annotations) |
 | `bikesched-micrometer` | `MicrometerJobListener` and `MicrometerEventListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` and `EventListener` SPIs; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |
-| `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`JobTypeHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/integrations/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
+| `bikesched-spring-boot-starter` | Spring Boot 4 auto-configuration (Java only, package `org.bikesched.spring`): builds the node from the context's `DataSource` and the `bikesched.*` properties, discovers `@JobHandler`/`StandaloneJobHandler` beans (proxy-safe via `JobHandlers.scan(Class)`/`bindTo`), polls with a `SmartLifecycle`, optional Jackson/Micrometer wiring (both `compileOnly`), recurrence parsers: ISO-8601 durations, Spring's six-field `CronExpression` and any `RecurrenceParser` beans (bikesched-cron's is not auto-configured); see `docs/integrations/spring.md`; Spring artifacts are automatic modules, hence the suppressed lints in `module-info.java` |
 | `bikesched-admin` | the admin UI (Java only, package `org.bikesched.admin.web`): `BikeschedAdmin` serves a page and a JSON API through a framework-neutral `handle(AdminRequest)` and a JDK `com.sun.net.httpserver` adapter, `AdminAccess` in the subpackage `access` decides per request (open by default, built-in Basic authentication); the page is static files in `src/main/resources/org/bikesched/admin/web/ui/` (ES modules with Preact and htm, copied from their WebJars by the `vendorUi` task, no build step, CSP without inline scripts or styles); depends on core only (`api`); see `docs/operations/admin.md` |
 | `bikesched-examples` | runnable examples, described in its own `README.md`, in two submodules: `java` (plain Java examples, one package per scenario, each with a Testcontainers test using the shared `util.Database`; JSON via bikesched-jackson) and `spring` (the Spring Boot example as a regular Boot application with the Spring Boot Gradle plugin, `bootRun`) |
 | `bikesched-stress-tests` | load and failure tests (database restarts, cut-off nodes, hanging connections, throughput), not published; `build` compiles them, `./gradlew :bikesched-stress-tests:stressTest` runs them before a release, see its `README.md` and ADR 0050 |
@@ -112,14 +112,14 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 - Callback interfaces are `<X>Handler` with one `handle(...)` method (`JobHandler`, `StepHandler`,
   `StepFailureHandler`, `CompensationHandler`); they receive the context object (e.g. the `Step`,
-  the `FailingStep`), not just a value. Exception: `JobTypeHandler` adds `type()` for class-based
-  handlers registered without a separate type argument.
+  the `FailingStep`), not just a value. Exception: `StandaloneJobHandler` adds `typedJob()` for
+  class-based handlers registered without a separate name argument.
 - Observers are `<X>Listener` SPIs with `on<Event>(record)` default no-op methods (`job.listener.JobListener`, `event.listener.EventListener`),
   called synchronously; their exceptions are logged and ignored. Each event passes one record, so
   fields can be added without breaking implementations.
 - Everything handed to user code (job, builders, `JobFailure`, `EventWait`) is a public
   **interface**; implementations are `Default<X>` in `internal`.
-- Builders: one fluent path ending in a verb that performs the action (`newJob(type)…schedule()`,
+- Builders: one fluent path ending in a verb that performs the action (`newJob(name)…schedule()`,
   `…schedule(Recurrence)` for a recurring job,
   `newEvent(name, key)…publish()`, `newStep(name, Class)…run(handler)`). Mutually exclusive options
   are separate builder types (`NodeEventBuilder` with `connection(…)`, `StepEventBuilder` with
@@ -131,13 +131,16 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - SPI defaults are static factories on the interface (`RetryBackoff.none()`); a default that only
   makes sense as "nothing configured" stays internal instead (`RawJsonMapper`, used by `Internals`
   when no `jsonMapper` was set).
-- Typed variants sit next to the string-based API, never replacing it: `JobType<T>`/`EventType<T>`
-  (records: name + payload class) select overloads (`newJob(JobType)`, `registerJobHandler(JobType,
-  TypedJobHandler)`, `newEvent(EventType, key)`, `waitForEvent(step, EventType, key)`). Builders
-  carry the payload type as `P` (`JobBuilder<P>`, `EventBuilder<P>`; `Object` for strings). Keep
-  the Kotlin API on reified generics instead.
+- Typed variants sit next to the string-based API, never replacing it: `TypedJob<T>`/`TypedEvent<T>`
+  (records: name + payload class) select overloads (`newJob(TypedJob)`,
+  `registerJobHandler(TypedJob, TypedJobHandler)`, `newEvent(TypedEvent, key)`,
+  `waitForEvent(step, TypedEvent, key)`). Builders carry the payload type as `P` (`JobBuilder<P>`,
+  `EventBuilder<P>`; `Object` for strings). Keep the Kotlin API on reified generics instead.
 - Results get their own type in the feature package (`job.JobHistoryEntry`); lookups return
   `Optional` of a minimal interface (`findJob` → `JobInfo` with a `JobState` enum).
+- A job's `name` selects its handler (`newJob(name)`, `registerJobHandler(name, …)`); its `type`
+  is the `JobType` enum (`ONE_OFF`, `RECURRING`, `CHILD`) bikesched derives from how it was started
+  (ADR 0059). Call the handler key a job name in code and docs, never a job type.
 - No exceptions for control flow: intent is a flag checked after the handler (`job.cancel()`,
   `job.fail()`), except suspending at an event wait (internal `Error`, see `JobSuspended`).
 - New mechanisms are opt-in: jobs not using them behave exactly as before (no extra state, replay
@@ -155,10 +158,10 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 ### Kotlin module (`org.bikesched.kotlin`)
 
 - Kotlin-style entry points are extensions on `Bikesched` with named arguments and an optional
-  trailing handler, implemented with the Java builders underneath: `handleJobs<T>(type) { payload -> }`
-  (the `Job` is the receiver), `createJob(…)`, `createRecurringJob(…)`, `publishEvent(…)`, and in
-  handlers `step<T>(name, compensation = …) { }` and
-  `waitForEvent<T>(step, name, key, timeout, onFailure = …)`.
+  trailing handler, implemented with the Java builders underneath:
+  `handleJobs<T>(name) { payload -> }` (the `Job` is the receiver), `createJob(…)`,
+  `createRecurringJob(…)`, `publishEvent(…)`, and in handlers `step<T>(name, compensation = …) { }`
+  and `waitForEvent<T>(step, name, key, timeout, onFailure = …)`.
 - Reified helpers do the `as T` cast inline, so a non-null `T` with a `null` value throws. `Unit`
   steps run as `Void` steps (no `Unit` reaches the `JsonMapper`).
 - Use distinct names rather than overloading a Java member: a member always wins over an extension
@@ -193,9 +196,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `inReadOnlyTransaction`, `onCallerConnection(connection, …)`: the last argument is a lazy
   exception handler, called only for an `SQLException`. A caller's connection is never committed,
   rolled back, closed or switched to auto-commit.
-- Statements that make jobs due report it on their `Sql` handle: `db.dueNow(type)` for jobs due
-  now (other nodes are notified after the commit, or in the caller's transaction), `db.dueAt(type,
-  time)` for the writing node's own wake-up (suspensions, retries), `db.due(type, time)` for new
+- Statements that make jobs due report it on their `Sql` handle: `db.dueNow(name)` for jobs due
+  now (other nodes are notified after the commit, or in the caller's transaction), `db.dueAt(name,
+  time)` for the writing node's own wake-up (suspensions, retries), `db.due(name, time)` for new
   jobs. A new statement inserting or updating `bikesched_jobs` must be classified in
   `DueJobsWritePathsTest`; a forgotten report makes that path up to one poll interval slower.
 - `Sql.one()` rejects a `null` mapping: map nullable columns into a record so "no row" and "null
@@ -205,7 +208,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 
 - One focused test class per feature area. Integration tests extend `AbstractBikeschedTest`
   (Bikesched level) or `AbstractStoreTest` (store level); both share **one** Postgres container per
-  JVM. Scope every assertion to a per-test job type or node name, and delete rows that would stay
+  JVM. Scope every assertion to a per-test job name or node name, and delete rows that would stay
   claimable (future jobs, recurring occurrences) after the test.
 - Wait for async outcomes with Awaitility (`await().untilAsserted { … }`, defaults set in the base
   classes); "nothing happens" checks are `Thread.sleep` + assert.
@@ -215,7 +218,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   (`"\"x\""`, not `"x"`).
 - Kotlin tests share `TestDatabase` and map data classes with `kotlinJsonMapper` (bikesched-jackson
   plus Jackson's Kotlin module); use
-  `unique(name)` for job types and event names, computed outside handlers (handlers replay).
+  `unique(name)` for job and event names, computed outside handlers (handlers replay).
 - Verify with `./gradlew build` and count results from `build/test-results/test/*.xml`; rerun
   timing-sensitive tests a few times with `--tests … --rerun`.
 

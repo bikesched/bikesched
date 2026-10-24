@@ -50,11 +50,11 @@ class MicrometerNodeTest {
                   assertThat(
                           registry
                               .get("bikesched.job.attempts")
-                              .tags("job.type", type, "outcome", "succeeded")
+                              .tags("job.name", type, "outcome", "succeeded")
                               .timer()
                               .count())
                       .isOne());
-      assertThat(registry.get("bikesched.job.claim.delay").tags("job.type", type).timer().count())
+      assertThat(registry.get("bikesched.job.claim.delay").tags("job.name", type).timer().count())
           .isOne();
       assertThat(registry.get("bikesched.jobs.active").gauge().value()).isZero();
     }

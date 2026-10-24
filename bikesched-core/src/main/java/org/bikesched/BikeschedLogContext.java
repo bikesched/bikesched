@@ -11,7 +11,7 @@ import org.bikesched.job.StepHandler;
  *
  * <table>
  *   <caption>Keys set per thread</caption>
- *   <tr><th>Thread</th><th>{@link #NODE_ID}</th><th>{@link #JOB_ID}</th><th>{@link #JOB_TYPE}</th>
+ *   <tr><th>Thread</th><th>{@link #NODE_ID}</th><th>{@link #JOB_ID}</th><th>{@link #JOB_NAME}</th>
  *       <th>{@link #STEP_NAME}</th></tr>
  *   <tr><td>heartbeat ({@code bikesched-heartbeat})</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
  *   <tr><td>poller ({@code bikesched-poller})</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
@@ -30,8 +30,8 @@ public final class BikeschedLogContext {
   /** Id of the job being executed. */
   public static final String JOB_ID = "bikesched.jobId";
 
-  /** Type of the job being executed. */
-  public static final String JOB_TYPE = "bikesched.jobType";
+  /** Name of the job being executed. */
+  public static final String JOB_NAME = "bikesched.jobName";
 
   /** Name of the {@link Job#step(String, Class, StepHandler) step} being executed. */
   public static final String STEP_NAME = "bikesched.stepName";

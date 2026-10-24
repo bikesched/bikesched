@@ -4,11 +4,11 @@ package org.bikesched.job;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Handles failed jobs of a {@link JobType}, receiving the payload mapped to the type's payload
+ * Handles failed jobs of a {@link TypedJob}, receiving the payload mapped to the type's payload
  * class; like a {@link JobFailureHandler} otherwise.
  *
  * @param <T> the payload type
- * @see org.bikesched.Bikesched#registerJobFailureHandler(JobType, TypedJobFailureHandler)
+ * @see org.bikesched.Bikesched#registerJobFailureHandler(TypedJob, TypedJobFailureHandler)
  */
 @FunctionalInterface
 public interface TypedJobFailureHandler<T extends @Nullable Object> {

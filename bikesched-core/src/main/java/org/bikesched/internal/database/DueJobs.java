@@ -19,10 +19,10 @@ public interface DueJobs {
   DueJobs NONE =
       new DueJobs() {
         @Override
-        public void dueNow(Set<String> types) {}
+        public void dueNow(Set<String> names) {}
 
         @Override
-        public void dueAt(String type, Instant dueAt) {}
+        public void dueAt(String name, Instant dueAt) {}
 
         @Override
         public boolean isNotifying() {
@@ -31,22 +31,22 @@ public interface DueJobs {
       };
 
   /**
-   * Jobs of these types are due now, e.g. new jobs, resumed or released jobs: every node handling
+   * Jobs of these names are due now, e.g. new jobs, resumed or released jobs: every node handling
    * them should poll.
    *
-   * @param types the job types, not empty
+   * @param names the job names, not empty
    */
-  void dueNow(Set<String> types);
+  void dueNow(Set<String> names);
 
   /**
-   * A job of this type, written by the reporting node, is due at the given time (possibly already):
+   * A job of this name, written by the reporting node, is due at the given time (possibly already):
    * e.g. a suspension until a deadline, a retry with a delay or a delayed job. Only for the
    * reporting node's own wake-up, other nodes are not told.
    *
-   * @param type the job type
+   * @param name the job name
    * @param dueAt when the job is due
    */
-  void dueAt(String type, Instant dueAt);
+  void dueAt(String name, Instant dueAt);
 
   /**
    * Whether writes on a caller's connection send their notification inside the caller's

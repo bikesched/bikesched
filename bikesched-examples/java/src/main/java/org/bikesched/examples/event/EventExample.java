@@ -7,10 +7,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.bikesched.Bikesched;
-import org.bikesched.event.EventType;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * One job with two steps: the first calls the {@link EventService}, which returns an id and
@@ -27,12 +27,12 @@ import org.bikesched.job.JobType;
  */
 public final class EventExample {
 
-  /** The job type: its name and payload class. */
-  public static final JobType<JobPayload> JOB_TYPE = JobType.of("event-job", JobPayload.class);
+  /** The typed job: its name and payload class. */
+  public static final TypedJob<JobPayload> JOB_NAME = TypedJob.of("event-job", JobPayload.class);
 
   /** The event the service publishes: its name and payload class. */
-  public static final EventType<EventPayload> EVENT_TYPE =
-      EventType.of("event-processed", EventPayload.class);
+  public static final TypedEvent<EventPayload> EVENT_TYPE =
+      TypedEvent.of("event-processed", EventPayload.class);
 
   /**
    * The job payload.
@@ -58,7 +58,7 @@ public final class EventExample {
 
     // Register a job handler with two steps.
     bikesched.registerJobHandler(
-        JOB_TYPE,
+        JOB_NAME,
         (job, payload) -> {
           // Step 1: call the service, which publishes the event; the id it returns is stored as
           // the step's result, so later runs of the handler wait with the same id.
@@ -83,7 +83,7 @@ public final class EventExample {
    * @return the job id
    */
   public UUID scheduleJob(Duration delay) {
-    return bikesched.newJob(JOB_TYPE).payload(new JobPayload(UUID.randomUUID(), delay)).schedule();
+    return bikesched.newJob(JOB_NAME).payload(new JobPayload(UUID.randomUUID(), delay)).schedule();
   }
 
   static void main() {

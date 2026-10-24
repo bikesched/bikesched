@@ -16,6 +16,7 @@ import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedException;
 import org.bikesched.job.JobState;
+import org.bikesched.job.JobType;
 import org.bikesched.job.Recurrence;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class AdminTest extends AbstractBikeschedTest {
   /** Deletes the jobs and events left behind (scheduled jobs of a node that does not poll). */
   @AfterEach
   void deleteRows() throws Exception {
-    execute("delete from bikesched_jobs where type like '" + prefix + "%'");
+    execute("delete from bikesched_jobs where name like '" + prefix + "%'");
     execute("delete from bikesched_events where name like '" + prefix + "%'");
   }
 
@@ -45,7 +46,7 @@ class AdminTest extends AbstractBikeschedTest {
       bikesched.newJob(prefix + "other").schedule(Duration.ofHours(1));
 
       Admin admin = bikesched.admin();
-      JobQuery query = JobQuery.newest(2).withType(type);
+      JobQuery query = JobQuery.newest(2).withName(type);
       List<UUID> found = new ArrayList<>();
       List<Integer> pageSizes = new ArrayList<>();
       List<JobSummary> page = admin.findJobs(query);
@@ -58,8 +59,9 @@ class AdminTest extends AbstractBikeschedTest {
 
       assertThat(pageSizes).containsExactly(2, 2, 1);
       assertThat(found).containsExactlyElementsOf(scheduled.reversed());
-      JobSummary newest = admin.findJobs(JobQuery.newest(1).withType(type)).getFirst();
-      assertThat(newest.type()).isEqualTo(type);
+      JobSummary newest = admin.findJobs(JobQuery.newest(1).withName(type)).getFirst();
+      assertThat(newest.name()).isEqualTo(type);
+      assertThat(newest.type()).isEqualTo(JobType.ONE_OFF);
       assertThat(newest.state()).isEqualTo(JobState.SCHEDULED);
       assertThat(newest.maxAttempts()).isPositive();
       assertThat(newest.scheduledAt()).isAfter(newest.createdAt());
@@ -85,7 +87,7 @@ class AdminTest extends AbstractBikeschedTest {
       awaitState(succeeded, "SUCCEEDED");
 
       Admin admin = bikesched.admin();
-      assertThat(admin.findJobs(JobQuery.newest(10).withType(type).withStates(JobState.FAILED)))
+      assertThat(admin.findJobs(JobQuery.newest(10).withName(type).withStates(JobState.FAILED)))
           .singleElement()
           .satisfies(
               job -> {
@@ -96,14 +98,14 @@ class AdminTest extends AbstractBikeschedTest {
       assertThat(
               admin.findJobs(
                   JobQuery.newest(10)
-                      .withType(type)
+                      .withName(type)
                       .withStates(JobState.SUCCEEDED, JobState.SCHEDULED)))
           .extracting(JobSummary::id)
           .containsExactlyInAnyOrder(succeeded, later);
 
-      JobTypeSummary summary =
-          admin.findJobTypes().stream()
-              .filter(t -> t.type().equals(type))
+      JobNameSummary summary =
+          admin.findJobNames().stream()
+              .filter(t -> t.name().equals(type))
               .findFirst()
               .orElseThrow();
       assertThat(summary.count(JobState.FAILED)).isOne();
@@ -135,9 +137,9 @@ class AdminTest extends AbstractBikeschedTest {
       UUID empty = bikesched.newJob(handled).payloadJson(null).schedule(Duration.ofHours(1));
 
       Admin admin = bikesched.admin();
-      assertThat(admin.findJobTypes())
-          .filteredOn(type -> type.type().startsWith(prefix))
-          .extracting(JobTypeSummary::type, JobTypeSummary::total, JobTypeSummary::handled)
+      assertThat(admin.findJobNames())
+          .filteredOn(type -> type.name().startsWith(prefix))
+          .extracting(JobNameSummary::name, JobNameSummary::total, JobNameSummary::handled)
           .containsExactly(
               tuple(foreign, 1, false), tuple(fresh, 0, true), tuple(handled, 2, true));
       assertThat(admin.findJobData(keyed).orElseThrow().payload()).isEqualTo("{\"a\": 1}");
@@ -181,7 +183,7 @@ class AdminTest extends AbstractBikeschedTest {
           .satisfies(
               step -> {
                 assertThat(step.jobId()).isEqualTo(jobId);
-                assertThat(step.jobType()).isEqualTo(type);
+                assertThat(step.jobName()).isEqualTo(type);
                 assertThat(step.stepName()).isEqualTo("await");
                 assertThat(step.eventKey()).isEqualTo("key-1");
               });
@@ -269,7 +271,7 @@ class AdminTest extends AbstractBikeschedTest {
           .satisfies(
               step -> {
                 assertThat(step.jobId()).isEqualTo(jobId);
-                assertThat(step.jobType()).isEqualTo(type);
+                assertThat(step.jobName()).isEqualTo(type);
                 assertThat(step.jobState()).isEqualTo(JobState.SUCCEEDED);
                 assertThat(step.isPublisher()).isTrue();
               });
@@ -296,14 +298,14 @@ class AdminTest extends AbstractBikeschedTest {
       Admin admin = bikesched.admin();
       JobSummary child = admin.findJob(childId.get()).orElseThrow();
       assertThat(child.parentJobId()).isEqualTo(parentId);
-      assertThat(child.parentJobType()).isEqualTo(parentType);
+      assertThat(child.parentJobName()).isEqualTo(parentType);
       assertThat(admin.findSteps(parentId))
           .filteredOn(step -> step.type().equals("CHILD_JOB"))
           .singleElement()
           .satisfies(
               step -> {
                 assertThat(step.childJobId()).isEqualTo(childId.get());
-                assertThat(step.childJobType()).isEqualTo(childType);
+                assertThat(step.childJobName()).isEqualTo(childType);
                 assertThat(step.childJobState()).isEqualTo(JobState.SUCCEEDED);
                 assertThat(step.childJobExists()).isTrue();
               });
@@ -362,7 +364,7 @@ class AdminTest extends AbstractBikeschedTest {
       assertThat(admin.findJobs(JobQuery.newest(10).withNode(nodeId)))
           .extracting(JobSummary::id)
           .containsExactly(running);
-      assertThat(admin.findJobs(JobQuery.newest(10).withType(type)))
+      assertThat(admin.findJobs(JobQuery.newest(10).withName(type)))
           .extracting(JobSummary::id)
           .containsExactlyInAnyOrder(running, scheduled);
       assertThat(admin.findNode(UUID.randomUUID())).isEmpty();
@@ -440,7 +442,7 @@ class AdminTest extends AbstractBikeschedTest {
       await().until(() -> admin.findRecurringJobRuns(type, 10).previous().size() >= 3);
       RecurringJobRuns runs = admin.findRecurringJobRuns(type, 2);
 
-      assertThat(runs.type()).isEqualTo(type);
+      assertThat(runs.name()).isEqualTo(type);
       assertThat(runs.pending()).isNotNull();
       assertThat(runs.pending().recurrence()).isEqualTo("every PT0.2S");
       assertThat(runs.previous()).hasSize(2);

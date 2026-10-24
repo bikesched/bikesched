@@ -10,7 +10,7 @@ import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * Business outcomes as step results: a declined card is an expected outcome, returned as {@link
@@ -24,8 +24,8 @@ import org.bikesched.job.JobType;
 public final class OutcomeExample {
 
   /** Charges an order's card and tells the customer. */
-  public static final JobType<ChargeOrder> CHARGE_ORDER =
-      JobType.of("charge-order", ChargeOrder.class);
+  public static final TypedJob<ChargeOrder> CHARGE_ORDER =
+      TypedJob.of("charge-order", ChargeOrder.class);
 
   /**
    * The job payload.

@@ -43,10 +43,10 @@ Package [`org.bikesched.examples.simple`](java/src/main/java/org/bikesched/examp
 smallest setup, one job handler and one job with a `JobPayload` record (a `UUID`):
 
 ```java
-JobType<JobPayload> JOB_TYPE = JobType.of("simple-job", JobPayload.class);
+TypedJob<JobPayload> JOB_NAME = TypedJob.of("simple-job", JobPayload.class);
 
-bikesched.registerJobHandler(JOB_TYPE, (job, payload) -> System.out.println("Job " + job.id() + ": " + payload));
-bikesched.newJob(JOB_TYPE).payload(new JobPayload(UUID.randomUUID())).schedule();
+bikesched.registerJobHandler(JOB_NAME, (job, payload) -> System.out.println("Job " + job.id() + ": " + payload));
+bikesched.newJob(JOB_NAME).payload(new JobPayload(UUID.randomUUID())).schedule();
 ```
 
 `SimpleExampleTest` runs the job and waits until it ended.
@@ -343,20 +343,20 @@ the `Job`, the payload (here a `Mail` record), both or neither:
 
 ```java
 public final class MailJobs {
-    @JobHandler(type = "send-mail")
+    @JobHandler(name = "send-mail")
     public void sendMail(Job job, Mail mail) { … }
 
-    @JobHandler(type = "archive-mail")
+    @JobHandler(name = "archive-mail")
     public void archiveMail(Mail mail) { … }
 
-    @JobHandler(type = "check-mailbox")
+    @JobHandler(name = "check-mailbox")
     public void checkMailbox() { … }
 }
 
 JobHandlers.register(bikesched, new MailJobs());
 ```
 
-`AnnotationExample` schedules one job of each type; `AnnotationExampleTest` checks that they
+`AnnotationExample` schedules one job of each name; `AnnotationExampleTest` checks that they
 succeed.
 
 ## Taxi booking
@@ -364,7 +364,7 @@ succeed.
 Package [`org.bikesched.examples.taxi`](java/src/main/java/org/bikesched/examples/taxi): booking a taxi
 ride as one job (`taxi-ride`, see `TaxiBooking`) that talks to a taxi broker, a payment service and
 push notifications (simulated in `Simulated*`). The job and its two events are declared as typed
-constants (`JobType<RideRequest>`, `EventType<DriverOffer>`, `EventType<PriceDecision>`), so
+constants (`TypedJob<RideRequest>`, `TypedEvent<DriverOffer>`, `TypedEvent<PriceDecision>`), so
 payloads need no casts or `Class` arguments.
 
 **The happy path:**
@@ -400,17 +400,17 @@ cancellation by the customer and a failed approval.
 ## Cinema tickets
 
 Package [`org.bikesched.examples.cinema`](java/src/main/java/org/bikesched/examples/cinema): ordering
-cinema tickets as one job (`cinema-ticket-order`) with a handler class that carries its job type
-(`JobTypeHandler`). The cinema, the payment provider and the mail server are simulated with
+cinema tickets as one job (`cinema-ticket-order`) with a handler class that carries its typed job
+(`StandaloneJobHandler`). The cinema, the payment provider and the mail server are simulated with
 console output.
 
 ```java
-public final class TicketOrderHandler implements JobTypeHandler<TicketOrder> {
-    public JobType<TicketOrder> type() { return CinemaJobs.TICKET_ORDER; }
+public final class TicketOrderHandler implements StandaloneJobHandler<TicketOrder> {
+    public TypedJob<TicketOrder> typedJob() { return CinemaJobs.TICKET_ORDER; }
     public void handle(Job job, TicketOrder order) throws Exception { … }
 }
 
-bikesched.registerJobHandler(new TicketOrderHandler());          // no separate type argument
+bikesched.registerJobHandler(new TicketOrderHandler());          // no separate name argument
 bikesched.newJob(CinemaJobs.TICKET_ORDER).payload(order).schedule();
 ```
 
@@ -420,8 +420,8 @@ bikesched.newJob(CinemaJobs.TICKET_ORDER).payload(order).schedule();
 2. `charge-payment`: charges the order's total.
 3. `mail-tickets`: mails the tickets to the customer.
 
-**Concepts shown:** [typed job types](../docs/jobs/README.md#typed-job-types) with a self-describing
-handler class, the job type as a shared constant (`CinemaJobs`) used by the code ordering tickets,
+**Concepts shown:** [typed jobs](../docs/jobs/README.md#typed-jobs) with a self-describing
+handler class, the typed job as a shared constant (`CinemaJobs`) used by the code ordering tickets,
 and [durable steps](../docs/multi-step-jobs/steps.md#durable-steps): a retry skips completed steps
 and reuses their results, so seats aren't reserved or cards charged twice.
 
@@ -494,7 +494,7 @@ public class OrderService {
         .schedule();
   }
 
-  @JobHandler(type = "fulfill-order")                                             // found by the starter
+  @JobHandler(name = "fulfill-order")                                             // found by the starter
   public void fulfill(Job job, FulfillOrder command) throws Exception {
     Order order = orders.findById(command.orderId()).orElseThrow();
     var fulfillmentId = job.step("fulfill", UUID.class, step -> fulfillment.fulfill(order.getId(), order.getItem()));
@@ -502,7 +502,7 @@ public class OrderService {
     order.markFulfilled(); // …
   }
 
-  @JobFailureHandler(type = "fulfill-order")                                      // once all attempts failed
+  @JobFailureHandler(name = "fulfill-order")                                      // once all attempts failed
   public void fulfillmentFailed(FailedJob failed, FulfillOrder command) {
     orders.findById(command.orderId()).orElseThrow().markFailed(); // …
   }

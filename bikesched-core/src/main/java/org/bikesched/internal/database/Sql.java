@@ -45,10 +45,10 @@ public final class Sql {
   /** The JDBC query timeout of every statement in seconds; 0 for none. */
   private final int queryTimeoutSeconds;
 
-  /** Types of jobs the work made due now, see {@link #dueNow}. */
+  /** Names of jobs the work made due now, see {@link #dueNow}. */
   private final Set<String> dueNow = new LinkedHashSet<>();
 
-  /** The earliest due time per type of the jobs the work made due later, see {@link #dueAt}. */
+  /** The earliest due time per name of the jobs the work made due later, see {@link #dueAt}. */
   private final Map<String, Instant> dueAt = new LinkedHashMap<>();
 
   public Sql(Connection connection) {
@@ -68,47 +68,47 @@ public final class Sql {
   }
 
   /**
-   * Reports that a statement of the work made jobs of this type due now (new, resumed, released
+   * Reports that a statement of the work made jobs of this name due now (new, resumed, released
    * jobs): all nodes are told after the commit, see {@link DueJobs#dueNow}.
    *
-   * @param type the job type
+   * @param name the job name
    */
-  public void dueNow(String type) {
-    dueNow.add(type);
+  public void dueNow(String name) {
+    dueNow.add(name);
   }
 
   /**
-   * Reports that a statement of the work made a job of this type due at the given time (possibly
+   * Reports that a statement of the work made a job of this name due at the given time (possibly
    * already), for this node's own wake-up after the commit, see {@link DueJobs#dueAt}.
    *
-   * @param type the job type
+   * @param name the job name
    * @param at when it is due
    */
-  public void dueAt(String type, Instant at) {
-    dueAt.merge(type, at, (a, b) -> a.isBefore(b) ? a : b);
+  public void dueAt(String name, Instant at) {
+    dueAt.merge(name, at, (a, b) -> a.isBefore(b) ? a : b);
   }
 
   /**
    * Reports a new job: due now (all nodes are told) if {@code at} has passed, otherwise for this
    * node's own wake-up at {@code at}.
    *
-   * @param type the job type
+   * @param name the job name
    * @param at when it is due
    */
-  public void due(String type, Instant at) {
+  public void due(String name, Instant at) {
     if (at.isAfter(Instant.now())) {
-      dueAt(type, at);
+      dueAt(name, at);
     } else {
-      dueNow(type);
+      dueNow(name);
     }
   }
 
-  /** The types reported by {@link #dueNow}. */
-  Set<String> dueNowTypes() {
+  /** The names reported by {@link #dueNow}. */
+  Set<String> dueNowNames() {
     return dueNow;
   }
 
-  /** The due times reported by {@link #dueAt}, the earliest per type. */
+  /** The due times reported by {@link #dueAt}, the earliest per name. */
   Map<String, Instant> dueAtTimes() {
     return dueAt;
   }

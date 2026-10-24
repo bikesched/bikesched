@@ -47,5 +47,5 @@ fun testNode(name: String): Bikesched = bikesched {
   jsonMapper = kotlinJsonMapper
 }
 
-/** A unique job type or event name per test run: the database is shared with other tests. */
+/** A unique job or event name per test run: the database is shared with other tests. */
 fun unique(name: String): String = "$name-${UUID.randomUUID()}"

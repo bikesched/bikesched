@@ -14,12 +14,12 @@ import org.bikesched.PaymentJsonMapper;
 import org.bikesched.PaymentJsonMapper.Payment;
 import org.junit.jupiter.api.Test;
 
-/** Events with a payload class: {@link EventType}, next to the string-based API. */
-class EventTypeTest extends AbstractBikeschedTest {
+/** Events with a payload class: {@link TypedEvent}, next to the string-based API. */
+class TypedEventTest extends AbstractBikeschedTest {
 
   @Test
   void typedWaitReceivesTheMappedPayload() throws Exception {
-    EventType<Payment> paid = EventType.of(unique("paid"), Payment.class);
+    TypedEvent<Payment> paid = TypedEvent.of(unique("paid"), Payment.class);
     String type = unique("typed-wait");
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-event-type")) {
@@ -40,7 +40,7 @@ class EventTypeTest extends AbstractBikeschedTest {
 
   @Test
   void awaitEventReturnsThePayloadWithoutReceive() throws Exception {
-    EventType<Payment> paid = EventType.of(unique("paid"), Payment.class);
+    TypedEvent<Payment> paid = TypedEvent.of(unique("paid"), Payment.class);
     String type = unique("await-event");
     var runs = new java.util.concurrent.atomic.AtomicInteger();
     var received = new CompletableFuture<Payment>();
@@ -66,7 +66,7 @@ class EventTypeTest extends AbstractBikeschedTest {
 
   @Test
   void awaitEventFailsTheJobAfterTheDefaultEventTimeout() throws Exception {
-    EventType<Payment> paid = EventType.of(unique("paid"), Payment.class);
+    TypedEvent<Payment> paid = TypedEvent.of(unique("paid"), Payment.class);
     String type = unique("await-event-timeout");
     try (Bikesched bikesched =
         testNode("node-await-event-timeout")
@@ -90,7 +90,7 @@ class EventTypeTest extends AbstractBikeschedTest {
 
   @Test
   void typedWaitReturnsTheTimeoutResultOnceTheDeadlinePassed() throws Exception {
-    EventType<Payment> paid = EventType.of(unique("paid-late"), Payment.class);
+    TypedEvent<Payment> paid = TypedEvent.of(unique("paid-late"), Payment.class);
     String type = unique("typed-timeout");
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-event-type-timeout")) {
@@ -112,7 +112,7 @@ class EventTypeTest extends AbstractBikeschedTest {
   @Test
   void eventPublishedWithTheStringApiReachesATypedWait() throws Exception {
     String name = unique("paid-mixed");
-    EventType<Payment> paid = EventType.of(name, Payment.class);
+    TypedEvent<Payment> paid = TypedEvent.of(name, Payment.class);
     String type = unique("typed-mixed");
     var received = new CompletableFuture<Payment>();
     try (Bikesched bikesched = node("node-event-type-mixed")) {
@@ -132,10 +132,10 @@ class EventTypeTest extends AbstractBikeschedTest {
 
   @Test
   void eventTypeNeedsANameAndAPayloadClass() {
-    assertThatThrownBy(() -> EventType.of("", Payment.class))
+    assertThatThrownBy(() -> TypedEvent.of("", Payment.class))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("event name must not be blank");
-    assertThatThrownBy(() -> EventType.of(null, Payment.class))
+    assertThatThrownBy(() -> TypedEvent.of(null, Payment.class))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("event name");
   }

@@ -23,7 +23,7 @@ class FindJobTest extends AbstractBikeschedTest {
           .hasValueSatisfying(
               job -> {
                 assertThat(job.id()).isEqualTo(later);
-                assertThat(job.type()).isEqualTo("find-later");
+                assertThat(job.name()).isEqualTo("find-later");
                 assertThat(job.state()).isEqualTo(JobState.SCHEDULED);
                 assertThat(job.state().isEnded()).isFalse();
               });

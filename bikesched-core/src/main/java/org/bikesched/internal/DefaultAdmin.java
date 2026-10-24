@@ -18,9 +18,9 @@ import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.EventStep;
 import org.bikesched.admin.EventSummary;
 import org.bikesched.admin.JobData;
+import org.bikesched.admin.JobNameSummary;
 import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
-import org.bikesched.admin.JobTypeSummary;
 import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
@@ -43,15 +43,15 @@ final class DefaultAdmin implements Admin {
 
   private final Runnable ensureReady;
 
-  // The job types with a handler on this node, a live view.
-  private final Set<String> handledTypes;
+  // The job names with a handler on this node, a live view.
+  private final Set<String> handledNames;
 
   DefaultAdmin(
-      AdminStore store, Duration nodeTimeout, Runnable ensureReady, Set<String> handledTypes) {
+      AdminStore store, Duration nodeTimeout, Runnable ensureReady, Set<String> handledNames) {
     this.store = store;
     this.nodeTimeout = nodeTimeout;
     this.ensureReady = ensureReady;
-    this.handledTypes = handledTypes;
+    this.handledNames = handledNames;
   }
 
   @Override
@@ -70,11 +70,11 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
-  public RecurringJobRuns findRecurringJobRuns(String type, int limit) {
-    Objects.requireNonNull(type, "type");
+  public RecurringJobRuns findRecurringJobRuns(String name, int limit) {
+    Objects.requireNonNull(name, "name");
     requireLimit(limit);
     ensureReady.run();
-    return store.findRecurringJobRuns(type, limit);
+    return store.findRecurringJobRuns(name, limit);
   }
 
   @Override
@@ -85,11 +85,11 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
-  public Optional<JobSummary> findJob(String type, String idempotencyKey) {
-    Objects.requireNonNull(type, "type");
+  public Optional<JobSummary> findJob(String name, String idempotencyKey) {
+    Objects.requireNonNull(name, "name");
     Objects.requireNonNull(idempotencyKey, "idempotencyKey");
     ensureReady.run();
-    return store.findJob(type, idempotencyKey);
+    return store.findJob(name, idempotencyKey);
   }
 
   @Override
@@ -121,19 +121,19 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
-  public List<JobTypeSummary> findJobTypes() {
+  public List<JobNameSummary> findJobNames() {
     ensureReady.run();
-    Set<String> handled = new TreeSet<>(handledTypes);
-    List<JobTypeSummary> types = new ArrayList<>();
-    for (JobTypeSummary type : store.findJobTypes()) {
-      boolean isHandled = handled.remove(type.type());
-      types.add(new JobTypeSummary(type.type(), type.counts(), type.recurrence(), isHandled));
+    Set<String> handled = new TreeSet<>(handledNames);
+    List<JobNameSummary> names = new ArrayList<>();
+    for (JobNameSummary name : store.findJobNames()) {
+      boolean isHandled = handled.remove(name.name());
+      names.add(new JobNameSummary(name.name(), name.counts(), name.recurrence(), isHandled));
     }
     if (!handled.isEmpty()) {
-      handled.forEach(type -> types.add(new JobTypeSummary(type, Map.of(), null, true)));
-      types.sort(Comparator.comparing(JobTypeSummary::type));
+      handled.forEach(name -> names.add(new JobNameSummary(name, Map.of(), null, true)));
+      names.sort(Comparator.comparing(JobNameSummary::name));
     }
-    return types;
+    return names;
   }
 
   @Override

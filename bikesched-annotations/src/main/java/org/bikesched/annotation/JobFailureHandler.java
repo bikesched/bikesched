@@ -9,17 +9,17 @@ import java.lang.annotation.Target;
 import org.bikesched.job.FailedJob;
 
 /**
- * Declares a method as the failure handler of a job type (see {@link
+ * Declares a method as the failure handler of a job name (see {@link
  * org.bikesched.job.JobFailureHandler}), registered with {@link
  * JobHandlers#register(org.bikesched.Bikesched, Object)} next to the {@link JobHandler @JobHandler}
  * methods:
  *
  * <pre>{@code
  * public class PaymentJobs {
- *     @JobHandler(type = "charge")
+ *     @JobHandler(name = "charge")
  *     public void charge(Charge charge) { … }
  *
- *     @JobFailureHandler(type = "charge")
+ *     @JobFailureHandler(name = "charge")
  *     public void chargeFailed(FailedJob failed, Charge charge) { deadLetters.insert(failed, charge); }
  * }
  * }</pre>
@@ -35,9 +35,9 @@ import org.bikesched.job.FailedJob;
 public @interface JobFailureHandler {
 
   /**
-   * The job type whose failed jobs the method handles, at most 200 characters.
+   * The job name whose failed jobs the method handles, at most 200 characters.
    *
-   * @return the job type
+   * @return the job name
    */
-  String type();
+  String name();
 }

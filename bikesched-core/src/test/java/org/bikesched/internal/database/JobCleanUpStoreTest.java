@@ -30,7 +30,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     assertThat(database.jobs().deleteFinishedJobs(null, null, Duration.ofHours(1), 1000).count())
         .isEqualTo(3);
 
-    assertThat(count("type like 'old-%'")).isZero();
+    assertThat(count("name like 'old-%'")).isZero();
     assertThat(count("true")).as("COMPENSATION_FAILED jobs are kept").isEqualTo(6);
     assertThat(countSteps("true")).as("steps deleted with their jobs").isEqualTo(6);
   }
@@ -45,7 +45,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     DeletedBatch first = database.jobs().deleteFinishedJobs(null, null, Duration.ofHours(1), 2);
 
     assertThat(first.count()).isEqualTo(2);
-    assertThat(count("type in ('old-5', 'old-4')")).as("the oldest two").isZero();
+    assertThat(count("name in ('old-5', 'old-4')")).as("the oldest two").isZero();
     assertThat(first.last()).isEqualTo(secondOldest);
   }
 
@@ -59,7 +59,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
         database.jobs().deleteFinishedJobs(finishedAt("newer"), null, Duration.ofHours(1), 10);
 
     assertThat(batch.count()).isOne();
-    assertThat(count("type = 'older'")).isOne();
+    assertThat(count("name = 'older'")).isOne();
     assertThat(database.jobs().deleteFinishedJobs(null, null, Duration.ofHours(1), 10).last())
         .isEqualTo(older);
   }
@@ -99,13 +99,13 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
 
     assertThat(batch.count()).isOne();
     assertThat(batch.cutoff()).isEqualTo(newer);
-    assertThat(count("type = 'newer'")).as("finished at the cutoff: kept").isOne();
+    assertThat(count("name = 'newer'")).as("finished at the cutoff: kept").isOne();
   }
 
   private static Instant finishedAt(String type) throws SQLException {
     try (var connection = dataSource.getConnection();
         var query =
-            connection.prepareStatement("select finished_at from bikesched_jobs where type = ?")) {
+            connection.prepareStatement("select finished_at from bikesched_jobs where name = ?")) {
       query.setString(1, type);
       try (var rs = query.executeQuery()) {
         rs.next();
@@ -118,7 +118,7 @@ class JobCleanUpStoreTest extends AbstractStoreTest {
     String compensated =
         state.startsWith("COMPENSATION") || state.equals("COMPENSATING") ? "'CANCELLED'" : "null";
     execute(
-        "insert into bikesched_jobs (id, type, state, compensation_end_state, finished_at) values"
+        "insert into bikesched_jobs (id, name, state, compensation_end_state, finished_at) values"
             + " (gen_random_uuid(), '"
             + type
             + "', '"

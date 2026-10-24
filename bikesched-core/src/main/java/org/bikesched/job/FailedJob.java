@@ -15,11 +15,11 @@ public interface FailedJob {
   UUID id();
 
   /**
-   * Returns the job type.
+   * Returns the job name.
    *
-   * @return the type
+   * @return the name
    */
-  String type();
+  String name();
 
   /**
    * Returns the payload as stored, see {@link Job#payload()}.

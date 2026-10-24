@@ -78,7 +78,7 @@ class JacksonJobTest {
     }
 
     // Stored as jsonb (which orders keys by length): the records' components as JSON properties.
-    assertThat(query("select payload::text from bikesched_jobs where type = 'order'"))
+    assertThat(query("select payload::text from bikesched_jobs where name = 'order'"))
         .isEqualTo("{\"id\": \"o-1\", \"amount\": 100}");
     assertThat(query("select result::text from bikesched_steps where name = 'create-receipt'"))
         .isEqualTo("{\"orderId\": \"o-1\", \"reference\": \"pay-7\"}");

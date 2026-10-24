@@ -59,7 +59,7 @@ no node registers any more, but cannot hold work back for a while and let it con
 during an incident with a downstream system. Removing a recurring job is undone by the next node
 start, and cancelling loses the job.
 
-- Recurring jobs: a paused flag per type in a small table (it must survive restarts and
+- Recurring jobs: a paused flag per name in a small table (it must survive restarts and
   re-registration); the pending occurrence stays, is not claimed while paused, and resuming makes
   it due (missed runs skipped as usual).
 - Running and scheduled one-off jobs: `Bikesched.pause(jobId)` marks the job like a cancel request
@@ -70,8 +70,8 @@ start, and cancelling loses the job.
   visible in every query and the admin UI; `PAUSED` rather than `SUSPENDED`, which internally
   already means a job ending its attempt at a wait, sleep or poll (`JobSuspended`).
 - Admin UI: pause and resume buttons on a job and on a recurring job.
-- Open: whether event waits and timeouts keep running while paused, and whether a type-wide pause
-  for one-off jobs (all jobs of a type) is needed too.
+- Open: whether event waits and timeouts keep running while paused, and whether a name-wide pause
+  for one-off jobs (all jobs with a name) is needed too.
 - Outcome: operators stop and continue work without losing jobs or their progress.
 
 ## Testing
@@ -112,7 +112,7 @@ backlog; see [its README](bikesched-stress-tests/README.md) and
 A `statementTimeout` does not end a statement on a connection that hangs without a TCP reset: the
 driver sends the cancel on a new connection, the answer would arrive on the hanging one. The poller
 then waits forever while the heartbeat (on fresh connections) keeps the node alive, so nothing
-takes over its job types. Today the docs ask for the driver's `socketTimeout`
+takes over its jobs. Today the docs ask for the driver's `socketTimeout`
 (`HangingConnectionTest` covers it).
 
 - bikesched sets `Connection.setNetworkTimeout(…)` on every connection it borrows, a margin above
@@ -142,13 +142,13 @@ All packages of `bikesched-core` are `@NullMarked` and checked with NullAway in 
 
 Jobs live across deploys and replay with the handler code deployed by then.
 [Changing handlers](docs/jobs/changing-handlers.md) lists the safe and unsafe changes and works
-around the unsafe ones with a version property in the payload, a new job type or two deploys.
+around the unsafe ones with a version property in the payload, a new job name or two deploys.
 Nothing in the API tells old jobs from new ones, and nothing stops an old node from running a job
 created for new code during a rolling deploy.
 
-- Handler versions: `registerJobHandler(type, version, handler)` stores the version on each new
+- Handler versions: `registerJobHandler(name, version, handler)` stores the version on each new
   job (`handler_version` column), `job.handlerVersion()` lets the handler branch for old jobs, and
-  a node claims only versions it supports (like the type filter during rolling deploys, so an old
+  a node claims only versions it supports (like the name filter during rolling deploys, so an old
   node does not run a job created for new code).
 - Alternatively per change: `job.isPatched("change-id")`, recorded as a step on first evaluation,
   so jobs that ran past that point before the change keep the old path.
@@ -156,12 +156,12 @@ created for new code during a rolling deploy.
 - Open: what happens to jobs whose version no node supports any more (stuck `SCHEDULED`, an
   incident?).
 - Outcome: deploys that change a handler without breaking jobs already in flight, without
-  encoding versions in payloads or type names; postponed until a real case needs more than the
+  encoding versions in payloads or job names; postponed until a real case needs more than the
   workarounds.
 
 ### Reference
 
-Allow jobs and events to store an external reference string (max 200 chars, like job types and
+Allow jobs and events to store an external reference string (max 200 chars, like job and
 event names) when created, e.g. an id from an external system (order id, payment id, webhook
 delivery id), so it can be looked up or shown without decoding the payload.
 
@@ -171,7 +171,7 @@ delivery id), so it can be looked up or shown without decoding the payload.
   [idempotency key](docs/jobs/README.md#idempotency-keys), this is a display/lookup aid, not a dedup
   key) — multiple jobs/events can share one external reference (e.g. several jobs for the same
   order).
-- Needs an index to actually look up by it (e.g. `(type, reference)` on jobs); postponed until
+- Needs an index to actually look up by it (e.g. `(name, reference)` on jobs); postponed until
   there is a concrete lookup need.
 - Open: whether it is mutable after creation, and whether it shows up in job history.
 

@@ -296,7 +296,7 @@ class DueJobsStoreTest extends AbstractStoreTest {
     insertJobs(1, 0, "now() + interval '5 seconds'");
     insertJobs(1, 0, "now() + interval '1 hour'");
     execute(
-        "insert into bikesched_jobs (id, type, scheduled_at) values (gen_random_uuid(), 'other', now() + interval '1 second')");
+        "insert into bikesched_jobs (id, name, scheduled_at) values (gen_random_uuid(), 'other', now() + interval '1 second')");
 
     Duration inWindow =
         database.jobs().nextDueIn(List.of("test"), Duration.ofSeconds(10)).orElseThrow();

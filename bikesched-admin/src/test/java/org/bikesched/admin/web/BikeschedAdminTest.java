@@ -48,7 +48,7 @@ class BikeschedAdminTest {
     bikesched.close();
     try (var connection = AdminServer.DATA_SOURCE.getConnection();
         var statement = connection.createStatement()) {
-      statement.execute("delete from bikesched_jobs where type like '" + prefix + "%'");
+      statement.execute("delete from bikesched_jobs where name like '" + prefix + "%'");
       statement.execute("delete from bikesched_events where name like '" + prefix + "%'");
     }
   }
@@ -119,7 +119,7 @@ class BikeschedAdminTest {
 
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
       JsonObject failedOnly =
-          AdminServer.json(server.get("/api/jobs?type=" + type + "&state=FAILED"));
+          AdminServer.json(server.get("/api/jobs?name=" + type + "&state=FAILED"));
       assertThat(failedOnly.getArray("jobs")).hasSize(1);
       JsonObject job = failedOnly.getArray("jobs").getObject(0);
       assertThat(job.getString("id")).isEqualTo(failed.toString());
@@ -127,19 +127,19 @@ class BikeschedAdminTest {
       assertThat(job.getString("lastError")).contains("failed on purpose");
       assertThat(failedOnly.isNull("next")).isTrue();
 
-      JsonObject first = AdminServer.json(server.get("/api/jobs?type=" + type + "&limit=2"));
+      JsonObject first = AdminServer.json(server.get("/api/jobs?name=" + type + "&limit=2"));
       assertThat(ids(first.getArray("jobs"))).containsExactly(later2.toString(), later1.toString());
       String next = first.getString("next");
       JsonObject second =
           AdminServer.json(
-              server.get("/api/jobs?type=" + type + "&limit=2&before=" + encode(next)));
+              server.get("/api/jobs?name=" + type + "&limit=2&before=" + encode(next)));
       assertThat(ids(second.getArray("jobs"))).containsExactly(failed.toString());
 
-      JsonObject types = AdminServer.json(server.get("/api/types"));
-      assertThat(types.getArray("types").stream().map(JsonObject.class::cast))
+      JsonObject types = AdminServer.json(server.get("/api/job-names"));
+      assertThat(types.getArray("names").stream().map(JsonObject.class::cast))
           .anySatisfy(
               t -> {
-                assertThat(t.getString("type")).isEqualTo(type);
+                assertThat(t.getString("name")).isEqualTo(type);
                 assertThat(t.getInt("total")).isEqualTo(3);
                 assertThat(t.getObject("counts").getInt("FAILED")).isOne();
                 assertThat(t.getObject("counts").getInt("SCHEDULED")).isEqualTo(2);
@@ -173,7 +173,7 @@ class BikeschedAdminTest {
 
       assertThat(server.get("/api/jobs?id=3f2a").statusCode()).isEqualTo(400);
       assertThat(server.get("/api/events?id=not-an-id").statusCode()).isEqualTo(400);
-      assertThat(server.get("/api/jobs?id=" + jobId + "&type=" + type).statusCode()).isEqualTo(400);
+      assertThat(server.get("/api/jobs?id=" + jobId + "&name=" + type).statusCode()).isEqualTo(400);
       assertThat(server.get("/api/events?id=" + eventId + "&key=k").statusCode()).isEqualTo(400);
     }
   }
@@ -190,18 +190,18 @@ class BikeschedAdminTest {
               () ->
                   assertThat(
                           AdminServer.json(
-                                  server.get("/api/recurring-runs?type=" + type + "&limit=2"))
+                                  server.get("/api/recurring-runs?name=" + type + "&limit=2"))
                               .getArray("previous"))
                       .hasSize(2));
-      JsonObject runs = AdminServer.json(server.get("/api/recurring-runs?type=" + type));
-      assertThat(runs.getString("type")).isEqualTo(type);
+      JsonObject runs = AdminServer.json(server.get("/api/recurring-runs?name=" + type));
+      assertThat(runs.getString("name")).isEqualTo(type);
       assertThat(runs.getObject("pending").getString("recurrence")).isEqualTo("every PT0.2S");
       assertThat(runs.getArray("previous").getObject(0).getString("state")).isEqualTo("SUCCEEDED");
-      JsonObject listed = AdminServer.json(server.get("/api/jobs?type=" + type));
+      JsonObject listed = AdminServer.json(server.get("/api/jobs?name=" + type));
       assertThat(listed.getArray("jobs").getObject(0).getString("recurrence"))
           .isEqualTo("every PT0.2S");
 
-      JsonObject none = AdminServer.json(server.get("/api/recurring-runs?type=" + prefix + "none"));
+      JsonObject none = AdminServer.json(server.get("/api/recurring-runs?name=" + prefix + "none"));
       assertThat(none.isNull("pending")).isTrue();
       assertThat(none.getArray("previous")).isEmpty();
       assertThat(server.get("/api/recurring-runs").statusCode()).isEqualTo(400);
@@ -235,14 +235,14 @@ class BikeschedAdminTest {
           .containsExactly("prepare", "run-child");
       JsonObject childStep = steps.getObject(1);
       assertThat(childStep.getString("type")).isEqualTo("CHILD_JOB");
-      assertThat(childStep.getString("childJobType")).isEqualTo(childType);
+      assertThat(childStep.getString("childJobName")).isEqualTo(childType);
       assertThat(childStep.getString("childJobState")).isEqualTo("SUCCEEDED");
       assertThat(childStep.getBoolean("childJobExists")).isTrue();
       assertThat(detail.getArray("history")).as("history disabled").isEmpty();
 
       String childId = childStep.getString("childJobId");
       JsonObject child = AdminServer.json(server.get("/api/jobs/" + childId));
-      assertThat(child.getObject("job").getString("parentJobType")).isEqualTo(parentType);
+      assertThat(child.getObject("job").getString("parentJobName")).isEqualTo(parentType);
       assertThat(child.getArray("ancestors")).hasSize(1);
       JsonObject parent = child.getArray("ancestors").getObject(0);
       assertThat(parent.getString("id")).isEqualTo(parentId.toString());
@@ -281,7 +281,7 @@ class BikeschedAdminTest {
       assertThat(step.getString("jobId")).isEqualTo(jobId.toString());
       assertThat(step.getString("name")).isEqualTo("prepare");
       assertThat(step.getString("state")).isEqualTo("SUCCEEDED");
-      assertThat(detail.getObject("job").getString("type")).isEqualTo(type);
+      assertThat(detail.getObject("job").getString("name")).isEqualTo(type);
       assertThat(detail.getArray("history")).as("history disabled").isEmpty();
       assertThat(detail.getBoolean("payloadsShown")).isFalse();
 
@@ -406,7 +406,7 @@ class BikeschedAdminTest {
       awaitState(later, JobState.CANCELLED);
 
       assertThat(server.get("/api/jobs/" + later + "/cancel").statusCode()).isEqualTo(405);
-      assertThat(server.post("/api/types", csrf, "1").statusCode()).isEqualTo(405);
+      assertThat(server.post("/api/job-names", csrf, "1").statusCode()).isEqualTo(405);
       assertThat(
               server
                   .send(
@@ -495,7 +495,7 @@ class BikeschedAdminTest {
 
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
       String csrf = AdminHandler.CSRF_HEADER;
-      String form = "type=" + encode(type) + "&payload=" + encode("{\"order\": 7}");
+      String form = "name=" + encode(type) + "&payload=" + encode("{\"order\": 7}");
       assertThat(server.postForm("/api/jobs", form, "X-Other", "1").statusCode())
           .as("without the CSRF header")
           .isEqualTo(403);
@@ -507,7 +507,7 @@ class BikeschedAdminTest {
       assertThat(payloads).containsExactly("{\"order\": 7}");
 
       String later =
-          "type="
+          "name="
               + encode(type)
               + "&delay=PT1H&priority=5&maxAttempts=7&timeout=PT30S&idempotencyKey=admin-1";
       JsonObject first = AdminServer.json(server.postForm("/api/jobs", later, csrf, "1"));
@@ -526,13 +526,13 @@ class BikeschedAdminTest {
       UUID atId =
           UUID.fromString(
               AdminServer.json(
-                      server.postForm("/api/jobs", "type=" + encode(type) + "&at=" + at, csrf, "1"))
+                      server.postForm("/api/jobs", "name=" + encode(type) + "&at=" + at, csrf, "1"))
                   .getString("id"));
       assertThat(bikesched.admin().findJob(atId).orElseThrow().scheduledAt())
           .isEqualTo(Instant.parse(at));
 
-      assertThat(server.postForm("/api/jobs", "type=", csrf, "1").body()).contains("needs a type");
-      assertThat(server.postForm("/api/jobs", "type=" + prefix + "unknown", csrf, "1").body())
+      assertThat(server.postForm("/api/jobs", "name=", csrf, "1").body()).contains("needs a name");
+      assertThat(server.postForm("/api/jobs", "name=" + prefix + "unknown", csrf, "1").body())
           .contains("no handler registered");
       for (String bad :
           List.of(
@@ -545,17 +545,17 @@ class BikeschedAdminTest {
               "&maxAttempts=0",
               "&timeout=PT0S")) {
         HttpResponse<String> response =
-            server.postForm("/api/jobs", "type=" + encode(type) + bad, csrf, "1");
+            server.postForm("/api/jobs", "name=" + encode(type) + bad, csrf, "1");
         assertThat(response.statusCode()).as(bad).isEqualTo(400);
       }
     }
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched).readOnly(true))) {
       HttpResponse<String> response =
-          server.postForm("/api/jobs", "type=" + encode(type), AdminHandler.CSRF_HEADER, "1");
+          server.postForm("/api/jobs", "name=" + encode(type), AdminHandler.CSRF_HEADER, "1");
       assertThat(response.statusCode()).isEqualTo(403);
       assertThat(response.body()).contains("read-only");
     }
-    assertThat(bikesched.admin().findJobs(JobQuery.newest(10).withType(type)))
+    assertThat(bikesched.admin().findJobs(JobQuery.newest(10).withName(type)))
         .as("only the valid forms scheduled a job")
         .hasSize(3);
   }
@@ -588,9 +588,9 @@ class BikeschedAdminTest {
     List<String> paths =
         List.of(
             "/api/me",
-            "/api/jobs?type=" + type,
+            "/api/jobs?name=" + type,
             "/api/jobs/" + jobId,
-            "/api/types",
+            "/api/job-names",
             "/api/events?name=" + event,
             "/api/events/" + eventId,
             "/api/event-names",
@@ -611,7 +611,7 @@ class BikeschedAdminTest {
       assertThat(job.getObject("result").getString("result")).isEqualTo(marker);
       assertThat(AdminServer.json(server.get("/api/events/" + eventId)).getString("payload"))
           .isEqualTo(marker);
-      assertThat(server.get("/api/jobs?type=" + type).body()).doesNotContain(marker);
+      assertThat(server.get("/api/jobs?name=" + type).body()).doesNotContain(marker);
     }
   }
 

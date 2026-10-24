@@ -55,11 +55,11 @@ public final class RecurringJobRepair {
         if (database.jobs().insertOccurrence(occurrence)) {
           LOG.info(
               "Recurring job {} had no pending occurrence, scheduled one at {}",
-              recurring.type(),
+              recurring.name(),
               occurrence.scheduledAt());
         }
       } catch (RuntimeException e) {
-        LOG.warn("Checking recurring job {} failed", recurring.type(), e);
+        LOG.warn("Checking recurring job {} failed", recurring.name(), e);
         succeeded = false;
       }
     }

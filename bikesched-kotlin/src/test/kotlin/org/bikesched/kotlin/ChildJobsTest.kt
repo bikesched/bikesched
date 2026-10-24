@@ -29,7 +29,7 @@ class ChildJobsTest {
       bikesched.handleJobs<Order>(parent) { order ->
         val child =
           startJob(
-            type = charge,
+            name = charge,
             payload = order,
             stepName = "charge",
             compensation = { _, id -> compensated += id },
@@ -38,7 +38,7 @@ class ChildJobsTest {
         receipts += receipt
         complete(receipt.orElseThrow())
       }
-      val jobId = bikesched.createJob(type = parent, payload = Order("o-1", 100))
+      val jobId = bikesched.createJob(name = parent, payload = Order("o-1", 100))
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
@@ -61,10 +61,10 @@ class ChildJobsTest {
     testNode("child-jobs-timeout").use { bikesched ->
       bikesched.handleJobs(slow) {}
       bikesched.handleJobs(parent) {
-        val child = startJob(type = slow, delay = 1.hours)
+        val child = startJob(name = slow, delay = 1.hours)
         outcomes += awaitJob<String?>(child, timeout = 200.milliseconds)
       }
-      val jobId = bikesched.createJob(type = parent)
+      val jobId = bikesched.createJob(name = parent)
 
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)

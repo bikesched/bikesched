@@ -13,7 +13,7 @@ flight survive, and how to make the changes they don't.
 ## What a deploy does to jobs in flight
 
 Nothing about the handler's code is stored with a job. Every attempt runs the handler registered
-for the job's type on the node that claims it, from the top; completed steps return what they
+for the job's name on the node that claims it, from the top; completed steps return what they
 stored, looked up by their name. What is stored per job:
 
 | Stored | Set by | Used by later attempts |
@@ -23,7 +23,7 @@ stored, looked up by their name. What is stored per job:
 | event wait: event name and key, deadline | the first wait | compared with the call's name and key; the deadline wins over a changed timeout |
 | sleep: wake-up time | the first sleep | wins over a changed duration |
 | poll: deadline, number of checks | the first check | the deadline wins over a changed timeout; the interval comes from the code |
-| child job step: the child's id and type | starting the child | returns the same child; a different type is rejected |
+| child job step: the child's id and name | starting the child | returns the same child; a different name is rejected |
 | pending occurrence of a recurring job: recurrence description | the previous occurrence's end | moved to a recurrence with another description when registered |
 
 The code decides everything else: which steps run in which order, step handlers that have not
@@ -35,7 +35,7 @@ event, a sleep, a poll or a child job, jobs `SCHEDULED` for later, for a retry o
 (`close()` returns them to `SCHEDULED`, a crashed node's jobs are released). A `FAILED` job meets
 it when you [retry](README.md#failures-and-retries) it.
 
-During a rolling deploy, old and new nodes claim the same job types. A job may run its next attempt
+During a rolling deploy, old and new nodes claim the same job names. A job may run its next attempt
 on either version, also on an old node after a new one ran it. A change must therefore work in both
 directions until the last old node is gone, or be split into two deploys (see
 [Making an unsafe change](#making-an-unsafe-change)).
@@ -62,15 +62,15 @@ directions until the last old node is gone, or be split into two deploys (see
 | change a step's result type incompatibly | reading the stored result fails with the `JsonMapper`'s exception: the attempt fails and is retried until the job is `FAILED`. A step that returned `Void` before returns `null` |
 | reuse a step name for another step type (a step becomes a sleep, a wait, a poll or a child job) | rejected with an `IllegalStateException` ("step names must be unique within a job"); the attempt fails |
 | change the event name or key of a wait | rejected the same way, also for a completed wait: compute keys from the payload or stored results the same way as before |
-| change the type of a child job | rejected for a started child. With the default step name `start <type>`, a renamed type is a new step instead and starts a second child; `job.newEvent(name, key)` publishes a second event under its default step name `publish <name>` the same way |
+| change the name of a child job | rejected for a started child. With the default step name `start <name>`, a renamed child is a new step instead and starts a second child; `job.newEvent(name, key)` publishes a second event under its default step name `publish <name>` the same way |
 | add a step before steps a job has completed | the job runs the new step on its next attempt, after the later steps already happened |
 | remove a step | its stored result is ignored, its compensation no longer runs when the job is cancelled or fails |
 | remove a wait a job is waiting at | the job stays `WAITING` until the event arrives, then continues without the wait; without a deadline, publish the event or cancel the job to move it on |
 | change a condition outside steps | the job may take another path: the steps of the new path run, completed steps of the old path are neither repeated nor compensated |
 | change the payload class incompatibly | mapping the stored payload fails on every attempt |
 | change the result class of a child job | the waiting parent fails to read the stored result in `waitForJob` |
-| rename or remove a job type | no node claims its jobs any more: they stay `SCHEDULED` or `WAITING`, and `bikesched.cancel` takes effect only once a node handles the type again |
-| stop registering a recurring job | its pending occurrence stays; `bikesched.removeRecurringJob(type)` deletes it, see [Occurrences](recurring-jobs.md#occurrences) |
+| rename or remove a job name | no node claims its jobs any more: they stay `SCHEDULED` or `WAITING`, and `bikesched.cancel` takes effect only once a node handles the name again |
+| stop registering a recurring job | its pending occurrence stays; `bikesched.removeRecurringJob(name)` deletes it, see [Occurrences](recurring-jobs.md#occurrences) |
 
 A failing attempt is retried with the node's retry backoff, so an incompatible change usually ends
 in `FAILED` jobs with the mapping error or the `IllegalStateException` as `last_error`. Once you
@@ -105,22 +105,22 @@ bikesched.newJob(ORDER).payload(new Order(orderId, 2)).schedule();
 Remove the old branch once no job with an older version is left (see
 [Draining jobs](#draining-jobs)).
 
-### New job type
+### New job name
 
-For a rewrite, register the new handler under a new type and schedule new jobs only with it. Keep
-the old handler registered until the old type's jobs have ended, then remove it:
+For a rewrite, register the new handler under a new name and schedule new jobs only with it. Keep
+the old handler registered until the old name's jobs have ended, then remove it:
 
 ```java
-static final JobType<Order> ORDER = JobType.of("order", Order.class);         // old jobs only
-static final JobType<Order> ORDER_V2 = JobType.of("order-v2", Order.class);   // every new job
+static final TypedJob<Order> ORDER = TypedJob.of("order", Order.class);         // old jobs only
+static final TypedJob<Order> ORDER_V2 = TypedJob.of("order-v2", Order.class);   // every new job
 
 bikesched.registerJobHandler(ORDER, legacyOrderHandler);
 bikesched.registerJobHandler(ORDER_V2, orderHandler);
 ```
 
-A node claims only types it has handlers for, so old nodes leave `order-v2` jobs to new nodes
-during the rolling deploy. A recurring job keeps its type; to change it in an unsafe way, add the
-new one under a new type and remove the old one with `bikesched.removeRecurringJob(type)` once no
+A node claims only names it has handlers for, so old nodes leave `order-v2` jobs to new nodes
+during the rolling deploy. A recurring job keeps its name; to change it in an unsafe way, add the
+new one under a new name and remove the old one with `bikesched.removeRecurringJob(name)` once no
 node registers it.
 
 ### Two deploys
@@ -132,31 +132,31 @@ results and events exchanged between services.
 
 ### Draining jobs
 
-Before removing a handler, a branch or a type, check that no job still needs it. The
+Before removing a handler, a branch or a job name, check that no job still needs it. The
 [lookups](../operations/admin.md#lookups-in-code) behind the admin UI count and list them:
 
 ```java
 Admin admin = bikesched.admin();
-admin.findJobTypes();   // jobs per type and state
-List<JobSummary> open = admin.findJobs(JobQuery.newest(100).withType("order")
+admin.findJobNames();   // jobs per name and state
+List<JobSummary> open = admin.findJobs(JobQuery.newest(100).withName("order")
         .withStates(JobState.SCHEDULED, JobState.RUNNING, JobState.WAITING,
                 JobState.COMPENSATING, JobState.FAILING));
 ```
 
 Jobs waiting without a deadline may never end on their own: cancel them, or publish the event they
 wait for. `FAILED` jobs stay until the [job retention](README.md#job-retention); a retried job runs
-only on a node with a handler for its type.
+only on a node with a handler for its name.
 
 ## Checklist
 
 - Give steps, waits, children and published events stable names and never reuse a name for another
-  step type; set `stepName(…)` for child jobs and published events, so renaming their type or event
-  name doesn't change the step.
+  step type; set `stepName(…)` for child jobs and published events, so renaming the child job or
+  event doesn't change the step.
 - Keep step results, payloads and job results compatible: add optional properties, don't rename or
   remove them.
 - Add new steps at the end, or behind a payload version.
 - Keep code outside steps deterministic: base conditions on the payload and on stored step results.
-- Keep the handler of a type registered while jobs of the type are in flight.
+- Keep the handler of a job name registered while jobs with that name are in flight.
 - Test the new code against jobs the old code suspended: run a job with the old handler on one
   [test node](../integrations/testing.md) until it is `WAITING`, close the node, and resume the job
   on a node with the new handler.

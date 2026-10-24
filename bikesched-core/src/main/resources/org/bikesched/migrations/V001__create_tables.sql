@@ -1,12 +1,12 @@
 -- bikesched schema v1: nodes, jobs, steps, events and the job history.
 -- States are text + CHECK constraints (not Postgres enums) so adding states later is a cheap migration.
--- Names (node names, job types, step and event names, recurrence descriptions) have at most 200
+-- Names (node, job, step and event names, recurrence descriptions) have at most 200
 -- characters, event keys and idempotency keys at most 500: most are indexed, and B-tree entries are
 -- limited to 2704 bytes. Since a character takes up to 4 bytes, they also have at most 3 bytes per
 -- character in UTF-8 (600 and 1500), so an index on a name and a key stays at most 2100 bytes. The
 -- library checks the same limits (ValidationUtil) before writing.
--- The identifying columns and the state come first (a job's id, type and state; a step's id, job,
--- name, type and state); the other columns are ordered by alignment: uuids, then timestamps and
+-- The identifying columns and the state come first (a job's id, name, type and state; a step's id,
+-- job, name, type and state); the other columns are ordered by alignment: uuids, then timestamps and
 -- bigints, then integers and booleans, then text and jsonb, so rows have little padding.
 -- Ids are time-ordered UUIDs (version 7, created by the library), so new rows land at the end of
 -- the primary keys and of the indexes led by a job id.
@@ -38,14 +38,19 @@ create table bikesched_nodes (
 -- A job that is cancelled or fails permanently after completing steps with a compensation is
 -- COMPENSATING (compensation_end_state: the state it ends in) until its compensations ran, or
 -- COMPENSATION_FAILED once they failed in max_attempts compensation attempts.
--- A job of a type with a failure handler that would end FAILED or COMPENSATION_FAILED is FAILING
+-- A job with a failure handler that would end FAILED or COMPENSATION_FAILED is FAILING
 -- (failure_end_state: the state it ends in) until its failure handler ran (failure_attempts: its runs).
--- A child job (parent_job_id set) was started by a step of its parent (type CHILD_JOB); ending it
--- completes that step with its outcome. parent_job_id only references the parent (no FK): the
+-- The type tells how a job was started:
+-- - ONE_OFF: scheduled by the application (or the admin UI), runs once.
+-- - RECURRING: an occurrence of a recurring job (recurrence and planned_run_at set); finishing it
+--   inserts the next occurrence.
+-- - CHILD: started by a step of its parent (parent_job_id set, step type CHILD_JOB); ending it
+--   completes that step with its outcome. parent_job_id only references the parent (no FK): the
 -- parent may be deleted after its retention while the child still runs.
 create table bikesched_jobs (
     id                     uuid        not null,
-    type                   text        not null,           -- identifies the handler that executes the job
+    name                   text        not null,           -- identifies the handler that executes the job
+    type                   text        not null default 'ONE_OFF',
     state                  text        not null default 'SCHEDULED',
     parent_job_id          uuid,                           -- the job that started this one as a child
     locked_by_node_id      uuid,
@@ -67,7 +72,7 @@ create table bikesched_jobs (
     compensation_end_state text,                           -- CANCELLED or FAILED: the state a compensating job ends in
     failure_end_state      text,                           -- FAILED or COMPENSATION_FAILED: the state a FAILING job ends in
     recurrence             text,                           -- occurrence of a recurring job: its recurrence's description
-    idempotency_key        text,                           -- dedups scheduling: unique per type while the job exists
+    idempotency_key        text,                           -- dedups scheduling: unique per name while the job exists
     payload                jsonb,
     result                 jsonb,                          -- Job.complete(result); only set when SUCCEEDED
     last_error             text,
@@ -75,6 +80,8 @@ create table bikesched_jobs (
     constraint bikesched_jobs_pkey primary key (id),
     constraint bikesched_jobs_locked_by_node_id_fkey
         foreign key (locked_by_node_id) references bikesched_nodes (id),
+    constraint bikesched_jobs_type_check
+        check (type in ('ONE_OFF', 'RECURRING', 'CHILD')),
     constraint bikesched_jobs_state_check
         check (state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'CANCELLED',
                          'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING')),
@@ -103,34 +110,36 @@ create table bikesched_jobs (
         check ((planned_run_at is null) = (recurrence is null)),
     constraint bikesched_jobs_cancel_message_check
         check (cancel_message is null or cancel_requested_at is not null),
-    constraint bikesched_jobs_type_check
-        check (char_length(type) between 1 and 200 and octet_length(type) <= 600),
+    constraint bikesched_jobs_name_check
+        check (char_length(name) between 1 and 200 and octet_length(name) <= 600),
     constraint bikesched_jobs_recurrence_check
         check (char_length(recurrence) between 1 and 200 and octet_length(recurrence) <= 600),
     constraint bikesched_jobs_idempotency_key_check
         check (char_length(idempotency_key) between 1 and 500 and octet_length(idempotency_key) <= 1500),
     constraint bikesched_jobs_result_check
         check (result is null or state = 'SUCCEEDED'),
-    -- Children are never recurring.
-    constraint bikesched_jobs_parent_check
-        check (parent_job_id is null or recurrence is null and parent_job_id <> id)
+    -- Exactly the occurrences of recurring jobs have a recurrence, exactly children a parent.
+    constraint bikesched_jobs_type_columns_check
+        check ((type = 'RECURRING') = (recurrence is not null)
+               and (type = 'CHILD') = (parent_job_id is not null)
+               and parent_job_id <> id)
 );
 
--- Polling index: only due-able jobs, in claim order. The type lets the claim skip jobs of types
--- the node has no handlers for on index entries.
-create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at, type)
+-- Polling index: only due-able jobs, in claim order. The name lets the claim skip jobs the node has
+-- no handlers for on index entries.
+create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at, name)
     where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING');
 
--- Recurring jobs (identified by their job type): at most one pending occurrence each. Finishing an
+-- Recurring jobs (identified by their job name): at most one pending occurrence each. Finishing an
 -- occurrence inserts the next one in the same transaction; registering a recurring job and the
 -- node's repair insert one with "on conflict do nothing" if it is missing.
-create unique index bikesched_jobs_recurring_idx on bikesched_jobs (type)
-    where recurrence is not null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING');
+create unique index bikesched_jobs_recurring_idx on bikesched_jobs (name)
+    where type = 'RECURRING' and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'COMPENSATING', 'FAILING');
 
--- Idempotency keys: scheduling a job with the key of an existing job of the same type returns that
+-- Idempotency keys: scheduling a job with the key of an existing job of the same name returns that
 -- job ("on conflict do nothing"); the key is taken until the job is deleted after its retention.
 -- Only jobs with a key have an entry.
-create unique index bikesched_jobs_idempotency_key_idx on bikesched_jobs (type, idempotency_key)
+create unique index bikesched_jobs_idempotency_key_idx on bikesched_jobs (name, idempotency_key)
     where idempotency_key is not null;
 
 -- Deleting ended jobs after the job retention, oldest first. Only the states that are deleted:
@@ -145,8 +154,8 @@ create index bikesched_jobs_locked_by_node_id_idx on bikesched_jobs (locked_by_n
     where locked_by_node_id is not null;
 
 -- Pages of the admin's job list, newest first: the ids are time-ordered, so the primary key serves
--- the list of all types, this index the list of one type.
-create index bikesched_jobs_type_id_idx on bikesched_jobs (type, id);
+-- the list of all jobs, this index the list of one name.
+create index bikesched_jobs_name_id_idx on bikesched_jobs (name, id);
 
 -- The admin's search by short id, the last 8 hex digits of the id (the random part of a UUIDv7).
 create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
@@ -160,7 +169,7 @@ create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
 --   not depend on the event) or wake_at has passed (TIMED_OUT).
 -- - EVENT_PUBLISH: published the event event_name/event_key (event_id) exactly once; SUCCEEDED
 --   when created, in the transaction that published the event.
--- - CHILD_JOB: started the child job child_job_id of type child_job_type exactly once; WAITING until the child ends
+-- - CHILD_JOB: started the child job child_job_id named child_job_name exactly once; WAITING until the child ends
 --   (SUCCEEDED, child_end_state = its terminal state, result = its result, last_error = its error or
 --   cancel message) or the parent's wait for it times out at wake_at (TIMED_OUT).
 -- - POLL: checks an external service until it is ready; one row for all checks (attempts = the
@@ -197,7 +206,7 @@ create table bikesched_steps (
     failure_attempts  integer     not null default 0, -- runs of its failure handler while FAILING
     compensable       boolean     not null default false,
     child_end_state   text,                           -- the child's terminal state, once it ended
-    child_job_type    text,                           -- its type, checked on replays even after it was deleted
+    child_job_name    text,                           -- its name, checked on replays even after it was deleted
     event_name        text,
     event_key         text,
     result            jsonb,
@@ -237,7 +246,7 @@ create table bikesched_steps (
     -- step is compensated afterwards).
     constraint bikesched_steps_child_check
         check ((child_job_id is not null) = (type = 'CHILD_JOB')
-               and (child_job_type is not null) = (type = 'CHILD_JOB')
+               and (child_job_name is not null) = (type = 'CHILD_JOB')
                and (child_end_state is null or type = 'CHILD_JOB' and state in ('SUCCEEDED', 'COMPENSATED'))
                and (type <> 'CHILD_JOB' or state <> 'SUCCEEDED' or child_end_state is not null)
                and child_end_state in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED')),
@@ -261,8 +270,8 @@ create table bikesched_steps (
         check (char_length(event_name) between 1 and 200 and octet_length(event_name) <= 600),
     constraint bikesched_steps_event_key_check
         check (char_length(event_key) between 1 and 500 and octet_length(event_key) <= 1500),
-    constraint bikesched_steps_child_job_type_check
-        check (char_length(child_job_type) between 1 and 200 and octet_length(child_job_type) <= 600)
+    constraint bikesched_steps_child_job_name_check
+        check (char_length(child_job_name) between 1 and 200 and octet_length(child_job_name) <= 600)
 );
 
 -- Matching published events to the steps waiting for them.

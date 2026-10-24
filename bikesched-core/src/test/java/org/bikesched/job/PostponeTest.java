@@ -304,7 +304,7 @@ class PostponeTest extends AbstractBikeschedTest {
         new JobListener() {
           @Override
           public void onAttemptEnded(JobAttemptResult result) {
-            if (result.claim().jobType().equals(type)) {
+            if (result.claim().jobName().equals(type)) {
               outcomes.add(result.outcome());
             }
           }

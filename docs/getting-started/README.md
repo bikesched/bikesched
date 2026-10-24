@@ -95,7 +95,7 @@ Optional modules are added the same way, with the same version:
 
 ## A first job
 
-Build one `Bikesched` instance per application, register a handler for each job type and schedule
+Build one `Bikesched` instance per application, register a handler for each job name and schedule
 jobs. Building the instance migrates the schema, registers the node and starts polling for due
 jobs; closing it stops the node.
 
@@ -104,10 +104,10 @@ DataSource dataSource = ...; // your PostgreSQL DataSource
 
 try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).build()) {
 
-    // Register a handler for a job type ...
+    // Register a handler for a job name ...
     bikesched.registerJobHandler("send-mail", job -> mailer.send(job.payload()));
 
-    // ... and schedule a job of that type, due right away
+    // ... and schedule a job with that name, due right away
     UUID jobId = bikesched.newJob("send-mail")
             .payload("{\"to\": \"alice@example.com\"}")
             .schedule();
@@ -120,7 +120,7 @@ records instead:
 ```java
 record Mail(String to) {}
 
-JobType<Mail> sendMail = JobType.of("send-mail", Mail.class);
+TypedJob<Mail> sendMail = TypedJob.of("send-mail", Mail.class);
 
 Bikesched bikesched = Bikesched.builder()
         .dataSource(dataSource)

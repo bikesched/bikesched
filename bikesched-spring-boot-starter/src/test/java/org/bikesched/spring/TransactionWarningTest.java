@@ -65,19 +65,19 @@ class TransactionWarningTest extends AbstractSpringTest {
   }
 
   public static class TxDefaultJobs {
-    @JobHandler(type = "tx-warn")
+    @JobHandler(name = "tx-warn")
     @Transactional
     public void handle(Job job, String payload) {}
   }
 
   @Transactional
   public static class TxClassLevelJobs {
-    @JobHandler(type = "tx-warn-class")
+    @JobHandler(name = "tx-warn-class")
     public void handle(Job job, String payload) {}
   }
 
   public static class TxExplicitJobs {
-    @JobHandler(type = "tx-explicit")
+    @JobHandler(name = "tx-explicit")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handle(Job job, String payload) {}
   }

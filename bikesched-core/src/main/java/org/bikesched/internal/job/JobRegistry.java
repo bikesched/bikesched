@@ -9,13 +9,13 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The job types a node knows: their handlers, its recurring jobs and the payload classes of typed
- * job types. Used when scheduling (with or without polling) and by the poller.
+ * The job names a node knows: their handlers, its recurring jobs and the payload classes of typed
+ * job names. Used when scheduling (with or without polling) and by the poller.
  */
 public final class JobRegistry {
 
@@ -23,14 +23,14 @@ public final class JobRegistry {
   private final Map<String, JobFailureHandler> failureHandlers = new ConcurrentHashMap<>();
   private final Map<String, RecurringJob> recurringJobs = new ConcurrentHashMap<>();
 
-  /** Payload classes of the job types used with a {@link JobType} on this node, by name. */
+  /** Payload classes of the job names used with a {@link TypedJob} on this node, by name. */
   private final Map<String, Class<?>> payloadTypes = new ConcurrentHashMap<>();
 
-  /** Runs after a handler of a new type was registered; set by the poller. */
+  /** Runs after a handler of a new name was registered; set by the poller. */
   private volatile Runnable onNewHandler = () -> {};
 
   /**
-   * Sets what runs after a handler of a new type was registered (the poller then looks for its
+   * Sets what runs after a handler of a new name was registered (the poller then looks for its
    * jobs).
    *
    * @param onNewHandler runs on the registering thread; must not throw
@@ -40,15 +40,15 @@ public final class JobRegistry {
   }
 
   /**
-   * Registers the handler of a job type unless it has one.
+   * Registers the handler of a job name unless it has one.
    *
-   * @param type the job type
+   * @param name the job name
    * @param handler its handler
-   * @return {@code false} if the type already had a handler (which is kept)
+   * @return {@code false} if the name already had a handler (which is kept)
    */
-  public boolean register(String type, JobHandler handler) {
+  public boolean register(String name, JobHandler handler) {
     Objects.requireNonNull(handler, "handler");
-    if (handlers.putIfAbsent(type, handler) != null) {
+    if (handlers.putIfAbsent(name, handler) != null) {
       return false;
     }
     onNewHandler.run();
@@ -56,25 +56,25 @@ public final class JobRegistry {
   }
 
   /**
-   * The handler of a job type.
+   * The handler of a job name.
    *
-   * @param type the job type
+   * @param name the job name
    * @return the handler, {@code null} if none is registered
    */
-  public @Nullable JobHandler handler(String type) {
-    return handlers.get(type);
+  public @Nullable JobHandler handler(String name) {
+    return handlers.get(name);
   }
 
   /**
-   * Registers the failure handler of a job type unless it has one.
+   * Registers the failure handler of a job name unless it has one.
    *
-   * @param type the job type
+   * @param name the job name
    * @param handler its failure handler
-   * @return {@code false} if the type already had a failure handler (which is kept)
+   * @return {@code false} if the name already had a failure handler (which is kept)
    */
-  public boolean registerFailureHandler(String type, JobFailureHandler handler) {
+  public boolean registerFailureHandler(String name, JobFailureHandler handler) {
     Objects.requireNonNull(handler, "handler");
-    return failureHandlers.putIfAbsent(type, handler) == null;
+    return failureHandlers.putIfAbsent(name, handler) == null;
   }
 
   /**
@@ -92,59 +92,59 @@ public final class JobRegistry {
   }
 
   /**
-   * The failure handler of a job type.
+   * The failure handler of a job name.
    *
-   * @param type the job type
+   * @param name the job name
    * @return the failure handler, {@code null} if none is registered
    */
-  public @Nullable JobFailureHandler failureHandler(String type) {
-    return failureHandlers.get(type);
+  public @Nullable JobFailureHandler failureHandler(String name) {
+    return failureHandlers.get(name);
   }
 
   /**
-   * The job types with a handler.
+   * The job names with a handler.
    *
    * @return a live view
    */
-  public Set<String> types() {
+  public Set<String> names() {
     return handlers.keySet();
   }
 
   /**
-   * Checks that a job type has a handler.
+   * Checks that a job name has a handler.
    *
-   * @param type the job type
+   * @param name the job name
    * @throws IllegalArgumentException if it has none
    */
-  public void requireHandler(String type) {
-    if (!handlers.containsKey(type)) {
+  public void requireHandler(String name) {
+    if (!handlers.containsKey(name)) {
       throw new IllegalArgumentException(
-          "Unknown job type '"
-              + type
-              + "': no handler registered (known types: "
+          "Unknown job name '"
+              + name
+              + "': no handler registered (known names: "
               + new TreeSet<>(handlers.keySet())
               + ")");
     }
   }
 
   /**
-   * Remembers the payload class of a typed job type; rejects a second payload class for the same
+   * Remembers the payload class of a typed job name; rejects a second payload class for the same
    * name on this node, which would make producers and handlers disagree on the payload.
    *
-   * @param type the typed job type
+   * @param typedJob the job name and its payload class
    * @throws IllegalArgumentException if the name is already used with another payload class
    */
-  public void requirePayloadType(JobType<?> type) {
-    Objects.requireNonNull(type, "type");
-    Class<?> known = payloadTypes.putIfAbsent(type.name(), type.payloadType());
-    if (known != null && known != type.payloadType()) {
+  public void requirePayloadType(TypedJob<?> typedJob) {
+    Objects.requireNonNull(typedJob, "typedJob");
+    Class<?> known = payloadTypes.putIfAbsent(typedJob.name(), typedJob.payloadType());
+    if (known != null && known != typedJob.payloadType()) {
       throw new IllegalArgumentException(
-          "Job type '"
-              + type.name()
+          "Job name '"
+              + typedJob.name()
               + "' is already used with payload type "
               + known.getName()
               + ", not "
-              + type.payloadType().getName());
+              + typedJob.payloadType().getName());
     }
   }
 
@@ -154,27 +154,27 @@ public final class JobRegistry {
    * @param job the recurring job
    */
   public void addRecurringJob(RecurringJob job) {
-    recurringJobs.put(job.type(), job);
+    recurringJobs.put(job.name(), job);
   }
 
   /**
    * Removes a recurring job from this node.
    *
-   * @param type its job type
+   * @param name its job name
    * @return whether this node had it
    */
-  public boolean removeRecurringJob(String type) {
-    return recurringJobs.remove(type) != null;
+  public boolean removeRecurringJob(String name) {
+    return recurringJobs.remove(name) != null;
   }
 
   /**
    * A recurring job of this node.
    *
-   * @param type its job type
-   * @return the recurring job, {@code null} if this node has none of that type
+   * @param name its job name
+   * @return the recurring job, {@code null} if this node has none of that name
    */
-  public @Nullable RecurringJob recurringJob(String type) {
-    return recurringJobs.get(type);
+  public @Nullable RecurringJob recurringJob(String name) {
+    return recurringJobs.get(name);
   }
 
   /**

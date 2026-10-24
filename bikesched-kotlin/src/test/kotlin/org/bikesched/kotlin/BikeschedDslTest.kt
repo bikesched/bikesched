@@ -58,7 +58,7 @@ class BikeschedDslTest {
         val id = bikesched.start().idOrNull
         assertThat(id).isNotNull()
 
-        val jobId = bikesched.createJob(type = unique("dsl-history"), delay = 1.hours) {}
+        val jobId = bikesched.createJob(name = unique("dsl-history"), delay = 1.hours) {}
         assertThat(bikesched.findJobHistory(jobId).map { it.state() }).containsExactly("SCHEDULED")
 
         val recurring = unique("dsl-recurring")

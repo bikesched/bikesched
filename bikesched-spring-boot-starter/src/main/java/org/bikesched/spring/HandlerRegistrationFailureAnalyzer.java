@@ -15,7 +15,7 @@ class HandlerRegistrationFailureAnalyzer
   protected FailureAnalysis analyze(Throwable rootFailure, HandlerRegistrationException cause) {
     return new FailureAnalysis(
         cause.getMessage(),
-        "give every @JobHandler method its own job type, or register the colliding handler by hand",
+        "give every @JobHandler method its own job name, or register the colliding handler by hand",
         cause);
   }
 }

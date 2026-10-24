@@ -9,7 +9,8 @@ Date: 2026-10-05
 
 ## Status
 
-Accepted
+Accepted. The records were renamed to `TypedJob<T>` and `TypedEvent<T>` by
+[ADR 0059](0059-job-name-and-job-type.md).
 
 ## Context
 

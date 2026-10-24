@@ -6,7 +6,7 @@ import java.time.Duration
 import java.util.UUID
 import org.bikesched.Bikesched
 import org.bikesched.RetryBackoff
-import org.bikesched.job.JobType
+import org.bikesched.job.TypedJob
 import org.bikesched.job.TypedJobHandler
 import org.bikesched.kotlin.step
 import org.slf4j.LoggerFactory
@@ -24,11 +24,11 @@ data class ProcessPaymentPayload(
   val paymentOptionId: String,
 )
 
-/** Job type of new orders. */
-val PROCESS_ORDER = JobType("process-order", ProcessOrderPayload::class.java)
+/** Typed job of new orders. */
+val PROCESS_ORDER = TypedJob("process-order", ProcessOrderPayload::class.java)
 
-/** Job type of payments. */
-val PROCESS_PAYMENT = JobType("process-payment", ProcessPaymentPayload::class.java)
+/** Typed job of payments. */
+val PROCESS_PAYMENT = TypedJob("process-payment", ProcessPaymentPayload::class.java)
 
 /** Handles new orders: offers payment options. */
 private val processOrderHandler = TypedJobHandler<ProcessOrderPayload> { job, payload ->

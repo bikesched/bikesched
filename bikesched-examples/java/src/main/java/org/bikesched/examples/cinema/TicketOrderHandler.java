@@ -5,19 +5,19 @@ import java.io.PrintStream;
 import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.job.Job;
-import org.bikesched.job.JobType;
-import org.bikesched.job.JobTypeHandler;
+import org.bikesched.job.StandaloneJobHandler;
+import org.bikesched.job.TypedJob;
 
 /**
  * Handles ticket orders as three durable steps. The cinema, the payment provider and the mail
  * server are simulated by printing what they would do.
  *
- * <p>As a {@link JobTypeHandler} it carries its job type, so it is registered without a separate
- * type argument: {@code bikesched.registerJobHandler(new TicketOrderHandler())}. If an attempt
- * fails after a step completed, the retry skips that step and reuses its stored result, so a seat
- * is never reserved or a card never charged twice.
+ * <p>As a {@link StandaloneJobHandler} it carries its typed job, so it is registered without a
+ * separate type argument: {@code bikesched.registerJobHandler(new TicketOrderHandler())}. If an
+ * attempt fails after a step completed, the retry skips that step and reuses its stored result, so
+ * a seat is never reserved or a card never charged twice.
  */
-public final class TicketOrderHandler implements JobTypeHandler<TicketOrder> {
+public final class TicketOrderHandler implements StandaloneJobHandler<TicketOrder> {
 
   private final PrintStream out;
 
@@ -36,7 +36,7 @@ public final class TicketOrderHandler implements JobTypeHandler<TicketOrder> {
   }
 
   @Override
-  public JobType<TicketOrder> type() {
+  public TypedJob<TicketOrder> typedJob() {
     return CinemaJobs.TICKET_ORDER;
   }
 

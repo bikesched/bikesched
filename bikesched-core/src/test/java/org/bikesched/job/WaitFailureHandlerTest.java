@@ -11,7 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
-import org.bikesched.event.EventType;
+import org.bikesched.event.TypedEvent;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -75,7 +75,7 @@ class WaitFailureHandlerTest extends AbstractBikeschedTest {
 
   @Test
   void aTypedWaitCanBeResolvedWithNull() throws Exception {
-    EventType<String> type = EventType.of("wait-failure-null-" + UUID.randomUUID(), String.class);
+    TypedEvent<String> type = TypedEvent.of("wait-failure-null-" + UUID.randomUUID(), String.class);
     List<String> results = new CopyOnWriteArrayList<>();
     try (Bikesched bikesched = testNode("node-wait-failure-null").build()) {
       UUID jobId =

@@ -8,7 +8,7 @@ import java.util.UUID;
  *
  * @param jobId the job id
  * @param lock the lock of the claim (node and token)
- * @param failureHandler whether the job type has a failure handler on this node: a job failing
+ * @param failureHandler whether the job has a failure handler on this node: a job failing
  *     permanently is {@code FAILING} then
  * @param followUp what follows once the job ended
  */

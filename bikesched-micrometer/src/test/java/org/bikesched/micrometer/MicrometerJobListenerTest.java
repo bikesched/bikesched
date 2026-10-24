@@ -36,20 +36,20 @@ class MicrometerJobListenerTest {
 
     assertThat(gauge("bikesched.jobs.active")).isZero();
     var delay =
-        registry.get("bikesched.job.claim.delay").tags("node", "n1", "job.type", "mail").timer();
+        registry.get("bikesched.job.claim.delay").tags("node", "n1", "job.name", "mail").timer();
     assertThat(delay.count()).isEqualTo(2);
     assertThat(delay.max(TimeUnit.MILLISECONDS)).isEqualTo(300);
     var succeeded =
         registry
             .get("bikesched.job.attempts")
-            .tags("node", "n1", "job.type", "mail", "outcome", "succeeded")
+            .tags("node", "n1", "job.name", "mail", "outcome", "succeeded")
             .timer();
     assertThat(succeeded.count()).isOne();
     assertThat(succeeded.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(50);
     assertThat(
             registry
                 .get("bikesched.job.attempts")
-                .tags("job.type", "mail", "outcome", "retrying")
+                .tags("job.name", "mail", "outcome", "retrying")
                 .timer()
                 .count())
         .isOne();
@@ -68,7 +68,7 @@ class MicrometerJobListenerTest {
     assertThat(
             registry
                 .get("bikesched.job.attempts.abandoned")
-                .tags("node", "n1", "job.type", "stuck")
+                .tags("node", "n1", "job.name", "stuck")
                 .counter()
                 .count())
         .isOne();

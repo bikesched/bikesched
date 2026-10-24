@@ -15,7 +15,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 /**
  * Base class of the {@link Bikesched} integration tests of all packages: one PostgreSQL container
  * shared by all test classes of the JVM (started once, stopped by Testcontainers on JVM exit) plus
- * SQL helpers. Tests isolate themselves by unique node names and job types; test classes run
+ * SQL helpers. Tests isolate themselves by unique node names and job names; test classes run
  * sequentially.
  */
 public abstract class AbstractBikeschedTest {

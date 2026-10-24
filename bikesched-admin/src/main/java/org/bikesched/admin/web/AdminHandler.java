@@ -147,7 +147,7 @@ final class AdminHandler {
                   .put("readOnly", readOnly)
                   .put("payloadsShown", showPayloads);
           case "/api/jobs" -> jobs(admin, params);
-          case "/api/types" -> Json.object().put("types", types(admin));
+          case "/api/job-names" -> Json.object().put("names", jobNames(admin));
           case "/api/events" -> events(admin, params);
           case "/api/event-names" ->
               Json.object()
@@ -284,17 +284,17 @@ final class AdminHandler {
   }
 
   /**
-   * Schedules a one-off job from the form-encoded body: {@code type}, {@code payload} (JSON text),
+   * Schedules a one-off job from the form-encoded body: {@code name}, {@code payload} (JSON text),
    * {@code delay} (ISO-8601 duration) or {@code at} (ISO-8601 instant), {@code priority}, {@code
    * maxAttempts}, {@code timeout} (ISO-8601 duration) and {@code idempotencyKey}, empty ones left
-   * out. Answers the job's id and whether it is new: a job of the type with the idempotency key is
+   * out. Answers the job's id and whether it is new: a job of the name with the idempotency key is
    * returned instead of a new one.
    */
   private AdminResponse schedule(AdminRequest request, String by) {
     Map<String, String> form = parseQuery(request.body());
-    String type = blankToNull(form.get("type"));
-    if (type == null) {
-      throw new BadRequest("A job needs a type");
+    String name = blankToNull(form.get("name"));
+    if (name == null) {
+      throw new BadRequest("A job needs a name");
     }
     String payload = blankToNull(form.get("payload"));
     if (payload != null) {
@@ -308,7 +308,7 @@ final class AdminHandler {
     if (delay != null && at != null) {
       throw new BadRequest("A job is scheduled either after a delay or at a time, not both");
     }
-    JobBuilder<Object> job = bikesched.newJob(type).payloadJson(payload);
+    JobBuilder<Object> job = bikesched.newJob(name).payloadJson(payload);
     String priority = blankToNull(form.get("priority"));
     if (priority != null) {
       job.priority(integer("priority", priority));
@@ -323,7 +323,7 @@ final class AdminHandler {
     }
     String idempotencyKey = blankToNull(form.get("idempotencyKey"));
     if (idempotencyKey != null) {
-      Optional<JobSummary> existing = bikesched.admin().findJob(type, idempotencyKey);
+      Optional<JobSummary> existing = bikesched.admin().findJob(name, idempotencyKey);
       if (existing.isPresent()) {
         return json(
             request, 200, Json.object().put("id", existing.get().id()).put("created", false));
@@ -342,13 +342,13 @@ final class AdminHandler {
               ? job.schedule(duration("delay", delay))
               : at != null ? job.schedule(instant("at", at)) : job.schedule();
     }
-    LOG.info("Job {} ({}) scheduled from the admin UI{}", jobId, type, by);
+    LOG.info("Job {} ({}) scheduled from the admin UI{}", jobId, name, by);
     return json(request, 200, Json.object().put("id", jobId).put("created", true));
   }
 
   private Json.Obj jobs(Admin admin, Map<String, String> params) {
     int limit = limit(params);
-    String idSuffix = idSuffix(params, "type", "state", "node");
+    String idSuffix = idSuffix(params, "name", "state", "node");
     if (idSuffix != null) {
       List<JobSummary> jobs = byIdSuffix(() -> admin.findJobsByIdSuffix(idSuffix, limit));
       return Json.object()
@@ -358,7 +358,7 @@ final class AdminHandler {
     String node = blankToNull(params.get("node"));
     JobQuery query =
         JobQuery.newest(limit)
-            .withType(blankToNull(params.get("type")))
+            .withName(blankToNull(params.get("name")))
             .withNode(node == null ? null : id(node));
     String states = params.get("state");
     if (states != null && !states.isBlank()) {
@@ -374,25 +374,25 @@ final class AdminHandler {
     }
     String before = blankToNull(params.get("before"));
     if (before != null) {
-      query = new JobQuery(query.type(), query.states(), query.nodeId(), id(before), limit);
+      query = new JobQuery(query.name(), query.states(), query.nodeId(), id(before), limit);
     }
     List<JobSummary> jobs = admin.findJobs(query);
     String next = jobs.size() == limit ? jobs.getLast().id().toString() : null;
     return Json.object().put("jobs", jobs.stream().map(AdminJson::job).toList()).put("next", next);
   }
 
-  private static List<Json.Obj> types(Admin admin) {
-    return admin.findJobTypes().stream()
+  private static List<Json.Obj> jobNames(Admin admin) {
+    return admin.findJobNames().stream()
         .map(
-            type -> {
+            name -> {
               Map<String, Integer> counts = new LinkedHashMap<>();
-              type.counts().forEach((state, count) -> counts.put(state.name(), count));
+              name.counts().forEach((state, count) -> counts.put(state.name(), count));
               return Json.object()
-                  .put("type", type.type())
-                  .put("total", type.total())
+                  .put("name", name.name())
+                  .put("total", name.total())
                   .put("counts", counts)
-                  .put("recurrence", type.recurrence())
-                  .put("handled", type.handled());
+                  .put("recurrence", name.recurrence())
+                  .put("handled", name.handled());
             })
         .toList();
   }
@@ -473,6 +473,7 @@ final class AdminHandler {
       path.addFirst(
           Json.object()
               .put("id", parentId)
+              .put("name", parent.get().name())
               .put("type", parent.get().type())
               .put("state", parent.get().state())
               .put("exists", true)
@@ -536,13 +537,13 @@ final class AdminHandler {
   }
 
   private static Json.Obj recurringRuns(Admin admin, Map<String, String> params) {
-    String type = blankToNull(params.get("type"));
-    if (type == null) {
-      throw new BadRequest("Parameter type is required");
+    String name = blankToNull(params.get("name"));
+    if (name == null) {
+      throw new BadRequest("Parameter name is required");
     }
-    RecurringJobRuns runs = admin.findRecurringJobRuns(type, limit(params));
+    RecurringJobRuns runs = admin.findRecurringJobRuns(name, limit(params));
     return Json.object()
-        .put("type", runs.type())
+        .put("name", runs.name())
         .put("pending", runs.pending() == null ? null : AdminJson.job(runs.pending()))
         .put("previous", runs.previous().stream().map(AdminJson::job).toList());
   }

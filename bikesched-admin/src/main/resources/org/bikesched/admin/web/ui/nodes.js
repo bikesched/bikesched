@@ -181,7 +181,7 @@ function NodeDetail({ nodeId, onClose }) {
               ${jobs.map(
                 (job) => html`<li class="row">
                   <a class="mono" href=${jobHref(job.id)}>${shortId(job.id)}</a>
-                  <span class="mono">${job.type}</span>
+                  <span class="mono">${job.name}</span>
                   <${Badge} state=${job.state} />
                   <span class="muted small mono">since ${dateTime(job.updatedAt)}</span>
                 </li>`,

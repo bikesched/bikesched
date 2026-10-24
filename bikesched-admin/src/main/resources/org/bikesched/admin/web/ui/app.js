@@ -50,7 +50,7 @@ function App() {
   const [countsKey, setCountsKey] = useState(0);
   const [me, setMe] = useState(null);
   const [nodes, setNodes] = useState([]);
-  const [types, setTypes] = useState([]);
+  const [jobNames, setJobNames] = useState([]);
   const [names, setNames] = useState([]);
   const [error, setError] = useState(null);
 
@@ -61,11 +61,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    Promise.all([getBody('api/me'), getBody('api/nodes'), getBody('api/types'), getBody('api/event-names')]).then(
-      ([meBody, nodesBody, typesBody, namesBody]) => {
+    Promise.all([getBody('api/me'), getBody('api/nodes'), getBody('api/job-names'), getBody('api/event-names')]).then(
+      ([meBody, nodesBody, jobNamesBody, namesBody]) => {
         setMe(meBody);
         setNodes(nodesBody.nodes);
-        setTypes(typesBody.types);
+        setJobNames(jobNamesBody.names);
         setNames(namesBody.names);
         setError(null);
       },
@@ -83,7 +83,7 @@ function App() {
     href: toHash(route.section === section ? { section } : lastRoutes.current[section]),
   });
   const tabs = [
-    tab('jobs', 'Jobs', types.reduce((sum, type) => sum + type.total, 0)),
+    tab('jobs', 'Jobs', jobNames.reduce((sum, jobName) => sum + jobName.total, 0)),
     tab('events', 'Events', names.reduce((sum, name) => sum + name.count, 0)),
     tab('nodes', 'Nodes', nodes.length, nodes.filter((node) => !node.alive).length),
   ];
@@ -93,7 +93,7 @@ function App() {
     ${error && html`<div class="banner banner-error" role="alert">${error}</div>`}
     <main class="content">
       ${route.section === 'jobs' &&
-      html`<${JobsView} route=${route} navigate=${navigate} types=${types} me=${me} nodes=${nodes}
+      html`<${JobsView} route=${route} navigate=${navigate} jobNames=${jobNames} me=${me} nodes=${nodes}
         reloadKey=${reloadKey} onChanged=${() => setCountsKey((key) => key + 1)} onScheduled=${reload} />`}
       ${route.section === 'events' &&
       html`<${EventsView} route=${route} navigate=${navigate} names=${names} me=${me}

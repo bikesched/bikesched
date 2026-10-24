@@ -8,8 +8,8 @@ import java.util.UUID;
 import org.bikesched.admin.Admin;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventPublisher;
-import org.bikesched.event.EventType;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.event.TypedEvent;
 import org.bikesched.internal.util.Version;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
@@ -17,10 +17,10 @@ import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobInfo;
-import org.bikesched.job.JobType;
-import org.bikesched.job.JobTypeFailureHandler;
-import org.bikesched.job.JobTypeHandler;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.StandaloneJobFailureHandler;
+import org.bikesched.job.StandaloneJobHandler;
+import org.bikesched.job.TypedJob;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
 import org.jspecify.annotations.Nullable;
@@ -31,16 +31,15 @@ import org.jspecify.annotations.Nullable;
  * <p>Create an instance with the {@link #builder() builder}. Building it brings the database schema
  * up to date, registers this application instance as a node in {@code bikesched_nodes} and starts a
  * background heartbeat and job poller. Jobs are executed by the {@link JobHandler} registered under
- * the job's type; the job type and the handler share the same name. Jobs are scheduled with {@link
- * #newJob(String)}. {@link #close() Closing} it stops polling and the heartbeat and deregisters the
- * node:
+ * the job's name. Jobs are scheduled with {@link #newJob(String)}. {@link #close() Closing} it
+ * stops polling and the heartbeat and deregisters the node:
  *
  * <pre>{@code
  * try (Bikesched bikesched = Bikesched.builder()
  *         .dataSource(dataSource)
  *         .nodeName("worker-1")          // optional, defaults to the host name
  *         .build()) {
- *     // register the handler once, schedule jobs by type ...
+ *     // register the handler once, schedule jobs by name ...
  *     bikesched.registerJobHandler("send-mail", job -> mailer.send(job.payload()));
  *     bikesched.newJob("send-mail").payload("{\"to\": \"alice@example.com\"}").schedule();
  *
@@ -52,7 +51,7 @@ import org.jspecify.annotations.Nullable;
  * }
  * }</pre>
  *
- * <p>Every node polls all due jobs regardless of their type. A node that claims a job it has no
+ * <p>Every node polls all due jobs regardless of their name. A node that claims a job it has no
  * handler for logs an error and fails that attempt (the job is retried while attempts remain), so
  * all nodes sharing a database should register the same handlers.
  *
@@ -81,124 +80,127 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
   }
 
   /**
-   * Registers the handler executing jobs of the given type. From then on jobs of that type can be
+   * Registers the handler executing jobs of the given name. From then on jobs of that name can be
    * scheduled with {@link #newJob(String)} and are executed by this handler on this node.
    *
-   * @param type the job type, not blank, at most 200 characters
+   * @param name the job name, not blank, at most 200 characters
    * @param handler executes the jobs; receives the job being executed
    * @return this instance
-   * @throws IllegalArgumentException if the type is blank or already has a handler
+   * @throws IllegalArgumentException if the name is blank or already has a handler
    */
-  Bikesched registerJobHandler(String type, JobHandler handler);
+  Bikesched registerJobHandler(String name, JobHandler handler);
 
   /**
-   * Registers a handler for jobs of the given type that does not need the job itself (e.g. no
+   * Registers a handler for jobs of the given name that does not need the job itself (e.g. no
    * payload).
    *
-   * @param type the job type, not blank, at most 200 characters
+   * @param name the job name, not blank, at most 200 characters
    * @param handler executes the jobs
    * @return this instance
-   * @throws IllegalArgumentException if the type is blank or already has a handler
+   * @throws IllegalArgumentException if the name is blank or already has a handler
    * @see #registerJobHandler(String, JobHandler)
    */
-  default Bikesched registerJobHandler(String type, Runnable handler) {
-    return registerJobHandler(type, ignored -> handler.run());
+  default Bikesched registerJobHandler(String name, Runnable handler) {
+    return registerJobHandler(name, ignored -> handler.run());
   }
 
   /**
-   * Registers the handler executing jobs of a {@link JobType}; it receives the payload mapped to
+   * Registers the handler executing jobs of a {@link TypedJob}; it receives the payload mapped to
    * the type's payload class. Like {@link #registerJobHandler(String, JobHandler)} otherwise.
    *
    * <pre>{@code
-   * static final JobType<Order> ORDER = JobType.of("order", Order.class);
+   * static final TypedJob<Order> ORDER = TypedJob.of("order", Order.class);
    *
    * bikesched.registerJobHandler(ORDER, (job, order) -> shipping.ship(order));
    * }</pre>
    *
-   * @param type the job type and its payload class
+   * @param typedJob the job's name and payload class
    * @param handler executes the jobs; receives the job and its payload
    * @param <T> the payload type
    * @return this instance
-   * @throws IllegalArgumentException if the type already has a handler, or this node already uses
-   *     the type's name with another payload class
+   * @throws IllegalArgumentException if the name already has a handler, or this node already uses
+   *     the name with another payload class
    */
   <T extends @Nullable Object> Bikesched registerJobHandler(
-      JobType<T> type, TypedJobHandler<? super T> handler);
+      TypedJob<T> typedJob, TypedJobHandler<? super T> handler);
 
   /**
-   * Registers a handler that carries its job type, see {@link JobTypeHandler}; like {@link
-   * #registerJobHandler(JobType, TypedJobHandler) registerJobHandler(handler.type(), handler)}.
+   * Registers a handler that carries its {@link TypedJob}, see {@link StandaloneJobHandler}; like
+   * {@link #registerJobHandler(TypedJob, TypedJobHandler) registerJobHandler(handler.typedJob(),
+   * handler)}.
    *
    * <pre>{@code
-   * handlers.forEach(bikesched::registerJobHandler);   // e.g. List<JobTypeHandler<?>> from DI
+   * handlers.forEach(bikesched::registerJobHandler);   // e.g. List<StandaloneJobHandler<?>> from DI
    * }</pre>
    *
-   * @param handler executes the jobs of {@link JobTypeHandler#type()}
+   * @param handler executes the jobs of {@link StandaloneJobHandler#typedJob()}
    * @param <T> the payload type
    * @return this instance
-   * @throws IllegalArgumentException if the type already has a handler, or this node already uses
-   *     the type's name with another payload class
+   * @throws IllegalArgumentException if the name already has a handler, or this node already uses
+   *     the name with another payload class
    */
-  default <T extends @Nullable Object> Bikesched registerJobHandler(JobTypeHandler<T> handler) {
+  default <T extends @Nullable Object> Bikesched registerJobHandler(
+      StandaloneJobHandler<T> handler) {
     Objects.requireNonNull(handler, "handler");
-    return registerJobHandler(Objects.requireNonNull(handler.type(), "handler.type()"), handler);
+    return registerJobHandler(
+        Objects.requireNonNull(handler.typedJob(), "handler.typedJob()"), handler);
   }
 
   /**
-   * Registers the failure handler of a job type: it runs before a job of the type ends {@code
+   * Registers the failure handler of a job name: it runs before a job of the name ends {@code
    * FAILED} or {@code COMPENSATION_FAILED}, e.g. to move it to a dead-letter table, see {@link
    * JobFailureHandler}. The job's outcome is final at that point.
    *
    * <pre>{@code
    * bikesched.registerJobFailureHandler("charge", failed ->
-   *     deadLetters.insert(failed.id(), failed.type(), failed.payload(), failed.error()));
+   *     deadLetters.insert(failed.id(), failed.name(), failed.payload(), failed.error()));
    * }</pre>
    *
-   * <p>Like the job handler, register it on every node that handles the type: the node failing a
+   * <p>Like the job handler, register it on every node that handles the name: the node failing a
    * job decides by its own registration whether the job becomes {@code FAILING}.
    *
-   * @param type the job type, not blank, at most 200 characters
+   * @param name the job name, not blank, at most 200 characters
    * @param handler handles the failed jobs
    * @return this instance
-   * @throws IllegalArgumentException if the type is blank or already has a failure handler
+   * @throws IllegalArgumentException if the name is blank or already has a failure handler
    */
-  Bikesched registerJobFailureHandler(String type, JobFailureHandler handler);
+  Bikesched registerJobFailureHandler(String name, JobFailureHandler handler);
 
   /**
-   * Registers the failure handler of a {@link JobType}; it receives the payload mapped to the
+   * Registers the failure handler of a {@link TypedJob}; it receives the payload mapped to the
    * type's payload class. Like {@link #registerJobFailureHandler(String, JobFailureHandler)}
    * otherwise.
    *
-   * @param type the job type and its payload class
+   * @param typedJob the job's name and payload class
    * @param handler handles the failed jobs; receives the job and its payload
    * @param <T> the payload type
    * @return this instance
-   * @throws IllegalArgumentException if the type already has a failure handler, or this node
-   *     already uses the type's name with another payload class
+   * @throws IllegalArgumentException if the name already has a failure handler, or this node
+   *     already uses the name with another payload class
    */
   <T extends @Nullable Object> Bikesched registerJobFailureHandler(
-      JobType<T> type, TypedJobFailureHandler<? super T> handler);
+      TypedJob<T> typedJob, TypedJobFailureHandler<? super T> handler);
 
   /**
-   * Registers a failure handler that carries its job type, see {@link JobTypeFailureHandler}; like
-   * {@link #registerJobFailureHandler(JobType, TypedJobFailureHandler)
-   * registerJobFailureHandler(handler.type(), handler)}.
+   * Registers a failure handler that carries its {@link TypedJob}, see {@link
+   * StandaloneJobFailureHandler}; like {@link #registerJobFailureHandler(TypedJob,
+   * TypedJobFailureHandler) registerJobFailureHandler(handler.typedJob(), handler)}.
    *
-   * @param handler handles the failed jobs of {@link JobTypeFailureHandler#type()}
+   * @param handler handles the failed jobs of {@link StandaloneJobFailureHandler#typedJob()}
    * @param <T> the payload type
    * @return this instance
-   * @throws IllegalArgumentException if the type already has a failure handler, or this node
-   *     already uses the type's name with another payload class
+   * @throws IllegalArgumentException if the name already has a failure handler, or this node
+   *     already uses the name with another payload class
    */
   default <T extends @Nullable Object> Bikesched registerJobFailureHandler(
-      JobTypeFailureHandler<T> handler) {
+      StandaloneJobFailureHandler<T> handler) {
     Objects.requireNonNull(handler, "handler");
     return registerJobFailureHandler(
-        Objects.requireNonNull(handler.type(), "handler.type()"), handler);
+        Objects.requireNonNull(handler.typedJob(), "handler.typedJob()"), handler);
   }
 
   /**
-   * Starts building a job of the given type; {@link JobBuilder#schedule()} (or one of its
+   * Starts building a job of the given name; {@link JobBuilder#schedule()} (or one of its
    * overloads) stores it. This is the only way to schedule jobs:
    *
    * <pre>{@code
@@ -208,28 +210,27 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * bikesched.newJob("cleanup").schedule(Instant.parse("2026-10-03T06:00:00Z"));
    * }</pre>
    *
-   * @param type the job type, also the name its handler is registered under (at most 200
+   * @param name the job name, also the name its handler is registered under (at most 200
    *     characters)
    * @return a builder for the job
-   * @throws IllegalArgumentException if the type is blank
+   * @throws IllegalArgumentException if the name is blank
    */
-  JobBuilder<Object> newJob(String type);
+  JobBuilder<Object> newJob(String name);
 
   /**
-   * Starts building a job of a {@link JobType}: {@link JobBuilder#payload(Object) payload(...)}
+   * Starts building a job of a {@link TypedJob}: {@link JobBuilder#payload(Object) payload(...)}
    * only accepts the type's payload class.
    *
    * <pre>{@code
    * bikesched.newJob(ORDER).payload(order).schedule();
    * }</pre>
    *
-   * @param type the job type and its payload class
+   * @param typedJob the job's name and payload class
    * @param <T> the payload type
    * @return a builder for the job
-   * @throws IllegalArgumentException if this node already uses the type's name with another payload
-   *     class
+   * @throws IllegalArgumentException if this node already uses the name with another payload class
    */
-  <T extends @Nullable Object> JobBuilder<T> newJob(JobType<T> type);
+  <T extends @Nullable Object> JobBuilder<T> newJob(TypedJob<T> typedJob);
 
   /**
    * Stops a recurring job (see {@link JobBuilder#schedule(Recurrence)}): unregisters it on this
@@ -239,19 +240,19 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * <p>Meant for recurring jobs that were removed from the code: nodes that still register the
    * recurring job recreate its occurrence when they register it again, e.g. on their next start.
    *
-   * @param type the job type of the recurring job
+   * @param name the job name of the recurring job
    * @return whether a pending occurrence was deleted
    */
-  boolean removeRecurringJob(String type);
+  boolean removeRecurringJob(String name);
 
   /**
-   * Stops a recurring job of a {@link JobType}, see {@link #removeRecurringJob(String)}.
+   * Stops a recurring job of a {@link TypedJob}, see {@link #removeRecurringJob(String)}.
    *
-   * @param type the job type of the recurring job
+   * @param typedJob the job's name and payload class of the recurring job
    * @return whether a pending occurrence was deleted
    */
-  default boolean removeRecurringJob(JobType<?> type) {
-    return removeRecurringJob(type.name());
+  default boolean removeRecurringJob(TypedJob<?> typedJob) {
+    return removeRecurringJob(typedJob.name());
   }
 
   /**
@@ -273,21 +274,21 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
   NodeEventBuilder<Object> newEvent(String eventName, String eventKey);
 
   /**
-   * Starts building an event of an {@link EventType}: {@link EventBuilder#payload(Object)
+   * Starts building an event of a {@link TypedEvent}: {@link EventBuilder#payload(Object)
    * payload(...)} only accepts the type's payload class.
    *
    * <pre>{@code
    * bikesched.newEvent(PAYMENT_RECEIVED, order.id()).payload(payment).publish();
    * }</pre>
    *
-   * @param eventType the event's name and payload class
+   * @param typedEvent the event's name and payload class
    * @param eventKey identifies the event instance, e.g. an order id, at most 500 characters
    * @param <T> the payload type
    * @return a builder for the event
    */
   @Override
   <T extends @Nullable Object> NodeEventBuilder<T> newEvent(
-      EventType<T> eventType, String eventKey);
+      TypedEvent<T> typedEvent, String eventKey);
 
   /**
    * Looks up a job by its id, in a read-only transaction.
@@ -297,8 +298,8 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    * }</pre>
    *
    * @param jobId the job id
-   * @return the job's id, type and current state; empty if there is no such job (e.g. it never
-   *     existed, or its recurring job was removed before it ran)
+   * @return the job's id, name, type and current state; empty if there is no such job (e.g. it
+   *     never existed, or its recurring job was removed before it ran)
    * @throws BikeschedException if the database cannot be accessed
    */
   Optional<JobInfo> findJob(UUID jobId);
@@ -322,8 +323,8 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
   List<JobHistoryEntry> findJobHistory(UUID jobId);
 
   /**
-   * Read-only lookups for operating bikesched: jobs by type and state, their steps, payloads and
-   * results, job types with counts per state, events, waiting steps and nodes. The admin UI ({@code
+   * Read-only lookups for operating bikesched: jobs by name and state, their steps, payloads and
+   * results, job names with counts per state, events, waiting steps and nodes. The admin UI ({@code
    * bikesched-admin}) is built on them; they also suit custom dashboards and support tools.
    *
    * <pre>{@code

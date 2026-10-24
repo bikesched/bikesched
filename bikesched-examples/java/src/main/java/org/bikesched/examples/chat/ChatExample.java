@@ -14,7 +14,7 @@ import java.util.concurrent.Executors;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobState;
-import org.bikesched.job.JobType;
+import org.bikesched.job.TypedJob;
 
 /**
  * Deduplicating incoming messages with idempotency keys: a chat platform delivers each message to
@@ -29,8 +29,8 @@ import org.bikesched.job.JobType;
 public final class ChatExample {
 
   /** Answers one chat message. */
-  public static final JobType<ChatMessage> ANSWER_MESSAGE =
-      JobType.of("answer-chat-message", ChatMessage.class);
+  public static final TypedJob<ChatMessage> ANSWER_MESSAGE =
+      TypedJob.of("answer-chat-message", ChatMessage.class);
 
   /**
    * A message posted in a chat channel, as the platform's webhook sends it.

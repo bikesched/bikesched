@@ -18,11 +18,19 @@ public interface JobInfo {
   UUID id();
 
   /**
-   * Returns the job type.
+   * Returns the job name, which selects the handler that runs the job.
    *
-   * @return the job type
+   * @return the job name
    */
-  String type();
+  String name();
+
+  /**
+   * Returns how the job was started: on its own, as an occurrence of a recurring job or as a child
+   * job.
+   *
+   * @return the job's type
+   */
+  JobType type();
 
   /**
    * Returns the job's state when it was read.

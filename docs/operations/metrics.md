@@ -24,9 +24,9 @@ Bikesched bikesched =
 
 | Meter | Type | Tags | Measures |
 |---|---|---|---|
-| `bikesched.job.claim.delay` | timer | `job.type` | how long after they were due jobs were claimed; rising values mean the nodes fall behind |
-| `bikesched.job.attempts` | timer | `job.type`, `outcome` | attempts by recorded outcome and their duration |
-| `bikesched.job.attempts.abandoned` | counter | `job.type` | attempts abandoned by the [hard timeout](../jobs/README.md#timeouts) |
+| `bikesched.job.claim.delay` | timer | `job.name` | how long after they were due jobs were claimed; rising values mean the nodes fall behind |
+| `bikesched.job.attempts` | timer | `job.name`, `outcome` | attempts by recorded outcome and their duration |
+| `bikesched.job.attempts.abandoned` | counter | `job.name` | attempts abandoned by the [hard timeout](../jobs/README.md#timeouts) |
 | `bikesched.jobs.active` | gauge | | attempts being processed by the node |
 | `bikesched.jobs.abandoned` | gauge | | abandoned attempts whose thread is still running |
 | `bikesched.events.published` | counter | `event.name`, `source` | published events; `source` is `node` (`bikesched.newEvent`) or `job` (`job.newEvent`) |
@@ -55,7 +55,7 @@ a query on `bikesched_jobs` (see [Database](database.md)).
 
 | Method | Called |
 |---|---|
-| `onJobClaimed(JobClaim)` | before a claimed job runs; `JobClaim` has the job id and type, the attempt, whether it is a compensation, and the claim delay |
+| `onJobClaimed(JobClaim)` | before a claimed job runs; `JobClaim` has the job id and name, the attempt, whether it is a compensation, and the claim delay |
 | `onAttemptEnded(JobAttemptResult)` | once per claim, after its outcome was recorded; `JobAttemptResult` has the claim, the `JobAttemptOutcome`, the duration and `isAbandoned()` |
 | `onAbandonedAttemptReturned(JobClaim)` | when the thread of an attempt abandoned by the hard timeout finally returns |
 

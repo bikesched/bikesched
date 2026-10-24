@@ -14,21 +14,21 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  *   <li>{@link JobBuilder}: a one-off job or, with {@link JobBuilder#schedule(Recurrence)}, a
  *       recurring job, from {@link org.bikesched.Bikesched#newJob(String)} or {@link
- *       org.bikesched.Bikesched#newJob(JobType)}
+ *       org.bikesched.Bikesched#newJob(TypedJob)}
  *   <li>{@link TransactionalJobBuilder}: a one-off job stored in the caller's transaction, from
  *       {@link JobBuilder#connection(Connection)}
  *   <li>{@link IdempotentJobBuilder}: a one-off job scheduled once per idempotency key, from {@link
  *       JobBuilder#idempotencyKey(String)}
  *   <li>{@link StepJobBuilder}: a child job started as a step of its parent, from {@link
- *       Job#newJob(String)} or {@link Job#newJob(JobType)}
+ *       Job#newJob(String)} or {@link Job#newJob(TypedJob)}
  * </ul>
  *
  * <p>The builders of jobs scheduled through {@link org.bikesched.Bikesched} can also set the
  * handler, see {@link JobHandlerSettings}.
  *
  * @param <B> the concrete builder type
- * @param <P> the payload type: {@code Object} for a job type given as a string, the payload class
- *     of a {@link JobType}
+ * @param <P> the payload type: {@code Object} for a job name given as a string, the payload class
+ *     of a {@link TypedJob}
  */
 public interface JobSettings<B extends JobSettings<B, P>, P extends @Nullable Object> {
 

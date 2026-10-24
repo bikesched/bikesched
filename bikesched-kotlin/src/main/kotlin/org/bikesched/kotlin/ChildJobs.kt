@@ -13,13 +13,13 @@ import org.bikesched.job.Step
  * Starts a child job exactly once as a durable step of this job, see `Job.newJob(String)`; later
  * runs return the same child's id without scheduling again:
  * ```
- * val charge = startJob(type = "charge", payload = order.payment, stepName = "charge")
+ * val charge = startJob(name = "charge", payload = order.payment, stepName = "charge")
  * val receipt = awaitJob<Receipt>(charge).orElseThrow()
  * ```
  *
- * @param type the child's job type; it needs a handler on this node
+ * @param name the child's job name; it needs a handler on this node
  * @param payload the payload, mapped to JSON by the configured `JsonMapper`; may be `null`
- * @param stepName the step name, unique within the job; defaults to `start <type>`
+ * @param stepName the step name, unique within the job; defaults to `start <name>`
  * @param at when the child is due; with neither [at] nor [delay] it is due right away
  * @param delay how long from now until the child is due
  * @param priority its priority, higher runs first; defaults to 0
@@ -28,11 +28,11 @@ import org.bikesched.job.Step
  * @param compensation undoes starting the child if this job is cancelled or fails permanently, e.g.
  *   cancels it; receives the child's id, see `StepJobBuilder.compensateWith`
  * @return the child's id, the same on every run of this job
- * @throws IllegalArgumentException if both [at] and [delay] are set, or the type has no handler
+ * @throws IllegalArgumentException if both [at] and [delay] are set, or the name has no handler
  * @throws IllegalStateException if this job is an occurrence of a recurring job
  */
 public fun Job.startJob(
-  type: String,
+  name: String,
   payload: Any? = null,
   stepName: String? = null,
   at: Instant? = null,
@@ -44,7 +44,7 @@ public fun Job.startJob(
 ): UUID {
   require(at == null || delay == null) { "at and delay are mutually exclusive" }
   val builder =
-    JobOptions(payload, priority, maxAttempts, timeout, null).applySettingsTo(newJob(type))
+    JobOptions(payload, priority, maxAttempts, timeout, null).applySettingsTo(newJob(name))
   stepName?.let(builder::stepName)
   compensation?.let { handler ->
     builder.compensateWith { step, id -> handler(step, checkNotNull(id)) }
