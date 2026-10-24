@@ -67,7 +67,8 @@ public final class HistoryStore {
                 delete from bikesched_job_history h using batch b
                  where h.job_id = b.job_id and h.seq = b.seq
                 returning h.created_at)
-            select count(*), max(created_at), (select at from cutoff) from deleted""";
+            select count(*) as count, max(created_at) as last, (select at from cutoff) as cutoff
+              from deleted""";
 
   /**
    * A change of a job or of one of its steps, to be recorded.
@@ -176,12 +177,12 @@ public final class HistoryStore {
                 FIND_HISTORY_SQL,
                 row ->
                     new JobHistoryEntry(
-                        row.instant(1),
-                        row.string(2),
-                        row.string(3),
-                        row.integer(4),
-                        row.uuid(5),
-                        row.string(6)),
+                        row.instant("created_at"),
+                        row.string("step_name"),
+                        row.string("state"),
+                        row.integer("attempt"),
+                        row.uuid("node_id"),
+                        row.string("detail")),
                 jobId),
         e ->
             new BikeschedException("Reading the history of bikesched job " + jobId + " failed", e));

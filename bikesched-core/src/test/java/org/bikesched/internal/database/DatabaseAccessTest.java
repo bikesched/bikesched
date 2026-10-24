@@ -19,7 +19,7 @@ class DatabaseAccessTest extends AbstractStoreTest {
     var calls = new AtomicInteger();
     int one =
         access.withConnection(
-            db -> db.one("select 1", row -> row.integer(1)).orElseThrow(),
+            db -> db.one("select 1 as one", row -> row.integer("one")).orElseThrow(),
             e -> {
               calls.incrementAndGet();
               return new BikeschedException("unexpected", e);
@@ -79,8 +79,36 @@ class DatabaseAccessTest extends AbstractStoreTest {
     int jobs =
         access.inReadOnlyTransaction(
             db ->
-                db.one("select count(*) from bikesched_jobs", row -> row.integer(1)).orElseThrow(),
+                db.one("select count(*) as jobs from bikesched_jobs", row -> row.integer("jobs"))
+                    .orElseThrow(),
             e -> new BikeschedException("Reading in a read-only transaction failed", e));
     assertThat(jobs).isNotNegative();
+  }
+
+  @Test
+  void rowsAreReadByUniqueColumnLabels() {
+    String read =
+        access.withConnection(
+            db ->
+                db.one(
+                        "select 'a' as name, 2 as count",
+                        row -> row.string("name") + row.integer("count"))
+                    .orElseThrow(),
+            e -> new BikeschedException("Reading failed", e));
+    assertThat(read).isEqualTo("a2");
+
+    assertThatThrownBy(
+            () ->
+                access.withConnection(
+                    db -> db.one("select 1 as one", row -> row.integer("two")),
+                    e -> new BikeschedException("Reading failed", e)))
+        .hasRootCauseMessage("No column two in the result, only [one]");
+
+    assertThatThrownBy(
+            () ->
+                access.withConnection(
+                    db -> db.one("select 1 as id, 2 as id", row -> row.integer("id")),
+                    e -> new BikeschedException("Reading failed", e)))
+        .hasRootCauseMessage("Several columns are labelled id: alias them");
   }
 }

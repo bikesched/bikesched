@@ -4,6 +4,7 @@ package org.bikesched.internal.database;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Duration;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -243,38 +245,72 @@ public final class Sql {
   }
 
   /**
-   * Typed, null-safe access to the current row of a result set; columns are 1-based.
+   * Typed, null-safe access to the current row of a result set by column label: the column name, or
+   * the alias given with {@code as} (unquoted, so lower case). Expressions get an alias, joined
+   * columns sharing a name a distinct one, so that every label read is unique in the result.
    *
    * <p>Whether a getter returns {@code null} depends on the column, which only the schema knows, so
    * the getters are not null-marked: NOT NULL columns map into non-null fields, nullable columns
    * into {@code @Nullable} ones.
-   *
-   * @param rs the result set, positioned on a row
    */
   @NullUnmarked
-  public record Row(ResultSet rs) {
+  public static final class Row {
 
-    String string(int column) throws SQLException {
-      return rs.getString(column);
+    private final ResultSet rs;
+
+    /** The 1-based index per label; {@code -1} for a label several columns share. */
+    private final Map<String, Integer> columns;
+
+    /**
+     * @param rs the result set, positioned on a row whenever a getter is called
+     */
+    public Row(ResultSet rs) throws SQLException {
+      this.rs = rs;
+      ResultSetMetaData metaData = rs.getMetaData();
+      int count = metaData.getColumnCount();
+      this.columns = new HashMap<>(count * 2);
+      for (int i = 1; i <= count; i++) {
+        columns.merge(metaData.getColumnLabel(i), i, (first, duplicate) -> -1);
+      }
+    }
+
+    /**
+     * The index of a column.
+     *
+     * @throws SQLException if no column or several have this label
+     */
+    private int index(String column) throws SQLException {
+      Integer index = columns.get(column);
+      if (index == null) {
+        throw new SQLException("No column " + column + " in the result, only " + columns.keySet());
+      }
+      if (index < 0) {
+        throw new SQLException("Several columns are labelled " + column + ": alias them");
+      }
+      return index;
+    }
+
+    String string(String column) throws SQLException {
+      return rs.getString(index(column));
     }
 
     /** An {@code integer} column; {@code 0} for SQL {@code null}. */
-    int integer(int column) throws SQLException {
-      return rs.getInt(column);
+    int integer(String column) throws SQLException {
+      return rs.getInt(index(column));
     }
 
     /** A {@code boolean} column; {@code false} for SQL {@code null}. */
-    boolean bool(int column) throws SQLException {
-      return rs.getBoolean(column);
+    boolean bool(String column) throws SQLException {
+      return rs.getBoolean(index(column));
     }
 
-    UUID uuid(int column) throws SQLException {
-      return rs.getObject(column, UUID.class);
+    UUID uuid(String column) throws SQLException {
+      return rs.getObject(index(column), UUID.class);
     }
 
     /** A {@code timestamptz} column, {@code null} for SQL {@code null}. */
-    Instant instant(int column) throws SQLException {
-      OffsetDateTime time = rs.getObject(column, OffsetDateTime.class);
+    Instant instant(String column) throws SQLException {
+      OffsetDateTime time = rs.getObject(index(column), OffsetDateTime.class);
       return time == null ? null : time.toInstant();
     }
 
@@ -282,14 +318,14 @@ public final class Sql {
      * A {@code text} column holding the name of an enum constant, {@code null} for SQL {@code
      * null}.
      */
-    <E extends Enum<E>> E enumValue(int column, Class<E> type) throws SQLException {
-      String name = rs.getString(column);
+    <E extends Enum<E>> E enumValue(String column, Class<E> type) throws SQLException {
+      String name = rs.getString(index(column));
       return name == null ? null : Enum.valueOf(type, name);
     }
 
     /** A {@code bigint} column holding milliseconds, {@code null} for SQL {@code null}. */
-    Duration millis(int column) throws SQLException {
-      Long millis = rs.getObject(column, Long.class);
+    Duration millis(String column) throws SQLException {
+      Long millis = rs.getObject(index(column), Long.class);
       return millis == null ? null : Duration.ofMillis(millis);
     }
   }

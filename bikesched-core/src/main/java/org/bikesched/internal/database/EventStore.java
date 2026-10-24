@@ -43,13 +43,13 @@ public final class EventStore {
 
   private static final String FIND_EVENT_STEP_SQL =
       """
-            select id, type, state, result::text, event_name, event_key, wake_at, wake_at <= now(),
-                   coalesce(last_error, '')
+            select id, type, state, result::text as result, event_name, event_key, wake_at,
+                   wake_at <= now() as deadline_passed, coalesce(last_error, '') as last_error
               from bikesched_steps where job_id = ? and name = ? for update""";
 
   private static final String LATEST_EVENT_SQL =
       """
-            select id, payload::text from bikesched_events
+            select id, payload::text as payload from bikesched_events
              where name = ? and key = ? and expires_at > now()
              order by published_at desc limit 1""";
 
@@ -100,7 +100,8 @@ public final class EventStore {
                   from received r
                  where j.id = r.job_id and j.state = 'WAITING'
                 returning j.id, j.attempts, j.type)
-            select r.job_id, r.name, x.id is not null, coalesce(x.attempts, 0), x.type
+            select r.job_id, r.name, x.id is not null as job_resumed,
+                   coalesce(x.attempts, 0) as attempts, x.type
               from received r left join resumed x on x.id = r.job_id""";
 
   // A batch of expired events, oldest expiry first from the given expires_at on (see
@@ -118,7 +119,8 @@ public final class EventStore {
             deleted as (
                 delete from bikesched_events e using batch b where e.id = b.id
                 returning e.expires_at)
-            select count(*), max(expires_at), (select at from cutoff) from deleted""";
+            select count(*) as count, max(expires_at) as last, (select at from cutoff) as cutoff
+              from deleted""";
 
   // A publishing step records the published event (name, key and id), so that later runs return
   // the same id and can check that they publish the same event.
@@ -203,15 +205,15 @@ public final class EventStore {
                   FIND_EVENT_STEP_SQL,
                   row ->
                       new EventStep(
-                          new StepRef(row.uuid(1), stepName),
-                          row.enumValue(2, StepType.class),
-                          row.enumValue(3, StepState.class),
-                          row.string(4),
-                          row.string(5),
-                          row.string(6),
-                          row.instant(7),
-                          row.bool(8),
-                          row.string(9)),
+                          new StepRef(row.uuid("id"), stepName),
+                          row.enumValue("type", StepType.class),
+                          row.enumValue("state", StepState.class),
+                          row.string("result"),
+                          row.string("event_name"),
+                          row.string("event_key"),
+                          row.instant("wake_at"),
+                          row.bool("deadline_passed"),
+                          row.string("last_error")),
                   jobId,
                   stepName);
           if (step.isPresent()) {
@@ -251,7 +253,7 @@ public final class EventStore {
           Optional<PublishedEvent> published =
               db.one(
                   LATEST_EVENT_SQL,
-                  row -> new PublishedEvent(row.uuid(1), row.string(2)),
+                  row -> new PublishedEvent(row.uuid("id"), row.string("payload")),
                   eventName,
                   eventKey);
           if (published.isPresent()) {
@@ -280,7 +282,7 @@ public final class EventStore {
           EventWaitResult.Waiting waiting =
               db.one(
                       WAIT_EVENT_STEP_SQL,
-                      row -> new EventWaitResult.Waiting(created, row.instant(1)),
+                      row -> new EventWaitResult.Waiting(created, row.instant("wake_at")),
                       created.id(),
                       jobId,
                       stepName,
@@ -436,10 +438,10 @@ public final class EventStore {
                   FIND_PUBLISH_STEP_SQL,
                   row ->
                       new PublishStep(
-                          row.enumValue(1, StepType.class),
-                          row.string(2),
-                          row.string(3),
-                          row.uuid(4)),
+                          row.enumValue("type", StepType.class),
+                          row.string("event_name"),
+                          row.string("event_key"),
+                          row.uuid("event_id")),
                   jobId,
                   stepName);
           if (previous.isPresent()) {
@@ -525,7 +527,7 @@ public final class EventStore {
     lockEvent(db, eventName, eventKey);
     if (idempotencyKey != null) {
       Optional<UUID> earlier =
-          db.one(FIND_KEYED_EVENT_SQL, row -> row.uuid(1), eventName, eventKey, idempotencyKey);
+          db.one(FIND_KEYED_EVENT_SQL, row -> row.uuid("id"), eventName, eventKey, idempotencyKey);
       if (earlier.isPresent()) {
         return new Publication(earlier.get(), 0, true);
       }
@@ -544,7 +546,11 @@ public final class EventStore {
             RESUME_WAITING_STEPS_SQL,
             row ->
                 new Resumption(
-                    row.uuid(1), row.string(2), row.bool(3), row.integer(4), row.string(5)),
+                    row.uuid("job_id"),
+                    row.string("name"),
+                    row.bool("job_resumed"),
+                    row.integer("attempts"),
+                    row.string("type")),
             payload,
             eventId,
             eventName,
