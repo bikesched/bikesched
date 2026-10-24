@@ -41,6 +41,9 @@ wherever a recurrence string does, but mixes a second grammar into the ISO-8601 
   `initialDelay` (the delay of a new first occurrence of a recurring handler), checked when
   scanning. `JobBuilder.schedule(String, Duration)` backs `initialDelay` for expressions.
   Recurrence expressions get no fixed-delay form.
+- `Recurrence.isWallClock()` (default `false`; `daily`, `weekly` and cron return `true`) lets a
+  node compute the run after many missed ones from the current time in one call, instead of
+  walking from the planned run through each missed run (a per-second cron after a day-long wait).
 
 ## Consequences
 

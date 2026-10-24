@@ -320,4 +320,8 @@ None.
    like the other `kotlin.time.Duration` overloads.
 3. The Spring starter needed no change: it registers `@JobHandler` beans through
    `AnnotatedJobHandler.registerOn`.
-
+4. Computing from the planned run made a wall-clock recurrence that waited long (a per-second cron
+   after a day of retries) walk through every missed run, up to `MAX_SKIPPED_RUNS` calls, where the
+   moved scheduled time used to need one. `Recurrence.isWallClock()` (default `false`, `true` for
+   `daily`, `weekly`, `CronRecurrence` and Spring's cron parser) lets `RecurringJob.nextRun`
+   compute the next run from now in one step once the first candidate is past (review finding).

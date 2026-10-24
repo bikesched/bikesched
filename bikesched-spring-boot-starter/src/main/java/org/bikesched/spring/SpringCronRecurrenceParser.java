@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.spring;
 
+import java.time.Instant;
 import java.time.ZoneOffset;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.RecurrenceParser;
@@ -17,8 +18,28 @@ final class SpringCronRecurrenceParser implements RecurrenceParser {
   @Override
   public Recurrence parse(String expression) {
     CronExpression cron = CronExpression.parse(expression);
-    return Recurrence.of(
-        "cron " + expression, previous -> cron.next(previous.atZone(ZoneOffset.UTC)).toInstant());
+    String description = "cron " + expression;
+    return new Recurrence() {
+      @Override
+      public Instant next(Instant previous) {
+        return cron.next(previous.atZone(ZoneOffset.UTC)).toInstant();
+      }
+
+      @Override
+      public String description() {
+        return description;
+      }
+
+      @Override
+      public boolean isWallClock() {
+        return true;
+      }
+
+      @Override
+      public String toString() {
+        return description;
+      }
+    };
   }
 
   @Override

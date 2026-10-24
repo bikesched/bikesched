@@ -70,12 +70,16 @@ public record RecurringJob(
 
   /**
    * The next run after {@code previous} that is still in the future: runs missed while no node was
-   * running (or the previous occurrence took longer) are skipped, not caught up on.
+   * running (or the previous occurrence took longer) are skipped, not caught up on. A {@linkplain
+   * Recurrence#isWallClock() wall-clock} recurrence skips them in one step from {@code now}.
    *
    * @throws IllegalStateException if the recurrence does not return a later instant
    */
   public Instant nextRun(Instant previous, Instant now) {
     Instant next = next(previous);
+    if (!next.isAfter(now) && recurrence.isWallClock()) {
+      return next(now);
+    }
     for (int skipped = 0; !next.isAfter(now); skipped++) {
       if (skipped == MAX_SKIPPED_RUNS) {
         return next(now);

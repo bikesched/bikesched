@@ -37,6 +37,9 @@ returns the id of the pending occurrence.
   computed from it, so retries, sleeps and event waits that move an occurrence don't shift the
   ones after it. Runs whose time has passed when an occurrence ends are skipped: `every(PT15M)`
   started at 12:00 and running for 20 minutes is followed by the run at 12:30.
+- Recurrences that snap to the wall clock (`daily`, `weekly`, cron) return `true` from
+  `isWallClock()`: after missed runs, the next run is computed from the current time in one step.
+  A custom recurrence that returns the first match after any instant can do the same.
 - Each occurrence stores the recurrence's description. Registering a recurrence with a different
   description (e.g. after a deploy) moves the pending occurrence to the new recurrence.
 

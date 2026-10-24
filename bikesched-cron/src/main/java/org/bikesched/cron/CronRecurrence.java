@@ -142,6 +142,16 @@ public final class CronRecurrence implements Recurrence {
     return recurrence.description();
   }
 
+  /**
+   * Returns {@code true}: a cron recurrence snaps to the wall clock.
+   *
+   * @return {@code true}
+   */
+  @Override
+  public boolean isWallClock() {
+    return true;
+  }
+
   @Override
   public String toString() {
     return recurrence.description();

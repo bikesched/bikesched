@@ -55,6 +55,22 @@ public interface Recurrence {
   }
 
   /**
+   * Returns whether this recurrence snaps to the wall clock: {@link #next(Instant)} returns the
+   * first match after any given instant (a time of day, a cron expression), so the run after a
+   * later instant is the same whichever earlier run it is computed from. A node then computes the
+   * next run after many missed ones (e.g. after a long retry or event wait) with one call from the
+   * current time instead of walking through each missed run. Recurrences that add to the previous
+   * run, like {@link #every(Duration)}, must return {@code false} to keep their rhythm.
+   *
+   * @return {@code true} for a wall-clock recurrence; {@code false} by default ({@link
+   *     #daily(LocalTime, ZoneId)} and {@link #weekly(DayOfWeek, LocalTime, ZoneId)} return {@code
+   *     true})
+   */
+  default boolean isWallClock() {
+    return false;
+  }
+
+  /**
    * Runs at a fixed rate: every {@code interval} after the previous planned run, regardless of
    * retries or event waits of the previous occurrence. Runs missed because the previous occurrence
    * took longer are skipped.
@@ -112,7 +128,7 @@ public interface Recurrence {
   static Recurrence daily(LocalTime time, ZoneId zone) {
     Objects.requireNonNull(time, "time");
     Objects.requireNonNull(zone, "zone");
-    return of(
+    return wallClock(
         "daily at " + time + " " + zone,
         previous -> {
           ZonedDateTime start = previous.atZone(zone);
@@ -135,7 +151,7 @@ public interface Recurrence {
     Objects.requireNonNull(day, "day");
     Objects.requireNonNull(time, "time");
     Objects.requireNonNull(zone, "zone");
-    return of(
+    return wallClock(
         "weekly on " + day + " at " + time + " " + zone,
         previous -> {
           var date = previous.atZone(zone).toLocalDate().with(TemporalAdjusters.nextOrSame(day));
@@ -170,6 +186,32 @@ public interface Recurrence {
       @Override
       public String description() {
         return description;
+      }
+
+      @Override
+      public String toString() {
+        return description;
+      }
+    };
+  }
+
+  /** A recurrence created with {@link #of(String, UnaryOperator)} that snaps to the wall clock. */
+  private static Recurrence wallClock(String description, UnaryOperator<Instant> next) {
+    Recurrence recurrence = of(description, next);
+    return new Recurrence() {
+      @Override
+      public Instant next(Instant previous) {
+        return recurrence.next(previous);
+      }
+
+      @Override
+      public String description() {
+        return description;
+      }
+
+      @Override
+      public boolean isWallClock() {
+        return true;
       }
 
       @Override

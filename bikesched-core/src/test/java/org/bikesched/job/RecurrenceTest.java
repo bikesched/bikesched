@@ -92,6 +92,18 @@ class RecurrenceTest {
   }
 
   @Test
+  void onlyDailyAndWeeklySnapToTheWallClock() {
+    assertThat(Recurrence.daily(LocalTime.NOON, BERLIN).isWallClock()).isTrue();
+    assertThat(Recurrence.weekly(DayOfWeek.MONDAY, LocalTime.NOON, BERLIN).isWallClock()).isTrue();
+    assertThat(Recurrence.every(Duration.ofMinutes(1)).isWallClock()).isFalse();
+    assertThat(Recurrence.everyAfterEnd(Duration.ofMinutes(1)).isWallClock()).isFalse();
+    assertThat(Recurrence.of("custom", previous -> previous.plusSeconds(1)).isWallClock())
+        .isFalse();
+    assertThat(Recurrence.daily(LocalTime.NOON, BERLIN))
+        .hasToString("daily at 12:00 Europe/Berlin");
+  }
+
+  @Test
   void invalidSchedulesAreRejected() {
     assertThatThrownBy(() -> Recurrence.every(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)

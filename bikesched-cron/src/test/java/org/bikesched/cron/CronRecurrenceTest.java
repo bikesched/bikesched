@@ -25,6 +25,7 @@ class CronRecurrenceTest {
     assertThat(recurrence.next(Instant.parse("2026-10-05T01:00:00Z")))
         .isEqualTo(Instant.parse("2026-10-06T01:00:00Z"));
     assertThat(recurrence.isFixedDelay()).isFalse();
+    assertThat(recurrence.isWallClock()).isTrue();
   }
 
   @Test
