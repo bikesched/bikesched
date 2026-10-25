@@ -9,8 +9,7 @@ Date: 2026-10-25
 
 ## Status
 
-Accepted; the type of `reference()` is amended by
-[ADR 0062](0062-job-reference-read-back-as-nullable.md) (`@Nullable String` instead of `Optional`)
+Accepted
 
 ## Context
 
@@ -39,7 +38,7 @@ column (indexes every row, most of them without a reference), and several refere
 - Child jobs and events published by a job inherit the job's reference unless their builder sets
   one, so one search finds the whole tree. The value is resolved when the child or event is
   created inside its step, so a replay changes nothing.
-- Read back through `JobInfo`, `Job` and `FailedJob` (`Optional<String> reference()`), the admin
+- Read back through `JobInfo`, `Job` and `FailedJob` (`@Nullable String reference()`), the admin
   summaries, the logging context (`bikesched.jobReference`, only for jobs with a reference) and the
   listener records `JobClaim` and `EventPublication`. The job history names it in the `SCHEDULED`
   detail, like the idempotency key; there is no history column.

@@ -249,7 +249,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   Status, Context, Decision, Consequences; copy `template.md`). A significant design decision
   (schema, API shape, a rejected alternative worth remembering) gets a new ADR in the same change,
   listed in `docs/decisions/README.md`. Accepted ADRs are not rewritten: a changed decision gets a
-  new ADR, and the old one's status becomes "Superseded by ADR NNNN".
+  new ADR, and the old one's status becomes "Superseded by ADR NNNN". Small changes (a return
+  type, a rename, a detail of an existing decision) need no ADR; they correct the affected ADR's
+  text in place.
 - `README.md` stays minimal: pitch, feature list, quick start, links into `docs/`, examples and
   build instructions. Details go into `docs/`, one page per concept, linked from `docs/index.md`.
   Pages are grouped into sections, one folder each with a `README.md` landing page (mounted as the

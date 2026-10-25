@@ -272,5 +272,4 @@ None left.
 - Kotlin: `startJob` and `Job.publishEvent` take a `reference` too; omitting it keeps the
   inheritance (the builder is not called).
 - `Job`, `FailedJob` and `JobInfo` return `@Nullable String reference()` instead of an
-  `Optional`, like `payload()` and the listener records
-  ([ADR 0062](../decisions/0062-job-reference-read-back-as-nullable.md)).
+  `Optional`, like `payload()` and the listener records.
