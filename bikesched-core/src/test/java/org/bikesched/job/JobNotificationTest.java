@@ -171,7 +171,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
     try (Bikesched worker = worker("node-notify-released").build()) {
       worker.registerJobHandler("notify-released", recordStart());
       Bikesched closing = worker("node-notify-closing").build();
-      UUID closingId = closing.node().id().orElseThrow();
+      UUID closingId = closing.node().id();
       UUID jobId = UUID.randomUUID();
       execute(
           "insert into bikesched_jobs (id, name, state, locked_by_node_id, lock_token, locked_at)"

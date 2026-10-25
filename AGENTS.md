@@ -149,7 +149,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   0048). Mark values that may be `null` with `@Nullable` (type-use position: `@Nullable String`,
   `java.time.@Nullable Duration`, `JobSuspended.@Nullable Suspension`); type parameters of user
   values are `<T extends @Nullable Object>`, with `@Nullable T` where `null` occurs for any `T`
-  (no payload, a `null` step result). Lookups keep returning `Optional`. Internal code does not
+  (no payload, a `null` step result). Only lookups (`find…` methods, where empty means "no such
+  row") return `Optional`; accessors of values that may be absent return `@Nullable`
+  (`JobInfo.parentJobId()`, `Node.id()`). Internal code does not
   `requireNonNull` what its types exclude; only API entry points check user arguments. Read a
   nullable field once into a local before testing it, so NullAway can follow it.
 - Breaking API changes are fine on `main` while at 0.x (never in a patch release); rename across
@@ -165,7 +167,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - Reified helpers do the `as T` cast inline, so a non-null `T` with a `null` value throws. `Unit`
   steps run as `Void` steps (no `Unit` reaches the `JsonMapper`).
 - Use distinct names rather than overloading a Java member: a member always wins over an extension
-  with the same signature (hence `findJobOrNull`, `node.idOrNull`, `handleJobs`).
+  with the same signature (hence `findJobOrNull`, `handleJobs`).
 - Keep one Kotlin style per operation; don't add parallel builder-ish extensions.
 
 ## Database

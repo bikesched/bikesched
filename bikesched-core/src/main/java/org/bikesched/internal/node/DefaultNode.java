@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.node;
 
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.bikesched.Node;
@@ -66,8 +65,8 @@ public final class DefaultNode implements Node {
   }
 
   @Override
-  public Optional<UUID> id() {
-    return Optional.ofNullable(id);
+  public @Nullable UUID id() {
+    return id;
   }
 
   @Override

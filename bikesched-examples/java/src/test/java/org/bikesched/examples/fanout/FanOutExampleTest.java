@@ -38,7 +38,7 @@ class FanOutExampleTest {
 
       var job = BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
       Duration took = Duration.ofNanos(System.nanoTime() - start);
-      ImportedAlbum result = job.result(ImportedAlbum.class).orElseThrow();
+      ImportedAlbum result = job.result(ImportedAlbum.class);
       assertThat(result.thumbnails())
           .extracting(Thumbnail::file)
           .containsExactly("beach.jpg", "sunset.jpg", "harbour.jpg");

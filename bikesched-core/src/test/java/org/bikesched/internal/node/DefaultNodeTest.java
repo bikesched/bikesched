@@ -12,12 +12,12 @@ class DefaultNodeTest {
   @Test
   void pollsFromRegistrationUntilClosed() {
     var node = new DefaultNode("node-a");
-    assertThat(node.id()).isEmpty();
+    assertThat(node.id()).isNull();
     assertThat(node.isPolling()).isFalse();
 
     UUID id = UUID.randomUUID();
     node.registered(id);
-    assertThat(node.id()).contains(id);
+    assertThat(node.id()).isEqualTo(id);
     assertThat(node.isPolling()).isTrue();
     assertThat(node).hasToString("Node[name=node-a, id=" + id + "]");
     assertThatThrownBy(() -> node.registered(UUID.randomUUID()))

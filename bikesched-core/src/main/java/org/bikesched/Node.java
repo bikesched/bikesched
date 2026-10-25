@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched;
 
-import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The cluster node of a {@link Bikesched} instance. A node joins the cluster (is registered in
@@ -22,9 +22,9 @@ public interface Node {
   /**
    * Returns the node's id once it polls for jobs, new for every instance.
    *
-   * @return the node id, empty until {@link Bikesched#start()} was called
+   * @return the node id, {@code null} until {@link Bikesched#start()} was called
    */
-  Optional<UUID> id();
+  @Nullable UUID id();
 
   /**
    * Returns whether this node polls for and executes jobs.

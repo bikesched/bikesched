@@ -409,7 +409,7 @@ class BikeschedAdminTest {
     try {
       UUID jobId = bikesched.newJob(type).schedule();
       awaitState(jobId, JobState.RUNNING);
-      UUID nodeId = bikesched.node().id().orElseThrow();
+      UUID nodeId = bikesched.node().id();
 
       try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
         JsonObject node = AdminServer.json(server.get("/api/nodes/" + nodeId)).getObject("node");

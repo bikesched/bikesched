@@ -43,7 +43,7 @@ class OptionalSchemaMigrationTest extends AbstractBikeschedTest {
           .isInstanceOf(BikeschedException.class);
       scheduler.migrate();
       assertThat(scheduler.findJob(UUID.randomUUID())).isEmpty();
-      assertThat(scheduler.node().id()).isEmpty();
+      assertThat(scheduler.node().id()).isNull();
     }
   }
 
@@ -84,7 +84,7 @@ class OptionalSchemaMigrationTest extends AbstractBikeschedTest {
         deploy.migrate();
       }
       scheduler.registerJobHandler("migration-test", job -> {});
-      assertThat(scheduler.start().id()).isPresent();
+      assertThat(scheduler.start().id()).isNotNull();
       var id = scheduler.newJob("migration-test").schedule();
       assertThat(scheduler.findJob(id)).isPresent();
     }
@@ -138,7 +138,7 @@ class OptionalSchemaMigrationTest extends AbstractBikeschedTest {
       assertThatThrownBy(() -> sql("create table forbidden (id int)"))
           .isInstanceOf(SQLException.class);
       try (var scheduler = builder().migrateSchema(false).autoStartPolling(true).build()) {
-        assertThat(scheduler.node().id()).isPresent();
+        assertThat(scheduler.node().id()).isNotNull();
         scheduler.registerJobHandler("no-ddl", job -> {});
         var id = scheduler.newJob("no-ddl").schedule();
         assertThat(scheduler.findJob(id)).isPresent();
@@ -165,7 +165,7 @@ class OptionalSchemaMigrationTest extends AbstractBikeschedTest {
     try (var scheduler = builder().migrateSchema(false).build()) {
       assertThat(scheduler.findJob(UUID.randomUUID())).isEmpty();
       assertThat(scheduler.findJob(UUID.randomUUID())).isEmpty();
-      assertThat(scheduler.node().id()).isEmpty();
+      assertThat(scheduler.node().id()).isNull();
     }
   }
 

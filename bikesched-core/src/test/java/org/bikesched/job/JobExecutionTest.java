@@ -248,7 +248,7 @@ class JobExecutionTest extends AbstractBikeschedTest {
     var seenByHandler = new java.util.concurrent.CompletableFuture<java.util.Map<String, String>>();
     try (logs;
         Bikesched bikesched = testNode("node-mdc", Duration.ofMillis(50)).build()) {
-      nodeId = bikesched.node().id().orElseThrow();
+      nodeId = bikesched.node().id();
       jobId =
           bikesched
               .newJob("mdc")

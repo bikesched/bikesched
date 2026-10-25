@@ -70,7 +70,7 @@ void complete(Object result);   // on Job; mapped by the JsonMapper
 - Stored in a new column `bikesched_jobs.result jsonb`, written only in the transaction that ends
   the job `SUCCEEDED`. A later failure or cancellation of the attempt discards it; the next
   attempt sets it again.
-- `JobInfo.result(Class<T>)` returns `Optional<T>` (empty unless `SUCCEEDED` with a result).
+- `JobInfo.result(Class<T>)` returns `@Nullable T` (`null` unless `SUCCEEDED` with a result).
 - Calling `complete` twice: the last value wins (the handler is replayed, so it may run again).
 - Precedence within an attempt: cancelling wins over failing (as today), failing wins over
   `complete`; an exception thrown after `complete` fails the attempt. A job ending `FAILED` or
@@ -177,7 +177,7 @@ public sealed interface JobResult<T> {
   null`, every other job neither; the two columns are independent, so a `kind` would only repeat
   them (unlike on steps, where kinds share columns).
 
-`JobInfo.parentJobId()` returns `Optional<UUID>`.
+`JobInfo.parentJobId()` returns `@Nullable UUID`.
 
 `bikesched_steps`:
 

@@ -3,7 +3,6 @@ package org.bikesched.kotlin
 
 import java.util.UUID
 import org.bikesched.Bikesched
-import org.bikesched.Node
 import org.bikesched.RetryBackoff
 import org.bikesched.job.FailingStep
 import org.bikesched.job.Job
@@ -71,10 +70,6 @@ public inline fun <reified T> Job.step(
  * @return the job's id, name, type and state; `null` if there is no such job
  */
 public fun Bikesched.findJobOrNull(jobId: UUID): JobInfo? = findJob(jobId).orElse(null)
-
-/** The node's id once it polls for jobs, `null` before, see `Node.id()`. */
-public val Node.idOrNull: UUID?
-  get() = id().orElse(null)
 
 @PublishedApi
 internal fun <T> runStep(

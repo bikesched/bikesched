@@ -18,7 +18,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   void buildMigratesSchemaAndRegistersNode() throws SQLException {
     try (Bikesched bikesched = Bikesched.builder(dataSource).nodeName("node-a").build()) {
       assertThat(bikesched.node().name()).isEqualTo("node-a");
-      assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo("node-a");
+      assertThat(nodeName(bikesched.node().id())).isEqualTo("node-a");
     }
   }
 
@@ -27,7 +27,7 @@ class BikeschedTest extends AbstractBikeschedTest {
     try (Bikesched bikesched = Bikesched.builder(dataSource).build()) {
       String hostName = InetAddress.getLocalHost().getHostName();
       assertThat(bikesched.node().name()).isEqualTo(hostName);
-      assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo(hostName);
+      assertThat(nodeName(bikesched.node().id())).isEqualTo(hostName);
     }
   }
 
@@ -65,7 +65,7 @@ class BikeschedTest extends AbstractBikeschedTest {
       bikesched.registerJobHandler(type, ignored -> {});
       UUID jobId = bikesched.newJob(type).schedule();
       awaitState(jobId, "SUCCEEDED");
-      assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo(bikesched.node().name());
+      assertThat(nodeName(bikesched.node().id())).isEqualTo(bikesched.node().name());
     }
   }
 
@@ -191,7 +191,7 @@ class BikeschedTest extends AbstractBikeschedTest {
         .isLessThan(Duration.ofSeconds(5));
     bikesched.close(); // idempotent
 
-    assertThat(nodeName(bikesched.node().id().orElseThrow())).isNull();
+    assertThat(nodeName(bikesched.node().id())).isNull();
     assertThat(Thread.getAllStackTraces().keySet())
         .noneMatch(
             t ->
@@ -208,14 +208,14 @@ class BikeschedTest extends AbstractBikeschedTest {
     execute(
         "insert into bikesched_jobs (id, name, state, locked_by_node_id, lock_token, locked_at) "
             + "values (gen_random_uuid(), 'stuck', 'RUNNING', '"
-            + bikesched.node().id().orElseThrow()
+            + bikesched.node().id()
             + "', gen_random_uuid(), now())");
 
     bikesched.close();
 
     assertThat(count("name = 'stuck' and state = 'SCHEDULED' and locked_by_node_id is null"))
         .isEqualTo(1);
-    assertThat(nodeName(bikesched.node().id().orElseThrow())).isNull();
+    assertThat(nodeName(bikesched.node().id())).isNull();
     execute("delete from bikesched_jobs where name = 'stuck'");
   }
 

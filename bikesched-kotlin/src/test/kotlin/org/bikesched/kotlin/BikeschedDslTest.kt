@@ -51,9 +51,9 @@ class BikeschedDslTest {
       .use { bikesched ->
         assertThat(bikesched.node().name()).isEqualTo("dsl-node")
         assertThat(bikesched.node().isPolling).isFalse()
-        assertThat(bikesched.node().idOrNull).`as`("no id before polling").isNull()
+        assertThat(bikesched.node().id()).`as`("no id before polling").isNull()
 
-        val id = bikesched.start().idOrNull
+        val id = bikesched.start().id()
         assertThat(id).isNotNull()
 
         val jobId = bikesched.createJob(name = unique("dsl-history"), delay = 1.hours) {}

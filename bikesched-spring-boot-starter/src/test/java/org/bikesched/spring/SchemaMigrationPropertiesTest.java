@@ -55,7 +55,7 @@ class SchemaMigrationPropertiesTest extends AbstractSpringTest {
             var node = context.getBean(Bikesched.class);
             assertThat(node.findJob(UUID.randomUUID())).isEmpty();
             assertThat(database.hasHistory()).isTrue();
-            assertThat(node.node().id()).isEmpty();
+            assertThat(node.node().id()).isNull();
           });
     }
   }
@@ -102,7 +102,7 @@ class SchemaMigrationPropertiesTest extends AbstractSpringTest {
                 node.migrate();
                 assertThat(database.hasHistory()).isTrue();
                 assertThat(node.findJob(UUID.randomUUID())).isEmpty();
-                assertThat(node.node().id()).isEmpty();
+                assertThat(node.node().id()).isNull();
               });
     }
   }

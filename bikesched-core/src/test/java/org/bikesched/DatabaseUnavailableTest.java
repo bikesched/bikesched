@@ -41,7 +41,7 @@ class DatabaseUnavailableTest extends AbstractBikeschedTest {
       Node node = bikesched.start();
 
       assertThat(node.isPolling()).isTrue();
-      assertThat(nodeName(node.id().orElseThrow())).isEqualTo("node-database-down");
+      assertThat(nodeName(node.id())).isEqualTo("node-database-down");
     }
   }
 

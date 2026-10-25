@@ -45,7 +45,7 @@ final class BikeschedLifecycle implements SmartLifecycle {
     }
     Node node = bikesched.start();
     running = true;
-    LOG.info("bikesched node {} ({}) polls for jobs", node.name(), node.id().orElse(null));
+    LOG.info("bikesched node {} ({}) polls for jobs", node.name(), node.id());
   }
 
   @Override
