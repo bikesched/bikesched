@@ -355,7 +355,7 @@ public final class JobProcessor {
     return new JobClaim(
         job.id(),
         job.name(),
-        job.reference().orElse(null),
+        job.reference(),
         phase.attempt(),
         phase instanceof JobPhase.Compensate,
         phase instanceof JobPhase.HandleFailure,

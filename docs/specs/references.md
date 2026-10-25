@@ -80,11 +80,11 @@ public interface JobSettings<B extends JobSettings<B, P>, P extends @Nullable Ob
 }
 
 public interface JobInfo {
-  Optional<String> reference();
+  @Nullable String reference();
 }
 
 public interface Job {
-  Optional<String> reference();
+  @Nullable String reference();
 }
 
 // org.bikesched.event: shared by NodeEventBuilder and StepEventBuilder
@@ -271,3 +271,6 @@ None left.
   "Publish similar" copy it. The detail's Reference field links to the jobs and the events with it.
 - Kotlin: `startJob` and `Job.publishEvent` take a `reference` too; omitting it keeps the
   inheritance (the builder is not called).
+- `Job`, `FailedJob` and `JobInfo` return `@Nullable String reference()` instead of an
+  `Optional`, like `payload()` and the listener records
+  ([ADR 0062](../decisions/0062-job-reference-read-back-as-nullable.md)).

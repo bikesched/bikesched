@@ -3,6 +3,7 @@ package org.bikesched.job;
 
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A read-only snapshot of a job, see {@code Bikesched.findJob(UUID)}: its identity and state at the
@@ -35,9 +36,9 @@ public interface JobInfo {
   /**
    * Returns the job's reference to an external entity, see {@link JobSettings#reference(String)}.
    *
-   * @return the reference; empty if the job has none
+   * @return the reference; {@code null} if the job has none
    */
-  Optional<String> reference();
+  @Nullable String reference();
 
   /**
    * Returns the job's state when it was read.

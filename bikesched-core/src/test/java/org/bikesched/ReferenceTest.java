@@ -51,10 +51,9 @@ class ReferenceTest extends AbstractBikeschedTest {
       UUID cleared =
           bikesched.newJob(name).reference("x").reference(null).schedule(Duration.ofHours(1));
 
-      assertThat(bikesched.findJob(withReference).flatMap(JobInfo::reference))
-          .contains("order-4711");
-      assertThat(bikesched.findJob(without).flatMap(JobInfo::reference)).isEmpty();
-      assertThat(bikesched.findJob(cleared).flatMap(JobInfo::reference)).isEmpty();
+      assertThat(bikesched.findJob(withReference).map(JobInfo::reference)).contains("order-4711");
+      assertThat(bikesched.findJob(without).map(JobInfo::reference)).isEmpty();
+      assertThat(bikesched.findJob(cleared).map(JobInfo::reference)).isEmpty();
       List<JobHistoryEntry> history = bikesched.findJobHistory(withReference);
       assertThat(history.getFirst().detail()).endsWith(", reference order-4711");
     } finally {
@@ -89,9 +88,9 @@ class ReferenceTest extends AbstractBikeschedTest {
               .reference("order-3")
               .schedule(Duration.ofHours(1));
 
-      assertThat(bikesched.findJob(transactional).flatMap(JobInfo::reference)).contains("order-1");
+      assertThat(bikesched.findJob(transactional).map(JobInfo::reference)).contains("order-1");
       assertThat(duplicate).isEqualTo(keyed);
-      assertThat(bikesched.findJob(keyed).flatMap(JobInfo::reference))
+      assertThat(bikesched.findJob(keyed).map(JobInfo::reference))
           .as("the duplicate's reference is ignored")
           .contains("order-2");
     } finally {
@@ -124,7 +123,7 @@ class ReferenceTest extends AbstractBikeschedTest {
                 .handler(() -> {})
                 .reference(longest)
                 .schedule(Duration.ofHours(1));
-        assertThat(bikesched.findJob(jobId).flatMap(JobInfo::reference)).contains(longest);
+        assertThat(bikesched.findJob(jobId).map(JobInfo::reference)).contains(longest);
       } finally {
         deleteJobs(name);
       }
@@ -151,7 +150,7 @@ class ReferenceTest extends AbstractBikeschedTest {
           job ->
               seen.complete(
                   List.of(
-                      job.reference(),
+                      Optional.ofNullable(job.reference()),
                       Optional.ofNullable(MDC.get(BikeschedLogContext.JOB_REFERENCE)))));
       UUID jobId = bikesched.newJob(name).reference("order-9").schedule();
 
@@ -232,7 +231,7 @@ class ReferenceTest extends AbstractBikeschedTest {
               .reference("tenant-3")
               .schedule(Recurrence.every(Duration.ofHours(1)), Instant.now().plusSeconds(3600));
 
-      assertThat(bikesched.findJob(occurrence).flatMap(JobInfo::reference)).contains("tenant-3");
+      assertThat(bikesched.findJob(occurrence).map(JobInfo::reference)).contains("tenant-3");
     } finally {
       deleteJobs(name);
     }

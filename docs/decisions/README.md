@@ -71,4 +71,5 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0058](0058-fixed-delay-recurrences-and-planned-runs.md) | Fixed-delay recurrences and a planned run on every occurrence | Accepted |
 | [0059](0059-job-name-and-job-type.md) | Job name and job type | Accepted |
 | [0060](0060-data-source-passed-to-the-builder.md) | Data source passed to the builder | Accepted |
-| [0061](0061-references-for-jobs-and-events.md) | References for jobs and events | Accepted |
+| [0061](0061-references-for-jobs-and-events.md) | References for jobs and events | Accepted; `reference()` type amended by [0062](0062-job-reference-read-back-as-nullable.md) |
+| [0062](0062-job-reference-read-back-as-nullable.md) | Job references read back as nullable values | Accepted |

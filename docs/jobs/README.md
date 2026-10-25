@@ -170,7 +170,7 @@ A handler receives the `Job` being executed:
 | Method | Purpose |
 |---|---|
 | `id()`, `name()` | identity, e.g. for idempotency keys and logging |
-| `reference()` | the job's [reference](#references), empty if it has none |
+| `reference()` | the job's [reference](#references), `null` if it has none |
 | `attempts()`, `maxAttempts()` | the current attempt (starting at 1) and the limit |
 | `payload()`, `payload(Class)` | the payload as raw JSON or mapped by the `JsonMapper` |
 | `step(name, Class, handler)` | run a durable step, see [Durable steps](../multi-step-jobs/steps.md#durable-steps) |

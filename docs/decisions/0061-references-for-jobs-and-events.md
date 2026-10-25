@@ -9,7 +9,8 @@ Date: 2026-10-25
 
 ## Status
 
-Accepted
+Accepted; the type of `reference()` is amended by
+[ADR 0062](0062-job-reference-read-back-as-nullable.md) (`@Nullable String` instead of `Optional`)
 
 ## Context
 
