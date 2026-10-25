@@ -13,7 +13,7 @@ scheduled and events published, from the page. It is embedded in the application
 bikesched; there is no separate service.
 
 ```java
-Bikesched bikesched = Bikesched.builder().dataSource(dataSource).build();
+Bikesched bikesched = Bikesched.builder(dataSource).build();
 
 HttpServer server = HttpServer.create(new InetSocketAddress(8081), 0);
 server.createContext("/bikesched", BikeschedAdmin.of(bikesched).httpHandler());

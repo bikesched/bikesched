@@ -149,8 +149,7 @@ class ShutdownTest extends AbstractBikeschedTest {
       dataSource.setUser(args[1]);
       dataSource.setPassword(args[2]);
       Bikesched bikesched =
-          Bikesched.builder()
-              .dataSource(dataSource)
+          Bikesched.builder(dataSource)
               .nodeName(args[3])
               .pollInterval(Duration.ofMillis(50))
               .closeOnShutdown(true)

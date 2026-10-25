@@ -300,7 +300,7 @@ the retention (every `jobHistoryCleanUpInterval`). Without it, nothing is record
 statement runs.
 
 ```java
-Bikesched bikesched = Bikesched.builder().dataSource(dataSource).jobHistory(Duration.ofDays(7)).build();
+Bikesched bikesched = Bikesched.builder(dataSource).jobHistory(Duration.ofDays(7)).build();
 
 for (JobHistoryEntry entry : bikesched.findJobHistory(jobId)) {   // oldest first
     System.out.println(entry);
@@ -352,7 +352,7 @@ retention ago, 7 days by default, together with their steps, every `jobCleanUpIn
 Set a different retention with `jobRetention(retention)`, the same on all nodes:
 
 ```java
-Bikesched bikesched = Bikesched.builder().dataSource(dataSource).jobRetention(Duration.ofDays(30)).build();
+Bikesched bikesched = Bikesched.builder(dataSource).jobRetention(Duration.ofDays(30)).build();
 ```
 
 - Scheduled, running, waiting and compensating jobs are never deleted, nor are jobs ending in
@@ -384,7 +384,7 @@ and its concurrency slot until it returns. With a hard timeout, the node gives u
 grace period:
 
 ```java
-Bikesched bikesched = Bikesched.builder().dataSource(dataSource)
+Bikesched bikesched = Bikesched.builder(dataSource)
         .defaultJobTimeout(Duration.ofMinutes(5))
         .hardTimeoutGrace(Duration.ofSeconds(30))
         .build();

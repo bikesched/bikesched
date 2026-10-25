@@ -70,7 +70,7 @@ class TextLengthTest extends AbstractBikeschedTest {
         .hasMessage("job name must have at most 200 characters, but has 201");
     assertThatThrownBy(() -> TypedEvent.of(tooLong, String.class))
         .hasMessage("event name must have at most 200 characters, but has 201");
-    assertThatThrownBy(() -> Bikesched.builder().nodeName(tooLong))
+    assertThatThrownBy(() -> Bikesched.builder(dataSource).nodeName(tooLong))
         .hasMessage("node name must have at most 200 characters, but has 201");
 
     try (Bikesched bikesched = testNode("node-too-long").autoStartPolling(false).build()) {

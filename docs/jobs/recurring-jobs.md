@@ -112,7 +112,7 @@ bikesched.newJob("report")
   default) and zone (UTC by default):
 
   ```java
-  Bikesched.builder()
+  Bikesched.builder(dataSource)
           .recurrenceParsers(RecurrenceParser.isoDuration(),
                   new CronRecurrenceParser(CronType.UNIX, ZoneId.of("Europe/Berlin")))
           …

@@ -12,8 +12,7 @@ The `bikesched-kotlin` module adds Kotlin extensions on top of the Java API, in 
 // bikesched-jackson with Jackson's Kotlin module (tools.jackson.module:jackson-module-kotlin)
 val kotlinObjectMapper = JsonMapper.builder().addModule(KotlinModule.Builder().build()).build()
 
-val bikesched = bikesched {                         // instead of Bikesched.builder()…build()
-    dataSource = ds
+val bikesched = bikesched(ds) {                     // instead of Bikesched.builder(ds)…build()
     jsonMapper = JacksonJsonMapper(kotlinObjectMapper)
     defaultJobTimeout = 5.minutes                   // kotlin.time.Duration everywhere
 }
@@ -64,7 +63,7 @@ failure handler the same way.
 
 | Helper | Instead of |
 |---|---|
-| `bikesched { … }` | `Bikesched.builder()…build()` |
+| `bikesched(dataSource) { … }` | `Bikesched.builder(dataSource)…build()` |
 | `job.payload<T>()` | `payload(T.class)` |
 | `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `postpone(Duration)`, `sleep(String, Duration)`, `every(Duration)`, `everyAfterEnd(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
 | `findJobOrNull(id)`, `node.idOrNull` | `Optional` |

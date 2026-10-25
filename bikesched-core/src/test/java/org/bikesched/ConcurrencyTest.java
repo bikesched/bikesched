@@ -66,8 +66,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
     String jobName = "full-batch-" + java.util.UUID.randomUUID();
     var completed = new java.util.concurrent.atomic.AtomicInteger();
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-" + jobName)
             .pollInterval(Duration.ofSeconds(1))
             .maxConcurrentJobs(20)
@@ -91,8 +90,7 @@ class ConcurrencyTest extends AbstractBikeschedTest {
     var running = new java.util.concurrent.atomic.AtomicInteger();
     var peak = new java.util.concurrent.atomic.AtomicInteger();
     var builder =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-" + jobName)
             .pollInterval(Duration.ofMillis(20))
             // Polling starts once all jobs are scheduled: with a full queue the node fills its

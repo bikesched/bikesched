@@ -56,7 +56,12 @@ class JobNotificationTest extends AbstractBikeschedTest {
 
   /** A node that schedules and publishes, but does not poll. */
   private static BikeschedBuilder client(String name) {
-    return testNode(name).pollInterval(MINUTE).autoStartPolling(false);
+    return client(dataSource, name);
+  }
+
+  /** Like {@link #client(String)}, on the given data source. */
+  private static BikeschedBuilder client(DataSource dataSource, String name) {
+    return testNode(dataSource, name).pollInterval(MINUTE).autoStartPolling(false);
   }
 
   /** Records when a job's handler started. */
@@ -384,8 +389,7 @@ class JobNotificationTest extends AbstractBikeschedTest {
     var logs = LogCapture.of(DueJobsNotifier.class);
     try (logs;
         Bikesched worker = worker("node-notify-failing").build();
-        Bikesched client =
-            client("node-notify-failing-client").dataSource(failingNotifier).build()) {
+        Bikesched client = client(failingNotifier, "node-notify-failing-client").build()) {
       worker.registerJobHandler("notify-failing", recordStart());
       client.registerJobHandler("notify-failing", ignored -> {});
       settle();

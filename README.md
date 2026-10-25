@@ -97,8 +97,7 @@ modelling and no orchestration across services. If that's what you're after, hav
 ```java
 DataSource dataSource = ...; // any PostgreSQL DataSource, e.g. a HikariCP pool
 
-try (Bikesched bikesched = Bikesched.builder()
-        .dataSource(dataSource)
+try (Bikesched bikesched = Bikesched.builder(dataSource)
         .nodeName("worker-1")              // optional, defaults to the host name
         .build()) {                    // migrates the schema, registers the node, starts polling
 

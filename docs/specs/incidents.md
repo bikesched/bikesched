@@ -12,8 +12,7 @@ lost, and lets an operator resolve it, through the API today and a CLI or admin 
 
 ```java
 Bikesched bikesched =
-    Bikesched.builder()
-        .dataSource(dataSource)
+    Bikesched.builder(dataSource)
         .incidents(
             IncidentSettings.builder()
                 .jobType("charge", "alert-payments") // failed job type -> incident job type

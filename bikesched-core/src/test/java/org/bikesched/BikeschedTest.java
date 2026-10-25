@@ -16,8 +16,7 @@ class BikeschedTest extends AbstractBikeschedTest {
 
   @Test
   void buildMigratesSchemaAndRegistersNode() throws SQLException {
-    try (Bikesched bikesched =
-        Bikesched.builder().dataSource(dataSource).nodeName("node-a").build()) {
+    try (Bikesched bikesched = Bikesched.builder(dataSource).nodeName("node-a").build()) {
       assertThat(bikesched.node().name()).isEqualTo("node-a");
       assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo("node-a");
     }
@@ -25,7 +24,7 @@ class BikeschedTest extends AbstractBikeschedTest {
 
   @Test
   void nodeNameDefaultsToHostName() throws Exception {
-    try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).build()) {
+    try (Bikesched bikesched = Bikesched.builder(dataSource).build()) {
       String hostName = InetAddress.getLocalHost().getHostName();
       assertThat(bikesched.node().name()).isEqualTo(hostName);
       assertThat(nodeName(bikesched.node().id().orElseThrow())).isEqualTo(hostName);
@@ -33,18 +32,17 @@ class BikeschedTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void buildRequiresDataSource() {
-    assertThatThrownBy(() -> Bikesched.builder().build())
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("dataSource is required");
+  void builderRequiresDataSource() {
+    assertThatThrownBy(() -> Bikesched.builder(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("dataSource");
   }
 
   @Test
   void nodeTimeoutMustBeAtLeastTwiceTheHeartbeatInterval() {
     assertThatThrownBy(
             () ->
-                Bikesched.builder()
-                    .dataSource(dataSource)
+                Bikesched.builder(dataSource)
                     .heartbeatInterval(Duration.ofSeconds(5))
                     .nodeTimeout(Duration.ofSeconds(5))
                     .build())
@@ -57,8 +55,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   @Test
   void pollHeartbeatAndNodeTimeoutAreConfigurable() throws Exception {
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-timings-" + UUID.randomUUID())
             .pollInterval(Duration.ofMillis(50))
             .heartbeatInterval(Duration.ofMillis(100))
@@ -76,11 +73,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   void migrateCreatesTheSchemaWithoutPollingOrRegisteringANode() throws Exception {
     String nodeName = "node-migrate-" + UUID.randomUUID();
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
-            .nodeName(nodeName)
-            .autoStartPolling(false)
-            .build()) {
+        Bikesched.builder(dataSource).nodeName(nodeName).autoStartPolling(false).build()) {
       assertThat(bikesched.node().isPolling()).isFalse();
 
       bikesched.migrate();
@@ -96,8 +89,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   @Test
   void migrateFailsOnceClosed() {
     Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-migrate-closed-" + UUID.randomUUID())
             .autoStartPolling(false)
             .build();
@@ -109,7 +101,7 @@ class BikeschedTest extends AbstractBikeschedTest {
 
   @Test
   void nodeNameMustNotBeBlank() {
-    assertThatThrownBy(() -> Bikesched.builder().nodeName(" "))
+    assertThatThrownBy(() -> Bikesched.builder(dataSource).nodeName(" "))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -117,8 +109,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   void nodeTimeoutMustCoverAtLeastTwoHeartbeats() {
     assertThatThrownBy(
             () ->
-                Bikesched.builder()
-                    .dataSource(dataSource)
+                Bikesched.builder(dataSource)
                     .heartbeatInterval(Duration.ofSeconds(5))
                     .nodeTimeout(Duration.ofSeconds(9))
                     .build())
@@ -128,17 +119,18 @@ class BikeschedTest extends AbstractBikeschedTest {
 
   @Test
   void cleanUpIntervalsMustBePositive() {
-    assertThatThrownBy(() -> Bikesched.builder().nodeCleanUpInterval(Duration.ZERO))
+    assertThatThrownBy(() -> Bikesched.builder(dataSource).nodeCleanUpInterval(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("nodeCleanUpInterval");
-    assertThatThrownBy(() -> Bikesched.builder().eventCleanUpInterval(Duration.ofSeconds(-1)))
+    assertThatThrownBy(
+            () -> Bikesched.builder(dataSource).eventCleanUpInterval(Duration.ofSeconds(-1)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("eventCleanUpInterval");
   }
 
   @Test
   void maxConcurrentJobsMustBePositive() {
-    assertThatThrownBy(() -> Bikesched.builder().maxConcurrentJobs(0))
+    assertThatThrownBy(() -> Bikesched.builder(dataSource).maxConcurrentJobs(0))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -149,8 +141,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   @Test
   void pollingCanBeStartedLater() throws Exception {
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-manual-polling")
             .pollInterval(Duration.ofMillis(50))
             .autoStartPolling(false)
@@ -175,8 +166,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   @Test
   void startAfterCloseFails() throws Exception {
     Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-closed-polling")
             .autoStartPolling(false)
             .build();
@@ -190,8 +180,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   @Test
   void closeStopsHeartbeatAndDeregistersNode() throws Exception {
     Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-closing")
             .heartbeatInterval(Duration.ofMillis(50))
             .build();
@@ -214,8 +203,7 @@ class BikeschedTest extends AbstractBikeschedTest {
 
   @Test
   void closeReleasesJobsThatAreStillRunning() throws Exception {
-    Bikesched bikesched =
-        Bikesched.builder().dataSource(dataSource).nodeName("node-releasing").build();
+    Bikesched bikesched = Bikesched.builder(dataSource).nodeName("node-releasing").build();
     // Simulate a job claimed by this node whose processing never finished.
     execute(
         "insert into bikesched_jobs (id, name, state, locked_by_node_id, lock_token, locked_at) "
@@ -235,8 +223,7 @@ class BikeschedTest extends AbstractBikeschedTest {
   void logsRedactedDatabaseUrlOnStartup() {
     var logs = LogCapture.of(DatabaseInitializer.class);
     try (logs;
-        Bikesched ignored =
-            Bikesched.builder().dataSource(dataSource).nodeName("node-db-url").build()) {
+        Bikesched ignored = Bikesched.builder(dataSource).nodeName("node-db-url").build()) {
       assertThat(logs.events())
           .filteredOn(e -> e.getFormattedMessage().startsWith("Database: "))
           .singleElement()

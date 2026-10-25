@@ -17,8 +17,7 @@ interval stays as a safety net, so its default goes up to 10 seconds (§4.6):
 
 ```java
 Bikesched bikesched =
-    Bikesched.builder()
-        .dataSource(dataSource)
+    Bikesched.builder(dataSource)
         .build(); // listens for due jobs by default
 ```
 

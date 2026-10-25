@@ -24,16 +24,14 @@ Use the core builder flag when migrations belong in a separate deploy step:
 
 ```java
 // Deployment: a data source with DDL rights, using the same bikesched library version.
-try (var deploy = Bikesched.builder()
-    .dataSource(migrationDataSource)
+try (var deploy = Bikesched.builder(migrationDataSource)
     .autoStartPolling(false)
     .build()) {
     deploy.migrate();
 }
 
 // Application: no DDL rights required.
-var scheduler = Bikesched.builder()
-    .dataSource(applicationDataSource)
+var scheduler = Bikesched.builder(applicationDataSource)
     .migrateSchema(false)
     .build();
 ```

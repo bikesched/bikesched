@@ -33,7 +33,7 @@ class StatementTimeoutNodeTest extends AbstractBikeschedTest {
 
   @Test
   void statementTimeoutMustBePositive() {
-    assertThatThrownBy(() -> Bikesched.builder().statementTimeout(Duration.ZERO))
+    assertThatThrownBy(() -> Bikesched.builder(dataSource).statementTimeout(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("statementTimeout must be positive: PT0S");
   }

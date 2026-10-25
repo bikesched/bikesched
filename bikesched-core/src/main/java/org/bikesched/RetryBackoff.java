@@ -14,8 +14,7 @@ import org.bikesched.job.JobFailure;
  * JobFailure#retryAfter(Duration)} (which takes precedence).
  *
  * <pre>{@code
- * Bikesched.builder()
- *     .dataSource(dataSource)
+ * Bikesched.builder(dataSource)
  *     .retryBackoff(RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10)))
  *     .build();
  * }</pre>

@@ -18,8 +18,7 @@ import org.bikesched.job.listener.JobListener;
  * Records the jobs a node runs as Micrometer meters:
  *
  * <pre>{@code
- * Bikesched.builder()
- *     .dataSource(dataSource)
+ * Bikesched.builder(dataSource)
  *     .jobListener(new MicrometerJobListener(registry, Tags.of("node", "node-1")))
  *     .build();
  * }</pre>

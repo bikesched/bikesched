@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.awaitility.Awaitility;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -43,10 +44,14 @@ public abstract class AbstractBikeschedTest {
    * packages access to the package-private test hooks of {@link BikeschedBuilder}.
    */
   public static BikeschedBuilder testNode(String nodeName) {
-    return Bikesched.builder()
-        .dataSource(dataSource)
-        .nodeName(nodeName)
-        .pollInterval(Duration.ofMillis(50));
+    return testNode(dataSource, nodeName);
+  }
+
+  /**
+   * Like {@link #testNode(String)}, on the given data source (e.g. one wrapping the shared one).
+   */
+  public static BikeschedBuilder testNode(DataSource dataSource, String nodeName) {
+    return Bikesched.builder(dataSource).nodeName(nodeName).pollInterval(Duration.ofMillis(50));
   }
 
   /** Like {@link #testNode(String)}, with the given heartbeat interval. */

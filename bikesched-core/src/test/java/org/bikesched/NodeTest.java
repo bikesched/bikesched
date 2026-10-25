@@ -22,8 +22,7 @@ class NodeTest extends AbstractBikeschedTest {
   @Test
   void heartbeatUpdatesNode() throws Exception {
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-heartbeat")
             .heartbeatInterval(Duration.ofMillis(100))
             .build()) {
@@ -78,8 +77,7 @@ class NodeTest extends AbstractBikeschedTest {
   @Test
   void nodeRegistersAndHeartbeatsOnlyOncePolling() throws Exception {
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-registers-later")
             .heartbeatInterval(Duration.ofMillis(50))
             .autoStartPolling(false)
@@ -111,8 +109,7 @@ class NodeTest extends AbstractBikeschedTest {
   void closingANodeThatNeverPolledDeregistersNothing() {
     var logs = LogCapture.of(org.bikesched.internal.DefaultBikesched.class);
     try (logs) {
-      Bikesched.builder()
-          .dataSource(dataSource)
+      Bikesched.builder(dataSource)
           .nodeName("node-never-polled")
           .autoStartPolling(false)
           .build()
@@ -127,9 +124,8 @@ class NodeTest extends AbstractBikeschedTest {
 
   @Test
   void liveNodesMayShareAName() throws SQLException {
-    try (Bikesched first = Bikesched.builder().dataSource(dataSource).nodeName("node-dup").build();
-        Bikesched second =
-            Bikesched.builder().dataSource(dataSource).nodeName("node-dup").build()) {
+    try (Bikesched first = Bikesched.builder(dataSource).nodeName("node-dup").build();
+        Bikesched second = Bikesched.builder(dataSource).nodeName("node-dup").build()) {
       UUID firstId = first.node().id().orElseThrow();
       UUID secondId = second.node().id().orElseThrow();
 
@@ -141,11 +137,7 @@ class NodeTest extends AbstractBikeschedTest {
 
   @Test
   void restartedNodeRegistersNextToItsStaleEntryAndReleasesItsJobs() throws SQLException {
-    Bikesched.builder()
-        .dataSource(dataSource)
-        .nodeName("bootstrap")
-        .build()
-        .close(); // ensure schema
+    Bikesched.builder(dataSource).nodeName("bootstrap").build().close(); // ensure schema
     UUID staleId = UUID.randomUUID();
     // The previous instance crashed a moment ago: its heartbeat is recent, so its row still counts
     // as live, and it was still running a job (scheduled in the future so the new instance's
@@ -183,8 +175,7 @@ class NodeTest extends AbstractBikeschedTest {
     UUID deadNode = UUID.randomUUID();
     try (logs;
         Bikesched bikesched =
-            Bikesched.builder()
-                .dataSource(dataSource)
+            Bikesched.builder(dataSource)
                 .nodeName("node-reaper")
                 .heartbeatInterval(Duration.ofMillis(50))
                 .nodeTimeout(Duration.ofSeconds(1))

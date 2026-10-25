@@ -48,8 +48,7 @@ public final class BikeschedTest {
    * @return a builder for a test node
    */
   public static BikeschedBuilder testNode(DataSource dataSource, String nodeNamePrefix) {
-    return Bikesched.builder()
-        .dataSource(dataSource)
+    return Bikesched.builder(dataSource)
         .nodeName(nodeNamePrefix + "-" + UUID.randomUUID())
         .pollInterval(POLL_INTERVAL);
   }

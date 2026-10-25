@@ -56,7 +56,7 @@ public final class RawJsonMapper implements JsonMapper {
   private static String unsupported(Class<?> type) {
     return "Without a configured JsonMapper, only JSON strings are supported, not "
         + type.getName()
-        + "; configure one via Bikesched.builder().jsonMapper(...), e.g. bikesched-jackson's"
+        + "; configure one via BikeschedBuilder.jsonMapper(...), e.g. bikesched-jackson's"
         + " JacksonJsonMapper";
   }
 }

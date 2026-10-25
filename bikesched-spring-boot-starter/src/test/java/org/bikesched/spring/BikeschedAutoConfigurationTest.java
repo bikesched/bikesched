@@ -57,11 +57,7 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
   void aUserDefinedNodeWins() {
     String nodeName = unique("user-node");
     try (Bikesched userNode =
-        Bikesched.builder()
-            .dataSource(dataSource())
-            .nodeName(nodeName)
-            .autoStartPolling(false)
-            .build()) {
+        Bikesched.builder(dataSource()).nodeName(nodeName).autoStartPolling(false).build()) {
       runner()
           .withBean("dataSource", DataSource.class, () -> dataSource())
           .withPropertyValues("bikesched.auto-start.enabled=false")

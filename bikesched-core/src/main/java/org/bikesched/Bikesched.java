@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.bikesched.admin.Admin;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventPublisher;
@@ -28,15 +29,15 @@ import org.jspecify.annotations.Nullable;
 /**
  * Entry point of bikesched: a database-backed job scheduler shared by all connected nodes.
  *
- * <p>Create an instance with the {@link #builder() builder}. Building it brings the database schema
- * up to date, registers this application instance as a node in {@code bikesched_nodes} and starts a
- * background heartbeat and job poller. Jobs are executed by the {@link JobHandler} registered under
- * the job's name. Jobs are scheduled with {@link #newJob(String)}. {@link #close() Closing} it
- * stops polling and the heartbeat and deregisters the node:
+ * <p>Create an instance with the {@link #builder(DataSource) builder}, passing the PostgreSQL data
+ * source bikesched stores its tables in. Building it brings the database schema up to date,
+ * registers this application instance as a node in {@code bikesched_nodes} and starts a background
+ * heartbeat and job poller. Jobs are executed by the {@link JobHandler} registered under the job's
+ * name. Jobs are scheduled with {@link #newJob(String)}. {@link #close() Closing} it stops polling
+ * and the heartbeat and deregisters the node:
  *
  * <pre>{@code
- * try (Bikesched bikesched = Bikesched.builder()
- *         .dataSource(dataSource)
+ * try (Bikesched bikesched = Bikesched.builder(dataSource)
  *         .nodeName("worker-1")          // optional, defaults to the host name
  *         .build()) {
  *     // register the handler once, schedule jobs by name ...
@@ -61,12 +62,14 @@ import org.jspecify.annotations.Nullable;
 public interface Bikesched extends AutoCloseable, EventPublisher {
 
   /**
-   * Returns a new builder for a {@link Bikesched} instance.
+   * Returns a new builder for a {@link Bikesched} instance storing its tables in the given data
+   * source.
    *
+   * @param dataSource the PostgreSQL data source bikesched stores its tables in
    * @return a new builder
    */
-  static BikeschedBuilder builder() {
-    return new BikeschedBuilder();
+  static BikeschedBuilder builder(DataSource dataSource) {
+    return new BikeschedBuilder(dataSource);
   }
 
   /**

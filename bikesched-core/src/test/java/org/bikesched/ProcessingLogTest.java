@@ -149,10 +149,6 @@ class ProcessingLogTest extends AbstractBikeschedTest {
   }
 
   private static Bikesched node(String name) {
-    return Bikesched.builder()
-        .dataSource(dataSource)
-        .nodeName(name)
-        .pollInterval(Duration.ofMillis(50))
-        .build();
+    return Bikesched.builder(dataSource).nodeName(name).pollInterval(Duration.ofMillis(50)).build();
   }
 }

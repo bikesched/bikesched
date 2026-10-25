@@ -14,8 +14,7 @@ class JsonMapperTest extends AbstractBikeschedTest {
   @Test
   void configuredJsonMapperMapsPayloadsAndTypedStepResults() throws Exception {
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-json-mapper")
             .jsonMapper(new PaymentJsonMapper())
             .pollInterval(Duration.ofMillis(50))
@@ -81,8 +80,7 @@ class JsonMapperTest extends AbstractBikeschedTest {
   @Test
   void defaultJsonMapperOnlySupportsJsonStrings() throws Exception {
     try (Bikesched bikesched =
-        Bikesched.builder()
-            .dataSource(dataSource)
+        Bikesched.builder(dataSource)
             .nodeName("node-default-mapper")
             .pollInterval(Duration.ofMillis(50))
             .build()) {

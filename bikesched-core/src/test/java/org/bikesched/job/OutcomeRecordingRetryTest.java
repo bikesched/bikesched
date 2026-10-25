@@ -30,8 +30,7 @@ class OutcomeRecordingRetryTest extends AbstractBikeschedTest {
     var logs = LogCapture.of(Retry.class);
     try (logs;
         Bikesched bikesched =
-            Bikesched.builder()
-                .dataSource(failures)
+            Bikesched.builder(failures)
                 .nodeName("node-record-retry-" + UUID.randomUUID())
                 .pollInterval(Duration.ofMillis(50))
                 .build()) {
@@ -55,8 +54,7 @@ class OutcomeRecordingRetryTest extends AbstractBikeschedTest {
     var processorLogs = LogCapture.of(JobProcessor.class);
     try (processorLogs;
         Bikesched bikesched =
-            Bikesched.builder()
-                .dataSource(failures)
+            Bikesched.builder(failures)
                 .nodeName("node-record-give-up-" + UUID.randomUUID())
                 .pollInterval(Duration.ofMillis(50))
                 .nodeCleanUpInterval(Duration.ofMillis(50))

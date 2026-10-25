@@ -33,7 +33,7 @@ class OptionalSchemaMigrationTest extends AbstractBikeschedTest {
   }
 
   private BikeschedBuilder builder() {
-    return Bikesched.builder().dataSource(isolated).nodeName(schema).autoStartPolling(false);
+    return Bikesched.builder(isolated).nodeName(schema).autoStartPolling(false);
   }
 
   @Test

@@ -8,7 +8,6 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.bikesched.event.listener.EventListener
 import org.bikesched.event.listener.EventPublication
 import org.bikesched.job.JobState
@@ -21,35 +20,34 @@ class BikeschedDslTest {
   @Test
   fun `builds an instance from the DSL`() {
     val published = mutableListOf<EventPublication>()
-    bikesched {
-      dataSource = TestDatabase.dataSource
-      nodeName = "dsl-node"
-      maxConcurrentJobs = 3
-      autoStartPolling = false
-      listenForDueJobs = true
-      notifyInterval = 200.milliseconds
-      defaultJobTimeout = 5.minutes
-      defaultEventTimeout = 1.minutes
-      retryBackoff = exponentialBackoff(1.seconds, 1.minutes)
-      failureHandlerAttempts = 5
-      eventRetention = 1.minutes
-      eventCleanUpInterval = 10.minutes
-      nodeCleanUpInterval = 30.seconds
-      jobHistoryRetention = 1.hours
-      jobHistoryCleanUpInterval = 10.minutes
-      jobRetention = 30.days
-      jobCleanUpInterval = 10.minutes
-      statementTimeout = 30.seconds
-      hardTimeoutGrace = 30.seconds
-      jobListener = object : JobListener {}
-      eventListener =
-        object : EventListener {
-          override fun onEventPublished(publication: EventPublication) {
-            published += publication
+    bikesched(TestDatabase.dataSource) {
+        nodeName = "dsl-node"
+        maxConcurrentJobs = 3
+        autoStartPolling = false
+        listenForDueJobs = true
+        notifyInterval = 200.milliseconds
+        defaultJobTimeout = 5.minutes
+        defaultEventTimeout = 1.minutes
+        retryBackoff = exponentialBackoff(1.seconds, 1.minutes)
+        failureHandlerAttempts = 5
+        eventRetention = 1.minutes
+        eventCleanUpInterval = 10.minutes
+        nodeCleanUpInterval = 30.seconds
+        jobHistoryRetention = 1.hours
+        jobHistoryCleanUpInterval = 10.minutes
+        jobRetention = 30.days
+        jobCleanUpInterval = 10.minutes
+        statementTimeout = 30.seconds
+        hardTimeoutGrace = 30.seconds
+        jobListener = object : JobListener {}
+        eventListener =
+          object : EventListener {
+            override fun onEventPublished(publication: EventPublication) {
+              published += publication
+            }
           }
-        }
-      recurrenceParsers = listOf(RecurrenceParser.isoDuration())
-    }
+        recurrenceParsers = listOf(RecurrenceParser.isoDuration())
+      }
       .use { bikesched ->
         assertThat(bikesched.node().name()).isEqualTo("dsl-node")
         assertThat(bikesched.node().isPolling).isFalse()
@@ -68,13 +66,6 @@ class BikeschedDslTest {
         val eventId = bikesched.newEvent(unique("dsl-event"), "k").publish()
         assertThat(published.map { it.eventId() }).containsExactly(eventId)
       }
-  }
-
-  @Test
-  fun `requires a data source`() {
-    assertThatThrownBy { bikesched { nodeName = "no-data-source" } }
-      .isInstanceOf(IllegalStateException::class.java)
-      .hasMessage("dataSource is required")
   }
 
   @Test

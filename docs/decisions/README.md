@@ -70,3 +70,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0057](0057-steps-keyed-by-a-time-ordered-id.md) | Steps keyed by a time-ordered id | Accepted |
 | [0058](0058-fixed-delay-recurrences-and-planned-runs.md) | Fixed-delay recurrences and a planned run on every occurrence | Accepted |
 | [0059](0059-job-name-and-job-type.md) | Job name and job type | Accepted |
+| [0060](0060-data-source-passed-to-the-builder.md) | Data source passed to the builder | Accepted |
