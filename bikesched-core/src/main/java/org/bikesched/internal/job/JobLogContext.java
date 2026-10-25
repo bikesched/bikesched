@@ -24,7 +24,10 @@ public final class JobLogContext implements AutoCloseable {
     MDC.put(BikeschedLogContext.NODE_ID, String.valueOf(nodeId));
     MDC.put(BikeschedLogContext.JOB_ID, job.id().toString());
     MDC.put(BikeschedLogContext.JOB_NAME, job.name());
-    job.reference().ifPresent(reference -> MDC.put(BikeschedLogContext.JOB_REFERENCE, reference));
+    String reference = job.reference();
+    if (reference != null) {
+      MDC.put(BikeschedLogContext.JOB_REFERENCE, reference);
+    }
     return new JobLogContext();
   }
 

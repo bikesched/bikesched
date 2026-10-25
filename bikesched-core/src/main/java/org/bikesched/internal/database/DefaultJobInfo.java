@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  * @param state the job's state when it was read
  * @param resultJson the job's result as JSON text, {@code null} if none
  * @param parent the parent job's id, {@code null} if the job is not a child
- * @param ref the job's reference, {@code null} if none
+ * @param reference the job's reference, {@code null} if none
  * @param jsonMapper reads the result
  */
 public record DefaultJobInfo(
@@ -29,7 +29,7 @@ public record DefaultJobInfo(
     JobState state,
     @Nullable String resultJson,
     @Nullable UUID parent,
-    @Nullable String ref,
+    @Nullable String reference,
     JsonMapper jsonMapper)
     implements JobInfo {
 
@@ -49,11 +49,6 @@ public record DefaultJobInfo(
   }
 
   @Override
-  public Optional<String> reference() {
-    return Optional.ofNullable(ref);
-  }
-
-  @Override
   public String toString() {
     return "JobInfo[id="
         + id
@@ -64,7 +59,7 @@ public record DefaultJobInfo(
         + ", state="
         + state
         + (parent == null ? "" : ", parentJobId=" + parent)
-        + (ref == null ? "" : ", reference=" + ref)
+        + (reference == null ? "" : ", reference=" + reference)
         + "]";
   }
 }

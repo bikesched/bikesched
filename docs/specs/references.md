@@ -24,7 +24,7 @@ bikesched.newEvent("payment-received", order.id())
     .reference("pay_3NqK8L2eZvKYlo2C")
     .publish();
 
-bikesched.findJob(id).flatMap(JobInfo::reference);           // Optional[order-4711]
+bikesched.findJob(id).map(JobInfo::reference);               // Optional[order-4711]
 bikesched.admin().findJobs(JobQuery.newest(50).withReference("order-4711"));
 ```
 
@@ -80,11 +80,11 @@ public interface JobSettings<B extends JobSettings<B, P>, P extends @Nullable Ob
 }
 
 public interface JobInfo {
-  Optional<String> reference();
+  @Nullable String reference();
 }
 
 public interface Job {
-  Optional<String> reference();
+  @Nullable String reference();
 }
 
 // org.bikesched.event: shared by NodeEventBuilder and StepEventBuilder
@@ -99,7 +99,7 @@ public record JobSummary(…, @Nullable String reference, …) {}
 public record EventSummary(…, @Nullable String reference, …) {}
 ```
 
-- `null` clears the reference, so `newJob(…).reference(job.reference().orElse(null))` works; a
+- `null` clears the reference, so `newJob(…).reference(job.reference())` works; a
   blank or too long reference is rejected with `IllegalArgumentException` at the builder call.
 - The reference sits next to the payload in `JobSettings`, not in its own builder type: it
   combines with every other option (connection, idempotency key, recurrence), so no compile-time
@@ -271,3 +271,5 @@ None left.
   "Publish similar" copy it. The detail's Reference field links to the jobs and the events with it.
 - Kotlin: `startJob` and `Job.publishEvent` take a `reference` too; omitting it keeps the
   inheritance (the builder is not called).
+- `Job`, `FailedJob` and `JobInfo` return `@Nullable String reference()` instead of an
+  `Optional`, like `payload()` and the listener records.

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.internal.job;
 
-import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.internal.database.JobPhase;
 import org.bikesched.job.FailedJob;
@@ -34,7 +33,7 @@ final class DefaultFailedJob implements FailedJob {
   }
 
   @Override
-  public Optional<String> reference() {
+  public @Nullable String reference() {
     return job.reference();
   }
 

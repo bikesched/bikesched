@@ -265,8 +265,8 @@ public final class DefaultJob implements Job {
   }
 
   @Override
-  public Optional<String> reference() {
-    return Optional.ofNullable(reference);
+  public @Nullable String reference() {
+    return reference;
   }
 
   @Override

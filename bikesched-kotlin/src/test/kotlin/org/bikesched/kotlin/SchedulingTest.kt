@@ -116,8 +116,8 @@ class SchedulingTest {
       await().untilAsserted {
         assertThat(bikesched.findJobOrNull(parentId)?.state()).isEqualTo(JobState.SUCCEEDED)
       }
-      assertThat(bikesched.findJobOrNull(parentId)?.reference()).contains("order-1")
-      assertThat(children.map { bikesched.findJobOrNull(it)?.reference()?.orElse(null) })
+      assertThat(bikesched.findJobOrNull(parentId)?.reference()).isEqualTo("order-1")
+      assertThat(children.map { bikesched.findJobOrNull(it)?.reference() })
         .containsExactly("order-1", "payment-1")
       assertThat(bikesched.admin().findEvent(published.single()).map { it.reference() })
         .contains("order-1")
@@ -131,7 +131,7 @@ class SchedulingTest {
           delay = 1.hours,
           reference = "tenant-1",
         ) {}
-      assertThat(bikesched.findJobOrNull(occurrence)?.reference()).contains("tenant-1")
+      assertThat(bikesched.findJobOrNull(occurrence)?.reference()).isEqualTo("tenant-1")
       bikesched.removeRecurringJob(recurring)
     }
   }
