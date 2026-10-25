@@ -141,11 +141,11 @@ export const jobHref = (id) => toHash({ section: 'jobs', id });
 export const stepHref = (jobId, stepId) => toHash({ section: 'jobs', id: jobId, stepId });
 
 // Search by id or reference: a full id or at least its last 8 hex digits (the short id; whitespace, hyphens and
-// case are ignored, as on the server), or a reference (exact match, at most 200 characters).
+// case are ignored, as on the server), or a reference (exact match, whitespace included, at most 200 characters).
 const idDigits = (text) => text.trim().replace(/-/g, '').toLowerCase();
 
 export function searchHint(text) {
-  if ([...text.trim()].length > 200) return 'A reference has at most 200 characters';
+  if ([...text].length > 200) return 'A reference has at most 200 characters';
   return '';
 }
 
@@ -159,7 +159,7 @@ export function SearchField({ kind, value, onSearch }) {
   return html`
     <form class="field" role="search" onSubmit=${(event) => {
       event.preventDefault();
-      if (!hint) onSearch(input.trim());
+      if (!hint) onSearch(input.trim() ? input : '');
     }}>
       <label class="field-label" for=${id}>${kind === 'job' ? 'Job id or reference' : 'Event id or reference'}</label>
       <div class="row">

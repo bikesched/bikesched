@@ -118,7 +118,12 @@ class ReferenceTest extends AbstractBikeschedTest {
       String longest = "r".repeat(200);
       String name = unique("reference-longest");
       try {
-        UUID jobId = bikesched.newJob(name).reference(longest).schedule(Duration.ofHours(1));
+        UUID jobId =
+            bikesched
+                .newJob(name)
+                .handler(() -> {})
+                .reference(longest)
+                .schedule(Duration.ofHours(1));
         assertThat(bikesched.findJob(jobId).flatMap(JobInfo::reference)).contains(longest);
       } finally {
         deleteJobs(name);
@@ -282,8 +287,18 @@ class ReferenceTest extends AbstractBikeschedTest {
     String other = unique("reference-admin-other");
     String reference = unique("order");
     try (Bikesched bikesched = node("node-reference-admin")) {
-      UUID older = bikesched.newJob(name).reference(reference).schedule(Duration.ofHours(1));
-      UUID newer = bikesched.newJob(other).reference(reference).schedule(Duration.ofHours(1));
+      UUID older =
+          bikesched
+              .newJob(name)
+              .handler(() -> {})
+              .reference(reference)
+              .schedule(Duration.ofHours(1));
+      UUID newer =
+          bikesched
+              .newJob(other)
+              .handler(() -> {})
+              .reference(reference)
+              .schedule(Duration.ofHours(1));
       bikesched.newJob(name).reference(reference + "-not").schedule(Duration.ofHours(1));
       bikesched.newJob(name).schedule(Duration.ofHours(1));
       UUID eventId = bikesched.newEvent(name, "key").reference(reference).publish();

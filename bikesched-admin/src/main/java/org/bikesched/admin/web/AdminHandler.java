@@ -373,7 +373,7 @@ final class AdminHandler {
           newestFirst(
               JobSummary::id,
               limit,
-              isIdSuffix(search) ? admin.findJobsByIdSuffix(search, limit) : List.of(),
+              isIdSuffix(search) ? admin.findJobsByIdSuffix(search.strip(), limit) : List.of(),
               admin.findJobs(JobQuery.newest(limit).withReference(search)));
       return Json.object()
           .put("jobs", jobs.stream().map(AdminJson::job).toList())
@@ -527,7 +527,7 @@ final class AdminHandler {
           newestFirst(
               EventSummary::id,
               limit,
-              isIdSuffix(search) ? admin.findEventsByIdSuffix(search, limit) : List.of(),
+              isIdSuffix(search) ? admin.findEventsByIdSuffix(search.strip(), limit) : List.of(),
               admin.findEvents(EventQuery.newest(limit).withReference(search)));
       return Json.object()
           .put("events", events.stream().map(AdminJson::event).toList())
@@ -695,7 +695,8 @@ final class AdminHandler {
   }
 
   // The search of a list by id or reference: the "search" parameter, which excludes the list's
-  // other filters and paging like the id search.
+  // other filters and paging like the id search. It is kept as given, since a reference may have
+  // surrounding whitespace; only the id lookup strips it.
   private static String search(Map<String, String> params, String... filters) {
     String search = blankToNull(params.get("search"));
     if (search == null) {
@@ -709,7 +710,6 @@ final class AdminHandler {
     if (blankToNull(params.get("before")) != null) {
       throw new BadRequest("Parameter search cannot be combined with before");
     }
-    search = search.strip();
     if (search.codePointCount(0, search.length()) > MAX_REFERENCE_LENGTH) {
       throw new BadRequest(
           "A search text has at most " + MAX_REFERENCE_LENGTH + " characters, like a reference");
@@ -720,7 +720,7 @@ final class AdminHandler {
   // Whether a search text can be an id suffix: 8 to 32 hex digits, hyphens and case ignored (as by
   // Admin.findJobsByIdSuffix); anything else is only searched as a reference.
   private static boolean isIdSuffix(String text) {
-    return ID_SUFFIX.matcher(text.replace("-", "")).matches();
+    return ID_SUFFIX.matcher(text.strip().replace("-", "")).matches();
   }
 
   // The rows of both lookups, each once, newest first by their time-ordered ids.

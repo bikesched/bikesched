@@ -193,9 +193,22 @@ class BikeschedAdminTest {
       assertThat(ids(jobs.getArray("jobs"))).containsExactly(newer.toString(), older.toString());
       assertThat(jobs.getArray("jobs").getObject(0).getString("reference")).isEqualTo(reference);
       assertThat(jobs.isNull("next")).isTrue();
-      JsonObject events =
-          AdminServer.json(server.get("/api/events?search=" + encode(" " + reference + " ")));
+      JsonObject events = AdminServer.json(server.get("/api/events?search=" + encode(reference)));
       assertThat(ids(events.getArray("events"))).containsExactly(eventId.toString());
+      // An exact match, whitespace included: a reference may have surrounding spaces.
+      String padded = " " + reference + " ";
+      UUID paddedId = bikesched.newEvent(prefix + "by-reference", "k").reference(padded).publish();
+      assertThat(
+              ids(
+                  AdminServer.json(server.get("/api/events?search=" + encode(padded)))
+                      .getArray("events")))
+          .containsExactly(paddedId.toString());
+      // A full id with surrounding whitespace is still found.
+      assertThat(
+              ids(
+                  AdminServer.json(server.get("/api/jobs?search=" + encode(" " + older + " ")))
+                      .getArray("jobs")))
+          .containsExactly(older.toString());
 
       // The search also finds ids; the reference filter combines with the name and paging.
       String suffix = older.toString().substring(28);

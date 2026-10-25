@@ -135,9 +135,10 @@ always shown.
 - **Search by id or reference**: the job list and the event list each have a search field. It
   takes a full id or its last 8 characters (the short id the lists show: ids are time-ordered
   UUIDv7, so their start is their creation time and their end is random), with or without hyphens,
-  or a reference (exact match, case-sensitive), and finds only jobs in the job list and only events
-  in the event list: those whose id ends with the text and those with it as their reference. A
-  single match opens its detail; the other filters are off while the search is active.
+  or a reference (exact match, case- and whitespace-sensitive), and finds only jobs in the job
+  list and only events in the event list: those whose id ends with the text and those with it as
+  their reference. A single match opens its detail; the other filters are off while the search is
+  active.
 - **Job detail**: all fields (the type says single, recurring or child job), the idempotency key,
   the reference (with links to the jobs and the events that have it),
   the last error, retry and cancel, the steps with their duration (a child job step links to the
