@@ -5,10 +5,10 @@
 # bikesched
 
 **A PostgreSQL-backed job scheduler for Java and Kotlin: durable steps, events and retries, with
-minimal dependencies and no extra infrastructure with an optional admin ui.**
+minimal dependencies, no extra infrastructure and an optional admin UI**
 
 <p align="center">
-  <img src="docs/bikesched-admin-ui.png" alt="bikesched admin ui: a web interface for managing jobs, events and nodes" width="400">
+  <img src="docs/bikesched-admin-ui.png" alt="bikesched admin UI: a web interface for managing jobs, events and nodes" width="400">
 </p>
 
 > [!NOTE]
