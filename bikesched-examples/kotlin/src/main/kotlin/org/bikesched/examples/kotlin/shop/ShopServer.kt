@@ -69,8 +69,7 @@ fun initDatabase(dataSource: DataSource) {
 /**
  * Creates and configures the bikesched instance.
  */
-fun createBikesched(dataSource: DataSource) = bikesched {
-  this.dataSource = dataSource
+fun createBikesched(dataSource: DataSource) = bikesched(dataSource) {
   nodeName = "shop-node"
   maxConcurrentJobs = 5
   pollInterval = 100.milliseconds

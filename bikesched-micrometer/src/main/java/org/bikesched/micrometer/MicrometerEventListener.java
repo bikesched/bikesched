@@ -14,8 +14,7 @@ import org.bikesched.event.listener.EventPublication;
  * Records the events published through a node as Micrometer meters:
  *
  * <pre>{@code
- * Bikesched.builder()
- *     .dataSource(dataSource)
+ * Bikesched.builder(dataSource)
  *     .eventListener(new MicrometerEventListener(registry, Tags.of("node", "node-1")))
  *     .build();
  * }</pre>

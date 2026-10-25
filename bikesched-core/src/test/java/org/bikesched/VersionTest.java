@@ -19,7 +19,7 @@ class VersionTest extends AbstractBikeschedTest {
   void startLogsTheVersion() {
     var logs = LogCapture.of(org.bikesched.internal.DefaultBikesched.class);
     try (logs) {
-      Bikesched.builder().dataSource(dataSource).nodeName("node-version").build().close();
+      Bikesched.builder(dataSource).nodeName("node-version").build().close();
     }
     assertThat(logs.messages())
         .anyMatch(m -> m.endsWith("(bikesched " + Bikesched.version() + ")"));

@@ -28,7 +28,7 @@ class RawJsonMapperTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(
             "Without a configured JsonMapper, only JSON strings are supported, not"
-                + " java.lang.Integer; configure one via Bikesched.builder().jsonMapper(...), e.g."
+                + " java.lang.Integer; configure one via BikeschedBuilder.jsonMapper(...), e.g."
                 + " bikesched-jackson's JacksonJsonMapper");
     assertThatThrownBy(() -> mapper.fromJson("{}", Payment.class))
         .isInstanceOf(IllegalArgumentException.class)

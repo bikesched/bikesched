@@ -13,7 +13,7 @@ import org.bikesched.job.RecurrenceParser;
  * and {@code @JobHandler(schedule = …)}:
  *
  * <pre>{@code
- * Bikesched.builder()
+ * Bikesched.builder(dataSource)
  *     .recurrenceParsers(
  *         RecurrenceParser.isoDuration(),
  *         new CronRecurrenceParser(CronType.UNIX, ZoneId.of("Europe/Berlin")))

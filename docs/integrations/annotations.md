@@ -71,8 +71,7 @@ expression (`schedule()`): an unsupported or invalid one fails the registration.
 `bikesched-cron`'s parser on the node, handlers can use cron expressions:
 
 ```java
-Bikesched bikesched = Bikesched.builder()
-        .dataSource(dataSource)
+Bikesched bikesched = Bikesched.builder(dataSource)
         .recurrenceParsers(RecurrenceParser.isoDuration(),
                 new CronRecurrenceParser(CronType.UNIX, ZoneId.of("Europe/Berlin")))
         .build();

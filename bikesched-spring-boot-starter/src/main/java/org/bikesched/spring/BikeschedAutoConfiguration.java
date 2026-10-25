@@ -135,8 +135,7 @@ public class BikeschedAutoConfiguration {
       ObjectProvider<StandaloneJobFailureHandler<?>> standaloneFailureHandlers,
       ObjectProvider<JsonMapper> jsonMapper) {
     var builder =
-        Bikesched.builder()
-            .dataSource(dataSourceSelector.select())
+        Bikesched.builder(dataSourceSelector.select())
             .nodeName(NodeNames.resolve(properties.nodeName(), environment))
             .autoStartPolling(false);
     properties.applyTo(builder);

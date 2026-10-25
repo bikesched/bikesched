@@ -17,30 +17,28 @@ import org.bikesched.job.listener.JobListener
 /**
  * Creates and starts a [Bikesched] instance, configured in Kotlin style:
  * ```
- * val bikesched = bikesched {
- *     dataSource = ds
+ * val bikesched = bikesched(ds) {
  *     nodeName = "worker-1"
  *     maxConcurrentJobs = 20
  *     defaultJobTimeout = 5.minutes
  * }
  * ```
  *
- * Options left unset keep the defaults of `Bikesched.builder()`.
+ * Options left unset keep the defaults of `Bikesched.builder(dataSource)`.
  *
- * @throws IllegalStateException if no [BikeschedSpec.dataSource] is set
+ * @param dataSource the PostgreSQL data source bikesched stores its tables in
  */
-public fun bikesched(configure: BikeschedSpec.() -> Unit): Bikesched =
-  BikeschedSpec().apply(configure).build()
+public fun bikesched(
+  dataSource: DataSource,
+  configure: BikeschedSpec.() -> Unit = {},
+): Bikesched = BikeschedSpec().apply(configure).build(dataSource)
 
 /**
- * The options of [bikesched], mirroring `BikeschedBuilder`. Every option is optional except
- * [dataSource]; `null` keeps the builder's default.
+ * The options of [bikesched], mirroring `BikeschedBuilder`. Every option is optional; `null` keeps
+ * the builder's default.
  */
 @BikeschedDsl
 public class BikeschedSpec internal constructor() {
-
-  /** The PostgreSQL data source (required). */
-  public var dataSource: DataSource? = null
 
   /** The unique node name; defaults to the host name. */
   public var nodeName: String? = null
@@ -173,9 +171,8 @@ public class BikeschedSpec internal constructor() {
    */
   public var recurrenceParsers: List<RecurrenceParser>? = null
 
-  internal fun build(): Bikesched {
-    val builder = Bikesched.builder()
-    dataSource?.let(builder::dataSource)
+  internal fun build(dataSource: DataSource): Bikesched {
+    val builder = Bikesched.builder(dataSource)
     nodeName?.let(builder::nodeName)
     maxConcurrentJobs?.let(builder::maxConcurrentJobs)
     autoStartPolling?.let(builder::autoStartPolling)

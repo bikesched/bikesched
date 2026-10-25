@@ -9,8 +9,7 @@ so metrics cover events too, not only jobs:
 
 ```java
 Bikesched bikesched =
-    Bikesched.builder()
-        .dataSource(dataSource)
+    Bikesched.builder(dataSource)
         .eventListener(new MicrometerEventListener(registry, Tags.of("node", "node-1")))
         .build();
 ```

@@ -40,12 +40,12 @@ val kotlinJsonMapper: JacksonJsonMapper =
   )
 
 /** A polling node on the test database with a unique name, mapping payloads with Jackson. */
-fun testNode(name: String): Bikesched = bikesched {
-  dataSource = TestDatabase.dataSource
-  nodeName = "$name-${UUID.randomUUID()}"
-  pollInterval = 50.milliseconds
-  jsonMapper = kotlinJsonMapper
-}
+fun testNode(name: String): Bikesched =
+  bikesched(TestDatabase.dataSource) {
+    nodeName = "$name-${UUID.randomUUID()}"
+    pollInterval = 50.milliseconds
+    jsonMapper = kotlinJsonMapper
+  }
 
 /** A unique job or event name per test run: the database is shared with other tests. */
 fun unique(name: String): String = "$name-${UUID.randomUUID()}"

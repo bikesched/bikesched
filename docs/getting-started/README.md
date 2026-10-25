@@ -102,7 +102,7 @@ jobs; closing it stops the node.
 ```java
 DataSource dataSource = ...; // your PostgreSQL DataSource
 
-try (Bikesched bikesched = Bikesched.builder().dataSource(dataSource).build()) {
+try (Bikesched bikesched = Bikesched.builder(dataSource).build()) {
 
     // Register a handler for a job name ...
     bikesched.registerJobHandler("send-mail", job -> mailer.send(job.payload()));
@@ -122,8 +122,7 @@ record Mail(String to) {}
 
 TypedJob<Mail> sendMail = TypedJob.of("send-mail", Mail.class);
 
-Bikesched bikesched = Bikesched.builder()
-        .dataSource(dataSource)
+Bikesched bikesched = Bikesched.builder(dataSource)
         .jsonMapper(new JacksonJsonMapper())
         .build();
 

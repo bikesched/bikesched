@@ -89,10 +89,11 @@ class JobCleanUpTest extends AbstractBikeschedTest {
 
   @Test
   void retentionAndIntervalMustBePositive() {
-    assertThatThrownBy(() -> Bikesched.builder().jobRetention(Duration.ZERO))
+    assertThatThrownBy(() -> Bikesched.builder(dataSource).jobRetention(Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("jobRetention must be positive: PT0S");
-    assertThatThrownBy(() -> Bikesched.builder().jobCleanUpInterval(Duration.ofSeconds(-1)))
+    assertThatThrownBy(
+            () -> Bikesched.builder(dataSource).jobCleanUpInterval(Duration.ofSeconds(-1)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("jobCleanUpInterval must be positive: PT-1S");
   }

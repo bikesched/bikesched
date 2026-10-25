@@ -36,8 +36,7 @@ class SharedConnectionPoolTest extends AbstractBikeschedTest {
       try {
         for (int i = 1; i <= NODES; i++) {
           Bikesched node =
-              Bikesched.builder()
-                  .dataSource(pool)
+              Bikesched.builder(pool)
                   .nodeName("pool-node-" + autoCommit + "-" + i)
                   .maxConcurrentJobs(3)
                   .heartbeatInterval(Duration.ofMillis(100))

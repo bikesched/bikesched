@@ -14,8 +14,7 @@ Micrometer.
 
 ```java
 Bikesched bikesched =
-    Bikesched.builder()
-        .dataSource(dataSource)
+    Bikesched.builder(dataSource)
         .nodeName("node-1")
         .jobListener(new MicrometerJobListener(registry, Tags.of("node", "node-1")))
         .eventListener(new MicrometerEventListener(registry, Tags.of("node", "node-1")))

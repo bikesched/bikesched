@@ -149,8 +149,7 @@ class RetryBackoffNodeTest extends AbstractBikeschedTest {
   }
 
   private static Bikesched node(String name, RetryBackoff backoff) {
-    return Bikesched.builder()
-        .dataSource(dataSource)
+    return Bikesched.builder(dataSource)
         .nodeName(name)
         .pollInterval(Duration.ofMillis(50))
         .retryBackoff(backoff)

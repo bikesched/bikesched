@@ -29,8 +29,7 @@ public final class BikeschedUtil {
    * @return the configured builder
    */
   public static BikeschedBuilder builder(String nodeName) {
-    return Bikesched.builder()
-        .dataSource(DatabaseUtil.composeDatabase())
+    return Bikesched.builder(DatabaseUtil.composeDatabase())
         .nodeName(nodeName)
         .pollInterval(Duration.ofSeconds(1))
         .jsonMapper(new JacksonJsonMapper());

@@ -22,7 +22,7 @@ import org.bikesched.job.listener.JobListener;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Builder for {@link Bikesched} instances, obtained via {@link Bikesched#builder()}. Not
+ * Builder for {@link Bikesched} instances, obtained via {@link Bikesched#builder(DataSource)}. Not
  * thread-safe.
  */
 public final class BikeschedBuilder {
@@ -40,7 +40,7 @@ public final class BikeschedBuilder {
   static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
   static final int DEFAULT_FAILURE_HANDLER_ATTEMPTS = 3;
 
-  private @Nullable DataSource dataSource;
+  private final DataSource dataSource;
   private @Nullable String nodeName;
   private int maxConcurrentJobs = DEFAULT_MAX_CONCURRENT_JOBS;
   private Duration heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL;
@@ -69,7 +69,9 @@ public final class BikeschedBuilder {
   private EventListener eventListener = new EventListener() {};
   private List<RecurrenceParser> recurrenceParsers = List.of(RecurrenceParser.isoDuration());
 
-  BikeschedBuilder() {}
+  BikeschedBuilder(DataSource dataSource) {
+    this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+  }
 
   /**
    * Whether first database use applies pending schema migrations (default {@code true}). With
@@ -82,17 +84,6 @@ public final class BikeschedBuilder {
    */
   public BikeschedBuilder migrateSchema(boolean migrateSchema) {
     this.migrateSchema = migrateSchema;
-    return this;
-  }
-
-  /**
-   * Sets the PostgreSQL data source bikesched stores its tables in (required).
-   *
-   * @param dataSource the data source
-   * @return this builder
-   */
-  public BikeschedBuilder dataSource(DataSource dataSource) {
-    this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
     return this;
   }
 
@@ -502,14 +493,10 @@ public final class BikeschedBuilder {
    * the database: migration or validation runs on first use instead.
    *
    * @return the new instance
-   * @throws IllegalStateException if no data source was set
    * @throws BikeschedException if polling is enabled and migration, validation or node registration
    *     fails, e.g. because the database is not available
    */
   public Bikesched build() {
-    if (dataSource == null) {
-      throw new IllegalStateException("dataSource is required");
-    }
     if (nodeTimeout.compareTo(heartbeatInterval.multipliedBy(2)) < 0) {
       throw new IllegalArgumentException(
           "nodeTimeout ("
@@ -559,7 +546,7 @@ public final class BikeschedBuilder {
         return fromEnv;
       }
       throw new BikeschedException(
-          "Cannot determine host name; set a node name via Bikesched.builder().nodeName(...)", e);
+          "Cannot determine host name; set a node name via BikeschedBuilder.nodeName(...)", e);
     }
   }
 }

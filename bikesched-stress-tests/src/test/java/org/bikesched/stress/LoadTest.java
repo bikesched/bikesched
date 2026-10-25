@@ -94,8 +94,7 @@ class LoadTest {
 
   /** A node with the default settings, apart from the concurrency; started by the caller. */
   private static Bikesched node(String name, int poolSize) {
-    return Bikesched.builder()
-        .dataSource(database.pool(name, poolSize))
+    return Bikesched.builder(database.pool(name, poolSize))
         .nodeName(name)
         .maxConcurrentJobs(CONCURRENCY)
         .autoStartPolling(false)

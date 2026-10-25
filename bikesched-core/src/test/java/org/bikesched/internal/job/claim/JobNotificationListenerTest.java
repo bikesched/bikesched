@@ -72,8 +72,7 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
     long start = System.nanoTime();
     try (logs;
         Bikesched worker =
-            testNode("node-listener-exhausted")
-                .dataSource(slowForTheListener)
+            testNode(slowForTheListener, "node-listener-exhausted")
                 .pollInterval(Duration.ofSeconds(1))
                 .build()) {
       assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(2));
@@ -100,7 +99,7 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
             () -> {});
     var logs = LogCapture.of(JobNotificationListener.class);
     try (logs;
-        Bikesched ignored = testNode("node-listener-self-check").dataSource(notListening).build()) {
+        Bikesched ignored = testNode(notListening, "node-listener-self-check").build()) {
       await()
           .atMost(Duration.ofSeconds(3))
           .until(
@@ -134,8 +133,7 @@ class JobNotificationListenerTest extends AbstractBikeschedTest {
     var logs = LogCapture.of(JobNotificationListener.class);
     try (logs;
         Bikesched worker =
-            testNode("node-listener-opaque")
-                .dataSource(wrapped)
+            testNode(wrapped, "node-listener-opaque")
                 .pollInterval(Duration.ofMillis(200))
                 .build()) {
       worker.registerJobHandler("listener-opaque", job -> started.put(job.id(), Instant.now()));

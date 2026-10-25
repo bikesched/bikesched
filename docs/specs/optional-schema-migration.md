@@ -9,8 +9,7 @@ guide](../operations/database.md#migrations).
 Let an application disable automatic DDL while retaining bikesched's migration bookkeeping.
 
 ```java
-var scheduler = Bikesched.builder()
-    .dataSource(dataSource)
+var scheduler = Bikesched.builder(dataSource)
     .migrateSchema(false)
     .autoStartPolling(false)
     .build();

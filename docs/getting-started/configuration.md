@@ -5,11 +5,11 @@ weight: 1
 
 # Configuration
 
-A node is configured with `Bikesched.builder()`; only the data source is required.
+A node is configured with `Bikesched.builder(dataSource)`: the PostgreSQL data source is the only
+required setting, and its tables are created in the data source's default schema.
 
 ```java
-Bikesched bikesched = Bikesched.builder()
-        .dataSource(dataSource)
+Bikesched bikesched = Bikesched.builder(dataSource)
         .build();
 ```
 
@@ -21,7 +21,6 @@ afterwards (see `autoStartPolling` below).
 
 | Builder option | Default | Description |
 |---|---|---|
-| `dataSource(DataSource)` | required | PostgreSQL data source; tables are created in its default schema |
 | `nodeName(String)` | host name | node name in logs and the admin UI; need not be unique, see [Nodes](#nodes) |
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
 | `migrateSchema(boolean)` | `true` | automatically migrate on first database use; `false` only validates migration history without DDL. Explicit `migrate()` still migrates. See [Migrations](../operations/database.md#migrations) |
@@ -161,8 +160,7 @@ The `bikesched-jackson` module (package `org.bikesched.jackson`) maps with Jacks
 `bikesched-core` and `jackson-databind` along:
 
 ```java
-Bikesched bikesched = Bikesched.builder()
-        .dataSource(dataSource)
+Bikesched bikesched = Bikesched.builder(dataSource)
         .jsonMapper(new JacksonJsonMapper())   // Jackson's defaults: records, java.time types
         .build();
 ```
@@ -178,8 +176,7 @@ Implement `JsonMapper`'s two methods; they must be thread-safe and throw uncheck
 
 ```java
 Gson gson = new Gson();
-Bikesched.builder()
-        .dataSource(dataSource)
+Bikesched.builder(dataSource)
         .jsonMapper(new JsonMapper() {
             public String toJson(Object value) {
                 return gson.toJson(value);

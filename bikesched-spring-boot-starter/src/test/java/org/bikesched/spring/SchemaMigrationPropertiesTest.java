@@ -110,8 +110,7 @@ class SchemaMigrationPropertiesTest extends AbstractSpringTest {
   @Test
   void pollingWithMigrationDisabledAcceptsPreparedSchema() throws SQLException {
     try (var database = new IsolatedDatabase()) {
-      try (var deploy =
-          Bikesched.builder().dataSource(database.dataSource).autoStartPolling(false).build()) {
+      try (var deploy = Bikesched.builder(database.dataSource).autoStartPolling(false).build()) {
         deploy.migrate();
       }
       runner(database)

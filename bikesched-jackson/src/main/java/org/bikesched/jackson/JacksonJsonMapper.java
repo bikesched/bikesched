@@ -10,8 +10,7 @@ import tools.jackson.databind.ObjectMapper;
  * plain records and classes:
  *
  * <pre>{@code
- * Bikesched bikesched = Bikesched.builder()
- *     .dataSource(dataSource)
+ * Bikesched bikesched = Bikesched.builder(dataSource)
  *     .jsonMapper(new JacksonJsonMapper())
  *     .build();
  * }</pre>
