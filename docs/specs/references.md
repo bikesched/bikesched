@@ -24,7 +24,7 @@ bikesched.newEvent("payment-received", order.id())
     .reference("pay_3NqK8L2eZvKYlo2C")
     .publish();
 
-bikesched.findJob(id).flatMap(JobInfo::reference);           // Optional[order-4711]
+bikesched.findJob(id).map(JobInfo::reference);               // Optional[order-4711]
 bikesched.admin().findJobs(JobQuery.newest(50).withReference("order-4711"));
 ```
 
@@ -99,7 +99,7 @@ public record JobSummary(…, @Nullable String reference, …) {}
 public record EventSummary(…, @Nullable String reference, …) {}
 ```
 
-- `null` clears the reference, so `newJob(…).reference(job.reference().orElse(null))` works; a
+- `null` clears the reference, so `newJob(…).reference(job.reference())` works; a
   blank or too long reference is rejected with `IllegalArgumentException` at the builder call.
 - The reference sits next to the payload in `JobSettings`, not in its own builder type: it
   combines with every other option (connection, idempotency key, recurrence), so no compile-time

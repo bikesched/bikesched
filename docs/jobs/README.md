@@ -143,7 +143,7 @@ bikesched.newJob("charge-order")
         .reference("order-" + order.id())
         .schedule();
 
-bikesched.findJob(jobId).flatMap(JobInfo::reference);   // Optional[order-4711]
+bikesched.findJob(jobId).map(JobInfo::reference);   // Optional[order-4711]
 ```
 
 - Optional, on every job builder (also with `connection(…)`, an idempotency key or a recurrence).
