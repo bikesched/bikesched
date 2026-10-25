@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -76,6 +77,8 @@ import org.slf4j.MDC;
  *   <li>the threads of the {@link JobPoller}, which claims and runs jobs while the node polls
  *   <li>{@code bikesched-notifier}: the {@link DueJobsNotifier}, which tells the nodes about the
  *       jobs this node's writes made due
+ *   <li>{@code bikesched-shutdown}: with {@link Settings#closeOnShutdown()}, the JVM shutdown hook
+ *       closing the node; removed again when the node is closed otherwise
  * </ul>
  *
  * <p>The job names the node knows (handlers, recurring jobs, payload classes) are in its {@link
@@ -99,6 +102,12 @@ public final class DefaultBikesched implements Bikesched {
 
   /** Guards starting to poll against closing, so a node never registers after it was closed. */
   private final Object lifecycle = new Object();
+
+  /** Released once the first {@link #close()} finished, which later calls wait for. */
+  private final CountDownLatch closed = new CountDownLatch(1);
+
+  /** The JVM shutdown hook closing the node; {@code null} without {@code closeOnShutdown}. */
+  private final @Nullable Thread shutdownHook;
 
   /** Called before every database access of the API (polling, scheduling, publishing events). */
   private final DatabaseInitializer initializer;
@@ -153,6 +162,16 @@ public final class DefaultBikesched implements Bikesched {
             1, Thread.ofPlatform().name("bikesched-cleanup").daemon().factory());
     // close() must not wait for the one-time recurring job repair if it has not started yet.
     this.cleanUpExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+    this.shutdownHook =
+        settings.closeOnShutdown()
+            ? Thread.ofPlatform()
+                .name("bikesched-shutdown")
+                .unstarted(
+                    () -> {
+                      LOG.info("JVM shutting down, closing bikesched node {}", nodeName);
+                      close();
+                    })
+            : null;
   }
 
   /**
@@ -166,6 +185,10 @@ public final class DefaultBikesched implements Bikesched {
    */
   public static DefaultBikesched create(Database database, Settings settings) {
     var bikesched = new DefaultBikesched(database, settings);
+    Thread hook = bikesched.shutdownHook;
+    if (hook != null) {
+      Runtime.getRuntime().addShutdownHook(hook);
+    }
     if (settings.autoStartPolling()) {
       try {
         bikesched.start();
@@ -439,19 +462,44 @@ public final class DefaultBikesched implements Bikesched {
     }
   }
 
+  private void removeShutdownHook() {
+    Thread hook = shutdownHook;
+    if (hook == null || hook == Thread.currentThread()) {
+      return;
+    }
+    try {
+      Runtime.getRuntime().removeShutdownHook(hook);
+    } catch (IllegalStateException ignored) {
+      // The JVM is shutting down already: the hook runs anyway, and waits for this close.
+    }
+  }
+
   /**
    * Stops polling, lets in-flight jobs finish (up to a timeout), releases jobs that are still
-   * running back to {@code SCHEDULED}, stops the heartbeat and deregisters the node.
+   * running back to {@code SCHEDULED}, stops the heartbeat and deregisters the node. A call while
+   * another one is closing the node waits for it.
    */
   @Override
   public void close() {
+    boolean first;
     UUID id;
     synchronized (lifecycle) {
-      if (!node.close()) {
-        return;
-      }
+      first = node.close();
       id = node.id().orElse(null);
     }
+    if (!first) {
+      awaitClosed();
+      return;
+    }
+    try {
+      closeNode(id);
+    } finally {
+      closed.countDown();
+    }
+  }
+
+  private void closeNode(@Nullable UUID id) {
+    removeShutdownHook();
     jobPoller.close();
     ExecutorUtil.shutdownAndAwait(cleanUpExecutor, "clean-up");
     ExecutorUtil.shutdownAndAwait(heartbeatExecutor, "heartbeat");
@@ -462,6 +510,15 @@ public final class DefaultBikesched implements Bikesched {
     }
     deregister(id);
     notifier.close(); // after releasing the node's jobs, so that other nodes take them over now
+  }
+
+  /** Waits for the close in progress, so no caller returns while the node still drains. */
+  private void awaitClosed() {
+    try {
+      closed.await();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void deregister(UUID id) {
