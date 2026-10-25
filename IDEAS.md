@@ -184,9 +184,9 @@ instead of in-memory. An example combining the two would show an agent whose too
 bikesched jobs (and, for long-running tools, use a poll step to wait for the result) in the
 Kotlin examples.
 
-- A new package in `bikesched-examples/kotlin` (or a new `bikesched-examples/kotlin` submodule
-  next to `java`/`spring`, mirroring the existing examples' Testcontainers-backed test), using
-  bikesched-kotlin; pulls in `ai.koog:koog-agents-jvm` as an example-only dependency (never core).
+- A new package in the existing `bikesched-examples/kotlin` module (next to the shop example),
+  using bikesched-kotlin; pulls in `ai.koog:koog-agents-jvm` as an example-only dependency (never
+  core).
 - Open: which tool call to model (something with a visible external effect, e.g. a notification
   or a fake payment, to make the durability payoff obvious) and whether Koog's own tool-calling
   abstraction needs any adapter, or jobs are just scheduled from a plain Kotlin tool function.
