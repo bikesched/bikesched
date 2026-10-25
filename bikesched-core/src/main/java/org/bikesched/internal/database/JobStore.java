@@ -46,8 +46,8 @@ public final class JobStore {
 
   private static final String INSERT_JOB_SQL =
       """
-            insert into bikesched_jobs (id, name, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, planned_run_at, idempotency_key)
-            values (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)""";
+            insert into bikesched_jobs (id, name, type, payload, scheduled_at, priority, max_attempts, timeout_millis, recurrence, planned_run_at, idempotency_key, reference)
+            values (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?)""";
 
   // Inserts a job with an idempotency key unless a job of its name has the key (partial unique
   // index); FIND_KEYED_JOB_SQL then finds that job.
@@ -62,8 +62,8 @@ public final class JobStore {
 
   private static final String INSERT_CHILD_JOB_SQL =
       """
-            insert into bikesched_jobs (id, name, type, payload, scheduled_at, priority, max_attempts, timeout_millis, parent_job_id)
-            values (?, ?, 'CHILD', ?::jsonb, ?, ?, ?, ?, ?)""";
+            insert into bikesched_jobs (id, name, type, payload, scheduled_at, priority, max_attempts, timeout_millis, parent_job_id, reference)
+            values (?, ?, 'CHILD', ?::jsonb, ?, ?, ?, ?, ?, ?)""";
 
   // The step of a job starting a child job.
   private static final String FIND_CHILD_JOB_STEP_SQL =
@@ -185,11 +185,11 @@ public final class JobStore {
                       compensation_attempts, cancel_requested_at is not null as cancel_requested,
                       cancel_message,
                       locked_by_node_id, lock_token, parent_job_id, failure_end_state,
-                      failure_attempts, last_error""";
+                      failure_attempts, last_error, reference""";
 
   private static final String FIND_JOB_SQL =
       """
-            select name, type, state, result::text as result, parent_job_id from bikesched_jobs where id = ?""";
+            select name, type, state, result::text as result, parent_job_id, reference from bikesched_jobs where id = ?""";
 
   private static final String COMPLETE_JOB_SQL =
       """
@@ -494,6 +494,9 @@ public final class JobStore {
     if (job.idempotencyKey() != null) {
       detail += ", idempotency key " + job.idempotencyKey();
     }
+    if (job.reference() != null) {
+      detail += ", reference " + job.reference();
+    }
     return Change.job(jobId, "SCHEDULED", 0, null, detail);
   }
 
@@ -509,7 +512,8 @@ public final class JobStore {
       Sql.millis(job.timeout()),
       job.recurrence(),
       Sql.timestamp(job.plannedRunAt()),
-      job.idempotencyKey()
+      job.idempotencyKey(),
+      job.reference()
     };
   }
 
@@ -532,6 +536,7 @@ public final class JobStore {
                         row.enumValue("state", JobState.class),
                         row.string("result"),
                         row.uuid("parent_job_id"),
+                        row.string("reference"),
                         jsonMapper),
                 jobId),
         e -> new BikeschedException("Reading bikesched job " + jobId + " failed", e));
@@ -729,7 +734,8 @@ public final class JobStore {
               child.priority(),
               child.maxAttempts(),
               Sql.millis(child.timeout()),
-              parentJobId);
+              parentJobId,
+              child.reference());
           db.due(child.name(), child.scheduledAt());
           if (step.isPresent()) {
             db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, step.get().id());
@@ -756,7 +762,8 @@ public final class JobStore {
                           + " step '"
                           + stepName
                           + "', due at "
-                          + child.scheduledAt()),
+                          + child.scheduledAt()
+                          + (child.reference() == null ? "" : ", reference " + child.reference())),
                   Change.step(
                       parentJobId,
                       stepName,
@@ -1653,6 +1660,7 @@ public final class JobStore {
    * @param cancelMessage the message of that request, may be {@code null}
    * @param lock the claiming node and the token of the claim; the attempt's writes are fenced by it
    * @param lastError the stored description of its last failure, may be {@code null}
+   * @param reference the external entity it is about, {@code null} for none
    */
   public record ClaimedJob(
       UUID id,
@@ -1668,7 +1676,8 @@ public final class JobStore {
       boolean cancelRequested,
       @Nullable String cancelMessage,
       JobLock lock,
-      @Nullable String lastError) {
+      @Nullable String lastError,
+      @Nullable String reference) {
 
     /** Maps a row of {@code CLAIM_JOBS_SQL}. */
     static ClaimedJob from(Sql.Row row) throws SQLException {
@@ -1698,7 +1707,8 @@ public final class JobStore {
           row.bool("cancel_requested"),
           row.string("cancel_message"),
           new JobLock(row.uuid("locked_by_node_id"), row.uuid("lock_token")),
-          row.string("last_error"));
+          row.string("last_error"),
+          row.string("reference"));
     }
   }
 }

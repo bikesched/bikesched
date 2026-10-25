@@ -33,6 +33,13 @@ public interface JobInfo {
   JobType type();
 
   /**
+   * Returns the job's reference to an external entity, see {@link JobSettings#reference(String)}.
+   *
+   * @return the reference; empty if the job has none
+   */
+  Optional<String> reference();
+
+  /**
    * Returns the job's state when it was read.
    *
    * @return the state

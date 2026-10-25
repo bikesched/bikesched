@@ -19,6 +19,8 @@ import org.jspecify.annotations.Nullable;
  * }</pre>
  *
  * @param name only jobs of this name; {@code null} for every name
+ * @param reference only jobs with exactly this {@linkplain org.bikesched.job.JobSettings#reference
+ *     reference}; {@code null} for every job
  * @param states only jobs in one of these states; empty for every state
  * @param nodeId only jobs this node is running now; {@code null} for every job
  * @param beforeId only jobs after this one in the order, i.e. with a smaller id (job ids are
@@ -27,6 +29,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record JobQuery(
     @Nullable String name,
+    @Nullable String reference,
     Set<JobState> states,
     @Nullable UUID nodeId,
     @Nullable UUID beforeId,
@@ -43,6 +46,9 @@ public record JobQuery(
   public JobQuery {
     states = states == null || states.isEmpty() ? Set.of() : Set.copyOf(EnumSet.copyOf(states));
     requireLimit(limit);
+    if (reference != null && reference.isEmpty()) {
+      reference = null;
+    }
   }
 
   /**
@@ -52,7 +58,7 @@ public record JobQuery(
    * @return the query
    */
   public static JobQuery newest(int limit) {
-    return new JobQuery(null, Set.of(), null, null, limit);
+    return new JobQuery(null, null, Set.of(), null, null, limit);
   }
 
   /**
@@ -62,7 +68,18 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withName(@Nullable String name) {
-    return new JobQuery(name, states, nodeId, beforeId, limit);
+    return new JobQuery(name, reference, states, nodeId, beforeId, limit);
+  }
+
+  /**
+   * Returns this query restricted to the jobs with a reference (exact match, along an index that
+   * holds only jobs with a reference).
+   *
+   * @param reference the reference; {@code null} for every job
+   * @return a new query
+   */
+  public JobQuery withReference(@Nullable String reference) {
+    return new JobQuery(name, reference, states, nodeId, beforeId, limit);
   }
 
   /**
@@ -82,7 +99,7 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withStates(Set<JobState> states) {
-    return new JobQuery(name, states, nodeId, beforeId, limit);
+    return new JobQuery(name, reference, states, nodeId, beforeId, limit);
   }
 
   /**
@@ -92,7 +109,7 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withNode(@Nullable UUID nodeId) {
-    return new JobQuery(name, states, nodeId, beforeId, limit);
+    return new JobQuery(name, reference, states, nodeId, beforeId, limit);
   }
 
   /**
@@ -103,7 +120,7 @@ public record JobQuery(
    */
   public JobQuery after(JobSummary last) {
     Objects.requireNonNull(last, "last");
-    return new JobQuery(name, states, nodeId, last.id(), limit);
+    return new JobQuery(name, reference, states, nodeId, last.id(), limit);
   }
 
   static void requireLimit(int limit) {

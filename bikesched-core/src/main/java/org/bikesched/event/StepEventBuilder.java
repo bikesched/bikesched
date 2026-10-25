@@ -27,6 +27,9 @@ public interface StepEventBuilder<P extends @Nullable Object> extends EventBuild
   @Override
   StepEventBuilder<P> retention(java.time.Duration retention);
 
+  @Override
+  StepEventBuilder<P> reference(@Nullable String reference);
+
   /**
    * Publishes the event exactly once as a durable step: the first run publishes it, later runs of
    * the job find the step and return the same event id without publishing again.

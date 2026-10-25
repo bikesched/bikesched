@@ -65,7 +65,8 @@ modelling and no orchestration across services. If that's what you're after, hav
 ## Features
 
 - Jobs now, at a given time or after a delay, with priority, retries and timeouts; optionally in
-  your own database transaction, and with an idempotency key for callers that retry
+  your own database transaction, with an idempotency key for callers that retry, and with a
+  reference to the order or payment they are about, to find them in the admin UI
 - Jobs start as soon as they are due: nodes notify each other with PostgreSQL `LISTEN/NOTIFY`,
   polling is only the safety net
 - Durable **steps** whose results survive retries, with optional **compensation** (sagas)

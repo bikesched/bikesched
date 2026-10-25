@@ -88,6 +88,7 @@ public final class DefaultJob implements Job {
   private final JobPhase phase;
   private final JobOrigin origin;
   private final @Nullable String lastError;
+  private final @Nullable String reference;
   private final boolean cancelRequested;
   private final @Nullable String cancelRequestMessage;
 
@@ -150,6 +151,7 @@ public final class DefaultJob implements Job {
     this.phase = claimed.phase();
     this.origin = claimed.origin();
     this.lastError = claimed.lastError();
+    this.reference = claimed.reference();
     this.cancelRequested = claimed.cancelRequested();
     this.cancelRequestMessage = claimed.cancelMessage();
     this.replay =
@@ -184,7 +186,10 @@ public final class DefaultJob implements Job {
       String eventKey,
       @Nullable String eventPayload,
       @Nullable Duration retention,
+      @Nullable String requestedReference,
+      boolean referenceSet,
       @Nullable String requestedStepName) {
+    String eventReference = referenceSet ? requestedReference : reference;
     String stepName =
         stepName(requestedStepName, "publish " + eventName, "Default event publishing step name");
     stepGuard.requireNoneRunning("publish an event as step '" + stepName + "'");
@@ -211,9 +216,10 @@ public final class DefaultJob implements Job {
                   eventKey,
                   eventPayload,
                   retention == null ? defaultEventRetention : retention,
+                  eventReference,
                   replay != null);
       if (published.publication() != null) {
-        notifyPublished(eventName, published.publication());
+        notifyPublished(eventName, eventReference, published.publication());
       }
       return published.eventId();
     }
@@ -238,11 +244,16 @@ public final class DefaultJob implements Job {
   }
 
   /** Reports a committed publication; the listener's exceptions must not affect the job. */
-  private void notifyPublished(String eventName, EventStore.Publication publication) {
+  private void notifyPublished(
+      String eventName, @Nullable String eventReference, EventStore.Publication publication) {
     try {
       eventListener.onEventPublished(
           new EventPublication(
-              publication.eventId(), eventName, EventSource.JOB, publication.received()));
+              publication.eventId(),
+              eventName,
+              eventReference,
+              EventSource.JOB,
+              publication.received()));
     } catch (RuntimeException e) {
       LOG.warn("Event listener failed for event {}, ignoring it", publication.eventId(), e);
     }
@@ -251,6 +262,11 @@ public final class DefaultJob implements Job {
   @Override
   public String name() {
     return name;
+  }
+
+  @Override
+  public Optional<String> reference() {
+    return Optional.ofNullable(reference);
   }
 
   @Override

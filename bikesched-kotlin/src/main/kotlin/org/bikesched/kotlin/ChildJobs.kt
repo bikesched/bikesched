@@ -25,6 +25,7 @@ import org.bikesched.job.Step
  * @param priority its priority, higher runs first; defaults to 0
  * @param maxAttempts its maximum number of attempts; defaults to 3
  * @param timeout the maximum duration of an attempt; defaults to the node's default
+ * @param reference the child's reference; defaults to this job's, see `JobSettings.reference`
  * @param compensation undoes starting the child if this job is cancelled or fails permanently, e.g.
  *   cancels it; receives the child's id, see `StepJobBuilder.compensateWith`
  * @return the child's id, the same on every run of this job
@@ -40,11 +41,13 @@ public fun Job.startJob(
   priority: Int? = null,
   maxAttempts: Int? = null,
   timeout: Duration? = null,
+  reference: String? = null,
   compensation: ((step: Step, childJobId: UUID) -> Unit)? = null,
 ): UUID {
   require(at == null || delay == null) { "at and delay are mutually exclusive" }
   val builder =
-    JobOptions(payload, priority, maxAttempts, timeout, null).applySettingsTo(newJob(name))
+    JobOptions(payload, priority, maxAttempts, timeout, null, reference = reference)
+      .applySettingsTo(newJob(name))
   stepName?.let(builder::stepName)
   compensation?.let { handler ->
     builder.compensateWith { step, id -> handler(step, checkNotNull(id)) }

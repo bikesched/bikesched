@@ -98,6 +98,45 @@ class SchedulingTest {
   }
 
   @Test
+  fun `reference is stored on jobs, child jobs and events`() {
+    val parent = unique("reference-parent")
+    val child = unique("reference-child")
+    val event = unique("reference-event")
+    val recurring = unique("reference-recurring")
+    val children = CopyOnWriteArrayList<UUID>()
+    val published = CopyOnWriteArrayList<UUID>()
+    testNode("reference").use { bikesched ->
+      bikesched.handleJobs(child) {}
+      val parentId =
+        bikesched.createJob(name = parent, reference = "order-1") {
+          children += startJob(name = child, stepName = "inherited")
+          children += startJob(name = child, stepName = "own", reference = "payment-1")
+          published += publishEvent(name = event, key = "k", stepName = "publish")
+        }
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(parentId)?.state()).isEqualTo(JobState.SUCCEEDED)
+      }
+      assertThat(bikesched.findJobOrNull(parentId)?.reference()).contains("order-1")
+      assertThat(children.map { bikesched.findJobOrNull(it)?.reference()?.orElse(null) })
+        .containsExactly("order-1", "payment-1")
+      assertThat(bikesched.admin().findEvent(published.single()).map { it.reference() })
+        .contains("order-1")
+
+      val eventId = bikesched.publishEvent(name = event, key = "k-2", reference = "payment-2")
+      assertThat(bikesched.admin().findEvent(eventId).map { it.reference() }).contains("payment-2")
+      val occurrence =
+        bikesched.createRecurringJob(
+          name = recurring,
+          recurrence = every(1.hours),
+          delay = 1.hours,
+          reference = "tenant-1",
+        ) {}
+      assertThat(bikesched.findJobOrNull(occurrence)?.reference()).contains("tenant-1")
+      bikesched.removeRecurringJob(recurring)
+    }
+  }
+
+  @Test
   fun `postpone runs the job and a step again later without using an attempt`() {
     val runs = CopyOnWriteArrayList<String>()
     testNode("postpone").use { bikesched ->

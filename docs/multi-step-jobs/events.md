@@ -66,6 +66,26 @@ bikesched.newEvent("payment-received", order.id())
 
 Jobs have the same option, see [Idempotency keys](../jobs/README.md#idempotency-keys).
 
+### References
+
+Like a job, an event can name the external entity it is about, so it can be found by it in the
+[admin UI](../operations/admin.md):
+
+```java
+bikesched.newEvent("payment-received", order.id())
+        .payload(payment)
+        .reference(payment.id())
+        .publish();
+```
+
+- Optional, 1 to 200 characters, not unique, never changed; the
+  [event listener](../operations/metrics.md#own-listeners) gets it in `EventPublication`.
+- Unlike the key, the reference is not matched against waiting steps.
+- An event published by a job (`Job.newEvent`) has the job's reference unless its builder sets
+  one (`reference(null)` for none).
+
+See [References](../jobs/README.md#references) for jobs.
+
 ## Lifecycle
 
 How a job and its wait step move through their states:

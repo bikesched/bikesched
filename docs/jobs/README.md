@@ -131,6 +131,38 @@ UUID id = bikesched.newJob("process-payment")
 
 Events have the same option, see [Idempotency keys](../multi-step-jobs/events.md#idempotency-keys).
 
+### References
+
+A job is usually about something outside bikesched: an order, a payment, a customer. A reference
+names it, so the job can be found by it in the [admin UI](../operations/admin.md) without opening
+payloads:
+
+```java
+bikesched.newJob("charge-order")
+        .payload(order)
+        .reference("order-" + order.id())
+        .schedule();
+
+bikesched.findJob(jobId).flatMap(JobInfo::reference);   // Optional[order-4711]
+```
+
+- Optional, on every job builder (also with `connection(…)`, an idempotency key or a recurrence).
+  A reference has 1 to 200 characters and at most 600 bytes in UTF-8, like a job name. It is set
+  once and never changes; `reference(null)` sets none.
+- Not unique: many jobs and events can share a reference (the charge, the shipment and the
+  invoice of one order). To schedule a job once, use an [idempotency key](#idempotency-keys).
+- [Child jobs](../multi-step-jobs/child-jobs.md#starting-children) and events published by the
+  job have the job's reference unless their builder sets one. Every occurrence of a
+  [recurring job](recurring-jobs.md) has the reference it was registered with.
+- Handlers read it with `job.reference()` (and failure handlers with `failed.reference()`); while
+  a job with a reference runs, it is in the logging context as `bikesched.jobReference` (see
+  [Logging](../getting-started/configuration.md#logging)), and listeners get it in `JobClaim`.
+- The admin UI searches jobs and events by it; in code, `JobQuery.withReference` and
+  `EventQuery.withReference` find them through `bikesched.admin()`. Only jobs and events with a
+  reference are indexed.
+- Use an opaque id, not a name or an email address: the admin UI shows references to every user,
+  and they end up in logs.
+
 ## Writing handlers
 
 A handler receives the `Job` being executed:
@@ -138,6 +170,7 @@ A handler receives the `Job` being executed:
 | Method | Purpose |
 |---|---|
 | `id()`, `name()` | identity, e.g. for idempotency keys and logging |
+| `reference()` | the job's [reference](#references), empty if it has none |
 | `attempts()`, `maxAttempts()` | the current attempt (starting at 1) and the limit |
 | `payload()`, `payload(Class)` | the payload as raw JSON or mapped by the `JsonMapper` |
 | `step(name, Class, handler)` | run a durable step, see [Durable steps](../multi-step-jobs/steps.md#durable-steps) |

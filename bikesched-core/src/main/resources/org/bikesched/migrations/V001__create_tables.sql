@@ -73,6 +73,7 @@ create table bikesched_jobs (
     failure_end_state      text,                           -- FAILED or COMPENSATION_FAILED: the state a FAILING job ends in
     recurrence             text,                           -- occurrence of a recurring job: its recurrence's description
     idempotency_key        text,                           -- dedups scheduling: unique per name while the job exists
+    reference              text,                           -- the external entity the job is about; not unique
     payload                jsonb,
     result                 jsonb,                          -- Job.complete(result); only set when SUCCEEDED
     last_error             text,
@@ -116,6 +117,8 @@ create table bikesched_jobs (
         check (char_length(recurrence) between 1 and 200 and octet_length(recurrence) <= 600),
     constraint bikesched_jobs_idempotency_key_check
         check (char_length(idempotency_key) between 1 and 500 and octet_length(idempotency_key) <= 1500),
+    constraint bikesched_jobs_reference_check
+        check (char_length(reference) between 1 and 200 and octet_length(reference) <= 600),
     constraint bikesched_jobs_result_check
         check (result is null or state = 'SUCCEEDED'),
     -- Exactly the occurrences of recurring jobs have a recurrence, exactly children a parent.
@@ -159,6 +162,10 @@ create index bikesched_jobs_name_id_idx on bikesched_jobs (name, id);
 
 -- The admin's search by short id, the last 8 hex digits of the id (the random part of a UUIDv7).
 create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
+
+-- The admin's search by reference, newest first. Only jobs with a reference have an entry.
+create index bikesched_jobs_reference_idx on bikesched_jobs (reference, id)
+    where reference is not null;
 
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
 -- job can skip steps that already succeeded. The type tells what a step does:
@@ -300,6 +307,7 @@ create table bikesched_events (
     name            text        not null,
     key             text        not null,
     idempotency_key text,
+    reference       text,                -- the external entity the event is about; not unique
     payload         jsonb,
     constraint bikesched_events_pkey primary key (id),
     constraint bikesched_events_name_key_check
@@ -307,6 +315,8 @@ create table bikesched_events (
                and char_length(key) between 1 and 500 and octet_length(key) <= 1500),
     constraint bikesched_events_idempotency_key_check
         check (char_length(idempotency_key) between 1 and 500 and octet_length(idempotency_key) <= 1500),
+    constraint bikesched_events_reference_check
+        check (char_length(reference) between 1 and 200 and octet_length(reference) <= 600),
     constraint bikesched_events_expires_at_check
         check (expires_at >= published_at)
 );
@@ -318,6 +328,10 @@ create index bikesched_events_expires_at_idx on bikesched_events (expires_at);
 
 -- The admin's search by short id, the last 8 hex digits of the id (the random part of a UUIDv7).
 create index bikesched_events_short_id_idx on bikesched_events (right(id::text, 8));
+
+-- The admin's search by reference, newest first. Only events with a reference have an entry.
+create index bikesched_events_reference_idx on bikesched_events (reference, id)
+    where reference is not null;
 
 -- Job history (only written by nodes with the history enabled): one row per change of a job
 -- (step_name null) or of one of its steps, in the transaction of the change. attempt is the job's

@@ -90,6 +90,6 @@ class RecurringJobNextRunTest {
   }
 
   private static RecurringJob recurring(Recurrence recurrence) {
-    return new RecurringJob("report", recurrence, null, 0, 3, null);
+    return new RecurringJob("report", recurrence, null, 0, 3, null, null);
   }
 }

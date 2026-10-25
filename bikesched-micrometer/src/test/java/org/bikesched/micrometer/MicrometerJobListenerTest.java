@@ -82,6 +82,6 @@ class MicrometerJobListenerTest {
   }
 
   private static JobClaim claim(String type, Duration delay) {
-    return new JobClaim(UUID.randomUUID(), type, 1, false, false, delay);
+    return new JobClaim(UUID.randomUUID(), type, null, 1, false, false, delay);
   }
 }

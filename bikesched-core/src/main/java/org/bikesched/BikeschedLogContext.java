@@ -12,11 +12,11 @@ import org.bikesched.job.StepHandler;
  * <table>
  *   <caption>Keys set per thread</caption>
  *   <tr><th>Thread</th><th>{@link #NODE_ID}</th><th>{@link #JOB_ID}</th><th>{@link #JOB_NAME}</th>
- *       <th>{@link #STEP_NAME}</th></tr>
- *   <tr><td>heartbeat ({@code bikesched-heartbeat})</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
- *   <tr><td>poller ({@code bikesched-poller})</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
+ *       <th>{@link #JOB_REFERENCE}</th><th>{@link #STEP_NAME}</th></tr>
+ *   <tr><td>heartbeat ({@code bikesched-heartbeat})</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+ *   <tr><td>poller ({@code bikesched-poller})</td><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
  *   <tr><td>job execution incl. the handler ({@code bikesched-job-N})</td><td>yes</td><td>yes</td><td>yes</td>
- *       <td>while a step runs</td></tr>
+ *       <td>if the job has a reference</td><td>while a step runs</td></tr>
  * </table>
  *
  * <p>The keys are removed again once the task (or step) finishes. Application threads calling
@@ -32,6 +32,12 @@ public final class BikeschedLogContext {
 
   /** Name of the job being executed. */
   public static final String JOB_NAME = "bikesched.jobName";
+
+  /**
+   * The job's {@linkplain org.bikesched.job.Job#reference() reference}; only set for jobs with a
+   * reference.
+   */
+  public static final String JOB_REFERENCE = "bikesched.jobReference";
 
   /** Name of the {@link Job#step(String, Class, StepHandler) step} being executed. */
   public static final String STEP_NAME = "bikesched.stepName";

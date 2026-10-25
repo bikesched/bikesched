@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -16,7 +17,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -57,6 +60,11 @@ final class AdminHandler {
 
   /** Ancestors of a child job shown above its detail; deeper ones are not looked up. */
   private static final int MAX_ANCESTORS = 20;
+
+  /** The length limit of references, as checked by bikesched (and the schema). */
+  private static final int MAX_REFERENCE_LENGTH = 200;
+
+  private static final Pattern ID_SUFFIX = Pattern.compile("(?i)[0-9a-f]{8,32}");
 
   private static final String CSP =
       "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -241,7 +249,8 @@ final class AdminHandler {
 
   /**
    * Publishes an event from the form-encoded body: {@code name}, {@code key}, {@code payload} (JSON
-   * text), {@code retention} (ISO-8601) and {@code idempotencyKey}, empty ones left out.
+   * text), {@code retention} (ISO-8601), {@code idempotencyKey} and {@code reference}, empty ones
+   * left out.
    */
   private AdminResponse publish(AdminRequest request, String by) {
     Map<String, String> form = parseQuery(request.body());
@@ -270,6 +279,7 @@ final class AdminHandler {
     if (idempotencyKey != null) {
       event.idempotencyKey(idempotencyKey);
     }
+    event.reference(reference(form));
     UUID eventId = event.publish();
     // Waiting steps receive the event as it is published, so they are counted right away.
     int received = bikesched.admin().findEvent(eventId).map(EventSummary::receivedBy).orElse(0);
@@ -286,9 +296,9 @@ final class AdminHandler {
   /**
    * Schedules a one-off job from the form-encoded body: {@code name}, {@code payload} (JSON text),
    * {@code delay} (ISO-8601 duration) or {@code at} (ISO-8601 instant), {@code priority}, {@code
-   * maxAttempts}, {@code timeout} (ISO-8601 duration) and {@code idempotencyKey}, empty ones left
-   * out. Answers the job's id and whether it is new: a job of the name with the idempotency key is
-   * returned instead of a new one.
+   * maxAttempts}, {@code timeout} (ISO-8601 duration), {@code idempotencyKey} and {@code
+   * reference}, empty ones left out. Answers the job's id and whether it is new: a job of the name
+   * with the idempotency key is returned instead of a new one.
    */
   private AdminResponse schedule(AdminRequest request, String by) {
     Map<String, String> form = parseQuery(request.body());
@@ -321,6 +331,7 @@ final class AdminHandler {
     if (timeout != null) {
       job.timeout(duration("timeout", timeout));
     }
+    job.reference(reference(form));
     String idempotencyKey = blankToNull(form.get("idempotencyKey"));
     if (idempotencyKey != null) {
       Optional<JobSummary> existing = bikesched.admin().findJob(name, idempotencyKey);
@@ -348,9 +359,22 @@ final class AdminHandler {
 
   private Json.Obj jobs(Admin admin, Map<String, String> params) {
     int limit = limit(params);
-    String idSuffix = idSuffix(params, "name", "state", "node");
+    String[] filters = {"name", "state", "node", "reference"};
+    String idSuffix = idSuffix(params, "name", "state", "node", "reference", "search");
     if (idSuffix != null) {
       List<JobSummary> jobs = byIdSuffix(() -> admin.findJobsByIdSuffix(idSuffix, limit));
+      return Json.object()
+          .put("jobs", jobs.stream().map(AdminJson::job).toList())
+          .put("next", null);
+    }
+    String search = search(params, filters);
+    if (search != null) {
+      List<JobSummary> jobs =
+          newestFirst(
+              JobSummary::id,
+              limit,
+              isIdSuffix(search) ? admin.findJobsByIdSuffix(search, limit) : List.of(),
+              admin.findJobs(JobQuery.newest(limit).withReference(search)));
       return Json.object()
           .put("jobs", jobs.stream().map(AdminJson::job).toList())
           .put("next", null);
@@ -359,6 +383,7 @@ final class AdminHandler {
     JobQuery query =
         JobQuery.newest(limit)
             .withName(blankToNull(params.get("name")))
+            .withReference(blankToNull(params.get("reference")))
             .withNode(node == null ? null : id(node));
     String states = params.get("state");
     if (states != null && !states.isBlank()) {
@@ -374,7 +399,9 @@ final class AdminHandler {
     }
     String before = blankToNull(params.get("before"));
     if (before != null) {
-      query = new JobQuery(query.name(), query.states(), query.nodeId(), id(before), limit);
+      query =
+          new JobQuery(
+              query.name(), query.reference(), query.states(), query.nodeId(), id(before), limit);
     }
     List<JobSummary> jobs = admin.findJobs(query);
     String next = jobs.size() == limit ? jobs.getLast().id().toString() : null;
@@ -486,9 +513,22 @@ final class AdminHandler {
 
   private Json.Obj events(Admin admin, Map<String, String> params) {
     int limit = limit(params);
-    String idSuffix = idSuffix(params, "name", "key");
+    String[] filters = {"name", "key", "reference"};
+    String idSuffix = idSuffix(params, "name", "key", "reference", "search");
     if (idSuffix != null) {
       List<EventSummary> events = byIdSuffix(() -> admin.findEventsByIdSuffix(idSuffix, limit));
+      return Json.object()
+          .put("events", events.stream().map(AdminJson::event).toList())
+          .put("next", null);
+    }
+    String search = search(params, filters);
+    if (search != null) {
+      List<EventSummary> events =
+          newestFirst(
+              EventSummary::id,
+              limit,
+              isIdSuffix(search) ? admin.findEventsByIdSuffix(search, limit) : List.of(),
+              admin.findEvents(EventQuery.newest(limit).withReference(search)));
       return Json.object()
           .put("events", events.stream().map(AdminJson::event).toList())
           .put("next", null);
@@ -496,10 +536,11 @@ final class AdminHandler {
     EventQuery query =
         EventQuery.newest(limit)
             .withName(blankToNull(params.get("name")))
-            .withKeyPrefix(blankToNull(params.get("key")));
+            .withKeyPrefix(blankToNull(params.get("key")))
+            .withReference(blankToNull(params.get("reference")));
     String before = blankToNull(params.get("before"));
     if (before != null) {
-      query = new EventQuery(query.name(), query.keyPrefix(), id(before), limit);
+      query = new EventQuery(query.name(), query.keyPrefix(), query.reference(), id(before), limit);
     }
     List<EventSummary> events = admin.findEvents(query);
     String next = events.size() == limit ? events.getLast().id().toString() : null;
@@ -651,6 +692,56 @@ final class AdminHandler {
       throw new BadRequest("Parameter id cannot be combined with before");
     }
     return idSuffix;
+  }
+
+  // The search of a list by id or reference: the "search" parameter, which excludes the list's
+  // other filters and paging like the id search.
+  private static String search(Map<String, String> params, String... filters) {
+    String search = blankToNull(params.get("search"));
+    if (search == null) {
+      return null;
+    }
+    for (String filter : filters) {
+      if (blankToNull(params.get(filter)) != null) {
+        throw new BadRequest("Parameter search cannot be combined with " + filter);
+      }
+    }
+    if (blankToNull(params.get("before")) != null) {
+      throw new BadRequest("Parameter search cannot be combined with before");
+    }
+    search = search.strip();
+    if (search.codePointCount(0, search.length()) > MAX_REFERENCE_LENGTH) {
+      throw new BadRequest(
+          "A search text has at most " + MAX_REFERENCE_LENGTH + " characters, like a reference");
+    }
+    return search;
+  }
+
+  // Whether a search text can be an id suffix: 8 to 32 hex digits, hyphens and case ignored (as by
+  // Admin.findJobsByIdSuffix); anything else is only searched as a reference.
+  private static boolean isIdSuffix(String text) {
+    return ID_SUFFIX.matcher(text.replace("-", "")).matches();
+  }
+
+  // The rows of both lookups, each once, newest first by their time-ordered ids.
+  @SafeVarargs
+  private static <T> List<T> newestFirst(Function<T, UUID> id, int limit, List<T>... lists) {
+    Map<UUID, T> byId = new TreeMap<>(Comparator.comparing(UUID::toString).reversed());
+    for (List<T> list : lists) {
+      for (T row : list) {
+        byId.putIfAbsent(id.apply(row), row);
+      }
+    }
+    return byId.values().stream().limit(limit).toList();
+  }
+
+  private static String reference(Map<String, String> form) {
+    String reference = blankToNull(form.get("reference"));
+    if (reference != null
+        && reference.codePointCount(0, reference.length()) > MAX_REFERENCE_LENGTH) {
+      throw new BadRequest("A reference has at most " + MAX_REFERENCE_LENGTH + " characters");
+    }
+    return reference;
   }
 
   private static <T> List<T> byIdSuffix(Supplier<List<T>> lookup) {

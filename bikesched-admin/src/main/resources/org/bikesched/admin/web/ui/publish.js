@@ -109,16 +109,21 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
   const [payload, setPayload] = useState('');
   const [retention, setRetention] = useState('');
   const [idempotencyKey, setIdempotencyKey] = useState('');
+  const [reference, setReference] = useState('');
   const [source, setSource] = useState(null);
   const [waiting, setWaiting] = useState(null);
   const [error, setError] = useState(null);
   const [sending, setSending] = useState(false);
 
-  // Copies key (unless kept) and payload from an event; payloads only come with showPayloads.
+  // Copies key and reference (unless the key is kept) and payload from an event; payloads only come
+  // with showPayloads.
   const copyFrom = async (eventId, keepKey) => {
     const data = await getBody(`api/events/${eventId}`);
     setName(data.event.name);
-    if (!keepKey) setKey(data.event.key);
+    if (!keepKey) {
+      setKey(data.event.key);
+      setReference(data.event.reference || '');
+    }
     if (data.payloadsShown) setPayload(pretty(data.payload));
     setSource(data.event);
   };
@@ -167,7 +172,8 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
   const steps = waiting && waiting.name === trimmedName ? waiting.steps : [];
   const receivers = steps.filter((step) => step.eventKey === trimmedKey);
   const waitingKeys = [...new Set(steps.map((step) => step.eventKey))].filter((k) => k !== trimmedKey).slice(0, 8);
-  const ready = trimmedName && trimmedKey && !jsonError && !sending;
+  const referenceError = [...reference.trim()].length > 200 ? 'At most 200 characters' : null;
+  const ready = trimmedName && trimmedKey && !jsonError && !referenceError && !sending;
   const kept = RETENTIONS.find(([value]) => value === retention)[1].toLowerCase();
 
   const pickName = (picked) => {
@@ -177,6 +183,7 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
   const clear = () => {
     setSource(null);
     setKey('');
+    setReference('');
     setPayload('');
   };
   const submit = async (event) => {
@@ -191,6 +198,7 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
         payload: payload.trim(),
         retention,
         idempotencyKey: idempotencyKey.trim(),
+        reference: reference.trim(),
       });
       lastPublished = result;
       onPublished(result.id);
@@ -251,6 +259,13 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
             <input id="publish-idempotency" class="input mono" type="text" placeholder="optional" value=${idempotencyKey}
               onInput=${(event) => setIdempotencyKey(event.target.value)} />
             <span class="muted small">A second publish with it returns the first event.</span>
+          </div>
+          <div class="field">
+            <label class="field-label" for="publish-reference">Reference</label>
+            <input id="publish-reference" class=${`input mono${referenceError ? ' invalid' : ''}`} type="text"
+              placeholder="optional, e.g. pay_3NqK8L" value=${reference}
+              onInput=${(event) => setReference(event.target.value)} />
+            <span class=${referenceError ? 'field-error' : 'muted small'}>${referenceError || 'The entity the event is about, to find it by.'}</span>
           </div>
         </div>
         ${trimmedName && trimmedKey &&

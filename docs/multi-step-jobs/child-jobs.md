@@ -58,6 +58,7 @@ bikesched.registerJobHandler("fulfil-order", job -> {
 | Method | Purpose |
 |---|---|
 | `stepName(name)` | the step's name, default `start <job name>`; set it when a job starts several children with one name |
+| `reference(reference)` | the child's [reference](../jobs/README.md#references), default the parent's; `null` for none |
 | `compensateWith((step, childId) -> …)` | undo starting the child if the parent is cancelled or fails permanently, e.g. `bikesched.cancel(childId, "order cancelled")` |
 | `schedule()`, `schedule(Instant)`, `schedule(Duration)` | start the child and return its id |
 

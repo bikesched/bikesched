@@ -32,6 +32,7 @@ final class AdminJson {
         .put("parentJobName", job.parentJobName())
         .put("recurrence", job.recurrence())
         .put("idempotencyKey", job.idempotencyKey())
+        .put("reference", job.reference())
         .put("nodeId", job.nodeId())
         .put("nodeName", job.nodeName());
   }
@@ -77,6 +78,7 @@ final class AdminJson {
         .put("name", event.name())
         .put("key", event.key())
         .put("idempotencyKey", event.idempotencyKey())
+        .put("reference", event.reference())
         .put("publishedAt", event.publishedAt())
         .put("expiresAt", event.expiresAt())
         .put("receivedBy", event.receivedBy())

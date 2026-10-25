@@ -53,7 +53,7 @@ class DueJobsStoreTest extends AbstractStoreTest {
 
   @Test
   void aDuplicateOfAnIdempotentJobIsNotReported() {
-    NewJob keyed = new NewJob("keyed", null, Instant.now(), 0, 3, null, null, null, "k-1");
+    NewJob keyed = new NewJob("keyed", null, Instant.now(), 0, 3, null, null, null, "k-1", null);
     UUID first = database.jobs().insertJob(UUID.randomUUID(), keyed);
     due.clear();
 
@@ -152,8 +152,8 @@ class DueJobsStoreTest extends AbstractStoreTest {
         .suspendJob(claimed.id(), claimed.lock(), step(claimed.id(), "wait"), "paid", "due-2");
     due.clear();
 
-    database.events().publishEvent("paid", "due-2", null, KEPT, null);
-    database.events().publishEvent("paid", "nobody-waits", null, KEPT, null);
+    database.events().publishEvent("paid", "due-2", null, KEPT, null, null);
+    database.events().publishEvent("paid", "nobody-waits", null, KEPT, null, null);
 
     assertThat(due.now).containsExactly(Set.of("resumed"));
   }
@@ -271,7 +271,9 @@ class DueJobsStoreTest extends AbstractStoreTest {
     try (Connection listener = listen();
         Connection connection = dataSource.getConnection()) {
       connection.setAutoCommit(false);
-      database.events().publishEventInTransaction(connection, "paid", "due-3", null, KEPT, null);
+      database
+          .events()
+          .publishEventInTransaction(connection, "paid", "due-3", null, KEPT, null, null);
       connection.commit();
 
       assertThat(receive(listener)).containsExactly("resumed-by-caller");

@@ -10,12 +10,18 @@ import org.jspecify.annotations.Nullable;
  *
  * @param name only events of this name; {@code null} for every name
  * @param keyPrefix only events whose key starts with it; {@code null} or empty for every key
+ * @param reference only events with exactly this {@linkplain
+ *     org.bikesched.event.EventBuilder#reference reference}; {@code null} for every event
  * @param beforeId only events after this one in the order, i.e. with a smaller id (event ids are
  *     time-ordered): the last event of the previous page; {@code null} for the first page
  * @param limit the maximum number of events, between 1 and {@link JobQuery#MAX_LIMIT}
  */
 public record EventQuery(
-    @Nullable String name, @Nullable String keyPrefix, @Nullable UUID beforeId, int limit) {
+    @Nullable String name,
+    @Nullable String keyPrefix,
+    @Nullable String reference,
+    @Nullable UUID beforeId,
+    int limit) {
 
   /**
    * Validates the query.
@@ -27,6 +33,9 @@ public record EventQuery(
     if (keyPrefix != null && keyPrefix.isEmpty()) {
       keyPrefix = null;
     }
+    if (reference != null && reference.isEmpty()) {
+      reference = null;
+    }
   }
 
   /**
@@ -36,7 +45,7 @@ public record EventQuery(
    * @return the query
    */
   public static EventQuery newest(int limit) {
-    return new EventQuery(null, null, null, limit);
+    return new EventQuery(null, null, null, null, limit);
   }
 
   /**
@@ -46,7 +55,7 @@ public record EventQuery(
    * @return a new query
    */
   public EventQuery withName(@Nullable String name) {
-    return new EventQuery(name, keyPrefix, beforeId, limit);
+    return new EventQuery(name, keyPrefix, reference, beforeId, limit);
   }
 
   /**
@@ -56,7 +65,18 @@ public record EventQuery(
    * @return a new query
    */
   public EventQuery withKeyPrefix(@Nullable String keyPrefix) {
-    return new EventQuery(name, keyPrefix, beforeId, limit);
+    return new EventQuery(name, keyPrefix, reference, beforeId, limit);
+  }
+
+  /**
+   * Returns this query restricted to the events with a reference (exact match, along an index that
+   * holds only events with a reference).
+   *
+   * @param reference the reference; {@code null} for every event
+   * @return a new query
+   */
+  public EventQuery withReference(@Nullable String reference) {
+    return new EventQuery(name, keyPrefix, reference, beforeId, limit);
   }
 
   /**
@@ -67,6 +87,6 @@ public record EventQuery(
    */
   public EventQuery after(EventSummary last) {
     Objects.requireNonNull(last, "last");
-    return new EventQuery(name, keyPrefix, last.id(), limit);
+    return new EventQuery(name, keyPrefix, reference, last.id(), limit);
   }
 }

@@ -179,6 +179,53 @@ class BikeschedAdminTest {
   }
 
   @Test
+  void findsJobsAndEventsByReference() {
+    String type = prefix + "by-reference";
+    String reference = "order-" + UUID.randomUUID();
+    bikesched.registerJobHandler(type, ignored -> {});
+    UUID older = bikesched.newJob(type).reference(reference).schedule(Duration.ofHours(1));
+    UUID newer = bikesched.newJob(type).reference(reference).schedule(Duration.ofHours(1));
+    bikesched.newJob(type).schedule(Duration.ofHours(1));
+    UUID eventId = bikesched.newEvent(prefix + "by-reference", "k").reference(reference).publish();
+
+    try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      JsonObject jobs = AdminServer.json(server.get("/api/jobs?search=" + encode(reference)));
+      assertThat(ids(jobs.getArray("jobs"))).containsExactly(newer.toString(), older.toString());
+      assertThat(jobs.getArray("jobs").getObject(0).getString("reference")).isEqualTo(reference);
+      assertThat(jobs.isNull("next")).isTrue();
+      JsonObject events =
+          AdminServer.json(server.get("/api/events?search=" + encode(" " + reference + " ")));
+      assertThat(ids(events.getArray("events"))).containsExactly(eventId.toString());
+
+      // The search also finds ids; the reference filter combines with the name and paging.
+      String suffix = older.toString().substring(28);
+      assertThat(ids(AdminServer.json(server.get("/api/jobs?search=" + suffix)).getArray("jobs")))
+          .containsExactly(older.toString());
+      JsonObject page =
+          AdminServer.json(
+              server.get(
+                  "/api/jobs?reference="
+                      + encode(reference)
+                      + "&name="
+                      + encode(type)
+                      + "&limit=1"));
+      assertThat(ids(page.getArray("jobs"))).containsExactly(newer.toString());
+      JsonObject next =
+          AdminServer.json(
+              server.get(
+                  "/api/jobs?reference="
+                      + encode(reference)
+                      + "&limit=1&before="
+                      + page.getString("next")));
+      assertThat(ids(next.getArray("jobs"))).containsExactly(older.toString());
+
+      assertThat(server.get("/api/jobs?search=x&name=" + encode(type)).statusCode()).isEqualTo(400);
+      assertThat(server.get("/api/events?search=x&id=" + eventId).statusCode()).isEqualTo(400);
+      assertThat(server.get("/api/jobs?search=" + "r".repeat(201)).statusCode()).isEqualTo(400);
+    }
+  }
+
+  @Test
   void showsTheRunsOfARecurringJob() {
     String type = prefix + "recurring";
     bikesched.registerJobHandler(type, ignored -> {});
@@ -433,7 +480,7 @@ class BikeschedAdminTest {
               + encode(event)
               + "&key=k-1&payload="
               + encode("{\"amount\": 42}")
-              + "&retention=PT1H&idempotencyKey=admin-1";
+              + "&retention=PT1H&idempotencyKey=admin-1&reference=pay-1";
       assertThat(server.postForm("/api/events", form).statusCode())
           .as("without the CSRF header")
           .isEqualTo(403);
@@ -450,6 +497,7 @@ class BikeschedAdminTest {
       assertThat(Duration.between(summary.publishedAt(), summary.expiresAt()))
           .isEqualTo(Duration.ofHours(1));
       assertThat(summary.idempotencyKey()).isEqualTo("admin-1");
+      assertThat(summary.reference()).isEqualTo("pay-1");
       assertThat(AdminServer.json(server.postForm("/api/events", form, csrf, "1")).getString("id"))
           .as("the idempotency key returns the first event")
           .isEqualTo(eventId.toString());
@@ -509,7 +557,8 @@ class BikeschedAdminTest {
       String later =
           "name="
               + encode(type)
-              + "&delay=PT1H&priority=5&maxAttempts=7&timeout=PT30S&idempotencyKey=admin-1";
+              + "&delay=PT1H&priority=5&maxAttempts=7&timeout=PT30S&idempotencyKey=admin-1"
+              + "&reference=order-7";
       JsonObject first = AdminServer.json(server.postForm("/api/jobs", later, csrf, "1"));
       assertThat(first.getBoolean("created")).isTrue();
       UUID laterId = UUID.fromString(first.getString("id"));
@@ -517,6 +566,7 @@ class BikeschedAdminTest {
       assertThat(summary.state()).isEqualTo(JobState.SCHEDULED);
       assertThat(summary.priority()).isEqualTo(5);
       assertThat(summary.maxAttempts()).isEqualTo(7);
+      assertThat(summary.reference()).isEqualTo("order-7");
       assertThat(summary.scheduledAt()).isAfter(Instant.now().plus(Duration.ofMinutes(50)));
       JsonObject second = AdminServer.json(server.postForm("/api/jobs", later, csrf, "1"));
       assertThat(second.getBoolean("created")).as("the idempotency key returns the job").isFalse();
@@ -543,7 +593,8 @@ class BikeschedAdminTest {
               "&at=tomorrow",
               "&priority=high",
               "&maxAttempts=0",
-              "&timeout=PT0S")) {
+              "&timeout=PT0S",
+              "&reference=" + "r".repeat(201))) {
         HttpResponse<String> response =
             server.postForm("/api/jobs", "name=" + encode(type) + bad, csrf, "1");
         assertThat(response.statusCode()).as(bad).isEqualTo(400);
