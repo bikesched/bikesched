@@ -13,6 +13,10 @@ instance connected to the database is a *node*: nodes claim due jobs with
 `SELECT … FOR UPDATE SKIP LOCKED`, so many nodes share one database without stepping on each other
 and without any coordinator besides PostgreSQL.
 
+<p align="center">
+  <img src="bikesched-admin-ui.png" alt="bikesched admin ui: a web interface for managing jobs, events and nodes" width="600">
+</p>
+
 ## Concepts
 
 - **Node**: a `Bikesched` instance. It registers in `bikesched_nodes`, sends heartbeats, polls for
