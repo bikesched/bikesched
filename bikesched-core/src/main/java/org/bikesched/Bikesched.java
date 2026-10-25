@@ -418,7 +418,8 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
 
   /**
    * Stops polling and the heartbeat, releases unfinished jobs and removes this node from {@code
-   * bikesched_nodes}. Idempotent.
+   * bikesched_nodes}. Idempotent: a call while another one is closing the node waits for it. See
+   * {@link BikeschedBuilder#closeOnShutdown(boolean)} for closing it on JVM shutdown.
    */
   @Override
   void close();

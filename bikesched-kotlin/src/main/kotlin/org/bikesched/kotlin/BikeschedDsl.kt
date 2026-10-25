@@ -52,6 +52,12 @@ public class BikeschedSpec internal constructor() {
   public var autoStartPolling: Boolean? = null
 
   /**
+   * Whether a JVM shutdown hook closes the node (see `BikeschedBuilder.closeOnShutdown`); defaults
+   * to `false`.
+   */
+  public var closeOnShutdown: Boolean? = null
+
+  /**
    * Interval between two polls for due jobs (see `BikeschedBuilder.pollInterval`); defaults to 10
    * seconds.
    */
@@ -173,6 +179,7 @@ public class BikeschedSpec internal constructor() {
     nodeName?.let(builder::nodeName)
     maxConcurrentJobs?.let(builder::maxConcurrentJobs)
     autoStartPolling?.let(builder::autoStartPolling)
+    closeOnShutdown?.let(builder::closeOnShutdown)
     pollInterval?.let { builder.pollInterval(it.toJavaDuration()) }
     listenForDueJobs?.let(builder::listenForDueJobs)
     notifyInterval?.let { builder.notifyInterval(it.toJavaDuration()) }

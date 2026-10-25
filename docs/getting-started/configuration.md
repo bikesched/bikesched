@@ -26,6 +26,7 @@ afterwards (see `autoStartPolling` below).
 | `maxConcurrentJobs(int)` | 10 | jobs executed at the same time on this node |
 | `migrateSchema(boolean)` | `true` | automatically migrate on first database use; `false` only validates migration history without DDL. Explicit `migrate()` still migrates. See [Migrations](../operations/database.md#migrations) |
 | `autoStartPolling(boolean)` | `true` | with `false`, call `start()` once all handlers are registered; until then the node is not registered, executes no jobs and sends no heartbeats, e.g. for an instance that only schedules jobs. `build()` then does not access the database, so it works while the database is down: the schema is migrated (or validated with `migrateSchema(false)`) on first use (`start()`, scheduling a job, publishing an event), and retried on the next one if that fails |
+| `closeOnShutdown(boolean)` | `false` | registers a JVM shutdown hook that closes the node (removed again by a regular `close()`), for applications without a lifecycle of their own; leave it off where a framework closes the node, see [Nodes](#nodes) |
 | `pollInterval(Duration)` | 10 seconds | delay between two polls for due jobs. While nodes [listen for due jobs](#due-jobs-start-right-away), it is the safety net for missed notifications and bounds how late a delayed job scheduled by another node starts; without listening, every job made due by another node starts within one interval, so lower it (e.g. 5 seconds or less) |
 | `listenForDueJobs(boolean)` | `true` | with `false`, the node neither listens for due jobs nor notifies other nodes, and holds no extra connection; set it the same on all nodes, see [Due jobs start right away](#due-jobs-start-right-away) |
 | `notifyInterval(Duration)` | 100 ms | how long a node collects the job names it made due before notifying the other nodes in one statement: the extra latency of such jobs on other nodes, and at most one notifying commit per node and interval |
@@ -73,7 +74,16 @@ jobs and removes it like any other dead node.
 
 `bikesched.node()` describes the node (`name()`, `id()`, `isPolling()`). `close()` stops polling and
 the heartbeat, waits up to 10 seconds for running jobs, returns still-running jobs to `SCHEDULED` for
-other nodes, and deregisters the node.
+other nodes, and deregisters the node. A `close()` while another thread closes the node waits for
+it.
+
+Close the node before the `DataSource` it uses. Spring does that (see
+[Lifecycle](../integrations/spring.md#lifecycle)); in a plain `main` method, try-with-resources does
+it when the method returns, and `closeOnShutdown(true)` also closes the node when the JVM is
+terminated (Ctrl+C, `SIGTERM`). The JVM runs shutdown hooks concurrently and in no order, so a pool
+closed by another hook can go away while the node releases its jobs; then the other nodes release
+them once the node's heartbeat is older than the `nodeTimeout`. A node that is never closed is
+handled the same way.
 
 ## Due jobs start right away
 

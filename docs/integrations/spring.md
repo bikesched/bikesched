@@ -126,7 +126,9 @@ The node is built with polling disabled, and a `SmartLifecycle` (last phase) sta
 of the context is up: it initializes the database (see below) and registers the node,
 sends heartbeats and polls. On shutdown, Spring closes the node before destroying the `DataSource`
 it uses: unfinished jobs are released and running handlers awaited (bounded by their timeouts), so
-another node takes over.
+another node takes over. Spring's own shutdown hook closes the context on JVM shutdown, so the
+starter leaves the builder's `closeOnShutdown` off: a second hook would close the node in no order
+with the `DataSource`.
 
 - `bikesched.auto-start.enabled=false` builds a node that schedules only: it registers with no
   database, executes nothing and sends no heartbeats. Call `start()` yourself later if such

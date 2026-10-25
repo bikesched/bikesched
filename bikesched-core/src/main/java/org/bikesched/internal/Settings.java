@@ -28,6 +28,7 @@ import org.jspecify.annotations.Nullable;
  * @param maxConcurrentJobs maximum number of jobs executed at the same time on this node
  * @param autoStartPolling whether job polling starts when the node is built; otherwise it starts
  *     with {@link Bikesched#start()}
+ * @param closeOnShutdown whether a JVM shutdown hook closes the node
  * @param migrateSchema whether first database use migrates rather than only validating history
  * @param defaultJobTimeout maximum duration of a job attempt for jobs without a timeout of their
  *     own; {@code null} for none
@@ -61,6 +62,7 @@ public record Settings(
     Duration notifyInterval,
     int maxConcurrentJobs,
     boolean autoStartPolling,
+    boolean closeOnShutdown,
     boolean migrateSchema,
     @Nullable Duration defaultJobTimeout,
     RetryBackoff retryBackoff,

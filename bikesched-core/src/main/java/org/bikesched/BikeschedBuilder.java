@@ -49,6 +49,7 @@ public final class BikeschedBuilder {
   private boolean listenForDueJobs = true;
   private Duration notifyInterval = DEFAULT_NOTIFY_INTERVAL;
   private boolean autoStartPolling = true;
+  private boolean closeOnShutdown;
   private boolean migrateSchema = true;
   private @Nullable JsonMapper jsonMapper; // null: the default, accepting only JSON strings
   private @Nullable Duration defaultJobTimeout;
@@ -141,6 +142,25 @@ public final class BikeschedBuilder {
    */
   public BikeschedBuilder autoStartPolling(boolean autoStartPolling) {
     this.autoStartPolling = autoStartPolling;
+    return this;
+  }
+
+  /**
+   * Whether a JVM shutdown hook {@linkplain Bikesched#close() closes} the node (default {@code
+   * false}), for applications that manage no lifecycle of their own, e.g. a plain {@code main}
+   * method ended with Ctrl+C or {@code SIGTERM}. The hook is removed again when the node is closed
+   * otherwise. Leave it off where a framework closes the node (the Spring Boot starter does).
+   *
+   * <p>The JVM runs its shutdown hooks concurrently and in no particular order: a data source
+   * closed by another hook can go away while the node still releases its jobs. Then the other nodes
+   * release them once this node's heartbeat is older than the {@link #nodeTimeout(Duration) node
+   * timeout}. A {@code close()} that runs while the hook closes the node waits for it.
+   *
+   * @param closeOnShutdown whether to close the node on JVM shutdown
+   * @return this builder
+   */
+  public BikeschedBuilder closeOnShutdown(boolean closeOnShutdown) {
+    this.closeOnShutdown = closeOnShutdown;
     return this;
   }
 
@@ -509,6 +529,7 @@ public final class BikeschedBuilder {
             notifyInterval,
             maxConcurrentJobs,
             autoStartPolling,
+            closeOnShutdown,
             migrateSchema,
             defaultJobTimeout,
             retryBackoff,
