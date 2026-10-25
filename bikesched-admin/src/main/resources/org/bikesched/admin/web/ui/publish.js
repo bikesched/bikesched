@@ -172,7 +172,7 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
   const steps = waiting && waiting.name === trimmedName ? waiting.steps : [];
   const receivers = steps.filter((step) => step.eventKey === trimmedKey);
   const waitingKeys = [...new Set(steps.map((step) => step.eventKey))].filter((k) => k !== trimmedKey).slice(0, 8);
-  const referenceError = [...reference.trim()].length > 200 ? 'At most 200 characters' : null;
+  const referenceError = [...reference].length > 200 ? 'At most 200 characters' : null;
   const ready = trimmedName && trimmedKey && !jsonError && !referenceError && !sending;
   const kept = RETENTIONS.find(([value]) => value === retention)[1].toLowerCase();
 
@@ -198,7 +198,8 @@ export function PublishForm({ names, prefill, payloadsShown, onClose, onPublishe
         payload: payload.trim(),
         retention,
         idempotencyKey: idempotencyKey.trim(),
-        reference: reference.trim(),
+        // Sent as typed: a reference may have surrounding spaces, and the search matches it exactly.
+        reference: reference.trim() ? reference : '',
       });
       lastPublished = result;
       onPublished(result.id);

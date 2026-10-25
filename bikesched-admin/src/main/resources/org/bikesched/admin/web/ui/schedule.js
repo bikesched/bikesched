@@ -122,7 +122,7 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
   const amountError = when === 'in' && !(wholeNumber(amount) && Number(amount) >= 0) ? 'A whole number, 0 or more' : null;
   const priorityError = wholeNumber(priority) ? null : 'A whole number';
   const attemptsError = wholeNumber(maxAttempts) && Number(maxAttempts) >= 1 ? null : 'At least 1';
-  const referenceError = [...reference.trim()].length > 200 ? 'At most 200 characters' : null;
+  const referenceError = [...reference].length > 200 ? 'At most 200 characters' : null;
   const due =
     when === 'in' && !amountError ? new Date(now + Number(amount) * UNITS.find(([u]) => u === unit)[2] * 1000) : null;
   const ready =
@@ -150,7 +150,8 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
         maxAttempts: maxAttempts.trim(),
         timeout,
         idempotencyKey: idempotencyKey.trim(),
-        reference: reference.trim(),
+        // Sent as typed: a reference may have surrounding spaces, and the search matches it exactly.
+        reference: reference.trim() ? reference : '',
       });
       lastScheduled = { ...result, idempotencyKey: idempotencyKey.trim(), due: when === 'now' ? null : due.toISOString() };
       onScheduled(result.id);
