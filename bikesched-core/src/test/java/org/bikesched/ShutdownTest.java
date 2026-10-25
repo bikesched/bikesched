@@ -34,8 +34,27 @@ class ShutdownTest extends AbstractBikeschedTest {
     await().until(() -> !bikesched.node().isPolling());
     bikesched.close(); // the second call, while the first awaits the running job
 
-    assertThat(first).isDone();
     assertThat(countRows("bikesched_nodes", "id = '" + nodeId + "'")).isZero();
+    first.get(30, TimeUnit.SECONDS);
+  }
+
+  @Test
+  void interruptedCloseStillWaitsForACloseInProgress() throws Exception {
+    String name = "shutdown-interrupted-" + UUID.randomUUID();
+    Bikesched bikesched = testNode(name).build();
+    bikesched.registerJobHandler(name, (Job job) -> Thread.sleep(1000));
+    UUID nodeId = bikesched.node().id().orElseThrow();
+    UUID jobId = bikesched.newJob(name).schedule();
+    awaitState(jobId, "RUNNING");
+
+    CompletableFuture<Void> first = CompletableFuture.runAsync(bikesched::close);
+    await().until(() -> !bikesched.node().isPolling());
+    Thread.currentThread().interrupt();
+    bikesched.close();
+
+    assertThat(Thread.interrupted()).as("interrupt restored").isTrue();
+    assertThat(countRows("bikesched_nodes", "id = '" + nodeId + "'")).isZero();
+    first.get(30, TimeUnit.SECONDS);
   }
 
   @Test

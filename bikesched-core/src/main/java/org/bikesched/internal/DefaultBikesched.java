@@ -470,8 +470,8 @@ public final class DefaultBikesched implements Bikesched {
     try {
       Runtime.getRuntime().removeShutdownHook(hook);
     } catch (IllegalStateException ignored) {
-      // The JVM is shutting down (the hook may be the caller): the hook runs anyway and waits for
-      // this close.
+      // The JVM is shutting down (the hook may be the caller): the hook runs anyway, and a second
+      // close waits for the first.
     }
   }
 
@@ -495,12 +495,13 @@ public final class DefaultBikesched implements Bikesched {
     try {
       closeNode(id);
     } finally {
+      // Only now: a hook started meanwhile by the JVM's shutdown waits for this close.
+      removeShutdownHook();
       closed.countDown();
     }
   }
 
   private void closeNode(@Nullable UUID id) {
-    removeShutdownHook();
     jobPoller.close();
     ExecutorUtil.shutdownAndAwait(cleanUpExecutor, "clean-up");
     ExecutorUtil.shutdownAndAwait(heartbeatExecutor, "heartbeat");
@@ -513,11 +514,21 @@ public final class DefaultBikesched implements Bikesched {
     notifier.close(); // after releasing the node's jobs, so that other nodes take them over now
   }
 
-  /** Waits for the close in progress, so no caller returns while the node still drains. */
+  /**
+   * Waits for the close in progress, so no caller returns while the node still drains; an interrupt
+   * does not end the wait (the close is bounded by its executor timeouts) and is restored after it.
+   */
   private void awaitClosed() {
-    try {
-      closed.await();
-    } catch (InterruptedException e) {
+    boolean interrupted = false;
+    while (true) {
+      try {
+        closed.await();
+        break;
+      } catch (InterruptedException e) {
+        interrupted = true;
+      }
+    }
+    if (interrupted) {
       Thread.currentThread().interrupt();
     }
   }
