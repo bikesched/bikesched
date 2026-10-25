@@ -140,35 +140,31 @@ export const jobHref = (id) => toHash({ section: 'jobs', id });
 
 export const stepHref = (jobId, stepId) => toHash({ section: 'jobs', id: jobId, stepId });
 
-// Search by id: a full id or at least its last 8 hex digits (the short id); whitespace, hyphens and case are
-// ignored, as on the server.
+// Search by id or reference: a full id or at least its last 8 hex digits (the short id; whitespace, hyphens and
+// case are ignored, as on the server), or a reference (exact match, whitespace included, at most 200 characters).
 const idDigits = (text) => text.trim().replace(/-/g, '').toLowerCase();
 
-export function idSearchHint(text) {
-  const digits = idDigits(text);
-  if (!digits) return '';
-  if (!/^[0-9a-f]+$/.test(digits)) return 'An id has only the digits 0-9, a-f and hyphens';
-  if (digits.length < 8) return 'Type at least the last 8 characters of the id';
-  if (digits.length > 32) return 'An id has 32 hex digits';
+export function searchHint(text) {
+  if ([...text].length > 200) return 'A reference has at most 200 characters';
   return '';
 }
 
 export const isFullId = (text) => idDigits(text).length === 32;
 
-export function IdSearch({ kind, value, onSearch }) {
+export function SearchField({ kind, value, onSearch }) {
   const [input, setInput] = useState(value);
   useEffect(() => setInput(value), [value]);
-  const hint = idSearchHint(input);
-  const id = `${kind}-id-search`;
+  const hint = searchHint(input);
+  const id = `${kind}-search`;
   return html`
     <form class="field" role="search" onSubmit=${(event) => {
       event.preventDefault();
-      if (!hint) onSearch(input.trim().toLowerCase());
+      if (!hint) onSearch(input.trim() ? input : '');
     }}>
-      <label class="field-label" for=${id}>${kind === 'job' ? 'Job id' : 'Event id'}</label>
+      <label class="field-label" for=${id}>${kind === 'job' ? 'Job id or reference' : 'Event id or reference'}</label>
       <div class="row">
         <input id=${id} class="input mono id-input" type="search" value=${input}
-          placeholder="Full id or its last 8 characters" aria-describedby=${hint ? `${id}-hint` : undefined}
+          placeholder="Id, its last 8 characters, or a reference" aria-describedby=${hint ? `${id}-hint` : undefined}
           onInput=${(event) => setInput(event.target.value)}
           onKeyDown=${(event) => {
             if (event.key === 'Escape') {
@@ -182,12 +178,18 @@ export function IdSearch({ kind, value, onSearch }) {
     </form>`;
 }
 
-/** The chip of an active id search, which clears it, with a note that the other filters are off. */
-export function IdSearchChip({ kind, value, note, onClear }) {
+/** A reference with links to the jobs and the events that have it. */
+export function ReferenceLinks({ reference }) {
+  const link = (section) => toHash({ section, params: { search: reference } });
+  return html`${reference}<span class="muted small"> · <a href=${link('jobs')}>jobs</a> · <a href=${link('events')}>events</a></span>`;
+}
+
+/** The chip of an active search, which clears it, with a note that the other filters are off. */
+export function SearchChip({ kind, value, note, onClear }) {
   return html`
     <div class="chips">
-      <button type="button" class="chip" aria-pressed="true" aria-label=${`Clear the ${kind} id search`} onClick=${onClear}>
-        <span class="mono">id ${value}</span><span aria-hidden="true">×</span>
+      <button type="button" class="chip" aria-pressed="true" aria-label=${`Clear the ${kind} search`} onClick=${onClear}>
+        <span class="mono">${value}</span><span aria-hidden="true">×</span>
       </button>
       <span class="muted">${note}</span>
     </div>`;

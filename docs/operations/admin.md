@@ -114,7 +114,8 @@ and `X-Content-Type-Options: nosniff`.
 Payloads and results may hold personal or secret data, so they are hidden by default. The filter
 is on the server: without `showPayloads(true)` the admin never reads them from the database, and
 no response of the JSON API contains them. The page keeps its Data and Payload tabs and explains
-how to turn them on. Error messages, step names, event keys and idempotency keys are always shown.
+how to turn them on. Error messages, step names, event keys, idempotency keys and references are
+always shown.
 
 ## The page
 
@@ -129,13 +130,17 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   jobs.
 - **Jobs**: newest first (an arrow marks the column a list is sorted by, here Created), filtered
   by name and by one or more states; "Older jobs" loads the next page. A child job names its
-  parent below its name; a run of a recurring job has the repeat icon and its recurrence there.
-- **Search by id**: the job list and the event list each have an id field. It takes a full id or
-  its last 8 characters (the short id the lists show: ids are time-ordered UUIDv7, so their start
-  is their creation time and their end is random), with or without hyphens, and finds only
-  jobs in the job list and only events in the event list. A single match opens its detail; the
-  other filters are off while the search is active.
+  parent below its name; a run of a recurring job has the repeat icon and its recurrence there; a
+  job with a [reference](../jobs/README.md#references) shows it there too.
+- **Search by id or reference**: the job list and the event list each have a search field. It
+  takes a full id or its last 8 characters (the short id the lists show: ids are time-ordered
+  UUIDv7, so their start is their creation time and their end is random), with or without hyphens,
+  or a reference (exact match, case- and whitespace-sensitive), and finds only jobs in the job
+  list and only events in the event list: those whose id ends with the text and those with it as
+  their reference. A single match opens its detail; the other filters are off while the search is
+  active.
 - **Job detail**: all fields (the type says single, recurring or child job), the idempotency key,
+  the reference (with links to the jobs and the events that have it),
   the last error, retry and cancel, the steps with their duration (a child job step links to the
   child, a child job shows the path to its parents), the job history when recorded, and a Data tab
   with the payload above the result. A running or waiting step's duration counts up; a retried step
@@ -154,8 +159,8 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   (with the name of the list filled in) or by "Schedule similar…" in a job's detail (name, payload,
   priority and max attempts copied from that job). It offers only the job names the serving node has
   a handler for; picking one copies the payload of its latest job (only with `showPayloads(true)`).
-  The job runs now or after a delay; priority, max attempts, timeout and an idempotency key are
-  under "More options". The payload must be JSON. For a recurring job it adds one run and leaves the
+  The job runs now or after a delay; priority, max attempts, timeout, an idempotency key and a
+  reference are under "More options" ("Schedule similar…" also copies the reference). The payload must be JSON. For a recurring job it adds one run and leaves the
   recurrence as it is. Once scheduled, the new job's detail opens; with an idempotency key a job
   with that name already has, that job opens instead and nothing is scheduled. The server logs every
   scheduled job with the user.
@@ -169,7 +174,8 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   a known name copies key and payload from its latest unexpired event (the payload only with
   `showPayloads(true)`); the keys jobs wait for are offered below the key. Before publishing, the
   form lists the jobs waiting for that name and key, which continue right away; the payload must be
-  JSON. Retention (node default, 0, 1 hour, 1 day, 7 days) and an idempotency key are optional. The
+  JSON. Retention (node default, 0, 1 hour, 1 day, 7 days), an idempotency key and a reference are
+  optional ("Publish similar" also copies the reference). The
   server logs every published event with the user.
 - **Nodes**: every registered node by name, online or offline, with its start, last heartbeat and
   the number of jobs it runs. The list and the open node refresh every 3 seconds while the tab is
@@ -177,7 +183,7 @@ how to turn them on. Error messages, step names, event keys and idempotency keys
   runs, each linked; an offline node says that other nodes release its jobs and later remove it. A
   running job's Node field links to the node.
 
-Every view is a link (`#/jobs?name=send-invoice&state=FAILED`, `#/jobs?id=3f2a9c1e`, `#/jobs/{id}`,
+Every view is a link (`#/jobs?name=send-invoice&state=FAILED`, `#/jobs?search=order-4711`, `#/jobs/{id}`,
 `#/jobs/{id}/steps/{stepId}`, `#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`, `#/nodes/{id}`), so
 it can be shared or put into an alert. The page follows the browser's light or dark mode.
 
@@ -213,13 +219,15 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `api/jobs?name=&state=&node=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
+| GET | `api/jobs?name=&state=&node=&reference=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `reference` a reference (exact match), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
 | GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id ends with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
+| GET | `api/jobs?search=&limit=` | `{"jobs": [...], "next": null}`: the page's search, jobs whose id ends with `search` (if it is 8 to 32 hex digits) or whose reference is `search`, newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
 | GET | `api/steps/{id}` | `{"step", "job", "history", "payloadsShown"}`: one step by its id with its job's summary and the step's history entries, plus `result` with `showPayloads(true)` |
 | GET | `api/job-names` | `{"names": [{"name", "total", "counts", "recurrence", "handled"}]}`: `handled` if the serving node has a handler for the name (handled names without jobs are listed too) |
-| GET | `api/events?name=&key=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix |
+| GET | `api/events?name=&key=&reference=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix, `reference` an exact match |
 | GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `id`, as for jobs |
+| GET | `api/events?search=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `search` or whose reference is `search`, as for jobs |
 | GET | `api/events/{id}` | `{"event", "steps", "payloadsShown"}`, plus `payload` with `showPayloads(true)` |
 | GET | `api/event-names` | `{"names": [{"name", "count", "waiting"}]}`: unexpired events and waiting steps per name |
 | GET | `api/recurring-runs?name=&limit=` | `{"name", "pending", "previous": [...]}`: the pending run of a recurring job (`null` if none) and its latest ended runs, newest first |
@@ -229,8 +237,8 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/me` | `{"user", "level", "readOnly", "payloadsShown"}` |
 | POST | `api/jobs/{id}/retry` | `{"retried": true or false}` (only failed jobs are retried) |
 | POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI") |
-| POST | `api/jobs` | `{"id", "created"}`: schedules a job from a form-encoded body (`name`, `payload` as JSON text, `delay` as ISO-8601 or `at` as an ISO-8601 instant, `priority`, `maxAttempts`, `timeout` as ISO-8601, `idempotencyKey`); `created` is `false` when a job with that name has the idempotency key, whose id is returned |
-| POST | `api/events` | `{"id", "received"}`: publishes an event from a form-encoded body (`name`, `key`, `payload` as JSON text, `retention` as ISO-8601, `idempotencyKey`); `received` counts the steps that got it at once |
+| POST | `api/jobs` | `{"id", "created"}`: schedules a job from a form-encoded body (`name`, `payload` as JSON text, `delay` as ISO-8601 or `at` as an ISO-8601 instant, `priority`, `maxAttempts`, `timeout` as ISO-8601, `idempotencyKey`, `reference`); `created` is `false` when a job with that name has the idempotency key, whose id is returned |
+| POST | `api/events` | `{"id", "received"}`: publishes an event from a form-encoded body (`name`, `key`, `payload` as JSON text, `retention` as ISO-8601, `idempotencyKey`, `reference`); `received` counts the steps that got it at once |
 
 Errors are `{"error": "..."}` with `400` (malformed parameter, id, job or event, a job name without
 a handler on the serving node), `401`/`403` (access), `404` (unknown job, step, event or path),
@@ -251,16 +259,16 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 
 | Method | Returns |
 |---|---|
-| `findJobs(JobQuery)` | jobs by name, states and the node running them, newest first, in pages (`after(lastJob)`) |
+| `findJobs(JobQuery)` | jobs by name, reference, states and the node running them, newest first, in pages (`after(lastJob)`) |
 | `findJobsByIdSuffix(suffix, limit)` | jobs whose id ends with at least 8 hex digits (or a full id), newest first |
-| `findJob(id)` | one job's summary: name, type, state, attempts, times, last error, parent, recurrence, idempotency key, node |
+| `findJob(id)` | one job's summary: name, type, state, attempts, times, last error, parent, recurrence, idempotency key, reference, node |
 | `findJob(name, idempotencyKey)` | the job with a name and an idempotency key, the one scheduling with that key returns |
 | `findJobData(id)` | the payload and result as JSON text |
 | `findSteps(id)` | the job's steps in the order they started, with event and child job details |
 | `findStep(stepId)`, `findStepResult(stepId)` | one step by its id, its result as JSON text |
 | `findJobNames()` | every job name with its number of jobs per state and whether this node handles it (handled names without jobs too) |
 | `findRecurringJobRuns(name, limit)` | a recurring job's pending run and its latest ended runs, newest first |
-| `findEvents(EventQuery)` | unexpired events by name and key prefix, newest first, in pages |
+| `findEvents(EventQuery)` | unexpired events by name, key prefix and reference, newest first, in pages |
 | `findEventsByIdSuffix(suffix, limit)` | unexpired events whose id ends with at least 8 hex digits |
 | `findEvent(id)`, `findEventPayload(id)` | one event, its payload as JSON text |
 | `findEventNames()` | every event name with its number of unexpired events |

@@ -414,6 +414,7 @@ public final class DefaultBikesched implements Bikesched {
       @Nullable String payload,
       @Nullable Duration eventRetention,
       @Nullable String idempotencyKey,
+      @Nullable String reference,
       @Nullable Connection connection) {
     ensureReady();
     Duration retention = eventRetention != null ? eventRetention : settings.eventRetention();
@@ -421,11 +422,11 @@ public final class DefaultBikesched implements Bikesched {
         connection == null
             ? database
                 .events()
-                .publishEvent(eventName, eventKey, payload, retention, idempotencyKey)
+                .publishEvent(eventName, eventKey, payload, retention, idempotencyKey, reference)
             : database
                 .events()
                 .publishEventInTransaction(
-                    connection, eventName, eventKey, payload, retention, idempotencyKey);
+                    connection, eventName, eventKey, payload, retention, idempotencyKey, reference);
     if (publication.duplicate()) {
       LOG.debug(
           "Event {}/{} with idempotency key {} already published as {}, not publishing it again",
@@ -444,19 +445,24 @@ public final class DefaultBikesched implements Bikesched {
         publication.received());
     if (connection == null) {
       // Events in the caller's transaction are not reported: it may still roll back.
-      notifyPublished(eventName, publication);
+      notifyPublished(eventName, reference, publication);
     }
     return publication.eventId();
   }
 
   /** Reports a committed publication; the listener's exceptions must not affect publishing. */
-  private void notifyPublished(String eventName, EventStore.Publication publication) {
+  private void notifyPublished(
+      String eventName, @Nullable String reference, EventStore.Publication publication) {
     try {
       settings
           .eventListener()
           .onEventPublished(
               new EventPublication(
-                  publication.eventId(), eventName, EventSource.NODE, publication.received()));
+                  publication.eventId(),
+                  eventName,
+                  reference,
+                  EventSource.NODE,
+                  publication.received()));
     } catch (RuntimeException e) {
       LOG.warn("Event listener failed for event {}, ignoring it", publication.eventId(), e);
     }

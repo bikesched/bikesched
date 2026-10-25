@@ -75,6 +75,11 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
   /** Set by the builders of one-off jobs scheduled through bikesched, otherwise {@code null}. */
   @Nullable String idempotencyKey;
 
+  @Nullable String reference;
+
+  /** Whether {@link #reference(String)} was called; a child job inherits its parent's otherwise. */
+  boolean referenceSet;
+
   BaseJobBuilder(String name, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
     this.name = name;
     this.payloadType = payloadType;
@@ -92,6 +97,8 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
     this.maxAttempts = settings.maxAttempts;
     this.timeout = settings.timeout;
     this.idempotencyKey = settings.idempotencyKey;
+    this.reference = settings.reference;
+    this.referenceSet = settings.referenceSet;
   }
 
   /** This builder as its interface type. */
@@ -106,6 +113,13 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
   @Override
   public B payloadJson(@Nullable String json) {
     this.payload = json;
+    return self();
+  }
+
+  @Override
+  public B reference(@Nullable String reference) {
+    this.reference = reference == null ? null : ValidationUtil.requireName(reference, "reference");
+    this.referenceSet = true;
     return self();
   }
 
@@ -162,8 +176,13 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
 
   /** A one-off job with the current settings, running at or after the given time. */
   NewJob newJob(Instant at) {
+    return newJob(at, reference);
+  }
+
+  /** A one-off job with the current settings and the given reference. */
+  NewJob newJob(Instant at, @Nullable String reference) {
     return new NewJob(
-        name, payload, at, priority, maxAttempts, timeout, null, null, idempotencyKey);
+        name, payload, at, priority, maxAttempts, timeout, null, null, idempotencyKey, reference);
   }
 
   static Instant after(Duration delay) {

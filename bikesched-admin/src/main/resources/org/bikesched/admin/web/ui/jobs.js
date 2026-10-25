@@ -6,9 +6,10 @@ import {
   Dot,
   ENDED,
   RecurringIcon,
-  IdSearch,
-  IdSearchChip,
+  ReferenceLinks,
   STATES,
+  SearchChip,
+  SearchField,
   SortedTh,
   dateTime,
   elapsed,
@@ -39,10 +40,10 @@ const listParams = (params) =>
 
 export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onChanged, onScheduled }) {
   const canSchedule = me?.level === 'OPERATE';
-  // An id search (route.params.id) replaces the name and state filters.
-  const id = route.params.id || '';
-  const jobName = id ? '' : route.params.name || '';
-  const state = id ? '' : route.params.state || '';
+  // A search by id or reference (route.params.search) replaces the name and state filters.
+  const search = route.params.search || '';
+  const jobName = search ? '' : route.params.name || '';
+  const state = search ? '' : route.params.state || '';
   const selected = state ? state.split(',') : [];
   const [jobs, setJobs] = useState([]);
   const [next, setNext] = useState(null);
@@ -52,12 +53,12 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
   const load = async (before) => {
     setLoading(true);
     try {
-      const params = id ? { id, limit: PAGE_SIZE } : { name: jobName, state, before, limit: PAGE_SIZE };
+      const params = search ? { search, limit: PAGE_SIZE } : { name: jobName, state, before, limit: PAGE_SIZE };
       const body = await getBody(`api/jobs${query(params)}`);
       setJobs((previous) => (before ? [...previous, ...body.jobs] : body.jobs));
       setNext(body.next);
       setError(null);
-      if (id && body.jobs.length === 1 && !route.id) {
+      if (search && body.jobs.length === 1 && !route.id) {
         navigate({ ...route, id: body.jobs[0].id, stepId: null });
       }
     } catch (e) {
@@ -71,7 +72,7 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
     setJobs([]);
     setNext(null);
     load();
-  }, [id, jobName, state, reloadKey]);
+  }, [search, jobName, state, reloadKey]);
 
   const counts = {};
   for (const summary of jobNames) {
@@ -97,12 +98,12 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
   const toggle = (s) => setStates(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s]);
   const open = (jobId) => navigate({ ...route, id: jobId, stepId: null, params: listParams(route.params) });
   const href = (jobId) => toHash({ ...route, id: jobId, stepId: null, params: listParams(route.params) });
-  const search = (text) => navigate({ section: 'jobs', id: null, params: text ? { id: text } : {} });
-  const empty = !id
+  const searchFor = (text) => navigate({ section: 'jobs', id: null, params: text ? { search: text } : {} });
+  const empty = !search
     ? 'No jobs match these filters.'
-    : isFullId(id)
-      ? `No job has the id ${id} (anymore).`
-      : `No job id ends with ${id}.`;
+    : isFullId(search)
+      ? `No job has the id or reference ${search} (anymore).`
+      : `No job id ends with ${search}, and no job has it as its reference.`;
   // The open job's live updates replace only its own row; the rest of the list stays as loaded.
   const updateRow = (job) => setJobs((list) => list.map((row) => (row.id === job.id ? job : row)));
   // Opens the form next to the list, keeping its filters.
@@ -113,7 +114,7 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
 
   return html`
     <div class="view-head">
-      <h1>${id ? `Job id ${id}` : jobName || 'All jobs'}</h1>
+      <h1>${search ? `Jobs matching ${search}` : jobName || 'All jobs'}</h1>
       <div class="row">
         ${canSchedule &&
         html`<button type="button" class="button primary" onClick=${() => schedule({ schedName: jobName })}>
@@ -133,11 +134,11 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
           items=${nameItems} selected=${jobName || null}
           onSelect=${(next) => navigate({ section: 'jobs', params: { name: next, state } })} />
       </div>
-      <${IdSearch} kind="job" value=${id} onSearch=${search} />
+      <${SearchField} kind="job" value=${search} onSearch=${searchFor} />
     </div>
-    ${id
-      ? html`<${IdSearchChip} kind="job" value=${id} onClear=${() => search('')}
-          note="Name and state filters are off while searching by id." />`
+    ${search
+      ? html`<${SearchChip} kind="job" value=${search} onClear=${() => searchFor('')}
+          note="Name and state filters are off while searching by id or reference." />`
       : html`<div class="chips" role="group" aria-label="Filter by state">
       <button type="button" class="chip" aria-pressed=${selected.length === 0} onClick=${() => setStates([])}>
         All states
@@ -173,6 +174,7 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
                       ${job.recurrence && html`<div class="sub">${job.recurrence}</div>`}
                       ${job.parentJobId &&
                       html`<div class="sub">child of ${job.parentJobName || shortId(job.parentJobId)}</div>`}
+                      ${job.reference && html`<div class="sub" title=${job.reference}>ref ${job.reference}</div>`}
                     </td>
                     <td><${Badge} state=${job.state} /></td>
                     <td class="mono">${job.attempts}/${job.maxAttempts}</td>
@@ -352,6 +354,7 @@ export function JobDetail({ jobId, me, nodes, stepHref, onUpdate, onChanged, onC
   }
   if (job.recurrence) fields.push(['Recurrence', job.recurrence]);
   if (job.idempotencyKey) fields.push(['Idempotency key', job.idempotencyKey]);
+  if (job.reference) fields.push(['Reference', html`<${ReferenceLinks} reference=${job.reference} />`, job.reference]);
 
   const parent = ancestors.length > 0 ? ancestors[ancestors.length - 1] : null;
   const tabs = [['steps', `Steps (${steps.length})`]];

@@ -62,6 +62,7 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
   const [maxAttempts, setMaxAttempts] = useState('3');
   const [timeout, setTimeoutValue] = useState('');
   const [idempotencyKey, setIdempotencyKey] = useState('');
+  const [reference, setReference] = useState('');
   const [source, setSource] = useState(null);
   const [error, setError] = useState(null);
   const [sending, setSending] = useState(false);
@@ -70,7 +71,8 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
   const handled = jobNames.filter((summary) => summary.handled);
   const summary = handled.find((candidate) => candidate.name === name);
 
-  // Copies the payload from a job; with settings (Schedule similar) also priority and attempts.
+  // Copies the payload from a job; with settings (Schedule similar) also priority, attempts and
+  // reference.
   const copyFrom = async (jobId, settings) => {
     const data = await getBody(`api/jobs/${jobId}`);
     setName(data.job.name);
@@ -78,6 +80,7 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
     if (settings) {
       setPriority(String(data.job.priority));
       setMaxAttempts(String(data.job.maxAttempts));
+      setReference(data.job.reference || '');
     }
     setSource(data.job);
   };
@@ -119,9 +122,11 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
   const amountError = when === 'in' && !(wholeNumber(amount) && Number(amount) >= 0) ? 'A whole number, 0 or more' : null;
   const priorityError = wholeNumber(priority) ? null : 'A whole number';
   const attemptsError = wholeNumber(maxAttempts) && Number(maxAttempts) >= 1 ? null : 'At least 1';
+  const referenceError = [...reference].length > 200 ? 'At most 200 characters' : null;
   const due =
     when === 'in' && !amountError ? new Date(now + Number(amount) * UNITS.find(([u]) => u === unit)[2] * 1000) : null;
-  const ready = summary && !jsonError && !amountError && !priorityError && !attemptsError && !sending;
+  const ready =
+    summary && !jsonError && !amountError && !priorityError && !attemptsError && !referenceError && !sending;
 
   const pickName = (picked) => {
     setName(picked);
@@ -145,6 +150,8 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
         maxAttempts: maxAttempts.trim(),
         timeout,
         idempotencyKey: idempotencyKey.trim(),
+        // Sent as typed: a reference may have surrounding spaces, and the search matches it exactly.
+        reference: reference.trim() ? reference : '',
       });
       lastScheduled = { ...result, idempotencyKey: idempotencyKey.trim(), due: when === 'now' ? null : due.toISOString() };
       onScheduled(result.id);
@@ -246,6 +253,13 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
               <input id="schedule-idempotency" class="input mono" type="text" placeholder="optional" value=${idempotencyKey}
                 onInput=${(event) => setIdempotencyKey(event.target.value)} />
               <span class="muted small">A job of the name with this key is not scheduled twice.</span>
+            </div>
+            <div class="field">
+              <label class="field-label" for="schedule-reference">Reference</label>
+              <input id="schedule-reference" class=${`input mono${referenceError ? ' invalid' : ''}`} type="text"
+                placeholder="optional, e.g. order-4711" value=${reference}
+                onInput=${(event) => setReference(event.target.value)} />
+              <span class=${referenceError ? 'field-error' : 'muted small'}>${referenceError || 'The entity the job is about, to find it by.'}</span>
             </div>
           </div>
         </details>

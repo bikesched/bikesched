@@ -52,8 +52,8 @@ class EventListenerTest extends AbstractBikeschedTest {
       assertThat(listener.named(eventName))
           .as("reported before publish() returned")
           .containsExactly(
-              new EventPublication(received, eventName, EventSource.NODE, 1),
-              new EventPublication(unreceived, eventName, EventSource.NODE, 0));
+              new EventPublication(received, eventName, null, EventSource.NODE, 1),
+              new EventPublication(unreceived, eventName, null, EventSource.NODE, 0));
       awaitState(waiting, "SUCCEEDED");
     }
   }
@@ -101,7 +101,7 @@ class EventListenerTest extends AbstractBikeschedTest {
       assertThat(listener.named(eventName))
           .as("reported by the run that published it only")
           .containsExactly(
-              new EventPublication(returned.getFirst(), eventName, EventSource.JOB, 0));
+              new EventPublication(returned.getFirst(), eventName, null, EventSource.JOB, 0));
     }
   }
 

@@ -19,8 +19,8 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
   public interface Publisher {
     /**
      * {@code retention} is the event's retention, {@code null} for the node default; {@code
-     * idempotencyKey} is {@code null} for none; {@code connection} is the caller's connection, or
-     * {@code null} to use bikesched's own.
+     * idempotencyKey} and {@code reference} are {@code null} for none; {@code connection} is the
+     * caller's connection, or {@code null} to use bikesched's own.
      */
     UUID publish(
         String eventName,
@@ -28,6 +28,7 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
         @Nullable String payload,
         @Nullable Duration retention,
         @Nullable String idempotencyKey,
+        @Nullable String reference,
         @Nullable Connection connection);
   }
 
@@ -38,6 +39,7 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
   private @Nullable String payload;
   private @Nullable Duration retention; // null: the node default
   private @Nullable String idempotencyKey;
+  private @Nullable String reference;
   private @Nullable Connection connection;
 
   public DefaultEventBuilder(
@@ -71,6 +73,12 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
   }
 
   @Override
+  public NodeEventBuilder<P> reference(@Nullable String reference) {
+    this.reference = reference == null ? null : ValidationUtil.requireName(reference, "reference");
+    return this;
+  }
+
+  @Override
   public NodeEventBuilder<P> idempotencyKey(String idempotencyKey) {
     this.idempotencyKey = ValidationUtil.requireKey(idempotencyKey, "idempotency key");
     return this;
@@ -84,6 +92,7 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
 
   @Override
   public UUID publish() {
-    return publisher.publish(eventName, eventKey, payload, retention, idempotencyKey, connection);
+    return publisher.publish(
+        eventName, eventKey, payload, retention, idempotencyKey, reference, connection);
   }
 }

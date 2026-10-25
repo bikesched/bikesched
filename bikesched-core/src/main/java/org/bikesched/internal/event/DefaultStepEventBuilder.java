@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.StepEventBuilder;
+import org.bikesched.internal.util.ValidationUtil;
 import org.jspecify.annotations.Nullable;
 
 /** Builder for an event published in a durable job step. */
@@ -18,6 +19,8 @@ public final class DefaultStepEventBuilder<P extends @Nullable Object>
         String key,
         @Nullable String payload,
         @Nullable Duration retention,
+        @Nullable String reference,
+        boolean referenceSet,
         @Nullable String stepName);
   }
 
@@ -27,6 +30,8 @@ public final class DefaultStepEventBuilder<P extends @Nullable Object>
   private final Publisher publisher;
   private @Nullable String payload;
   private @Nullable Duration retention;
+  private @Nullable String reference;
+  private boolean referenceSet; // the job's reference otherwise
   private @Nullable String stepName;
 
   public DefaultStepEventBuilder(
@@ -59,6 +64,13 @@ public final class DefaultStepEventBuilder<P extends @Nullable Object>
   }
 
   @Override
+  public StepEventBuilder<P> reference(@Nullable String value) {
+    reference = value == null ? null : ValidationUtil.requireName(value, "reference");
+    referenceSet = true;
+    return this;
+  }
+
+  @Override
   public StepEventBuilder<P> stepName(String value) {
     stepName = Objects.requireNonNull(value, "stepName");
     return this;
@@ -66,6 +78,7 @@ public final class DefaultStepEventBuilder<P extends @Nullable Object>
 
   @Override
   public UUID publish() {
-    return publisher.publish(eventName, eventKey, payload, retention, stepName);
+    return publisher.publish(
+        eventName, eventKey, payload, retention, reference, referenceSet, stepName);
   }
 }

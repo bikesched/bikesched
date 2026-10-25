@@ -48,19 +48,21 @@ public final class AdminStore {
             select j.id, j.name, j.type, j.state, j.attempts, j.max_attempts, j.priority,
                    nullif(j.scheduled_at, 'infinity') as scheduled_at, j.created_at, j.updated_at,
                    j.finished_at, j.last_error, j.parent_job_id, p.name as parent_job_name,
-                   j.recurrence, j.idempotency_key, n.id as node_id, n.name as node_name
+                   j.recurrence, j.idempotency_key, j.reference, n.id as node_id,
+                   n.name as node_name
               from %s j
               left join bikesched_jobs p on p.id = j.parent_job_id
               left join bikesched_nodes n on n.id = j.locked_by_node_id""";
 
   // One page of jobs, newest first by their time-ordered ids, read along the primary key (or
-  // bikesched_jobs_name_id_idx with a name, or bikesched_jobs_short_id_idx for an id search);
+  // bikesched_jobs_name_id_idx with a name, bikesched_jobs_reference_idx with a reference, or
+  // bikesched_jobs_short_id_idx for an id search);
   // parents and nodes are joined to the page only.
   private static final String JOB_PAGE =
       """
             (select id, name, type, state, attempts, max_attempts, priority, scheduled_at, created_at,
                     updated_at, finished_at, last_error, parent_job_id, recurrence,
-                    idempotency_key, locked_by_node_id
+                    idempotency_key, reference, locked_by_node_id
                from bikesched_jobs%s
               order by id desc
               limit ?)""";
@@ -123,7 +125,7 @@ public final class AdminStore {
   // newest unexpired event of a name and key is the one a new wait receives.
   private static final String EVENT_COLUMNS =
       """
-            select e.id, e.name, e.key, e.idempotency_key, e.published_at, e.expires_at,
+            select e.id, e.name, e.key, e.idempotency_key, e.reference, e.published_at, e.expires_at,
                    (select count(*) from bikesched_steps s
                      where s.event_id = e.id and s.type = 'EVENT_WAIT') as received_by,
                    e.expires_at > now() and not exists (
@@ -195,6 +197,10 @@ public final class AdminStore {
     if (query.name() != null) {
       conditions.add("name = ?");
       parameters.add(query.name());
+    }
+    if (query.reference() != null) {
+      conditions.add("reference = ?");
+      parameters.add(query.reference());
     }
     if (!query.states().isEmpty()) {
       conditions.add("state = any(?)");
@@ -351,6 +357,10 @@ public final class AdminStore {
       conditions.add("starts_with(e.key, ?)");
       parameters.add(query.keyPrefix());
     }
+    if (query.reference() != null) {
+      conditions.add("e.reference = ?");
+      parameters.add(query.reference());
+    }
     if (query.beforeId() != null) {
       conditions.add("e.id < ?");
       parameters.add(query.beforeId());
@@ -503,6 +513,7 @@ public final class AdminStore {
         row.string("parent_job_name"),
         row.string("recurrence"),
         row.string("idempotency_key"),
+        row.string("reference"),
         row.uuid("node_id"),
         row.string("node_name"));
   }
@@ -513,6 +524,7 @@ public final class AdminStore {
         row.string("name"),
         row.string("key"),
         row.string("idempotency_key"),
+        row.string("reference"),
         row.instant("published_at"),
         row.instant("expires_at"),
         row.integer("received_by"),

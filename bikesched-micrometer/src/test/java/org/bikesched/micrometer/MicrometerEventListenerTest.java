@@ -62,6 +62,6 @@ class MicrometerEventListenerTest {
   }
 
   private static EventPublication publication(String name, EventSource source, int received) {
-    return new EventPublication(UUID.randomUUID(), name, source, received);
+    return new EventPublication(UUID.randomUUID(), name, null, source, received);
   }
 }

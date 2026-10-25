@@ -43,6 +43,7 @@ class AdminJsonTest {
             "parent",
             "every PT1H",
             "dedup",
+            "order-4711",
             ID,
             "worker");
     assertContract(
@@ -53,7 +54,7 @@ class AdminJsonTest {
          "createdAt":"2026-10-11T12:00:00.123456Z","updatedAt":"2026-10-11T12:00:00.123456Z",
          "finishedAt":null,"lastError":"failed","parentJobId":"7f0c2a1e-0000-4000-8000-000000000001",
          "parentJobName":"parent","recurrence":"every PT1H","idempotencyKey":"dedup",
-         "nodeId":"7f0c2a1e-0000-4000-8000-000000000001","nodeName":"worker"}
+         "reference":"order-4711","nodeId":"7f0c2a1e-0000-4000-8000-000000000001","nodeName":"worker"}
         """);
   }
 
@@ -107,10 +108,10 @@ class AdminJsonTest {
   @Test
   void eventHasOnlySummaryFields() throws Exception {
     assertContract(
-        AdminJson.event(new EventSummary(ID, "paid", "order", null, AT, AT, 4, true)),
+        AdminJson.event(new EventSummary(ID, "paid", "order", null, "pay-1", AT, AT, 4, true)),
         """
         {"id":"7f0c2a1e-0000-4000-8000-000000000001","name":"paid","key":"order",
-         "idempotencyKey":null,"publishedAt":"2026-10-11T12:00:00.123456Z",
+         "idempotencyKey":null,"reference":"pay-1","publishedAt":"2026-10-11T12:00:00.123456Z",
          "expiresAt":"2026-10-11T12:00:00.123456Z","receivedBy":4,"latest":true}
         """);
   }

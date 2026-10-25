@@ -4,8 +4,9 @@
 import { getBody, query } from './api.js';
 import {
   Badge,
-  IdSearch,
-  IdSearchChip,
+  ReferenceLinks,
+  SearchChip,
+  SearchField,
   SortedTh,
   dateTime,
   duration,
@@ -30,16 +31,16 @@ const listParams = (params) =>
 
 export function EventsView({ route, navigate, names, me, reloadKey, onPublished }) {
   const canPublish = me?.level === 'OPERATE';
-  // An id search (route.params.id) replaces the name and key filters.
-  const id = route.params.id || '';
-  const name = id ? '' : route.params.name || '';
-  const key = id ? '' : route.params.key || '';
+  // A search by id or reference (route.params.search) replaces the name and key filters.
+  const search = route.params.search || '';
+  const name = search ? '' : route.params.name || '';
+  const key = search ? '' : route.params.key || '';
   const tab = name && route.params.tab === 'waiting' ? 'waiting' : 'published';
   const [keyInput, setKeyInput] = useState(key);
   useEffect(() => setKeyInput(key), [key]);
 
   const setParams = (params) => navigate({ ...route, params: { ...route.params, ...params } });
-  const search = (text) => navigate({ section: 'events', id: null, params: text ? { id: text } : {} });
+  const searchFor = (text) => navigate({ section: 'events', id: null, params: text ? { search: text } : {} });
   // Opens the form next to the published list, keeping its filters.
   const publish = (prefill) =>
     navigate({ section: 'events', id: 'new', params: { ...listParams(route.params), tab: '', ...prefill } });
@@ -51,7 +52,7 @@ export function EventsView({ route, navigate, names, me, reloadKey, onPublished 
 
   return html`
     <div class="view-head">
-      <h1>${id ? `Event id ${id}` : name || 'All events'}</h1>
+      <h1>${search ? `Events matching ${search}` : name || 'All events'}</h1>
       <div class="row">
         ${canPublish &&
         html`<button type="button" class="button primary" onClick=${() => publish({})}>
@@ -71,8 +72,8 @@ export function EventsView({ route, navigate, names, me, reloadKey, onPublished 
           items=${nameItems} selected=${name || null}
           onSelect=${(next) => navigate({ section: 'events', params: { name: next } })} />
       </div>
-      <${IdSearch} kind="event" value=${id} onSearch=${search} />
-      ${!id &&
+      <${SearchField} kind="event" value=${search} onSearch=${searchFor} />
+      ${!search &&
       html`<form class="field" onSubmit=${(event) => {
         event.preventDefault();
         setParams({ key: keyInput.trim() });
@@ -85,9 +86,9 @@ export function EventsView({ route, navigate, names, me, reloadKey, onPublished 
         </div>
       </form>`}
     </div>
-    ${id &&
-    html`<${IdSearchChip} kind="event" value=${id} onClear=${() => search('')}
-      note="Name and key filters are off while searching by id." />`}
+    ${search &&
+    html`<${SearchChip} kind="event" value=${search} onClear=${() => searchFor('')}
+      note="Name and key filters are off while searching by id or reference." />`}
     ${name &&
     html`<div class="tabs view-tabs" role="tablist" aria-label="Event views">
       <button type="button" role="tab" class="tab" aria-selected=${tab === 'published'}
@@ -100,7 +101,7 @@ export function EventsView({ route, navigate, names, me, reloadKey, onPublished 
     ${tab === 'waiting'
       ? html`<${WaitingJobs} name=${name} keyPrefix=${key} reloadKey=${reloadKey}
           onPublish=${canPublish ? (step) => publish({ pubName: step.eventName, pubKey: step.eventKey }) : null} />`
-      : html`<${EventList} route=${route} navigate=${navigate} idSuffix=${id} name=${name} keyPrefix=${key}
+      : html`<${EventList} route=${route} navigate=${navigate} search=${search} name=${name} keyPrefix=${key}
           names=${names} me=${me} reloadKey=${reloadKey}
           onPublishSimilar=${canPublish ? (eventId) => publish({ from: eventId }) : null}
           onPublished=${(eventId) => {
@@ -109,7 +110,7 @@ export function EventsView({ route, navigate, names, me, reloadKey, onPublished 
           }} />`}`;
 }
 
-function EventList({ route, navigate, idSuffix, name, keyPrefix, names, me, reloadKey, onPublishSimilar, onPublished }) {
+function EventList({ route, navigate, search, name, keyPrefix, names, me, reloadKey, onPublishSimilar, onPublished }) {
   const [events, setEvents] = useState([]);
   const [next, setNext] = useState(null);
   const [error, setError] = useState(null);
@@ -118,14 +119,14 @@ function EventList({ route, navigate, idSuffix, name, keyPrefix, names, me, relo
   const load = async (before) => {
     setLoading(true);
     try {
-      const params = idSuffix
-        ? { id: idSuffix, limit: PAGE_SIZE }
+      const params = search
+        ? { search, limit: PAGE_SIZE }
         : { name, key: keyPrefix, before, limit: PAGE_SIZE };
       const body = await getBody(`api/events${query(params)}`);
       setEvents((previous) => (before ? [...previous, ...body.events] : body.events));
       setNext(body.next);
       setError(null);
-      if (idSuffix && body.events.length === 1 && !route.id) {
+      if (search && body.events.length === 1 && !route.id) {
         navigate({ ...route, id: body.events[0].id });
       }
     } catch (e) {
@@ -139,14 +140,14 @@ function EventList({ route, navigate, idSuffix, name, keyPrefix, names, me, relo
     setEvents([]);
     setNext(null);
     load();
-  }, [idSuffix, name, keyPrefix, reloadKey]);
+  }, [search, name, keyPrefix, reloadKey]);
 
   const href = (id) => toHash({ ...route, id });
-  const empty = !idSuffix
+  const empty = !search
     ? 'No unexpired events match these filters.'
-    : isFullId(idSuffix)
-      ? `No unexpired event has the id ${idSuffix}.`
-      : `No event id ends with ${idSuffix}.`;
+    : isFullId(search)
+      ? `No unexpired event has the id or reference ${search}.`
+      : `No unexpired event id ends with ${search}, and no event has it as its reference.`;
   return html`
     ${error && html`<div class="banner banner-error" role="alert">${error}</div>`}
     <div class="split">
@@ -162,7 +163,10 @@ function EventList({ route, navigate, idSuffix, name, keyPrefix, names, me, relo
                   <tr key=${event.id} class=${event.id === route.id ? 'selected' : ''}
                     onClick=${() => navigate({ ...route, id: event.id })}>
                     <td><a class="mono" href=${href(event.id)}>${shortId(event.id)}</a></td>
-                    <td class="mono">${event.name}</td>
+                    <td class="mono">
+                      ${event.name}
+                      ${event.reference && html`<div class="sub" title=${event.reference}>ref ${event.reference}</div>`}
+                    </td>
                     <td class="mono">${event.key}${event.latest && html` <span class="tag latest">latest</span>`}</td>
                     <td class="mono muted">${dateTime(event.publishedAt)}</td>
                     <td class="mono muted">${dateTime(event.expiresAt)}</td>
@@ -224,6 +228,7 @@ function EventDetail({ eventId, onClose, onPublishSimilar }) {
     ['Received by', plural(event.receivedBy, 'job', 'jobs')],
   ];
   if (event.idempotencyKey) fields.push(['Idempotency key', event.idempotencyKey]);
+  if (event.reference) fields.push(['Reference', html`<${ReferenceLinks} reference=${event.reference} />`, event.reference]);
 
   const jobLink = (step) => html`
     <li class="row">
@@ -238,7 +243,9 @@ function EventDetail({ eventId, onClose, onPublishSimilar }) {
         ${event.latest && html`<span class="small muted"><span class="tag latest">latest</span> A new wait for this name and key receives this event.</span>`}
       <//>
       <dl class="meta">
-        ${fields.map(([label, value]) => html`<div><dt>${label}</dt><dd class="mono" title=${value}>${value}</dd></div>`)}
+        ${fields.map(
+          ([label, value, title = String(value)]) => html`<div><dt>${label}</dt><dd class="mono" title=${title}>${value}</dd></div>`,
+        )}
       </dl>
       ${published &&
       html`<div class="notice notice-success" role="status">

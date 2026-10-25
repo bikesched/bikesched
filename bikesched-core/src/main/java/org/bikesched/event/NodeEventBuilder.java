@@ -52,6 +52,9 @@ public interface NodeEventBuilder<P extends @Nullable Object> extends EventBuild
   @Override
   NodeEventBuilder<P> retention(Duration retention);
 
+  @Override
+  NodeEventBuilder<P> reference(@Nullable String reference);
+
   /**
    * Publishes the event.
    *

@@ -20,6 +20,7 @@ import org.jspecify.annotations.Nullable;
  * @param priority the priority of each occurrence
  * @param maxAttempts the maximum number of attempts of each occurrence
  * @param timeout the timeout of each occurrence's attempts, {@code null} for the node default
+ * @param reference the reference of each occurrence, {@code null} for none
  */
 public record RecurringJob(
     String name,
@@ -27,7 +28,8 @@ public record RecurringJob(
     @Nullable String payload,
     int priority,
     int maxAttempts,
-    @Nullable Duration timeout) {
+    @Nullable Duration timeout,
+    @Nullable String reference) {
 
   /** Upper bound of runs skipped at once, so a misbehaving recurrence cannot loop forever. */
   private static final int MAX_SKIPPED_RUNS = 100_000;
@@ -40,7 +42,16 @@ public record RecurringJob(
   /** An occurrence running at the given time. */
   public NewJob occurrence(Instant at) {
     return new NewJob(
-        name, payload, at, priority, maxAttempts, timeout, recurrence.description(), at);
+        name,
+        payload,
+        at,
+        priority,
+        maxAttempts,
+        timeout,
+        recurrence.description(),
+        at,
+        null,
+        reference);
   }
 
   /** The next run after an occurrence that ended now, see {@link #nextRunAfterEnd}. */

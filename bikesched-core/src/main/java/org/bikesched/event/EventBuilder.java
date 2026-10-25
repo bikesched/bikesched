@@ -75,6 +75,21 @@ public interface EventBuilder<P extends @Nullable Object> {
   EventBuilder<P> retention(Duration retention);
 
   /**
+   * Sets a reference to the external entity the event is about (optional), e.g. a payment or
+   * webhook delivery id, so the event can be found by it in the admin UI. Unlike the event key, it
+   * is not matched against waiting steps; it is not unique and never changes. Use an opaque id
+   * rather than personal data: the admin UI shows it.
+   *
+   * <p>An event published by a job ({@link org.bikesched.job.Job#newEvent(String, String)}) has the
+   * job's reference unless this is called; {@code reference(null)} gives it none.
+   *
+   * @param reference 1 to 200 characters, not blank; {@code null} for none (the default)
+   * @return this builder
+   * @throws IllegalArgumentException if the reference is blank or too long
+   */
+  EventBuilder<P> reference(@Nullable String reference);
+
+  /**
    * Publishes the event.
    *
    * @return the id of the published event, e.g. to log it or store it with your own data

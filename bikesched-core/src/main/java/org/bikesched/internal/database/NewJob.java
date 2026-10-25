@@ -22,6 +22,7 @@ import org.jspecify.annotations.Nullable;
  *     null} for a one-off job
  * @param idempotencyKey unique per job name while the job exists: scheduling a job with the key of
  *     an existing one returns that job; {@code null} for none
+ * @param reference the external entity the job is about (not unique), {@code null} for none
  */
 public record NewJob(
     String name,
@@ -32,9 +33,10 @@ public record NewJob(
     @Nullable Duration timeout,
     @Nullable String recurrence,
     @Nullable Instant plannedRunAt,
-    @Nullable String idempotencyKey) {
+    @Nullable String idempotencyKey,
+    @Nullable String reference) {
 
-  /** A job without idempotency key: a one-off job or an occurrence. */
+  /** A job without idempotency key and reference: a one-off job or an occurrence. */
   public NewJob(
       String name,
       @Nullable String payload,
@@ -45,10 +47,19 @@ public record NewJob(
       @Nullable String recurrence,
       @Nullable Instant plannedRunAt) {
     this(
-        name, payload, scheduledAt, priority, maxAttempts, timeout, recurrence, plannedRunAt, null);
+        name,
+        payload,
+        scheduledAt,
+        priority,
+        maxAttempts,
+        timeout,
+        recurrence,
+        plannedRunAt,
+        null,
+        null);
   }
 
-  /** A one-off job without idempotency key. */
+  /** A one-off job without idempotency key and reference. */
   public NewJob(
       String name,
       @Nullable String payload,
@@ -56,6 +67,6 @@ public record NewJob(
       int priority,
       int maxAttempts,
       @Nullable Duration timeout) {
-    this(name, payload, scheduledAt, priority, maxAttempts, timeout, null, null, null);
+    this(name, payload, scheduledAt, priority, maxAttempts, timeout, null, null, null, null);
   }
 }

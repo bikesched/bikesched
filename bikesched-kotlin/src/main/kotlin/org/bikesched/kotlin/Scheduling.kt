@@ -102,6 +102,8 @@ public fun Bikesched.handleJobFailures(name: String, handler: FailedJob.() -> Un
  * @param connection stores the job in the caller's transaction, see `JobBuilder.connection`
  * @param idempotencyKey while a job of this name has the key, returns its id instead of scheduling
  *   another one, see `JobBuilder.idempotencyKey`
+ * @param reference the external entity the job is about, e.g. an order id, see
+ *   `JobSettings.reference`
  * @param onFailure handles failed jobs of this name, registered unless the name already has a
  *   failure handler, see [handleJobFailures]
  * @param handler executes jobs of this name, registered unless the name already has a handler
@@ -117,6 +119,7 @@ public fun Bikesched.createJob(
   timeout: Duration? = null,
   connection: Connection? = null,
   idempotencyKey: String? = null,
+  reference: String? = null,
   onFailure: (FailedJob.() -> Unit)? = null,
   handler: (Job.() -> Unit)? = null,
 ): UUID =
@@ -130,6 +133,7 @@ public fun Bikesched.createJob(
       timeout,
       handler?.let { JobHandler { job -> job.it() } },
       onFailure?.let { JobFailureHandler { failed -> failed.it() } },
+      reference,
     ),
     at,
     delay,
@@ -161,6 +165,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
   timeout: Duration? = null,
   connection: Connection? = null,
   idempotencyKey: String? = null,
+  reference: String? = null,
   noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   noinline handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID =
@@ -174,6 +179,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
       timeout,
       handler?.let { typedJobHandler(name, T::class.java, false, it) },
       onFailure?.let { typedJobFailureHandler(name, T::class.java, false, it) },
+      reference,
     ),
     at,
     delay,
@@ -204,6 +210,7 @@ public fun <T : Any> Bikesched.createJob(
   timeout: Duration? = null,
   connection: Connection? = null,
   idempotencyKey: String? = null,
+  reference: String? = null,
   onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID {
@@ -212,6 +219,7 @@ public fun <T : Any> Bikesched.createJob(
   priority?.let { builder = builder.priority(it) }
   maxAttempts?.let { builder = builder.maxAttempts(it) }
   timeout?.let { builder = builder.timeout(it.toJavaDuration()) }
+  reference?.let { builder = builder.reference(it) }
   handler?.let { h ->
     builder =
       builder.handler(TypedJobHandler<T> { job, p -> job.h(requirePayload(job.id(), typedJob, p)) })
@@ -241,6 +249,7 @@ public fun <T : Any> Bikesched.createJob(
  * @param priority the priority of its occurrences, higher runs first; defaults to 0
  * @param maxAttempts the maximum number of attempts per occurrence; defaults to 3
  * @param timeout the maximum duration of an attempt; defaults to the node's default
+ * @param reference the reference of every occurrence, see `JobSettings.reference`
  * @param onFailure handles failed occurrences, registered unless the name already has a failure
  *   handler, see [handleJobFailures]
  * @param handler executes jobs of this name, registered unless the name already has a handler
@@ -256,6 +265,7 @@ public fun Bikesched.createRecurringJob(
   priority: Int? = null,
   maxAttempts: Int? = null,
   timeout: Duration? = null,
+  reference: String? = null,
   onFailure: (FailedJob.() -> Unit)? = null,
   handler: (Job.() -> Unit)? = null,
 ): UUID =
@@ -270,6 +280,7 @@ public fun Bikesched.createRecurringJob(
       timeout,
       handler?.let { JobHandler { job -> job.it() } },
       onFailure?.let { JobFailureHandler { failed -> failed.it() } },
+      reference,
     ),
     firstRun,
     delay,
@@ -300,6 +311,7 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
   priority: Int? = null,
   maxAttempts: Int? = null,
   timeout: Duration? = null,
+  reference: String? = null,
   noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   noinline handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID =
@@ -314,6 +326,7 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
       timeout,
       handler?.let { typedJobHandler(name, T::class.java, false, it) },
       onFailure?.let { typedJobFailureHandler(name, T::class.java, false, it) },
+      reference,
     ),
     firstRun,
     delay,
@@ -334,6 +347,8 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
  * @param connection publishes the event in the caller's transaction, see `EventBuilder.connection`
  * @param idempotencyKey while an event with the same name, key and idempotency key is kept, returns
  *   its id instead of publishing again, see `NodeEventBuilder.idempotencyKey`
+ * @param reference the external entity the event is about, e.g. a payment id, see
+ *   `EventBuilder.reference`
  * @return the id of the published event, or of the earlier one with the idempotency key
  */
 public fun Bikesched.publishEvent(
@@ -343,18 +358,20 @@ public fun Bikesched.publishEvent(
   retention: Duration? = null,
   connection: Connection? = null,
   idempotencyKey: String? = null,
+  reference: String? = null,
 ): UUID {
   val event = newEvent(name, key)
   payload?.let(event::payload)
   retention?.let { event.retention(it.toJavaDuration()) }
   connection?.let(event::connection)
   idempotencyKey?.let(event::idempotencyKey)
+  reference?.let(event::reference)
   return event.publish()
 }
 
 /**
  * Publishes an event exactly once as a durable step of this job, see `Job.newEvent(String,
- * String)`.
+ * String)`. The event has this job's reference unless [reference] is given.
  *
  * @return the id of the published event, the same on every run of the job
  */
@@ -364,11 +381,13 @@ public fun Job.publishEvent(
   payload: Any? = null,
   retention: Duration? = null,
   stepName: String? = null,
+  reference: String? = null,
 ): UUID {
   val event = newEvent(name, key)
   payload?.let(event::payload)
   retention?.let { event.retention(it.toJavaDuration()) }
   stepName?.let(event::stepName)
+  reference?.let(event::reference)
   return event.publish()
 }
 
@@ -381,6 +400,7 @@ internal class JobOptions(
   private val timeout: Duration?,
   private val handler: JobHandler?,
   private val failureHandler: JobFailureHandler? = null,
+  private val reference: String? = null,
 ) {
 
   fun <B : JobHandlerSettings<B, Any>> applyTo(builder: B): B {
@@ -397,6 +417,7 @@ internal class JobOptions(
     priority?.let { b = b.priority(it) }
     maxAttempts?.let { b = b.maxAttempts(it) }
     timeout?.let { b = b.timeout(it.toJavaDuration()) }
+    reference?.let { b = b.reference(it) }
     return b
   }
 }

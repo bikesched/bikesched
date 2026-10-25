@@ -159,22 +159,6 @@ created for new code during a rolling deploy.
   encoding versions in payloads or job names; postponed until a real case needs more than the
   workarounds.
 
-### Reference
-
-Allow jobs and events to store an external reference string (max 200 chars, like job and
-event names) when created, e.g. an id from an external system (order id, payment id, webhook
-delivery id), so it can be looked up or shown without decoding the payload.
-
-- Optional `reference(String)` on the job builder (also the transactional one) and the event
-  builder; `char_length` CHECK + `ValidationUtil`, like other 200-character names.
-- Column `reference` on `bikesched_jobs` and `bikesched_events`, nullable, not unique (unlike the
-  [idempotency key](docs/jobs/README.md#idempotency-keys), this is a display/lookup aid, not a dedup
-  key) — multiple jobs/events can share one external reference (e.g. several jobs for the same
-  order).
-- Needs an index to actually look up by it (e.g. `(name, reference)` on jobs); postponed until
-  there is a concrete lookup need.
-- Open: whether it is mutable after creation, and whether it shows up in job history.
-
 ### Stable step id for external callbacks
 
 Every step has an id (`bikesched_steps.id`, a UUIDv7 kept across its attempts, see

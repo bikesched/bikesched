@@ -106,6 +106,6 @@ public final class DefaultJobBuilder<P extends @Nullable Object>
 
   private RecurringJob recurringJob(Recurrence recurrence) {
     Objects.requireNonNull(recurrence, "recurrence");
-    return new RecurringJob(name, recurrence, payload, priority, maxAttempts, timeout);
+    return new RecurringJob(name, recurrence, payload, priority, maxAttempts, timeout, reference);
   }
 }

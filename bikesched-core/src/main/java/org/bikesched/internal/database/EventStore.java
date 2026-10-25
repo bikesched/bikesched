@@ -71,8 +71,8 @@ public final class EventStore {
 
   private static final String INSERT_EVENT_SQL =
       """
-            insert into bikesched_events (id, name, key, payload, idempotency_key, expires_at)
-            values (?, ?, ?, ?::jsonb, ?, now() + ? * interval '1 millisecond')""";
+            insert into bikesched_events (id, name, key, payload, idempotency_key, reference, expires_at)
+            values (?, ?, ?, ?::jsonb, ?, ?, now() + ? * interval '1 millisecond')""";
 
   // An unexpired event published with the same idempotency key (under the event's advisory lock).
   private static final String FIND_KEYED_EVENT_SQL =
@@ -350,6 +350,7 @@ public final class EventStore {
    *     be zero
    * @param idempotencyKey while an event with the same name, key and idempotency key is unexpired,
    *     it is returned instead of publishing again; {@code null} for none
+   * @param reference the external entity the event is about (not unique), {@code null} for none
    * @return the published event, or the earlier one with the idempotency key
    */
   public Publication publishEvent(
@@ -357,9 +358,10 @@ public final class EventStore {
       String eventKey,
       @Nullable String payload,
       Duration retention,
-      @Nullable String idempotencyKey) {
+      @Nullable String idempotencyKey,
+      @Nullable String reference) {
     return access.inTransaction(
-        db -> publish(db, eventName, eventKey, payload, retention, idempotencyKey),
+        db -> publish(db, eventName, eventKey, payload, retention, idempotencyKey, reference),
         e ->
             new BikeschedException(
                 "Publishing event " + eventName + "/" + eventKey + " failed", e));
@@ -367,15 +369,17 @@ public final class EventStore {
 
   /**
    * Publishes an event as part of the caller's transaction (see {@link #publishEvent(String,
-   * String, String, Duration, String)}): the connection is neither committed nor closed, and the
-   * event's advisory lock is held until the caller ends the transaction.
+   * String, String, Duration, String, String)}): the connection is neither committed nor closed,
+   * and the event's advisory lock is held until the caller ends the transaction.
    *
    * @param connection the caller's connection, not in auto-commit mode
    * @param eventName the event name
    * @param eventKey the event key
    * @param payload the payload as JSON text, may be {@code null}
    * @param retention how long steps starting to wait later still receive it; may be zero
-   * @param idempotencyKey see {@link #publishEvent(String, String, String, Duration, String)}
+   * @param idempotencyKey see {@link #publishEvent(String, String, String, Duration, String,
+   *     String)}
+   * @param reference the external entity the event is about, {@code null} for none
    * @return the published event (visible to others once the caller commits), or the earlier one
    *     with the idempotency key
    * @throws IllegalArgumentException if the connection is in auto-commit mode
@@ -386,7 +390,8 @@ public final class EventStore {
       String eventKey,
       @Nullable String payload,
       Duration retention,
-      @Nullable String idempotencyKey) {
+      @Nullable String idempotencyKey,
+      @Nullable String reference) {
     return access.onCallerConnection(
         connection,
         db -> {
@@ -395,7 +400,7 @@ public final class EventStore {
                 "Publishing an event on the caller's connection requires a transaction:"
                     + " the connection must not be in auto-commit mode");
           }
-          return publish(db, eventName, eventKey, payload, retention, idempotencyKey);
+          return publish(db, eventName, eventKey, payload, retention, idempotencyKey, reference);
         },
         e ->
             new BikeschedException(
@@ -414,6 +419,7 @@ public final class EventStore {
    * @param eventKey the event key
    * @param payload the payload as JSON text, may be {@code null}
    * @param retention how long steps starting to wait later still receive it; may be zero
+   * @param reference the external entity the event is about, {@code null} for none
    * @param compensating whether the job replays for compensation: then the step must exist
    * @return the id of the published event, the same on every run, and the publication if this run
    *     published it
@@ -429,6 +435,7 @@ public final class EventStore {
       String eventKey,
       @Nullable String payload,
       Duration retention,
+      @Nullable String reference,
       boolean compensating) {
     return access.inTransaction(
         db -> {
@@ -452,7 +459,8 @@ public final class EventStore {
             throw new IllegalStateException(
                 "Compensation replay has no succeeded publishing step '" + stepName + "'");
           }
-          Publication publication = publish(db, eventName, eventKey, payload, retention, null);
+          Publication publication =
+              publish(db, eventName, eventKey, payload, retention, null, reference);
           db.update(
               INSERT_PUBLISH_STEP_SQL,
               UuidUtil.timeOrdered(),
@@ -522,7 +530,8 @@ public final class EventStore {
       String eventKey,
       @Nullable String payload,
       Duration retention,
-      @Nullable String idempotencyKey)
+      @Nullable String idempotencyKey,
+      @Nullable String reference)
       throws SQLException {
     lockEvent(db, eventName, eventKey);
     if (idempotencyKey != null) {
@@ -540,6 +549,7 @@ public final class EventStore {
         eventKey,
         payload,
         idempotencyKey,
+        reference,
         retention.toMillis());
     List<Resumption> resumptions =
         db.list(

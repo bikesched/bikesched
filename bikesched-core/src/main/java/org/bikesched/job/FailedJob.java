@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.job;
 
+import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
@@ -20,6 +21,13 @@ public interface FailedJob {
    * @return the name
    */
   String name();
+
+  /**
+   * Returns the job's reference to an external entity, see {@link Job#reference()}.
+   *
+   * @return the reference; empty if the job has none
+   */
+  Optional<String> reference();
 
   /**
    * Returns the payload as stored, see {@link Job#payload()}.

@@ -12,6 +12,7 @@ import org.jspecify.annotations.Nullable;
  * @param name the event name
  * @param key the event key
  * @param idempotencyKey the key it was published with; may be {@code null}
+ * @param reference the external entity it is about; may be {@code null}
  * @param publishedAt when it was published
  * @param expiresAt when it expires and is deleted
  * @param receivedBy the number of event waits that received it
@@ -23,6 +24,7 @@ public record EventSummary(
     String name,
     String key,
     @Nullable String idempotencyKey,
+    @Nullable String reference,
     Instant publishedAt,
     Instant expiresAt,
     int receivedBy,

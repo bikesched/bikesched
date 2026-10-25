@@ -245,6 +245,20 @@ class TextLengthTest extends AbstractBikeschedTest {
     assertThatThrownBy(
             () ->
                 execute(
+                    "insert into bikesched_jobs (id, name, reference)"
+                        + " values (gen_random_uuid(), 'x', '"
+                        + "r".repeat(201)
+                        + "')"))
+        .hasMessageContaining("bikesched_jobs_reference_check");
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "insert into bikesched_events (id, name, key, reference, expires_at)"
+                        + " values (gen_random_uuid(), 'event', 'key', '', now())"))
+        .hasMessageContaining("bikesched_events_reference_check");
+    assertThatThrownBy(
+            () ->
+                execute(
                     "insert into bikesched_jobs (id, name) values (gen_random_uuid(), repeat(chr("
                         + 0x1F6B2
                         + "), 151))"))

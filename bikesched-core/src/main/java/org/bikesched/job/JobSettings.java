@@ -8,8 +8,8 @@ import org.bikesched.JsonMapper;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The settings shared by all job builders: payload, priority, attempts and timeout. Each setter
- * returns the concrete builder, so they can be called in any order:
+ * The settings shared by all job builders: payload, reference, priority, attempts and timeout. Each
+ * setter returns the concrete builder, so they can be called in any order:
  *
  * <ul>
  *   <li>{@link JobBuilder}: a one-off job or, with {@link JobBuilder#schedule(Recurrence)}, a
@@ -62,6 +62,25 @@ public interface JobSettings<B extends JobSettings<B, P>, P extends @Nullable Ob
    * @see Job#payload()
    */
   B payloadJson(@Nullable String json);
+
+  /**
+   * Sets a reference to the external entity the job is about (optional), e.g. an order or payment
+   * id, so the job can be found by it (in the admin UI, or through {@code
+   * Bikesched.admin().findJobs(JobQuery…withReference(…))}) without reading payloads. A reference
+   * is not unique: many jobs and events can share one; it is set once and never changes. Use an
+   * opaque id rather than personal data: the admin UI shows it, and it is in the logging context
+   * ({@link org.bikesched.BikeschedLogContext#JOB_REFERENCE}) while the job runs.
+   *
+   * <p>A child job (see {@link StepJobBuilder}) has its parent's reference unless this is called;
+   * {@code reference(null)} gives it none. An occurrence of a recurring job has the reference of
+   * the registration that scheduled it.
+   *
+   * @param reference 1 to 200 characters, not blank; {@code null} for none (the default)
+   * @return this builder
+   * @throws IllegalArgumentException if the reference is blank or too long
+   * @see Job#reference()
+   */
+  B reference(@Nullable String reference);
 
   /**
    * Sets the priority (optional, default 0). Due jobs with a higher priority are claimed first.

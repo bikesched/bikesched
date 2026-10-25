@@ -218,8 +218,8 @@ during a rolling deploy, old and new code can read each other's payloads.
 
 bikesched logs through the SLF4J API under the logger names `org.bikesched.*`; bring your own
 binding. On its own threads it fills the logging context with the keys from `BikeschedLogContext`:
-`bikesched.nodeId`, `bikesched.jobId`, `bikesched.jobName` and `bikesched.stepName`, each only where
-it applies. With Logback:
+`bikesched.nodeId`, `bikesched.jobId`, `bikesched.jobName`, `bikesched.jobReference` (the job's
+[reference](../jobs/README.md#references)) and `bikesched.stepName`, each only where it applies. With Logback:
 
 ```xml
 <pattern>%d %-5level [%thread] node=%X{bikesched.nodeId} job=%X{bikesched.jobId} %logger - %msg%n</pattern>

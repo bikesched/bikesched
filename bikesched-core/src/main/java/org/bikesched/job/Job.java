@@ -3,6 +3,7 @@ package org.bikesched.job;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
@@ -74,6 +75,13 @@ public interface Job extends EventPublisher {
    * @return the job name
    */
   String name();
+
+  /**
+   * Returns the job's reference to an external entity, see {@link JobSettings#reference(String)}.
+   *
+   * @return the reference; empty if the job has none
+   */
+  Optional<String> reference();
 
   /**
    * Returns the number of attempts including the current one.
