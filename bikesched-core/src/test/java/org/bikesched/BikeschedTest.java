@@ -174,7 +174,7 @@ class BikeschedTest extends AbstractBikeschedTest {
 
     assertThat(bikesched.node().isPolling()).isFalse();
     assertThatThrownBy(bikesched::start).isInstanceOf(IllegalStateException.class);
-    assertThat(bikesched.node().id()).as("never registered").isEmpty();
+    assertThat(bikesched.node().id()).as("never registered").isNull();
   }
 
   @Test

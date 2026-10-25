@@ -28,7 +28,7 @@ class DefaultNodeTest {
     assertThat(node.close()).isTrue();
     assertThat(node.close()).as("only the first call").isFalse();
     assertThat(node.isPolling()).isFalse();
-    assertThat(node.id()).as("kept after closing").contains(id);
+    assertThat(node.id()).as("kept after closing").isEqualTo(id);
     assertThatThrownBy(node::requireOpen)
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("bikesched node node-a is closed");
