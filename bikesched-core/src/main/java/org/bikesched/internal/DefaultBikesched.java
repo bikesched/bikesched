@@ -464,13 +464,14 @@ public final class DefaultBikesched implements Bikesched {
 
   private void removeShutdownHook() {
     Thread hook = shutdownHook;
-    if (hook == null || hook == Thread.currentThread()) {
+    if (hook == null) {
       return;
     }
     try {
       Runtime.getRuntime().removeShutdownHook(hook);
     } catch (IllegalStateException ignored) {
-      // The JVM is shutting down already: the hook runs anyway, and waits for this close.
+      // The JVM is shutting down (the hook may be the caller): the hook runs anyway and waits for
+      // this close.
     }
   }
 
