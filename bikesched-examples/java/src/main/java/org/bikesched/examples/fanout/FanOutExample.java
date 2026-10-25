@@ -163,8 +163,7 @@ public final class FanOutExample {
           await()
               .atMost(Duration.ofSeconds(30))
               .until(() -> bikesched.findJob(jobId).orElseThrow().state(), JobState::isEnded);
-      ImportedAlbum result =
-          bikesched.findJob(jobId).orElseThrow().result(ImportedAlbum.class).orElseThrow();
+      ImportedAlbum result = bikesched.findJob(jobId).orElseThrow().result(ImportedAlbum.class);
       System.out.printf("%s [app]     job %s ended %s: %s%n", timestamp(), jobId, state, result);
     }
   }

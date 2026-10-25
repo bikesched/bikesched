@@ -49,8 +49,8 @@ class ChildJobTest extends AbstractBikeschedTest {
       awaitState(jobId, "SUCCEEDED");
 
       JobInfo info = bikesched.findJob(jobId).orElseThrow();
-      assertThat(info.result(String.class)).contains("{\"secret\": \"s3cr3t\"}");
-      assertThat(info.parentJobId()).isEmpty();
+      assertThat(info.result(String.class)).isEqualTo("{\"secret\": \"s3cr3t\"}");
+      assertThat(info.parentJobId()).isNull();
       assertThat(bikesched.findJobHistory(jobId))
           .anyMatch(
               entry ->
@@ -67,7 +67,7 @@ class ChildJobTest extends AbstractBikeschedTest {
       UUID jobId = bikesched.newJob("child-no-result").handler(() -> {}).schedule();
       awaitState(jobId, "SUCCEEDED");
 
-      assertThat(bikesched.findJob(jobId).orElseThrow().result(String.class)).isEmpty();
+      assertThat(bikesched.findJob(jobId).orElseThrow().result(String.class)).isNull();
     }
   }
 
@@ -141,7 +141,7 @@ class ChildJobTest extends AbstractBikeschedTest {
       bikesched.registerJobHandler(
           "child-basic-child",
           job -> {
-            UUID parent = bikesched.findJob(job.id()).orElseThrow().parentJobId().orElseThrow();
+            UUID parent = bikesched.findJob(job.id()).orElseThrow().parentJobId();
             await().until(() -> count("id = '" + parent + "' and state = 'WAITING'") == 1);
             job.complete("{\"echo\": " + job.payload() + "}");
           });
@@ -164,10 +164,10 @@ class ChildJobTest extends AbstractBikeschedTest {
           .containsExactly(new JobResult.Succeeded<>(childId, "{\"echo\": \"hi\"}"));
       assertThat(count("parent_job_id = '" + parentId + "'")).isEqualTo(1);
       JobInfo child = bikesched.findJob(childId).orElseThrow();
-      assertThat(child.parentJobId()).contains(parentId);
-      assertThat(child.result(String.class)).contains("{\"echo\": \"hi\"}");
+      assertThat(child.parentJobId()).isEqualTo(parentId);
+      assertThat(child.result(String.class)).isEqualTo("{\"echo\": \"hi\"}");
       assertThat(bikesched.findJob(parentId).orElseThrow().result(String.class))
-          .contains("\"done\"");
+          .isEqualTo("\"done\"");
       assertThat(count("id = '" + parentId + "' and attempts = 1"))
           .as("waiting gives the attempt back")
           .isEqualTo(1);
@@ -787,7 +787,7 @@ class ChildJobTest extends AbstractBikeschedTest {
       execute("delete from bikesched_jobs where id = '" + parentId + "'"); // job retention
       bikesched.newEvent("child-orphan-go", "k").payload("\"go\"").publish();
       awaitState(child.get(), "SUCCEEDED");
-      assertThat(bikesched.findJob(child.get()).orElseThrow().parentJobId()).contains(parentId);
+      assertThat(bikesched.findJob(child.get()).orElseThrow().parentJobId()).isEqualTo(parentId);
     }
   }
 

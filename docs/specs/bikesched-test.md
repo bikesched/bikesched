@@ -15,7 +15,7 @@ try (Bikesched bikesched = BikeschedTest.testNode(dataSource).jsonMapper(new Jac
   UUID jobId = bikesched.newJob(CinemaJobs.TICKET_ORDER).payload(order).schedule();
 
   JobInfo job = BikeschedTest.awaitJob(bikesched, jobId).untilSucceeded();
-  assertThat(job.result(Receipt.class)).isPresent();
+  assertThat(job.result(Receipt.class)).isNotNull();
 }
 ```
 

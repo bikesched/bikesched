@@ -45,7 +45,7 @@ bikesched.registerJobHandler("fulfil-order", job -> {
 - Cancelling wins over failing, failing wins over `complete`: an attempt that is cancelled, failed
   or throws after `complete` discards the result, the next attempt sets it again. A job that ends
   after its compensations has no result.
-- `bikesched.findJob(id)` returns it: `JobInfo.result(Class)` is empty unless the job `SUCCEEDED`
+- `bikesched.findJob(id)` returns it: `JobInfo.result(Class)` is `null` unless the job `SUCCEEDED`
   with a result.
 - The [job history](../jobs/README.md#job-history) records "succeeded with result", never the result
   itself (it may be large or sensitive).

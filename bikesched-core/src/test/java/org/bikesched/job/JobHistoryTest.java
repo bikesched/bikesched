@@ -46,7 +46,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
               "charge:SUCCEEDED",
               "SUCCEEDED");
       assertThat(history).extracting(JobHistoryEntry::attempt).containsExactly(0, 1, 1, 1, 1, 1, 1);
-      UUID nodeId = bikesched.node().id().orElseThrow();
+      UUID nodeId = bikesched.node().id();
       assertThat(history.getFirst().nodeId()).isNull(); // scheduled by the application
       assertThat(history.getFirst().detail()).startsWith("due at ");
       assertThat(history.subList(1, history.size()))

@@ -351,7 +351,7 @@ class AdminTest extends AbstractBikeschedTest {
       bikesched.registerJobHandler(type, ignored -> release.await());
       UUID running = bikesched.newJob(type).schedule();
       UUID scheduled = bikesched.newJob(type).schedule(Duration.ofHours(1));
-      UUID nodeId = bikesched.node().id().orElseThrow();
+      UUID nodeId = bikesched.node().id();
       Admin admin = bikesched.admin();
 
       await()

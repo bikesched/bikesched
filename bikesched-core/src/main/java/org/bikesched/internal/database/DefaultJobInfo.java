@@ -2,7 +2,6 @@
 package org.bikesched.internal.database;
 
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.job.JobInfo;
@@ -18,7 +17,7 @@ import org.jspecify.annotations.Nullable;
  * @param type how the job was started
  * @param state the job's state when it was read
  * @param resultJson the job's result as JSON text, {@code null} if none
- * @param parent the parent job's id, {@code null} if the job is not a child
+ * @param parentJobId the parent job's id, {@code null} if the job is not a child
  * @param reference the job's reference, {@code null} if none
  * @param jsonMapper reads the result
  */
@@ -28,7 +27,7 @@ public record DefaultJobInfo(
     JobType type,
     JobState state,
     @Nullable String resultJson,
-    @Nullable UUID parent,
+    @Nullable UUID parentJobId,
     @Nullable String reference,
     JsonMapper jsonMapper)
     implements JobInfo {
@@ -36,16 +35,10 @@ public record DefaultJobInfo(
   public DefaultJobInfo {}
 
   @Override
-  public <T> Optional<T> result(Class<T> type) {
+  public <T extends @Nullable Object> @Nullable T result(Class<T> type) {
     Objects.requireNonNull(type, "type");
-    return resultJson == null || state != JobState.SUCCEEDED
-        ? Optional.empty()
-        : Optional.ofNullable(jsonMapper.fromJson(resultJson, type));
-  }
-
-  @Override
-  public Optional<UUID> parentJobId() {
-    return Optional.ofNullable(parent);
+    String json = resultJson;
+    return json == null || state != JobState.SUCCEEDED ? null : jsonMapper.fromJson(json, type);
   }
 
   @Override
@@ -58,7 +51,7 @@ public record DefaultJobInfo(
         + type
         + ", state="
         + state
-        + (parent == null ? "" : ", parentJobId=" + parent)
+        + (parentJobId == null ? "" : ", parentJobId=" + parentJobId)
         + (reference == null ? "" : ", reference=" + reference)
         + "]";
   }

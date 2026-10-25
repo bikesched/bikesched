@@ -26,7 +26,7 @@ class ShutdownTest extends AbstractBikeschedTest {
     String name = "shutdown-concurrent-" + UUID.randomUUID();
     Bikesched bikesched = testNode(name).build();
     bikesched.registerJobHandler(name, (Job job) -> Thread.sleep(1000));
-    UUID nodeId = bikesched.node().id().orElseThrow();
+    UUID nodeId = bikesched.node().id();
     UUID jobId = bikesched.newJob(name).schedule();
     awaitState(jobId, "RUNNING");
 
@@ -43,7 +43,7 @@ class ShutdownTest extends AbstractBikeschedTest {
     String name = "shutdown-interrupted-" + UUID.randomUUID();
     Bikesched bikesched = testNode(name).build();
     bikesched.registerJobHandler(name, (Job job) -> Thread.sleep(1000));
-    UUID nodeId = bikesched.node().id().orElseThrow();
+    UUID nodeId = bikesched.node().id();
     UUID jobId = bikesched.newJob(name).schedule();
     awaitState(jobId, "RUNNING");
 
@@ -154,7 +154,7 @@ class ShutdownTest extends AbstractBikeschedTest {
               .pollInterval(Duration.ofMillis(50))
               .closeOnShutdown(true)
               .build();
-      System.out.println(NODE_ID + bikesched.node().id().orElseThrow());
+      System.out.println(NODE_ID + bikesched.node().id());
       System.out.flush();
       Thread.sleep(Duration.ofMinutes(1));
     }

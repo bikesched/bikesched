@@ -210,7 +210,7 @@ public final class DefaultBikesched implements Bikesched {
     ensureReady(); // not under the lifecycle lock: close() must not wait for it
     synchronized (lifecycle) {
       node.requireOpen();
-      if (node.id().isPresent()) {
+      if (node.id() != null) {
         return node;
       }
       UUID id = UuidUtil.timeOrdered();
@@ -492,7 +492,7 @@ public final class DefaultBikesched implements Bikesched {
     UUID id;
     synchronized (lifecycle) {
       first = node.close();
-      id = node.id().orElse(null);
+      id = node.id();
     }
     if (!first) {
       awaitClosed();
@@ -559,9 +559,7 @@ public final class DefaultBikesched implements Bikesched {
     long millis = interval.toMillis();
     executor.scheduleWithFixedDelay(
         () -> {
-          try (var mdc =
-              MDC.putCloseable(
-                  BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
+          try (var mdc = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(node.id()))) {
             task.run();
           }
         },
@@ -592,9 +590,7 @@ public final class DefaultBikesched implements Bikesched {
   private void scheduleOnce(ScheduledExecutorService executor, Runnable task, Duration delay) {
     executor.schedule(
         () -> {
-          try (var mdc =
-              MDC.putCloseable(
-                  BikeschedLogContext.NODE_ID, String.valueOf(node.id().orElse(null)))) {
+          try (var mdc = MDC.putCloseable(BikeschedLogContext.NODE_ID, String.valueOf(node.id()))) {
             task.run();
           }
         },

@@ -46,8 +46,8 @@ class ChildJobsTest {
       val childId = receipts.single().jobId()
       assertThat(receipts).containsExactly(JobResult.Succeeded(childId, Receipt("o-1", 100)))
       assertThat(bikesched.findJobOrNull(jobId)?.result(Receipt::class.java))
-        .contains(Receipt("o-1", 100))
-      assertThat(bikesched.findJobOrNull(childId)?.parentJobId()).contains(jobId)
+        .isEqualTo(Receipt("o-1", 100))
+      assertThat(bikesched.findJobOrNull(childId)?.parentJobId()).isEqualTo(jobId)
       assertThat(compensated).isEmpty()
     }
   }

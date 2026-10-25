@@ -26,7 +26,7 @@ class NodeTest extends AbstractBikeschedTest {
             .nodeName("node-heartbeat")
             .heartbeatInterval(Duration.ofMillis(100))
             .build()) {
-      UUID id = bikesched.node().id().orElseThrow();
+      UUID id = bikesched.node().id();
       OffsetDateTime registered = lastHeartbeat(id);
       await().untilAsserted(() -> assertThat(lastHeartbeat(id)).isAfter(registered));
     }
@@ -38,7 +38,7 @@ class NodeTest extends AbstractBikeschedTest {
     try (logs;
         Bikesched bikesched = testNode("node-removed", Duration.ofMillis(50)).build()) {
       bikesched.registerJobHandler("after-removal", () -> {});
-      UUID id = bikesched.node().id().orElseThrow();
+      UUID id = bikesched.node().id();
 
       // Like other nodes do after missing its heartbeats for twice the node timeout.
       execute("delete from bikesched_nodes where id = '" + id + "'");
@@ -59,7 +59,7 @@ class NodeTest extends AbstractBikeschedTest {
   void removedNodeRegistersAgainNextToAnotherNodeWithItsName() throws Exception {
     UUID other = UUID.randomUUID();
     try (Bikesched bikesched = testNode("node-name-shared", Duration.ofMillis(50)).build()) {
-      UUID id = bikesched.node().id().orElseThrow();
+      UUID id = bikesched.node().id();
 
       execute(
           "begin; delete from bikesched_nodes where id = '"
@@ -87,7 +87,7 @@ class NodeTest extends AbstractBikeschedTest {
       execute("delete from bikesched_jobs where name = 'not-polling'");
 
       assertThat(bikesched.node().name()).isEqualTo("node-registers-later");
-      assertThat(bikesched.node().id()).isEmpty();
+      assertThat(bikesched.node().id()).isNull();
       assertThat(bikesched.node().isPolling()).isFalse();
       assertThat(countRows("bikesched_nodes", "name = 'node-registers-later'")).isZero();
 
@@ -95,7 +95,7 @@ class NodeTest extends AbstractBikeschedTest {
 
       assertThat(node).isSameAs(bikesched.node());
       assertThat(node.isPolling()).isTrue();
-      UUID id = node.id().orElseThrow();
+      UUID id = node.id();
       assertThat(nodeName(id)).isEqualTo("node-registers-later");
       OffsetDateTime registered = lastHeartbeat(id);
       await()
@@ -126,8 +126,8 @@ class NodeTest extends AbstractBikeschedTest {
   void liveNodesMayShareAName() throws SQLException {
     try (Bikesched first = Bikesched.builder(dataSource).nodeName("node-dup").build();
         Bikesched second = Bikesched.builder(dataSource).nodeName("node-dup").build()) {
-      UUID firstId = first.node().id().orElseThrow();
-      UUID secondId = second.node().id().orElseThrow();
+      UUID firstId = first.node().id();
+      UUID secondId = second.node().id();
 
       assertThat(firstId).isNotEqualTo(secondId);
       assertThat(nodeName(firstId)).isEqualTo("node-dup");
@@ -154,7 +154,7 @@ class NodeTest extends AbstractBikeschedTest {
             .nodeTimeout(Duration.ofSeconds(1))
             .nodeCleanUpInterval(Duration.ofMillis(50))
             .build()) {
-      assertThat(bikesched.node().id().orElseThrow()).isNotEqualTo(staleId);
+      assertThat(bikesched.node().id()).isNotEqualTo(staleId);
       await()
           .untilAsserted(
               () -> {

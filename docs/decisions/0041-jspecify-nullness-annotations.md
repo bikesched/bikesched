@@ -34,7 +34,8 @@ annotation are non-null, and `@Nullable` marks exactly the places where `null` i
   so they accept nullable type arguments (e.g. Kotlin's `step<String?>`).
 - Positions where `null` occurs whatever the type argument are `@Nullable T`: a job without
   payload, a step returning `null`, `FailingStep.resolve(null)`, `JobResult.orElse(null)`.
-- `Optional`-returning lookups stay as they are.
+- `Optional`-returning lookups stay as they are; accessors of values that may be absent
+  (`JobInfo.parentJobId()`, `JobInfo.result(Class)`, `Node.id()`) return `@Nullable`.
 - `org.jspecify:jspecify` is an `api` dependency of core (`requires transitive org.jspecify`), as
   JSpecify recommends, so annotations are visible to consumers' tools and to Kotlin.
 - The internal packages and the other modules are not marked yet, and the build has no nullness
