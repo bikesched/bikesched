@@ -126,6 +126,8 @@ export function historyDetail(entry) {
     else if (key === 'eventId' || key === 'childJobId') value = shortId(value);
     return label ? `${label} ${value}` : value;
   });
+  // A job entry naming a step (SUSPENDED, POSTPONED): the step it happened in.
+  if (!entry.stepId && data.stepName) parts.unshift(`step ${data.stepName}`);
   return [data.error, data.message, parts.join(' · ')].filter(Boolean).join(' · ');
 }
 

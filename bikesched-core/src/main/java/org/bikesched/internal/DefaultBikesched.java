@@ -214,8 +214,8 @@ public final class DefaultBikesched implements Bikesched {
         return node;
       }
       UUID id = UuidUtil.timeOrdered();
-      database.history().writtenBy(id);
       database.nodes().registerNode(id, nodeName);
+      database.history().writtenBy(id);
       var heartbeat = new NodeHeartbeat(database, id, nodeName);
       var nodeCleanUp =
           new NodeCleanUp(
