@@ -52,6 +52,22 @@ no commit callback, and reporting before the commit could count rolled-back even
 The Spring starter could register a `TransactionSynchronization` and report after the commit when
 the connection belongs to a Spring-managed transaction.
 
+### Longer retention for user history entries
+
+The history has one retention: every entry older than it is deleted, whatever its kind. Most
+entries are debugging data (claims, step starts, successes), wanted for days; entries of users
+(`actor_type = 'USER'`: a cancel, retry or publish from the admin UI) are an audit trail, few per
+day and often wanted for months. One retention either drops the audit trail early or keeps months
+of job noise.
+
+- A second setting, e.g. `userHistoryRetention(Duration)`, defaulting to the history retention.
+- The clean-up deletes in two batches: entries `where actor_type <> 'USER'` past the history
+  retention, user entries past their own, the latter through the partial user index.
+- The entries a user's action caused (an event's receivers) stay on the short retention; the user
+  entry keeps its detail.
+- Outcome: an audit trail of what people did that outlives the debugging history, without a
+  bigger table.
+
 ### Pausing jobs
 
 An operator can cancel a job or one occurrence of a recurring job, and remove a recurring job that
