@@ -274,11 +274,13 @@ public record StepEntry(UUID id, UUID jobId, UUID stepId, Instant createdAt, Ste
     StepState state, int attempt, …) implements HistoryEntry { … }
 public record EventEntry(UUID id, UUID eventId, Instant createdAt, EventAction action, …)
     implements HistoryEntry { … }
-public record NodeEntry(UUID id, UUID nodeId, Instant createdAt, NodeAction action, …)
+public record NodeEntry(UUID id, UUID subjectId, Instant createdAt, NodeAction action, …)
     implements HistoryEntry { … }
 ```
 
 - `@Nullable` rather than `Optional` on the interface: record components implement it.
+- `nodeId()` is always the writing node. A node entry's subject is therefore `subjectId`, not
+  `nodeId`: for a `REMOVED` entry the two differ (the removed node and the node that removed it).
 - The records narrow `action()` to their enum. Step states need a public `StepState` (internal in
   `internal.database` today; the public one moves to `org.bikesched.job`, next to `JobState`).
 - Also public: `Actor` (`Actor.user(String)`, validated like other names), `ActorType`,
@@ -324,7 +326,9 @@ filter) with the design; they are not part of the repository.
   own `REGISTERED` entry (one primary-key lookup per distinct node on the page). Only a node whose
   `REGISTERED` entry is past the retention shows its short id.
 - Live refresh re-reads a trailing window (the last minute before the newest shown entry) and
-  merges by `id`: an entry of a long transaction commits after newer ones were shown.
+  merges by `id`: an entry of a long transaction commits after newer ones were shown. An entry of
+  a transaction open longer than the window (a caller's connection held for minutes) is missed by
+  live refresh and shows up on the next Reload, which reads the page from scratch; the docs say so.
 - Job, step, event and node pages show the action next to the state badge.
 - Visible to viewers too, user names and messages included.
 - JSON API: `GET api/history` (query parameters for the filters and the cursor), the `history` of
