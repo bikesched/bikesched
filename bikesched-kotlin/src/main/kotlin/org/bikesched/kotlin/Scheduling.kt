@@ -7,6 +7,7 @@ import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 import org.bikesched.Bikesched
+import org.bikesched.history.Actor
 import org.bikesched.job.FailedJob
 import org.bikesched.job.Job
 import org.bikesched.job.JobBuilder
@@ -104,6 +105,8 @@ public fun Bikesched.handleJobFailures(name: String, handler: FailedJob.() -> Un
  *   another one, see `JobBuilder.idempotencyKey`
  * @param reference the external entity the job is about, e.g. an order id, see
  *   `JobSettings.reference`
+ * @param actor the user scheduling the job, named on its history entry, see
+ *   `JobHandlerSettings.actor`
  * @param onFailure handles failed jobs of this name, registered unless the name already has a
  *   failure handler, see [handleJobFailures]
  * @param handler executes jobs of this name, registered unless the name already has a handler
@@ -120,6 +123,7 @@ public fun Bikesched.createJob(
   connection: Connection? = null,
   idempotencyKey: String? = null,
   reference: String? = null,
+  actor: Actor? = null,
   onFailure: (FailedJob.() -> Unit)? = null,
   handler: (Job.() -> Unit)? = null,
 ): UUID =
@@ -134,6 +138,7 @@ public fun Bikesched.createJob(
       handler?.let { JobHandler { job -> job.it() } },
       onFailure?.let { JobFailureHandler { failed -> failed.it() } },
       reference,
+      actor,
     ),
     at,
     delay,
@@ -166,6 +171,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
   connection: Connection? = null,
   idempotencyKey: String? = null,
   reference: String? = null,
+  actor: Actor? = null,
   noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   noinline handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID =
@@ -180,6 +186,7 @@ public inline fun <reified T : Any> Bikesched.createJob(
       handler?.let { typedJobHandler(name, T::class.java, false, it) },
       onFailure?.let { typedJobFailureHandler(name, T::class.java, false, it) },
       reference,
+      actor,
     ),
     at,
     delay,
@@ -211,6 +218,7 @@ public fun <T : Any> Bikesched.createJob(
   connection: Connection? = null,
   idempotencyKey: String? = null,
   reference: String? = null,
+  actor: Actor? = null,
   onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID {
@@ -220,6 +228,7 @@ public fun <T : Any> Bikesched.createJob(
   maxAttempts?.let { builder = builder.maxAttempts(it) }
   timeout?.let { builder = builder.timeout(it.toJavaDuration()) }
   reference?.let { builder = builder.reference(it) }
+  actor?.let { builder = builder.actor(it) }
   handler?.let { h ->
     builder =
       builder.handler(TypedJobHandler<T> { job, p -> job.h(requirePayload(job.id(), typedJob, p)) })
@@ -250,6 +259,8 @@ public fun <T : Any> Bikesched.createJob(
  * @param maxAttempts the maximum number of attempts per occurrence; defaults to 3
  * @param timeout the maximum duration of an attempt; defaults to the node's default
  * @param reference the reference of every occurrence, see `JobSettings.reference`
+ * @param actor the user registering the recurring job, named on the history entry of the occurrence
+ *   it creates or moves, see `JobHandlerSettings.actor`
  * @param onFailure handles failed occurrences, registered unless the name already has a failure
  *   handler, see [handleJobFailures]
  * @param handler executes jobs of this name, registered unless the name already has a handler
@@ -266,6 +277,7 @@ public fun Bikesched.createRecurringJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   reference: String? = null,
+  actor: Actor? = null,
   onFailure: (FailedJob.() -> Unit)? = null,
   handler: (Job.() -> Unit)? = null,
 ): UUID =
@@ -281,6 +293,7 @@ public fun Bikesched.createRecurringJob(
       handler?.let { JobHandler { job -> job.it() } },
       onFailure?.let { JobFailureHandler { failed -> failed.it() } },
       reference,
+      actor,
     ),
     firstRun,
     delay,
@@ -312,6 +325,7 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   reference: String? = null,
+  actor: Actor? = null,
   noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
   noinline handler: (Job.(payload: T) -> Unit)? = null,
 ): UUID =
@@ -327,6 +341,7 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
       handler?.let { typedJobHandler(name, T::class.java, false, it) },
       onFailure?.let { typedJobFailureHandler(name, T::class.java, false, it) },
       reference,
+      actor,
     ),
     firstRun,
     delay,
@@ -349,6 +364,8 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
  *   its id instead of publishing again, see `NodeEventBuilder.idempotencyKey`
  * @param reference the external entity the event is about, e.g. a payment id, see
  *   `EventBuilder.reference`
+ * @param actor the user publishing the event, named on its history entry, see
+ *   `NodeEventBuilder.actor`
  * @return the id of the published event, or of the earlier one with the idempotency key
  */
 public fun Bikesched.publishEvent(
@@ -359,6 +376,7 @@ public fun Bikesched.publishEvent(
   connection: Connection? = null,
   idempotencyKey: String? = null,
   reference: String? = null,
+  actor: Actor? = null,
 ): UUID {
   val event = newEvent(name, key)
   payload?.let(event::payload)
@@ -366,6 +384,7 @@ public fun Bikesched.publishEvent(
   connection?.let(event::connection)
   idempotencyKey?.let(event::idempotencyKey)
   reference?.let(event::reference)
+  actor?.let(event::actor)
   return event.publish()
 }
 
@@ -401,12 +420,14 @@ internal class JobOptions(
   private val handler: JobHandler?,
   private val failureHandler: JobFailureHandler? = null,
   private val reference: String? = null,
+  private val actor: Actor? = null,
 ) {
 
   fun <B : JobHandlerSettings<B, Any>> applyTo(builder: B): B {
     var b = applySettingsTo(builder)
     handler?.let { b = b.handler(it) }
     failureHandler?.let { b = b.failureHandler(it) }
+    actor?.let { b = b.actor(it) }
     return b
   }
 

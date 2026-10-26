@@ -3,6 +3,7 @@ package org.bikesched.internal.database;
 
 import java.time.Duration;
 import java.time.Instant;
+import org.bikesched.history.Actor;
 import org.bikesched.job.JobBuilder;
 import org.jspecify.annotations.Nullable;
 
@@ -23,6 +24,8 @@ import org.jspecify.annotations.Nullable;
  * @param idempotencyKey unique per job name while the job exists: scheduling a job with the key of
  *     an existing one returns that job; {@code null} for none
  * @param reference the external entity the job is about (not unique), {@code null} for none
+ * @param actor the user scheduling the job (or registering the recurring job), named on its {@code
+ *     SCHEDULED} or {@code MOVED} history entry; {@code null} for the code path's actor
  */
 public record NewJob(
     String name,
@@ -34,7 +37,34 @@ public record NewJob(
     @Nullable String recurrence,
     @Nullable Instant plannedRunAt,
     @Nullable String idempotencyKey,
-    @Nullable String reference) {
+    @Nullable String reference,
+    @Nullable Actor actor) {
+
+  /** A job without a user. */
+  public NewJob(
+      String name,
+      @Nullable String payload,
+      Instant scheduledAt,
+      int priority,
+      int maxAttempts,
+      @Nullable Duration timeout,
+      @Nullable String recurrence,
+      @Nullable Instant plannedRunAt,
+      @Nullable String idempotencyKey,
+      @Nullable String reference) {
+    this(
+        name,
+        payload,
+        scheduledAt,
+        priority,
+        maxAttempts,
+        timeout,
+        recurrence,
+        plannedRunAt,
+        idempotencyKey,
+        reference,
+        null);
+  }
 
   /** A job without idempotency key and reference: a one-off job or an occurrence. */
   public NewJob(
@@ -56,6 +86,7 @@ public record NewJob(
         recurrence,
         plannedRunAt,
         null,
+        null,
         null);
   }
 
@@ -67,6 +98,22 @@ public record NewJob(
       int priority,
       int maxAttempts,
       @Nullable Duration timeout) {
-    this(name, payload, scheduledAt, priority, maxAttempts, timeout, null, null, null, null);
+    this(name, payload, scheduledAt, priority, maxAttempts, timeout, null, null, null, null, null);
+  }
+
+  /** This job named as scheduled by the given user, or as it is for {@code null}. */
+  public NewJob withActor(@Nullable Actor actor) {
+    return new NewJob(
+        name,
+        payload,
+        scheduledAt,
+        priority,
+        maxAttempts,
+        timeout,
+        recurrence,
+        plannedRunAt,
+        idempotencyKey,
+        reference,
+        actor);
   }
 }

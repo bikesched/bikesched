@@ -133,7 +133,8 @@ results and events exchanged between services.
 ### Draining jobs
 
 Before removing a handler, a branch or a job name, check that no job still needs it. The
-[lookups](../operations/admin.md#lookups-in-code) behind the admin UI count and list them:
+[lookups](../operations/admin.md#lookups-and-actions-in-code) behind the admin UI count and list
+them:
 
 ```java
 Admin admin = bikesched.admin();

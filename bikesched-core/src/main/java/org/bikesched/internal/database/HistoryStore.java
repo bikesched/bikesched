@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.history.Actor;
 import org.bikesched.history.ActorType;
 import org.bikesched.history.EventAction;
 import org.bikesched.history.EventEntry;
@@ -57,12 +58,13 @@ public final class HistoryStore {
   private static final String RECORD_SQL =
       """
             insert into bikesched_history (subject_id, id, step_id, subject_type, action, state, node_id,
-                                           caused_by_id, attempt, actor_type, data)
+                                           caused_by_id, attempt, actor_type, actor_name, data)
             select t.subject_id, t.id, t.step_id, t.subject_type, t.action, t.state,
                    coalesce(t.node_id, ?::uuid),
                    t.caused_by_id,
                    case when t.subject_type = 'JOB' then coalesce(t.attempt, j.attempts, 0) end,
                    t.actor_type,
+                   t.actor_name,
                    nullif(jsonb_strip_nulls(jsonb_build_object(
                        'subjectName', coalesce(t.subject_name, j.name, e.name, n.name),
                        'stepName', coalesce(s.name, t.step_name),
@@ -89,12 +91,13 @@ public final class HistoryStore {
                           ?::integer[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[],
                           ?::integer[], ?::integer[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[],
                           ?::text[], ?::uuid[], ?::text[], ?::uuid[], ?::text[], ?::text[], ?::uuid[],
-                          ?::text[], ?::integer[])
+                          ?::text[], ?::integer[], ?::text[])
                    with ordinality as t (subject_id, id, step_id, subject_type, action, state, caused_by_id,
                                          attempt, actor_type, subject_name, step_name, error, message, reason,
                                          run, checks, due_at, wait_until, recurrence, previous_recurrence,
                                          idempotency_key, reference, child_job_id, child_state, event_id,
-                                         event_name, event_key, node_id, retention, received, position)
+                                         event_name, event_key, node_id, retention, received, actor_name,
+                                         position)
               left join bikesched_jobs j on t.subject_type = 'JOB' and j.id = t.subject_id
               left join bikesched_events e on t.subject_type = 'EVENT' and e.id = t.subject_id
               left join bikesched_nodes n on t.subject_type = 'NODE' and n.id = t.subject_id
@@ -155,7 +158,8 @@ public final class HistoryStore {
     private final HistoryAction action;
     private final @Nullable String state;
     private final @Nullable Integer attempt;
-    private final ActorType actorType;
+    private ActorType actorType;
+    private @Nullable String actorName;
     private @Nullable UUID causedById;
     private @Nullable String subjectName;
     private @Nullable String stepName;
@@ -248,6 +252,17 @@ public final class HistoryStore {
     public static Change node(UUID nodeId, NodeAction action) {
       return new Change(SubjectType.NODE, nodeId, null, action, null, null, ActorType.NODE)
           .writtenBy(nodeId);
+    }
+
+    /**
+     * The user who made the change, replacing the code path's actor type; {@code null} for none.
+     */
+    public Change actor(@Nullable Actor actor) {
+      if (actor != null) {
+        this.actorType = actor.type();
+        this.actorName = actor.name();
+      }
+      return this;
     }
 
     /** The node writing the entry, if not the store's registered node. */
@@ -428,6 +443,7 @@ public final class HistoryStore {
     var writers = new @Nullable UUID[size];
     var retentions = new @Nullable String[size];
     var received = new @Nullable Integer[size];
+    var actorNames = new @Nullable String[size];
     for (int i = 0; i < size; i++) {
       Change change = changes.get(i);
       subjectIds[i] = change.subjectId;
@@ -461,6 +477,7 @@ public final class HistoryStore {
       Duration retention = change.retention;
       retentions[i] = retention == null ? null : retention.toString();
       received[i] = change.received;
+      actorNames[i] = change.actorName;
     }
     db.update(
         RECORD_SQL,
@@ -494,7 +511,8 @@ public final class HistoryStore {
         Sql.array("text", eventKeys),
         Sql.array("uuid", writers),
         Sql.array("text", retentions),
-        Sql.array("integer", received));
+        Sql.array("integer", received),
+        Sql.array("text", actorNames));
   }
 
   /** Records one change, see {@link #record(Sql, List)}. */

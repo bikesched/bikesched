@@ -152,8 +152,8 @@ class DueJobsStoreTest extends AbstractStoreTest {
         .suspendJob(claimed.id(), claimed.lock(), step(claimed.id(), "wait"), "paid", "due-2");
     due.clear();
 
-    database.events().publishEvent("paid", "due-2", null, KEPT, null, null);
-    database.events().publishEvent("paid", "nobody-waits", null, KEPT, null, null);
+    database.events().publishEvent("paid", "due-2", null, KEPT, null, null, null);
+    database.events().publishEvent("paid", "nobody-waits", null, KEPT, null, null, null);
 
     assertThat(due.now).containsExactly(Set.of("resumed"));
   }
@@ -169,8 +169,8 @@ class DueJobsStoreTest extends AbstractStoreTest {
     database.jobs().insertJob(delayed, job("cancelled", Instant.now().plusSeconds(60)));
     due.clear();
 
-    assertThat(database.jobs().retryJob(failedJob)).isTrue();
-    assertThat(database.jobs().requestCancel(delayed, null)).isTrue();
+    assertThat(database.jobs().retryJob(failedJob, null)).isTrue();
+    assertThat(database.jobs().requestCancel(delayed, null, null)).isTrue();
 
     assertThat(due.now).containsExactly(Set.of("failed"), Set.of("cancelled"));
   }
@@ -182,7 +182,7 @@ class DueJobsStoreTest extends AbstractStoreTest {
     claimJobs(registerNode("node-due-cancel-running"), 1);
     due.clear();
 
-    assertThat(database.jobs().requestCancel(jobId, null)).isTrue();
+    assertThat(database.jobs().requestCancel(jobId, null, null)).isTrue();
 
     assertThat(due.now).isEmpty();
   }
@@ -273,7 +273,7 @@ class DueJobsStoreTest extends AbstractStoreTest {
       connection.setAutoCommit(false);
       database
           .events()
-          .publishEventInTransaction(connection, "paid", "due-3", null, KEPT, null, null);
+          .publishEventInTransaction(connection, "paid", "due-3", null, KEPT, null, null, null);
       connection.commit();
 
       assertThat(receive(listener)).containsExactly("resumed-by-caller");

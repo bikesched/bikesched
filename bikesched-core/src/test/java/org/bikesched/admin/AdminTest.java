@@ -21,7 +21,7 @@ import org.bikesched.job.Recurrence;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** The read-only lookups of {@link Bikesched#admin()}. */
+/** The lookups of {@link Bikesched#admin()}. */
 class AdminTest extends AbstractBikeschedTest {
 
   private final String prefix = "admin-" + UUID.randomUUID().toString().substring(0, 8) + "-";

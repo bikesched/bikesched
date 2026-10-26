@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
+import org.bikesched.history.Actor;
 import org.bikesched.history.ActorType;
 import org.bikesched.history.JobAction;
 import org.bikesched.history.StepAction;
@@ -492,6 +493,7 @@ public final class JobStore {
   /** The history entry of a new job (or occurrence). */
   private static Change created(UUID jobId, NewJob job, ActorType actor) {
     return Change.job(jobId, JobAction.SCHEDULED, JobState.SCHEDULED, 0, actor)
+        .actor(job.actor())
         .dueAt(job.scheduledAt())
         .recurrence(job.recurrence(), null)
         .keys(job.idempotencyKey(), job.reference());
@@ -941,9 +943,10 @@ public final class JobStore {
    *
    * @param jobId the job id
    * @param message why the job is cancelled, may be {@code null}
+   * @param actor the user cancelling it, {@code null} for the application
    * @return {@code false} if the job does not exist, has ended or is compensating
    */
-  public boolean requestCancel(UUID jobId, @Nullable String message) {
+  public boolean requestCancel(UUID jobId, @Nullable String message, @Nullable Actor actor) {
     return history.change(
         db -> {
           Optional<ChangedJob> job =
@@ -964,6 +967,7 @@ public final class JobStore {
                         job.get().state(),
                         job.get().attempts(),
                         ActorType.APPLICATION)
+                    .actor(actor)
                     .message(message));
           }
           return job.isPresent();
@@ -975,10 +979,11 @@ public final class JobStore {
    * Schedules a {@code FAILED} job to run again right away, see {@code RETRY_JOB_SQL}.
    *
    * @param jobId the job
+   * @param actor the user retrying it, {@code null} for the application
    * @return whether the job was failed and is now scheduled
    * @throws IllegalArgumentException if the job is an occurrence of a recurring job
    */
-  public boolean retryJob(UUID jobId) {
+  public boolean retryJob(UUID jobId, @Nullable Actor actor) {
     return history.change(
         db -> {
           Optional<ChangedJob> job = db.one(RETRY_JOB_SQL, ChangedJob::from, jobId);
@@ -987,11 +992,12 @@ public final class JobStore {
             history.record(
                 db,
                 Change.job(
-                    jobId,
-                    JobAction.RETRIED,
-                    job.get().state(),
-                    job.get().attempts(),
-                    ActorType.APPLICATION));
+                        jobId,
+                        JobAction.RETRIED,
+                        job.get().state(),
+                        job.get().attempts(),
+                        ActorType.APPLICATION)
+                    .actor(actor));
             return true;
           }
           Optional<NotRetryable> notRetryable =
@@ -1179,6 +1185,7 @@ public final class JobStore {
                         JobState.SCHEDULED,
                         moved.get().attempts(),
                         ActorType.APPLICATION)
+                    .actor(first.actor())
                     .recurrence(first.recurrence(), moved.get().previousRecurrence())
                     .dueAt(first.scheduledAt()));
           }
@@ -1226,9 +1233,10 @@ public final class JobStore {
    * Deletes the pending occurrences of a recurring job that are not running.
    *
    * @param name the job name of the recurring job
+   * @param actor the user removing it, {@code null} for the application
    * @return the number of deleted occurrences
    */
-  public int deletePendingOccurrences(String name) {
+  public int deletePendingOccurrences(String name, @Nullable Actor actor) {
     return history.change(
         db -> {
           List<Change> deleted =
@@ -1241,6 +1249,7 @@ public final class JobStore {
                               row.enumValue("state", JobState.class),
                               row.integer("attempts"),
                               ActorType.APPLICATION)
+                          .actor(actor)
                           .subjectName(row.string("name")),
                   name);
           history.record(db, deleted);

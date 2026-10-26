@@ -95,7 +95,7 @@ class HistoryStoreTest extends AbstractStoreTest {
             .jobs()
             .registerRecurringJob(new NewJob("report", null, at, 0, 3, null, "every PT1H", at));
 
-    assertThat(database.jobs().deletePendingOccurrences("report")).isEqualTo(1);
+    assertThat(database.jobs().deletePendingOccurrences("report", null)).isEqualTo(1);
 
     List<HistoryEntry> history = database.history().findJobHistory(registration.jobId());
     assertThat(HistoryTesting.actions(history)).containsExactly("SCHEDULED", "DELETED");

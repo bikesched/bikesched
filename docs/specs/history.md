@@ -1,7 +1,7 @@
 # Specification: history of jobs, events, nodes and user actions
 
-Status: **implementing**: steps 1 and 2 of 4 (table and entries; events, nodes and causes) are
-implemented, see
+Status: **implementing**: steps 1 to 3 of 4 (table and entries; events, nodes and causes; users)
+are implemented, see
 [ADR 0062](../decisions/0062-one-history-with-actions-and-actors.md) and the
 [History](../jobs/README.md#history) docs.
 
@@ -15,9 +15,9 @@ actions users take in the admin UI (or any other tool acting for a person), with
 Bikesched bikesched =
     Bikesched.builder().dataSource(dataSource).history(Duration.ofDays(7)).build();
 
-// writes that are plain methods today become builders; a user can be named on each
-bikesched.cancelJob(jobId).message("customer called").actor(Actor.user("simon")).cancel();
-bikesched.retryJob(jobId).actor(Actor.user("simon")).retry();
+// the admin's actions are builders naming a user; jobs and events name one on their builders
+bikesched.admin().cancelJob(jobId).message("customer called").actor(Actor.user("simon")).cancel();
+bikesched.admin().retryJob(jobId).actor(Actor.user("simon")).retry();
 bikesched.newEvent("paid", "order-1").actor(Actor.user("simon")).publish();
 
 for (HistoryEntry entry : bikesched.findJobHistory(jobId)) {
@@ -64,8 +64,8 @@ In scope:
 - A link to the event, job or node that caused an entry (`caused_by_id`).
 - Names and an action's specifics stored with the entry (`data`, JSON built in SQL), so a deleted
   job, step, event or node still reads well.
-- Builders for the writes that are plain methods today (cancel, retry, removing a recurring job),
-  each with an `actor(…)` option, as on the job and event builders.
+- Builders under `bikesched.admin()` for the writes that are plain methods today (cancel, retry,
+  removing a recurring job), each with an `actor(…)` option, as on the job and event builders.
 - Read API: `findJobHistory`, `findEventHistory`, and `Admin.findHistory(HistoryQuery)` for the
   History tab.
 - Admin UI: the History tab, actions and actors in the job, step, event and node pages, the admin's
@@ -293,17 +293,18 @@ public record NodeEntry(UUID id, UUID subjectId, Instant createdAt, NodeAction a
   `JobHistoryEntry` is removed.
 - `Admin.findHistory(HistoryQuery)`: entries newest first, filtered by subject type, actor type,
   actions and a time bound, keyset-paged by (`created_at`, `id`).
-- Builders, replacing plain methods (breaking, `feat!`):
+- Builders under `Admin`, next to the plain methods of `Bikesched`, which stay (see 10.5):
 
   ```java
-  boolean cancelled = bikesched.cancelJob(jobId).message("…").actor(actor).cancel();
-  boolean retried = bikesched.retryJob(jobId).actor(actor).retry();
-  boolean removed = bikesched.removeRecurringJob("report").actor(actor).remove(); // also TypedJob
+  Admin admin = bikesched.admin();
+  boolean cancelled = admin.cancelJob(jobId).message("…").actor(actor).cancel();
+  boolean retried = admin.retryJob(jobId).actor(actor).retry();
+  boolean removed = admin.removeRecurringJob("report").actor(actor).remove(); // also TypedJob
   ```
 
-  replace `cancel(UUID)`, `cancel(UUID, String)`, `retry(UUID)` and `removeRecurringJob(…)`.
-  `JobBuilder` and `NodeEventBuilder` get `actor(Actor)`. Internally each builder builds an
-  immutable command (sealed, like the job state of ADR 0043) executed in one place.
+  `JobBuilder`, `TransactionalJobBuilder`, `IdempotentJobBuilder` (through `JobHandlerSettings`)
+  and `NodeEventBuilder` get `actor(Actor)`. The builders run the same code path as the plain
+  methods, with the actor passed down to the store.
 - Configuration: `history(Duration)` and `historyCleanUpInterval(Duration)` replace
   `jobHistory(…)`; Spring properties `bikesched.history-retention` and
   `bikesched.history-clean-up-interval`; Kotlin DSL `historyRetention`, `historyCleanUpInterval`.
@@ -412,8 +413,8 @@ Four pull requests, each green on its own:
 2. **Events, nodes and causes**: `PUBLISHED` and node entries, `caused_by_id` on every caused
    entry, `findEventHistory`, the event and node pages in the admin.
 3. **Users**: `Actor`, `actor(…)` on `JobBuilder` and `NodeEventBuilder`, the `cancelJob`,
-   `retryJob` and `removeRecurringJob` builders replacing the methods (examples, docs, Kotlin,
-   Spring), the admin passing the signed-in user.
+   `retryJob` and `removeRecurringJob` builders under `Admin` (docs, Kotlin), the admin passing
+   the signed-in user.
 4. **History tab**: `Admin.findHistory`, `api/history`, the tab, its filters and detail panel.
 
 Docs in the same changes: the ADR (superseding ADR 0007 and the history part of ADR 0057),
@@ -482,3 +483,11 @@ None.
 8. The node page reads `Admin.findNodeHistory(UUID)` (the node's entries and those it caused),
    next to `Bikesched.findEventHistory`; `api/nodes/{id}` answers for a removed node while it has
    history entries, with `node` `null`.
+9. `Actor` is a record of an `ActorType` and a name that accepts `USER` only, created with
+   `Actor.user(name)`. `actor(…)` sits on `JobHandlerSettings`, so the job builders reached from
+   `Bikesched` have it and `StepJobBuilder` (child jobs) does not. A recurring job's registration
+   names the user on the occurrence it creates or moves (`SCHEDULED`, `MOVED`); later occurrences
+   are the node's. The admin's write builders build no command object: they call the node's
+   cancel, retry and remove paths with the actor, the plain methods call them with none.
+10. The admin passes `Actor.user(grant.user())` on cancel, retry, schedule and publish when the
+    grant names a user; the cancel message is "cancelled from the admin UI" without the user.

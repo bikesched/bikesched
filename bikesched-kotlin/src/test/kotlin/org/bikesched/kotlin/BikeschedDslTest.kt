@@ -10,6 +10,7 @@ import kotlin.time.Duration.Companion.seconds
 import org.assertj.core.api.Assertions.assertThat
 import org.bikesched.event.listener.EventListener
 import org.bikesched.event.listener.EventPublication
+import org.bikesched.history.Actor
 import org.bikesched.job.JobState
 import org.bikesched.job.RecurrenceParser
 import org.bikesched.job.listener.JobListener
@@ -60,12 +61,32 @@ class BikeschedDslTest {
         assertThat(bikesched.findJobHistory(jobId).map { it.action().name() })
           .containsExactly("SCHEDULED")
 
+        val simon = Actor.user("simon")
+        val userJob =
+          bikesched.createJob(name = unique("dsl-user"), delay = 1.hours, actor = simon) {}
+        val userRecurring = unique("dsl-user-recurring")
+        val userOccurrence =
+          bikesched.createRecurringJob(
+            name = userRecurring,
+            recurrence = every(1.hours),
+            actor = simon,
+          ) {}
+        val userEvent =
+          bikesched.publishEvent(name = unique("dsl-user-event"), key = "k", actor = simon)
+        assertThat(
+            listOf(userJob, userOccurrence).map {
+              bikesched.findJobHistory(it).single().actorName()
+            } + bikesched.findEventHistory(userEvent).single().actorName()
+          )
+          .containsOnly("simon")
+        bikesched.removeRecurringJob(userRecurring)
+
         val recurring = unique("dsl-recurring")
         bikesched.newJob(recurring).handler { _ -> }.schedule("PT1H")
         assertThat(bikesched.removeRecurringJob(recurring)).isTrue()
 
         val eventId = bikesched.newEvent(unique("dsl-event"), "k").publish()
-        assertThat(published.map { it.eventId() }).containsExactly(eventId)
+        assertThat(published.map { it.eventId() }).containsExactly(userEvent, eventId)
       }
   }
 

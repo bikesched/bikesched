@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import org.bikesched.history.Actor;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.TransactionalJobBuilder;
@@ -47,6 +48,11 @@ final class DefaultTransactionalJobBuilder<P extends @Nullable Object>
   @Override
   public TransactionalJobBuilder<P> failureHandler(TypedJobFailureHandler<? super P> handler) {
     return setFailureHandler(handler);
+  }
+
+  @Override
+  public TransactionalJobBuilder<P> actor(Actor actor) {
+    return setActor(actor);
   }
 
   @Override

@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
+import org.bikesched.history.Actor;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobFailureHandler;
@@ -42,12 +43,16 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
         @Nullable JobFailureHandler failureHandler,
         @Nullable Connection connection);
 
-    /** Registers a recurring job; {@code firstRun} is {@code null} for the schedule's next run. */
+    /**
+     * Registers a recurring job; {@code firstRun} is {@code null} for the schedule's next run,
+     * {@code actor} the user registering it, {@code null} for the application.
+     */
     UUID scheduleRecurring(
         RecurringJob job,
         @Nullable JobHandler handler,
         @Nullable JobFailureHandler failureHandler,
-        @Nullable Instant firstRun);
+        @Nullable Instant firstRun,
+        @Nullable Actor actor);
 
     /** Parses a recurrence expression with the node's recurrence parsers. */
     Recurrence parseRecurrence(String expression);
@@ -80,6 +85,9 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
   /** Whether {@link #reference(String)} was called; a child job inherits its parent's otherwise. */
   boolean referenceSet;
 
+  /** Set by the builders implementing {@code JobHandlerSettings}, otherwise {@code null}. */
+  @Nullable Actor actor;
+
   BaseJobBuilder(String name, Class<P> payloadType, JsonMapper jsonMapper, Scheduler scheduler) {
     this.name = name;
     this.payloadType = payloadType;
@@ -99,6 +107,7 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
     this.idempotencyKey = settings.idempotencyKey;
     this.reference = settings.reference;
     this.referenceSet = settings.referenceSet;
+    this.actor = settings.actor;
   }
 
   /** This builder as its interface type. */
@@ -146,6 +155,12 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
     return setFailureHandler(JobRegistry.typed(handler, payloadType));
   }
 
+  /** Sets the user scheduling the job, for the builders implementing {@code JobHandlerSettings}. */
+  B setActor(Actor actor) {
+    this.actor = Objects.requireNonNull(actor, "actor");
+    return self();
+  }
+
   /** Sets the idempotency key, for the builders of one-off jobs scheduled through bikesched. */
   B setIdempotencyKey(String idempotencyKey) {
     this.idempotencyKey = ValidationUtil.requireKey(idempotencyKey, "idempotency key");
@@ -182,7 +197,17 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
   /** A one-off job with the current settings and the given reference. */
   NewJob newJob(Instant at, @Nullable String reference) {
     return new NewJob(
-        name, payload, at, priority, maxAttempts, timeout, null, null, idempotencyKey, reference);
+        name,
+        payload,
+        at,
+        priority,
+        maxAttempts,
+        timeout,
+        null,
+        null,
+        idempotencyKey,
+        reference,
+        actor);
   }
 
   static Instant after(Duration delay) {

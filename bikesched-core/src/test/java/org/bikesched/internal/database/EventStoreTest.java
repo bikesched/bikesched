@@ -42,7 +42,7 @@ class EventStoreTest extends AbstractStoreTest {
     assertThat(
             database
                 .events()
-                .publishEvent("paid", "race-1", "{\"amount\": 1}", KEPT, null, null)
+                .publishEvent("paid", "race-1", "{\"amount\": 1}", KEPT, null, null, null)
                 .received())
         .isOne();
     assertThat(count("id = '" + job.id() + "' and state = 'RUNNING'")).isEqualTo(1);
@@ -88,7 +88,10 @@ class EventStoreTest extends AbstractStoreTest {
     assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).doesNotContain(job.id());
 
     assertThat(
-            database.events().publishEvent("paid", "suspend-1", null, KEPT, null, null).received())
+            database
+                .events()
+                .publishEvent("paid", "suspend-1", null, KEPT, null, null, null)
+                .received())
         .isOne();
     assertThat(stateAndSchedule(job.id())).startsWith("SCHEDULED ");
   }
@@ -98,7 +101,7 @@ class EventStoreTest extends AbstractStoreTest {
     assertThat(
             database
                 .events()
-                .publishEvent("paid", "early-1", "\"early\"", KEPT, null, null)
+                .publishEvent("paid", "early-1", "\"early\"", KEPT, null, null, null)
                 .received())
         .isZero();
     JobStore.ClaimedJob job = claimNewJob("early");
@@ -117,9 +120,9 @@ class EventStoreTest extends AbstractStoreTest {
 
   @Test
   void latestPublishedEventIsReceived() throws Exception {
-    database.events().publishEvent("status", "latest-1", "\"first\"", KEPT, null, null);
+    database.events().publishEvent("status", "latest-1", "\"first\"", KEPT, null, null, null);
     Thread.sleep(5);
-    database.events().publishEvent("status", "latest-1", "\"second\"", KEPT, null, null);
+    database.events().publishEvent("status", "latest-1", "\"second\"", KEPT, null, null, null);
     JobStore.ClaimedJob job = claimNewJob("latest");
 
     assertThat(
@@ -138,7 +141,7 @@ class EventStoreTest extends AbstractStoreTest {
               database
                   .events()
                   .publishEventInTransaction(
-                      connection, "paid", "lock-1", "\"tx\"", KEPT, null, null)
+                      connection, "paid", "lock-1", "\"tx\"", KEPT, null, null, null)
                   .received())
           .isZero();
 
@@ -174,7 +177,7 @@ class EventStoreTest extends AbstractStoreTest {
               database
                   .events()
                   .publishEventInTransaction(
-                      connection, "paid", "rollback-1", null, KEPT, null, null)
+                      connection, "paid", "rollback-1", null, KEPT, null, null, null)
                   .received())
           .isOne();
       connection.rollback();
@@ -192,7 +195,7 @@ class EventStoreTest extends AbstractStoreTest {
                   database
                       .events()
                       .publishEventInTransaction(
-                          connection, "paid", "auto-1", null, KEPT, null, null))
+                          connection, "paid", "auto-1", null, KEPT, null, null, null))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("must not be in auto-commit mode");
     }
@@ -224,7 +227,10 @@ class EventStoreTest extends AbstractStoreTest {
                     job.id(), lock(job.id()), "wait", "paid", "deadline-1", Duration.ofMillis(200)))
         .isEqualTo(new EventStore.EventWaitResult.TimedOut(step(job.id(), "wait")));
     assertThat(
-            database.events().publishEvent("paid", "deadline-1", null, KEPT, null, null).received())
+            database
+                .events()
+                .publishEvent("paid", "deadline-1", null, KEPT, null, null, null)
+                .received())
         .as("a timed out step no longer receives the event")
         .isZero();
   }
@@ -247,8 +253,8 @@ class EventStoreTest extends AbstractStoreTest {
   void expiredEventsAreDeletedAndNoLongerReceived() throws Exception {
     database
         .events()
-        .publishEvent("old", "retention-1", "\"short\"", Duration.ofMillis(200), null, null);
-    database.events().publishEvent("old", "retention-2", null, KEPT, null, null);
+        .publishEvent("old", "retention-1", "\"short\"", Duration.ofMillis(200), null, null, null);
+    database.events().publishEvent("old", "retention-2", null, KEPT, null, null, null);
     Thread.sleep(300);
 
     JobStore.ClaimedJob job = claimNewJob("expired");
@@ -275,7 +281,7 @@ class EventStoreTest extends AbstractStoreTest {
     assertThat(
             database
                 .events()
-                .publishEvent("ping", "zero-1", "\"now\"", Duration.ZERO, null, null)
+                .publishEvent("ping", "zero-1", "\"now\"", Duration.ZERO, null, null, null)
                 .received())
         .isOne();
     // Claimed now: claimNewJob below claims every due job.
@@ -307,7 +313,7 @@ class EventStoreTest extends AbstractStoreTest {
 
     database
         .events()
-        .publishEvent("paid", "copied-1", "{\"amount\": 7}", Duration.ZERO, null, null);
+        .publishEvent("paid", "copied-1", "{\"amount\": 7}", Duration.ZERO, null, null, null);
     assertThat(
             countSteps(
                 "job_id = '"
@@ -441,7 +447,7 @@ class EventStoreTest extends AbstractStoreTest {
   @Test
   void stepReceivingAPublishedEventRightAwayReferencesIt() throws Exception {
     UUID eventId =
-        database.events().publishEvent("paid", "ref-1", null, KEPT, null, null).eventId();
+        database.events().publishEvent("paid", "ref-1", null, KEPT, null, null, null).eventId();
     JobStore.ClaimedJob job = claimNewJob("ref");
 
     database.events().awaitEvent(job.id(), lock(job.id()), "wait", "paid", "ref-1", null);

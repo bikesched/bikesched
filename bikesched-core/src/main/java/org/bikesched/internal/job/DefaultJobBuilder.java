@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import org.bikesched.JsonMapper;
+import org.bikesched.history.Actor;
 import org.bikesched.job.IdempotentJobBuilder;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailureHandler;
@@ -52,6 +53,11 @@ public final class DefaultJobBuilder<P extends @Nullable Object>
   }
 
   @Override
+  public JobBuilder<P> actor(Actor actor) {
+    return setActor(actor);
+  }
+
+  @Override
   public TransactionalJobBuilder<P> connection(Connection connection) {
     return new DefaultTransactionalJobBuilder<>(
         this, Objects.requireNonNull(connection, "connection"));
@@ -80,7 +86,8 @@ public final class DefaultJobBuilder<P extends @Nullable Object>
 
   @Override
   public UUID schedule(Recurrence recurrence) {
-    return scheduler.scheduleRecurring(recurringJob(recurrence), handler, failureHandler, null);
+    return scheduler.scheduleRecurring(
+        recurringJob(recurrence), handler, failureHandler, null, actor);
   }
 
   @Override
@@ -91,7 +98,8 @@ public final class DefaultJobBuilder<P extends @Nullable Object>
   @Override
   public UUID schedule(Recurrence recurrence, Instant firstRun) {
     Objects.requireNonNull(firstRun, "firstRun");
-    return scheduler.scheduleRecurring(recurringJob(recurrence), handler, failureHandler, firstRun);
+    return scheduler.scheduleRecurring(
+        recurringJob(recurrence), handler, failureHandler, firstRun, actor);
   }
 
   @Override

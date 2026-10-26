@@ -8,9 +8,11 @@ import com.grack.nanojson.JsonArray;
 import com.grack.nanojson.JsonObject;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -23,6 +25,9 @@ import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
 import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.JobQuery;
+import org.bikesched.admin.web.access.AdminAccess;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.HistoryEntry;
 import org.bikesched.job.JobState;
 import org.bikesched.job.Recurrence;
 import org.bikesched.test.BikeschedTest;
@@ -527,6 +532,84 @@ class BikeschedAdminTest {
                           .method("PUT", HttpRequest.BodyPublishers.noBody()))
                   .statusCode())
           .isEqualTo(405);
+    }
+  }
+
+  @Test
+  void theActionsNameTheSignedInUser() {
+    String type = prefix + "user-actions";
+    String event = prefix + "user-event";
+    try (Bikesched recording =
+        BikeschedTest.testNode(AdminServer.DATA_SOURCE, prefix + "user-actions")
+            .history(Duration.ofDays(1))
+            .build()) {
+      recording.registerJobHandler(type, job -> job.fail("fails"));
+      BikeschedAdmin admin =
+          BikeschedAdmin.of(recording)
+              .access(AdminAccess.basicAuth().operator("simon", "simon-password").build());
+      String auth =
+          "Basic "
+              + Base64.getEncoder()
+                  .encodeToString("simon:simon-password".getBytes(StandardCharsets.UTF_8));
+
+      UUID failed =
+          UUID.fromString(
+              post(admin, auth, "/api/jobs", "name=" + encode(type) + "&maxAttempts=1")
+                  .getString("id"));
+      BikeschedTest.awaitJob(recording, failed).untilState(JobState.FAILED);
+      assertThat(post(admin, auth, "/api/jobs/" + failed + "/retry", null).getBoolean("retried"))
+          .isTrue();
+      UUID later =
+          UUID.fromString(
+              post(admin, auth, "/api/jobs", "name=" + encode(type) + "&delay=PT1H")
+                  .getString("id"));
+      assertThat(post(admin, auth, "/api/jobs/" + later + "/cancel", null).getBoolean("cancelled"))
+          .isTrue();
+      UUID eventId =
+          UUID.fromString(
+              post(admin, auth, "/api/events", "name=" + encode(event) + "&key=k").getString("id"));
+
+      assertThat(userEntries(recording.findJobHistory(failed)))
+          .containsExactly("SCHEDULED by simon", "RETRIED by simon");
+      assertThat(userEntries(recording.findJobHistory(later)))
+          .containsExactly("SCHEDULED by simon", "CANCEL_REQUESTED by simon");
+      assertThat(userEntries(recording.findEventHistory(eventId)))
+          .containsExactly("PUBLISHED by simon");
+      BikeschedTest.awaitJob(recording, later).untilState(JobState.CANCELLED);
+      assertThat(recording.admin().findJob(later).orElseThrow().lastError())
+          .as("the user is not in the message")
+          .isEqualTo(AdminHandler.CANCEL_MESSAGE);
+    } finally {
+      try (var connection = AdminServer.DATA_SOURCE.getConnection();
+          var statement = connection.createStatement()) {
+        statement.execute(
+            "delete from bikesched_history where data ->> 'subjectName' like '" + prefix + "%'");
+      } catch (java.sql.SQLException e) {
+        throw new IllegalStateException(e);
+      }
+    }
+  }
+
+  /** The entries naming a user, as "ACTION by user". */
+  private static List<String> userEntries(List<HistoryEntry> history) {
+    return history.stream()
+        .filter(entry -> entry.actorType() == ActorType.USER)
+        .map(entry -> entry.action().name() + " by " + entry.actorName())
+        .toList();
+  }
+
+  /** A POST through {@link BikeschedAdmin#handle} with a form body, answering its JSON. */
+  private static JsonObject post(BikeschedAdmin admin, String auth, String path, String form) {
+    AdminRequest request =
+        AdminRequest.of("POST", path, null)
+            .withHeader(AdminHandler.CSRF_HEADER, "1")
+            .withHeader("Authorization", auth);
+    AdminResponse response = admin.handle(form == null ? request : request.withBody(form));
+    assertThat(response.status()).as(response.bodyText()).isEqualTo(200);
+    try {
+      return com.grack.nanojson.JsonParser.object().from(response.bodyText());
+    } catch (com.grack.nanojson.JsonParserException e) {
+      throw new AssertionError(e);
     }
   }
 
