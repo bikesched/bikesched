@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// The page: header with the Jobs, Events and Nodes tabs, and the view of the current hash route.
+// The page: header with the Jobs, Events, Nodes and History tabs, and the view of the current hash route.
 import { getBody } from './api.js';
 import { EventsView } from './events.js';
 import { parseHash, toHash } from './format.js';
+import { HistoryView } from './history.js';
 import { html, render, useEffect, useRef, useState } from './html.js';
 import { JobsView } from './jobs.js';
 import { NodesView } from './nodes.js';
@@ -20,7 +21,7 @@ function Header({ me, tabs, onReload }) {
         ${tabs.map(
           (tab) => html`
             <a class="section-tab" href=${tab.href} aria-current=${tab.current ? 'page' : undefined}>
-              ${tab.label}<span class="count">${tab.total}</span>
+              ${tab.label}${tab.total !== undefined && html`<span class="count">${tab.total}</span>`}
               ${tab.offline > 0 &&
               html`<span class="offline-marker" title=${`${tab.offline} offline`}><span class="marker-dot" aria-hidden="true"></span>${tab.offline} offline</span>`}
             </a>`,
@@ -43,7 +44,12 @@ function Header({ me, tabs, onReload }) {
 function App() {
   const [route, setRoute] = useState(parseHash());
   // The last route of each section, so its tab returns to the list as it was left.
-  const lastRoutes = useRef({ jobs: { section: 'jobs' }, events: { section: 'events' }, nodes: { section: 'nodes' } });
+  const lastRoutes = useRef({
+    jobs: { section: 'jobs' },
+    events: { section: 'events' },
+    nodes: { section: 'nodes' },
+    history: { section: 'history' },
+  });
   lastRoutes.current[route.section] = route;
   const [reloadKey, setReloadKey] = useState(0);
   // Counts and nodes only: after a retry or cancel, the list keeps its rows until a reload.
@@ -86,6 +92,7 @@ function App() {
     tab('jobs', 'Jobs', jobNames.reduce((sum, jobName) => sum + jobName.total, 0)),
     tab('events', 'Events', names.reduce((sum, name) => sum + name.count, 0)),
     tab('nodes', 'Nodes', nodes.length, nodes.filter((node) => !node.alive).length),
+    tab('history', 'History'),
   ];
 
   return html`
@@ -99,6 +106,7 @@ function App() {
       html`<${EventsView} route=${route} navigate=${navigate} names=${names} me=${me}
         reloadKey=${reloadKey} onPublished=${reload} />`}
       ${route.section === 'nodes' && html`<${NodesView} route=${route} navigate=${navigate} reloadKey=${reloadKey} />`}
+      ${route.section === 'history' && html`<${HistoryView} route=${route} navigate=${navigate} reloadKey=${reloadKey} />`}
     </main>`;
 }
 

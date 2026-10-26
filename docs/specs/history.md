@@ -1,9 +1,8 @@
 # Specification: history of jobs, events, nodes and user actions
 
-Status: **implementing**: steps 1 to 3 of 4 (table and entries; events, nodes and causes; users)
-are implemented, see
-[ADR 0062](../decisions/0062-one-history-with-actions-and-actors.md) and the
-[History](../jobs/README.md#history) docs.
+Status: **implemented**, see [ADR 0062](../decisions/0062-one-history-with-actions-and-actors.md),
+the [History](../jobs/README.md#history) docs and the admin's
+[History tab](../operations/admin.md#the-page).
 
 ## 1. Goal
 
@@ -491,3 +490,17 @@ None.
    cancel, retry and remove paths with the actor, the plain methods call them with none.
 10. The admin passes `Actor.user(grant.user())` on cancel, retry, schedule and publish when the
     grant names a user; the cancel message is "cancelled from the admin UI" without the user.
+11. History tab (step 4): `HistoryQuery` lives in `org.bikesched.admin` next to `JobQuery` and
+    `EventQuery`, not in `org.bikesched.history`, with `HistoryPosition` (the cursor: `createdAt`
+    and `id`) and `HistoryPage`. The entry type filter takes the entry record's class
+    (`StepEntry.class`), since steps share the subject type `JOB`; actions of several types can
+    be mixed, each matching its own type. `since` is the trailing window's lower bound for live
+    refresh, `until` the tab's time bound, `causedById` the detail's caused entries.
+12. The bounded scan reads at most `HistoryQuery.SCAN_LIMIT` (5000) entries along the indexes
+    (time, position, cause, users) and applies the other filters to them in one statement; a page
+    that reached the bound without filling up ends at the last scanned entry, so `next` can follow
+    a short or empty page. Without such filters the scan stops at the page size.
+13. `HistoryPage.subjects` names the writing nodes and the causing subjects (type and name: a
+    registered node's name, else the latest named entry of the subject), so the Actor column can
+    name a causing job and the detail can link a cause; `isRecordingHistory()` feeds the tab's
+    notice. `api/history` passes both on and takes the cursor as `createdAt,id`.

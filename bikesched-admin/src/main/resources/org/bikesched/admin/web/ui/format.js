@@ -92,7 +92,6 @@ export function RecurringIcon({ label = 'recurring' }) {
     : html`<svg class="recurring-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
 }
 
-/** The header of the column a table is sorted by, with an arrow; title says how. */
 /** Who made a history entry's change: a user's name, or the type of actor. */
 export function actor(entry) {
   return entry.actorType === 'USER' ? entry.actorName : entry.actorType.toLowerCase();
@@ -171,6 +170,7 @@ export function SubjectHistory({ entries }) {
     </ol>`;
 }
 
+/** The header of the column a table is sorted by, with an arrow; title says how. */
 export function SortedTh({ label, descending, title }) {
   return html`<th aria-sort=${descending ? 'descending' : 'ascending'} title=${title}>
     ${label}<span class="sort-arrow" aria-hidden="true">${descending ? '↓' : '↑'}</span>
@@ -187,13 +187,13 @@ export function Dot({ state }) {
 
 /**
  * Hash routes: #/jobs/{id}?name=…&state=…, #/jobs/{id}/steps/{stepId} (one step of the job),
- * #/events/{id}?name=…&key=…&tab=…, #/nodes/{id}
+ * #/events/{id}?name=…&key=…&tab=…, #/nodes/{id}, #/history/{entryId}?actor=…&subject=…&action=…
  */
 export function parseHash(hash = location.hash) {
   const raw = hash.replace(/^#\/?/, '');
   const [path, search = ''] = raw.split('?');
   const [section, id, sub, subId] = path.split('/');
-  const jobs = !['events', 'nodes'].includes(section);
+  const jobs = !['events', 'nodes', 'history'].includes(section);
   return {
     section: jobs ? 'jobs' : section,
     id: id || null,
