@@ -70,10 +70,14 @@ const sortKey = (entry) => {
 };
 const newestFirst = (a, b) => (sortKey(a) < sortKey(b) ? 1 : sortKey(a) > sortKey(b) ? -1 : 0);
 
-/** The entries of a live re-read merged into the page by id; a re-read that overflowed replaces it. */
+/**
+ * The entries of a live re-read merged into the page by id. A re-read with more entries than it
+ * returns would leave a gap: the page then keeps what it shows (older pages included) and is
+ * marked as behind, for a Reload.
+ */
 function merge(page, body) {
   if (body.next) {
-    return body;
+    return { ...page, behind: true };
   }
   const shown = new Set(page.entries.map((entry) => entry.id));
   const added = body.entries.filter((entry) => !shown.has(entry.id));
@@ -177,6 +181,8 @@ function HistoryList({ filters, route, navigate, reloadKey }) {
   const [loadingMore, setLoadingMore] = useState(false);
   // The page as the polling reads it; set together with the state.
   const current = useRef(null);
+  // Counts reloads, so an "Older entries" request from before one is dropped.
+  const generation = useRef(0);
   const update = (next) => {
     current.current = next;
     setPage(next);
@@ -184,7 +190,10 @@ function HistoryList({ filters, route, navigate, reloadKey }) {
   // Live only for the newest entries: with an upper bound, nothing new shows up.
   const isLive = !filters.until;
 
-  useEffect(() => update(null), [reloadKey]);
+  useEffect(() => {
+    generation.current += 1;
+    update(null);
+  }, [reloadKey]);
 
   usePolling(
     async (stopped) => {
@@ -195,10 +204,11 @@ function HistoryList({ filters, route, navigate, reloadKey }) {
         : { ...filters, limit: PAGE_SIZE };
       const body = await getBody(`api/history${query(params)}`);
       if (stopped()) return false;
-      update(shown && newest ? merge(current.current, body) : body);
+      const next = shown && newest ? merge(current.current, body) : body;
+      update(next);
       setError(null);
-      setLive(isLive ? 'live' : 'paused');
-      return isLive;
+      setLive(next.behind ? 'behind' : isLive ? 'live' : 'paused');
+      return isLive && !next.behind;
     },
     (e) => {
       setError(e.message);
@@ -210,8 +220,10 @@ function HistoryList({ filters, route, navigate, reloadKey }) {
 
   const loadMore = async () => {
     setLoadingMore(true);
+    const started = generation.current;
     try {
       const body = await getBody(`api/history${query({ ...filters, after: page.next, limit: PAGE_SIZE })}`);
+      if (started !== generation.current || !current.current) return;
       const shown = new Set(current.current.entries.map((entry) => entry.id));
       update({
         ...current.current,
@@ -221,7 +233,7 @@ function HistoryList({ filters, route, navigate, reloadKey }) {
       });
       setError(null);
     } catch (e) {
-      setError(e.message);
+      if (started === generation.current) setError(e.message);
     } finally {
       setLoadingMore(false);
     }
@@ -231,7 +243,8 @@ function HistoryList({ filters, route, navigate, reloadKey }) {
   const subjects = page?.subjects || {};
   const selected = route.id && entries.find((entry) => entry.id === route.id);
   const href = (id) => toHash({ section: 'history', id, params: filters });
-  const liveText = { loading: 'Loading…', live: 'Live', paused: 'Not live: a time bound is set', lost: 'Connection lost, retrying' }[live];
+  const liveText = { loading: 'Loading…', live: 'Live', paused: 'Not live: a time bound is set',
+    behind: 'Not live: more new entries than it reads, Reload to show them', lost: 'Connection lost, retrying' }[live];
   return html`
     ${error && html`<div class="banner banner-error" role="alert">${error}</div>`}
     ${page && !page.recording &&
@@ -270,7 +283,7 @@ function HistoryList({ filters, route, navigate, reloadKey }) {
         </div>
         <div class="panel-foot">
           <span>${page ? `${plural(entries.length, 'entry', 'entries')} shown` : 'Loading…'}</span>
-          <span role="status" class=${`live live-${live === 'paused' ? 'loading' : live}`}><span class="live-dot"></span>${liveText}</span>
+          <span role="status" class=${`live live-${live === 'paused' || live === 'behind' ? 'loading' : live}`}><span class="live-dot"></span>${liveText}</span>
           ${page?.next &&
           html`<button type="button" class="button" disabled=${loadingMore} onClick=${loadMore}>Older entries</button>`}
         </div>

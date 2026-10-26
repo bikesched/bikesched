@@ -202,7 +202,8 @@ always shown.
   its subject caused (a job's child jobs, an event's receivers, a dead node's released jobs). The
   list is live: every 3 seconds it re-reads the minute before its newest entry and adds what is
   new, so an entry of a transaction that committed late still shows up. An entry of a transaction
-  open for longer than that minute shows up only after Reload. The tab says when the serving
+  open for longer than that minute shows up only after Reload, and when more than 500 new
+  entries arrive between two refreshes, live refresh stops and asks for a Reload. The tab says when the serving
   instance does not record the history; it still shows what other nodes recorded. Viewers see
   everything, user names and messages included.
 

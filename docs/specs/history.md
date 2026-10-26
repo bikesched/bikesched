@@ -501,6 +501,9 @@ None.
     that reached the bound without filling up ends at the last scanned entry, so `next` can follow
     a short or empty page. Without such filters the scan stops at the page size.
 13. `HistoryPage.subjects` names the writing nodes and the causing subjects (type and name: a
-    registered node's name, else the latest named entry of the subject), so the Actor column can
+    registered node's name, else the subject's latest entry), so the Actor column can
     name a causing job and the detail can link a cause; `isRecordingHistory()` feeds the tab's
     notice. `api/history` passes both on and takes the cursor as `createdAt,id`.
+14. Live refresh never replaces the list: a re-read with more entries than it returns (500, or the
+    scan bound) would leave a gap, so the tab keeps what it shows, stops refreshing and asks for a
+    Reload. An "Older entries" response from before a Reload is dropped.

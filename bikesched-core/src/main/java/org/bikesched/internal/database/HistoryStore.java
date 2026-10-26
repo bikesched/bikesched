@@ -705,7 +705,7 @@ public final class HistoryStore {
           .formatted(ENTRY_COLUMNS);
 
   // The type and name of each subject: a registered node's, or else from the subject's latest entry
-  // with a name (an index range of the primary key).
+  // (one step backwards along the primary key; every entry names its subject).
   private static final String SUBJECTS_SQL =
       """
             select s.id, coalesce(h.subject_type, 'NODE') as subject_type,
@@ -715,7 +715,7 @@ public final class HistoryStore {
               left join lateral (
                   select subject_type, data from bikesched_history
                    where subject_id = s.id
-                   order by (data->>'subjectName' is not null) desc, id desc
+                   order by id desc
                    limit 1) h on true
              where n.id is not null or h.subject_type is not null""";
 
