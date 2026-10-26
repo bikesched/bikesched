@@ -130,7 +130,16 @@ Other paths:
   the event was deleted.
 
 With the [history](../jobs/README.md#history) enabled, each of these changes is recorded: the
-step `WAITING`, `RECEIVED` or `TIMED_OUT`, the job `SUSPENDED` and `RESUMED`.
+step `WAITING`, `RECEIVED` or `TIMED_OUT`, the job `SUSPENDED` and `RESUMED`. Publishing records
+the event's own `PUBLISHED` entry (with its `key`, `retention` and the number of steps that
+`received` it); the steps it completes and the jobs it resumes name the event as their cause.
+`bikesched.findEventHistory(eventId)` reads both, also after the event and the jobs were deleted:
+
+```java
+for (HistoryEntry entry : bikesched.findEventHistory(eventId)) {
+    System.out.println(entry.action() + " " + entry.subjectId());   // PUBLISHED, RECEIVED, RESUMED
+}
+```
 
 ## Publishing from jobs
 

@@ -365,7 +365,14 @@ A job that waited for an event and was retried once could show (step names and s
 | | `SUCCEEDED` | `SUCCEEDED` | 2 | `NODE` | |
 
 - `findJobHistory` returns a `JobEntry` for each change of the job and a `StepEntry` for each
-  change of one of its steps (`stepId`). Both are `HistoryEntry`s in `org.bikesched.history`.
+  change of one of its steps (`stepId`). Both are `HistoryEntry`s in `org.bikesched.history`,
+  next to `EventEntry` (a [published event](../multi-step-jobs/events.md), read with
+  `findEventHistory`) and `NodeEntry` (a node `REGISTERED`, `STOPPED` or `REMOVED` by another
+  node's clean-up, read with `admin().findNodeHistory`).
+- `causedById` links an entry to the event, job or node that caused it: the steps an event
+  completed and the jobs it resumed name the event, a [child job](../multi-step-jobs/child-jobs.md)
+  its parent, the parent's step and resumption the child, a job released after its node died that
+  node. A job's own follow-ups (a cancel request, then the cancellation) are not caused entries.
 - `action` says what happened (`JobAction`, `StepAction`; their Javadoc lists each action's `data`
   keys), `state` is the job's or step's state afterwards: unchanged for recorded requests (a cancel
   request, a failed compensation of a step).

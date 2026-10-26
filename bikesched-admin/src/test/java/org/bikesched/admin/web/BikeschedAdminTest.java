@@ -431,6 +431,59 @@ class BikeschedAdminTest {
   }
 
   @Test
+  void showsTheHistoryOfEventsAndNodes() throws Exception {
+    String type = prefix + "history-receiver";
+    String event = prefix + "history-event";
+    UUID stoppedNode;
+    try (Bikesched stopped =
+        BikeschedTest.testNode(AdminServer.DATA_SOURCE, prefix + "history-stopped")
+            .history(Duration.ofDays(1))
+            .build()) {
+      stoppedNode = stopped.node().id();
+    }
+    try (Bikesched recording =
+            BikeschedTest.testNode(AdminServer.DATA_SOURCE, prefix + "history")
+                .history(Duration.ofDays(1))
+                .build();
+        var server = AdminServer.serve(BikeschedAdmin.of(recording))) {
+      recording.registerJobHandler(
+          type, job -> job.waitForEvent("await", event, "k", String.class).receive());
+      UUID jobId = recording.newJob(type).schedule();
+      awaitState(jobId, JobState.WAITING);
+      UUID eventId = recording.newEvent(event, "k").payload("\"x\"").publish();
+      awaitState(jobId, JobState.SUCCEEDED);
+
+      JsonArray eventHistory =
+          AdminServer.json(server.get("/api/events/" + eventId)).getArray("history");
+      assertThat(eventHistory.stream().map(e -> ((JsonObject) e).getString("action")))
+          .containsExactly("PUBLISHED", "RECEIVED", "RESUMED");
+      JsonObject published = eventHistory.getObject(0);
+      assertThat(published.getString("subjectType")).isEqualTo("EVENT");
+      assertThat(published.getObject("data").getString("key")).isEqualTo("k");
+      assertThat(eventHistory.getObject(1).getString("causedById")).isEqualTo(eventId.toString());
+
+      UUID nodeId = recording.node().id();
+      JsonArray nodeHistory =
+          AdminServer.json(server.get("/api/nodes/" + nodeId)).getArray("history");
+      assertThat(nodeHistory.stream().map(e -> ((JsonObject) e).getString("action")))
+          .containsExactly("REGISTERED");
+
+      // A stopped node is gone from the table, its history stays.
+      JsonObject removed = AdminServer.json(server.get("/api/nodes/" + stoppedNode));
+      assertThat(removed.isNull("node")).isTrue();
+      assertThat(
+              removed.getArray("history").stream().map(e -> ((JsonObject) e).getString("action")))
+          .containsExactly("REGISTERED", "STOPPED");
+    } finally {
+      try (var connection = AdminServer.DATA_SOURCE.getConnection();
+          var statement = connection.createStatement()) {
+        statement.execute(
+            "delete from bikesched_history where data ->> 'subjectName' like '" + prefix + "%'");
+      }
+    }
+  }
+
+  @Test
   void retriesAndCancelsJobs() {
     String type = prefix + "actions";
     var failOnce = new AtomicBoolean(true);

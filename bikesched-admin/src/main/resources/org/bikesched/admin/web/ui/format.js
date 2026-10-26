@@ -114,6 +114,9 @@ const DETAIL_LABELS = [
   ['eventId', 'event'],
   ['childJobId', 'child'],
   ['childState', 'child ended'],
+  ['key', 'key'],
+  ['retention', 'retention'],
+  ['received', 'received by'],
 ];
 
 /** The specifics of a history entry as one line: its error or message first, then the rest. */
@@ -129,6 +132,43 @@ export function historyDetail(entry) {
   // A job entry naming a step (SUSPENDED, POSTPONED): the step it happened in.
   if (!entry.stepId && data.stepName) parts.unshift(`step ${data.stepName}`);
   return [data.error, data.message, parts.join(' · ')].filter(Boolean).join(' · ');
+}
+
+/**
+ * History entries of several subjects, oldest first: an event's or a node's own entries and the
+ * entries of the jobs and steps it caused, each linked to its job or step.
+ */
+export function SubjectHistory({ entries }) {
+  return html`
+    <ol class="steps history">
+      ${entries.map((entry) => {
+        const name = entry.data?.subjectName;
+        const step = entry.stepId && (entry.data?.stepName || shortId(entry.stepId));
+        const href =
+          entry.subjectType === 'JOB' &&
+          (entry.stepId ? stepHref(entry.subjectId, entry.stepId) : jobHref(entry.subjectId));
+        const label = html`${name || shortId(entry.subjectId)}${step && html` · ${step}`}`;
+        const detail = historyDetail(entry);
+        return html`
+          <li class="step history-entry">
+            <div class="step-head">
+              <div class="row">
+                <span class="tag">${entry.stepId ? 'STEP' : entry.subjectType}</span>
+                ${href
+                  ? html`<a class="mono strong" href=${href}>${label}</a>`
+                  : html`<span class="mono strong">${label}</span>`}
+                <span class="history-action">${entry.action}</span>
+                ${entry.state && html`<${Badge} state=${entry.state} />`}
+              </div>
+              <span class="mono muted small">${preciseTime(entry.at)}</span>
+            </div>
+            <div class="muted small">
+              ${actor(entry)}${entry.nodeId && html` · node <span class="mono">${shortId(entry.nodeId)}</span>`}
+            </div>
+            ${detail && html`<div class="small break">${detail}</div>`}
+          </li>`;
+      })}
+    </ol>`;
 }
 
 export function SortedTh({ label, descending, title }) {

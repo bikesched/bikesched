@@ -196,8 +196,10 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   state and its actor type (`NODE` for what a node does by itself, `APPLICATION` for `Bikesched`
   API calls, `JOB` for a handler); specifics go into `data` through the `Change` setters (a new key
   is a parameter of the recording statement, documented on the action's enum constant), names are
-  joined from the written rows and passed only when the row is gone. No-ops and idempotency
-  duplicates record nothing.
+  joined from the written rows and passed only when the row is gone. An entry caused by another
+  subject (an event's receivers, a child job, a dead node's released jobs) names it with
+  `causedBy(…)`; a subject's own follow-ups do not. No-ops and idempotency duplicates record
+  nothing.
 - JDBC only inside the stores (`JobStore`, `StepStore`, `EventStore`, `NodeStore`,
   `HistoryStore`, and the read-only `AdminStore` across the tables), which receive a
   `DatabaseAccess` (no reference to `Database`, which only wires them). Statements go through the

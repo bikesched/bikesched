@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // The node list and the live node detail with the jobs the node runs.
 import { ApiError, getBody } from './api.js';
-import { Badge, SortedTh, dateTime, duration, jobHref, plural, shortId, toHash } from './format.js';
+import { Badge, SortedTh, SubjectHistory, dateTime, duration, jobHref, plural, shortId, toHash } from './format.js';
 import { html, useEffect, useState } from './html.js';
 import { DetailHead } from './jobs.js';
 
@@ -125,7 +125,7 @@ function NodeDetail({ nodeId, onClose }) {
         getBody(`api/jobs?node=${encodeURIComponent(nodeId)}&limit=100`),
       ]);
       if (stopped()) return false;
-      setData({ node: nodeBody.node, jobs: jobsBody.jobs });
+      setData({ node: nodeBody.node, history: nodeBody.history, jobs: jobsBody.jobs });
       setNow(new Date().toISOString());
       setLive('live');
       return true;
@@ -153,7 +153,22 @@ function NodeDetail({ nodeId, onClose }) {
     </aside>`;
   }
 
-  const { node, jobs } = data;
+  const { node, history, jobs } = data;
+  const historySection = html`
+    <h3 class="section-label">History</h3>
+    ${history.length > 0
+      ? html`<${SubjectHistory} entries=${history} />`
+      : html`<p class="muted small">Nothing recorded: the history is off, or its entries were deleted
+          after the retention.</p>`}`;
+  if (!node) {
+    const registered = history.find((entry) => entry.subjectType === 'NODE');
+    return html`<aside class="panel detail" aria-label="Node details">
+      <${DetailHead} title=${registered?.data?.subjectName || 'Node removed'} id=${nodeId} onClose=${onClose} />
+      <div class="notice" role="status">This node is not registered anymore: it stopped, or other nodes
+        removed it after twice the node timeout without heartbeat.</div>
+      <div class="detail-body">${historySection}</div>
+    </aside>`;
+  }
   const silent = duration(node.lastHeartbeatAt, now);
   const fields = [
     ['Last heartbeat', `${dateTime(node.lastHeartbeatAt)} · ${silent} ago`],
@@ -187,6 +202,7 @@ function NodeDetail({ nodeId, onClose }) {
                 </li>`,
               )}
             </ul>`}
+        ${historySection}
       </div>
     </aside>`;
 }

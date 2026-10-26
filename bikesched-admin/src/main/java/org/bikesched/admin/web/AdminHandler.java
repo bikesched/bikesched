@@ -30,6 +30,7 @@ import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.EventSummary;
 import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
+import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
@@ -37,6 +38,7 @@ import org.bikesched.admin.web.access.AccessGrant;
 import org.bikesched.admin.web.access.AccessLevel;
 import org.bikesched.admin.web.access.AdminAccess;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.history.HistoryEntry;
 import org.bikesched.history.StepEntry;
 import org.bikesched.job.IdempotentJobBuilder;
 import org.bikesched.job.JobBuilder;
@@ -188,11 +190,7 @@ final class AdminHandler {
       } else if (event.matches()) {
         body = event(admin, id(event.group(1))).orElse(null);
       } else if (node.matches()) {
-        body =
-            admin
-                .findNode(id(node.group(1)))
-                .map(n -> Json.object().put("node", AdminJson.node(n)))
-                .orElse(null);
+        body = node(admin, id(node.group(1))).orElse(null);
       } else if (JOB_ACTION.matcher(path).matches()) {
         return error(405, "Method not allowed", Map.of("Allow", "POST"));
       }
@@ -552,6 +550,22 @@ final class AdminHandler {
         .put("next", next);
   }
 
+  /**
+   * A node with its history; a node that is no longer registered only while its history has entries
+   * ({@code node} is then {@code null}).
+   */
+  private static Optional<Json.Obj> node(Admin admin, UUID nodeId) {
+    Optional<NodeInfo> found = admin.findNode(nodeId);
+    List<HistoryEntry> history = admin.findNodeHistory(nodeId);
+    if (found.isEmpty() && history.isEmpty()) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        Json.object()
+            .put("node", found.map(AdminJson::node).orElse(null))
+            .put("history", history.stream().map(AdminJson::history).toList()));
+  }
+
   private Optional<Json.Obj> event(Admin admin, UUID eventId) {
     Optional<EventSummary> found = admin.findEvent(eventId);
     if (found.isEmpty()) {
@@ -561,6 +575,9 @@ final class AdminHandler {
         Json.object()
             .put("event", AdminJson.event(found.get()))
             .put("steps", admin.findEventSteps(eventId).stream().map(AdminJson::eventStep).toList())
+            .put(
+                "history",
+                bikesched.findEventHistory(eventId).stream().map(AdminJson::history).toList())
             .put("payloadsShown", showPayloads);
     if (showPayloads) {
       admin

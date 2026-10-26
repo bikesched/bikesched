@@ -24,6 +24,7 @@ import org.bikesched.event.TypedEvent;
 import org.bikesched.event.listener.EventPublication;
 import org.bikesched.event.listener.EventSource;
 import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.SubjectType;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.DatabaseInitializer;
 import org.bikesched.internal.database.EventStore;
@@ -120,7 +121,11 @@ public final class DefaultBikesched implements Bikesched {
     this.node = new DefaultNode(nodeName);
     this.admin =
         new DefaultAdmin(
-            database.admin(), settings.nodeTimeout(), this::ensureReady, registry.names());
+            database.admin(),
+            database.history(),
+            settings.nodeTimeout(),
+            this::ensureReady,
+            registry.names());
     this.jobScheduler =
         new JobScheduler(
             database,
@@ -374,6 +379,13 @@ public final class DefaultBikesched implements Bikesched {
     Objects.requireNonNull(jobId, "jobId");
     ensureReady();
     return database.history().findJobHistory(jobId);
+  }
+
+  @Override
+  public List<HistoryEntry> findEventHistory(UUID eventId) {
+    Objects.requireNonNull(eventId, "eventId");
+    ensureReady();
+    return database.history().findHistoryWithCaused(SubjectType.EVENT, eventId);
   }
 
   @Override

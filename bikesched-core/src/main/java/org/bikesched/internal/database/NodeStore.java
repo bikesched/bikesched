@@ -4,8 +4,11 @@ package org.bikesched.internal.database;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.history.NodeAction;
+import org.bikesched.internal.database.HistoryStore.Change;
 
 /**
  * The {@code bikesched_nodes} table: registering nodes, their heartbeats and removing dead nodes.
@@ -14,9 +17,11 @@ import org.bikesched.BikeschedException;
 public final class NodeStore {
 
   private final DatabaseAccess access;
+  private final HistoryStore history;
 
-  NodeStore(DatabaseAccess access) {
+  NodeStore(DatabaseAccess access, HistoryStore history) {
     this.access = access;
+    this.history = history;
   }
 
   // Names need not be unique: a restarted instance registers next to the stale row of its
@@ -31,7 +36,8 @@ public final class NodeStore {
   private static final String HEARTBEAT_SQL =
       "update bikesched_nodes set last_heartbeat_at = now() where id = ?";
 
-  private static final String DEREGISTER_NODE_SQL = "delete from bikesched_nodes where id = ?";
+  private static final String DEREGISTER_NODE_SQL =
+      "delete from bikesched_nodes where id = ? returning name";
 
   // Deletes nodes whose heartbeat is older than the given age (excluding the calling node). Nodes
   // still referenced by RUNNING jobs are kept; their jobs are released first by
@@ -61,8 +67,12 @@ public final class NodeStore {
    * @param name the node name, not necessarily unique
    */
   public void registerNode(UUID nodeId, String name) {
-    access.withConnection(
-        db -> db.update(REGISTER_NODE_SQL, nodeId, name),
+    history.change(
+        db -> {
+          db.update(REGISTER_NODE_SQL, nodeId, name);
+          history.record(db, Change.node(nodeId, NodeAction.REGISTERED));
+          return null;
+        },
         e -> new BikeschedException("Registering bikesched node '" + name + "' failed", e));
   }
 
@@ -87,8 +97,13 @@ public final class NodeStore {
    * @param name the node's name
    */
   public void reregisterNode(UUID nodeId, String name) {
-    access.withConnection(
-        db -> db.update(REREGISTER_NODE_SQL, nodeId, name),
+    history.change(
+        db -> {
+          if (db.update(REREGISTER_NODE_SQL, nodeId, name) > 0) {
+            history.record(db, Change.node(nodeId, NodeAction.REGISTERED));
+          }
+          return null;
+        },
         e -> new BikeschedException("Registering bikesched node '" + name + "' failed", e));
   }
 
@@ -99,11 +114,15 @@ public final class NodeStore {
    * @return {@code false} if the node was not registered
    */
   public boolean deregisterNode(UUID nodeId) {
-    return access.withConnection(
-            db -> db.update(DEREGISTER_NODE_SQL, nodeId),
-            e ->
-                new BikeschedException("Deregistration of bikesched node " + nodeId + " failed", e))
-        > 0;
+    return history.change(
+        db -> {
+          Optional<String> name = db.one(DEREGISTER_NODE_SQL, row -> row.string("name"), nodeId);
+          if (name.isPresent()) {
+            history.record(db, Change.node(nodeId, NodeAction.STOPPED).subjectName(name.get()));
+          }
+          return name.isPresent();
+        },
+        e -> new BikeschedException("Deregistration of bikesched node " + nodeId + " failed", e));
   }
 
   /**
@@ -115,15 +134,27 @@ public final class NodeStore {
    * @return the deleted nodes
    */
   public List<DeletedNode> deleteDeadNodes(UUID callingNodeId, Duration olderThan) {
-    return access.withConnection(
-        db ->
-            db.list(
-                DELETE_DEAD_NODES_SQL,
-                row ->
-                    new DeletedNode(
-                        row.uuid("id"), row.string("name"), row.instant("last_heartbeat_at")),
-                callingNodeId,
-                Sql.seconds(olderThan)),
+    return history.change(
+        db -> {
+          List<DeletedNode> deleted =
+              db.list(
+                  DELETE_DEAD_NODES_SQL,
+                  row ->
+                      new DeletedNode(
+                          row.uuid("id"), row.string("name"), row.instant("last_heartbeat_at")),
+                  callingNodeId,
+                  Sql.seconds(olderThan));
+          history.record(
+              db,
+              deleted.stream()
+                  .map(
+                      node ->
+                          Change.node(node.nodeId(), NodeAction.REMOVED)
+                              .writtenBy(callingNodeId)
+                              .subjectName(node.nodeName()))
+                  .toList());
+          return deleted;
+        },
         e -> new BikeschedException("Deleting dead bikesched nodes failed", e));
   }
 }

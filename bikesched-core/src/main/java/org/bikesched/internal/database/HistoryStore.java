@@ -6,6 +6,7 @@ import java.sql.Types;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.history.ActorType;
@@ -51,17 +52,19 @@ public final class HistoryStore {
   // One statement for any number of changes, in the given order. data is built here from the given
   // specifics and the names of the rows the transaction just wrote (joined by primary key), so the
   // callers pass a name only for a row that is gone. Step entries and job entries without an
-  // attempt count take the job's from bikesched_jobs.
+  // attempt count take the job's from bikesched_jobs. node_id is the change's own writer (a node's
+  // entries about itself) or else the store's registered node.
   private static final String RECORD_SQL =
       """
             insert into bikesched_history (subject_id, id, step_id, subject_type, action, state, node_id,
                                            caused_by_id, attempt, actor_type, data)
-            select t.subject_id, t.id, t.step_id, t.subject_type, t.action, t.state, ?::uuid,
+            select t.subject_id, t.id, t.step_id, t.subject_type, t.action, t.state,
+                   coalesce(t.node_id, ?::uuid),
                    t.caused_by_id,
                    case when t.subject_type = 'JOB' then coalesce(t.attempt, j.attempts, 0) end,
                    t.actor_type,
                    nullif(jsonb_strip_nulls(jsonb_build_object(
-                       'subjectName', coalesce(t.subject_name, j.name),
+                       'subjectName', coalesce(t.subject_name, j.name, e.name, n.name),
                        'stepName', coalesce(s.name, t.step_name),
                        'error', left(t.error, 4000),
                        'message', left(t.message, 4000),
@@ -78,17 +81,23 @@ public final class HistoryStore {
                        'childState', t.child_state,
                        'eventId', t.event_id,
                        'eventName', t.event_name,
-                       'eventKey', t.event_key)), '{}'::jsonb)
+                       'eventKey', t.event_key,
+                       'key', e.key,
+                       'retention', t.retention,
+                       'received', t.received)), '{}'::jsonb)
               from unnest(?::uuid[], ?::uuid[], ?::uuid[], ?::text[], ?::text[], ?::text[], ?::uuid[],
                           ?::integer[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[],
                           ?::integer[], ?::integer[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[],
-                          ?::text[], ?::uuid[], ?::text[], ?::uuid[], ?::text[], ?::text[])
+                          ?::text[], ?::uuid[], ?::text[], ?::uuid[], ?::text[], ?::text[], ?::uuid[],
+                          ?::text[], ?::integer[])
                    with ordinality as t (subject_id, id, step_id, subject_type, action, state, caused_by_id,
                                          attempt, actor_type, subject_name, step_name, error, message, reason,
                                          run, checks, due_at, wait_until, recurrence, previous_recurrence,
                                          idempotency_key, reference, child_job_id, child_state, event_id,
-                                         event_name, event_key, position)
+                                         event_name, event_key, node_id, retention, received, position)
               left join bikesched_jobs j on t.subject_type = 'JOB' and j.id = t.subject_id
+              left join bikesched_events e on t.subject_type = 'EVENT' and e.id = t.subject_id
+              left join bikesched_nodes n on t.subject_type = 'NODE' and n.id = t.subject_id
               left join bikesched_steps s on s.id = t.step_id
              order by t.position""";
 
@@ -96,6 +105,16 @@ public final class HistoryStore {
       """
             subject_id, id, step_id, subject_type, action, state, node_id, caused_by_id, created_at,
             attempt, actor_type, actor_name, data::text as data""";
+
+  // An event's entries and the entries it caused (the steps that received it, the jobs it resumed).
+  private static final String FIND_CAUSED_HISTORY_SQL =
+      """
+            select %s from (
+                select * from bikesched_history where subject_id = ? and subject_type = ?
+                union all
+                select * from bikesched_history where caused_by_id = ?) h
+             order by created_at, id"""
+          .formatted(ENTRY_COLUMNS);
 
   private static final String FIND_JOB_HISTORY_SQL =
       """
@@ -156,6 +175,9 @@ public final class HistoryStore {
     private @Nullable UUID eventId;
     private @Nullable String eventName;
     private @Nullable String eventKey;
+    private @Nullable UUID writer;
+    private @Nullable Duration retention;
+    private @Nullable Integer received;
 
     private Change(
         SubjectType subjectType,
@@ -204,6 +226,46 @@ public final class HistoryStore {
     public static Change step(
         UUID jobId, UUID stepId, StepAction action, StepState state, ActorType actorType) {
       return new Change(SubjectType.JOB, jobId, stepId, action, state.name(), null, actorType);
+    }
+
+    /**
+     * An event published.
+     *
+     * @param eventId the event
+     * @param actorType who published it
+     */
+    public static Change published(UUID eventId, ActorType actorType) {
+      return new Change(
+          SubjectType.EVENT, eventId, null, EventAction.PUBLISHED, null, null, actorType);
+    }
+
+    /**
+     * A change of a node, written by the node itself unless {@link #writtenBy} names another one.
+     *
+     * @param nodeId the node
+     * @param action what happened
+     */
+    public static Change node(UUID nodeId, NodeAction action) {
+      return new Change(SubjectType.NODE, nodeId, null, action, null, null, ActorType.NODE)
+          .writtenBy(nodeId);
+    }
+
+    /** The node writing the entry, if not the store's registered node. */
+    public Change writtenBy(@Nullable UUID writer) {
+      this.writer = writer;
+      return this;
+    }
+
+    /** How long a published event is kept for steps starting to wait later. */
+    public Change retention(@Nullable Duration retention) {
+      this.retention = retention;
+      return this;
+    }
+
+    /** The number of waiting steps that received a published event. */
+    public Change received(@Nullable Integer received) {
+      this.received = received;
+      return this;
     }
 
     /** The event, job or node that caused the change. */
@@ -316,8 +378,9 @@ public final class HistoryStore {
   }
 
   /**
-   * Runs a statement (or several) changing jobs or steps: in a transaction if the history is
-   * enabled, so the recorded entries commit with the change, otherwise on a plain connection.
+   * Runs a statement (or several) changing jobs, steps, events or nodes: in a transaction if the
+   * history is enabled, so the recorded entries commit with the change, otherwise on a plain
+   * connection.
    */
   <T extends @Nullable Object> T change(Sql.Work<T> work, SqlExceptionHandler onFailure) {
     return enabled ? access.inTransaction(work, onFailure) : access.withConnection(work, onFailure);
@@ -362,6 +425,9 @@ public final class HistoryStore {
     var eventIds = new @Nullable UUID[size];
     var eventNames = new @Nullable String[size];
     var eventKeys = new @Nullable String[size];
+    var writers = new @Nullable UUID[size];
+    var retentions = new @Nullable String[size];
+    var received = new @Nullable Integer[size];
     for (int i = 0; i < size; i++) {
       Change change = changes.get(i);
       subjectIds[i] = change.subjectId;
@@ -391,6 +457,10 @@ public final class HistoryStore {
       eventIds[i] = change.eventId;
       eventNames[i] = change.eventName;
       eventKeys[i] = change.eventKey;
+      writers[i] = change.writer;
+      Duration retention = change.retention;
+      retentions[i] = retention == null ? null : retention.toString();
+      received[i] = change.received;
     }
     db.update(
         RECORD_SQL,
@@ -421,7 +491,10 @@ public final class HistoryStore {
         Sql.array("text", childStates),
         Sql.array("uuid", eventIds),
         Sql.array("text", eventNames),
-        Sql.array("text", eventKeys));
+        Sql.array("text", eventKeys),
+        Sql.array("uuid", writers),
+        Sql.array("text", retentions),
+        Sql.array("integer", received));
   }
 
   /** Records one change, see {@link #record(Sql, List)}. */
@@ -446,6 +519,33 @@ public final class HistoryStore {
         db -> db.list(FIND_JOB_HISTORY_SQL, HistoryStore::entry, jobId),
         e ->
             new BikeschedException("Reading the history of bikesched job " + jobId + " failed", e));
+  }
+
+  /**
+   * Reads the entries of an event or node and the entries it caused, in a read-only transaction.
+   *
+   * @param subjectType {@code EVENT} or {@code NODE}
+   * @param subjectId the event or node id
+   * @return its entries and the caused ones, oldest first; empty if none were recorded (or they
+   *     were deleted)
+   */
+  public List<HistoryEntry> findHistoryWithCaused(SubjectType subjectType, UUID subjectId) {
+    return access.inReadOnlyTransaction(
+        db ->
+            db.list(
+                FIND_CAUSED_HISTORY_SQL,
+                HistoryStore::entry,
+                subjectId,
+                subjectType.name(),
+                subjectId),
+        e ->
+            new BikeschedException(
+                "Reading the history of bikesched "
+                    + subjectType.name().toLowerCase(Locale.ROOT)
+                    + " "
+                    + subjectId
+                    + " failed",
+                e));
   }
 
   /** Maps a row of {@link #ENTRY_COLUMNS} to the entry of its subject type. */

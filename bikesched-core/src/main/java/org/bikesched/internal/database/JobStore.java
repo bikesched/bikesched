@@ -749,6 +749,7 @@ public final class JobStore {
               db,
               List.of(
                   Change.job(childJobId, JobAction.SCHEDULED, JobState.SCHEDULED, 0, ActorType.JOB)
+                      .causedBy(parentJobId)
                       .dueAt(child.scheduledAt())
                       .keys(null, child.reference()),
                   Change.step(
@@ -832,17 +833,19 @@ public final class JobStore {
                 StepAction.CHILD_ENDED,
                 StepState.SUCCEEDED,
                 ActorType.NODE)
+            .causedBy(jobId)
             .child(null, completed.get().childState()));
     Optional<ChangedJob> resumed = db.one(RESUME_PARENT_SQL, ChangedJob::from, parent);
     if (resumed.isPresent()) {
       db.dueNow(resumed.get().name());
       changes.add(
           Change.job(
-              parent,
-              JobAction.RESUMED,
-              JobState.SCHEDULED,
-              resumed.get().attempts(),
-              ActorType.NODE));
+                  parent,
+                  JobAction.RESUMED,
+                  JobState.SCHEDULED,
+                  resumed.get().attempts(),
+                  ActorType.NODE)
+              .causedBy(jobId));
     }
     history.record(db, changes);
   }
@@ -1540,6 +1543,7 @@ public final class JobStore {
                         job.state(),
                         job.attempts(),
                         ActorType.NODE)
+                    .causedBy(job.nodeId())
                     .reason("NODE_DEAD"));
             perNode.merge(
                 job.nodeId(),
