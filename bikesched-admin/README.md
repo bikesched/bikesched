@@ -9,8 +9,9 @@ documentation: [Admin UI](../docs/operations/admin.md). Design: [spec](../docs/s
 ## Scope
 
 - Shows jobs by type and state, a job with its steps, history, child jobs, last error and
-  (optionally) payload and result, events with who published, received or waits for them, and the
-  nodes with their heartbeat.
+  (optionally) payload and result, events with who published, received or waits for them, the
+  nodes with their heartbeat, and the history of all of them with who acted
+  ([spec](../docs/specs/history.md)).
 - Four actions: retry a failed job, cancel an active one, schedule a job and publish an event.
   Nothing else writes.
 - Reads only through `bikesched.admin()` (package `org.bikesched.admin` in core), read-only lookups
@@ -84,11 +85,13 @@ response contains them.
 ## Limitations
 
 - No logout with Basic authentication; closing the browser ends the session.
-- Lists are not live: they reload on navigation or with the reload button. Only an open job
-  refreshes by itself.
+- Lists are not live: they reload on navigation or with the reload button. Only an open job, the
+  node list and the History tab refresh by themselves; the History tab misses an entry of a
+  transaction open for more than a minute until the next reload.
 - Events are listed only until they expire.
 - Search by id needs at least the first 8 hex digits and relies on bikesched's random UUIDs.
-- The History tab appears only when the job history is enabled.
+- A job's History tab appears only when the history is enabled; the History tab in the header
+  says when the serving instance does not record it.
 - A retried step shows the duration of its last attempt.
 - One database per `BikeschedAdmin`; no aggregation across several bikesched instances.
 

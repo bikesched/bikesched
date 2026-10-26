@@ -5,10 +5,19 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.bikesched.BikeschedException;
+import org.bikesched.admin.HistoryPage;
+import org.bikesched.admin.HistoryPosition;
+import org.bikesched.admin.HistoryQuery;
+import org.bikesched.admin.HistorySubject;
 import org.bikesched.history.Actor;
 import org.bikesched.history.ActorType;
 import org.bikesched.history.EventAction;
@@ -564,6 +573,183 @@ public final class HistoryStore {
                     + subjectId
                     + " failed",
                 e));
+  }
+
+  /**
+   * Reads a page of entries of every subject, newest first, in a read-only transaction.
+   *
+   * <p>The time bounds, the position, the cause and the users' actor type select the entries to
+   * scan, along the indexes; the other filters apply to at most {@code scanLimit} scanned entries,
+   * so a rare action costs a bounded scan per page, not one through the whole table. A page that
+   * reached the bound without filling up ends at the last scanned entry.
+   *
+   * @param query the filters, the page size and the position
+   * @param scanLimit the maximum number of entries scanned for the filters applied after the scan
+   * @return the page with the nodes that wrote its entries and the subjects that caused them
+   */
+  public HistoryPage findHistory(HistoryQuery query, int scanLimit) {
+    List<String> scan = new ArrayList<>();
+    List<@Nullable Object> parameters = new ArrayList<>();
+    Instant since = query.since();
+    if (since != null) {
+      scan.add("created_at >= ?");
+      parameters.add(Sql.timestamp(since));
+    }
+    Instant until = query.until();
+    if (until != null) {
+      scan.add("created_at < ?");
+      parameters.add(Sql.timestamp(until));
+    }
+    HistoryPosition after = query.after();
+    if (after != null) {
+      // Not as a row comparison, which the index on created_at alone cannot serve.
+      scan.add("created_at <= ? and (created_at < ? or id < ?)");
+      parameters.add(Sql.timestamp(after.createdAt()));
+      parameters.add(Sql.timestamp(after.createdAt()));
+      parameters.add(after.id());
+    }
+    UUID causedById = query.causedById();
+    if (causedById != null) {
+      scan.add("caused_by_id = ?");
+      parameters.add(causedById);
+    }
+    ActorType actorType = query.actorType();
+    if (actorType == ActorType.USER) {
+      // A literal, so the planner can use the partial index of the users' entries.
+      scan.add("actor_type = 'USER'");
+    }
+    List<String> filter = new ArrayList<>();
+    List<@Nullable Object> filterParameters = new ArrayList<>();
+    if (actorType != null && actorType != ActorType.USER) {
+      filter.add("actor_type = ?");
+      filterParameters.add(actorType.name());
+    }
+    Class<? extends HistoryEntry> entryType = query.entryType();
+    if (entryType != null) {
+      filter.add(KIND + " = ?");
+      filterParameters.add(kind(entryType));
+    }
+    if (!query.actions().isEmpty()) {
+      filter.add(KIND + " || ':' || action = any(?::text[])");
+      filterParameters.add(
+          Sql.array(
+              "text",
+              query.actions().stream().map(a -> kind(a) + ":" + a.name()).toArray(String[]::new)));
+    }
+    int limit = query.limit();
+    int scanned = filter.isEmpty() ? limit + 1 : Math.max(scanLimit, limit + 1);
+    parameters.add(scanned);
+    parameters.addAll(filterParameters);
+    parameters.add(limit + 1);
+    parameters.add(scanned);
+    String sql =
+        FIND_HISTORY_SQL.formatted(
+            scan.isEmpty() ? "true" : String.join(" and ", scan),
+            filter.isEmpty() ? "true" : String.join(" and ", filter));
+    return access.inReadOnlyTransaction(
+        db -> {
+          List<PageRow> rows = db.list(sql, PageRow::of, parameters.toArray());
+          List<HistoryEntry> entries = new ArrayList<>(rows.size());
+          HistoryPosition next = null;
+          for (PageRow row : rows) {
+            if (row.lastScanned()) {
+              next = HistoryPosition.of(row.entry());
+            } else {
+              entries.add(row.entry());
+            }
+          }
+          if (entries.size() > limit) {
+            entries = entries.subList(0, limit);
+            next = HistoryPosition.of(entries.getLast());
+          }
+          UUID[] ids =
+              entries.stream()
+                  .flatMap(entry -> Stream.of(entry.nodeId(), entry.causedById()))
+                  .filter(Objects::nonNull)
+                  .distinct()
+                  .toArray(UUID[]::new);
+          Map<UUID, HistorySubject> subjects = new HashMap<>();
+          if (ids.length > 0) {
+            for (HistorySubject subject :
+                db.list(SUBJECTS_SQL, HistoryStore::subject, Sql.array("uuid", ids))) {
+              subjects.put(subject.id(), subject);
+            }
+          }
+          return new HistoryPage(entries, next, subjects);
+        },
+        e -> new BikeschedException("Reading the bikesched history failed", e));
+  }
+
+  // The type of an entry as one value: JOB, STEP, EVENT or NODE.
+  private static final String KIND =
+      "(case when step_id is null then subject_type else 'STEP' end)";
+
+  // The matching entries among the scanned ones, newest first, one more than the page holds; and
+  // the last scanned entry if the scan reached its bound, where the next page starts if this one
+  // does not fill up. The scan is materialized, so it runs once for both.
+  private static final String FIND_HISTORY_SQL =
+      """
+            with scanned as materialized (
+                select * from bikesched_history
+                 where %%s
+                 order by created_at desc, id desc
+                 limit ?),
+            page as (
+                select * from scanned where %%s order by created_at desc, id desc limit ?)
+            select %1$s, false as last_scanned from page
+            union all
+            select %1$s, true as last_scanned
+              from (select * from scanned order by created_at, id limit 1) l
+             where (select count(*) from scanned) = ?
+             order by last_scanned, created_at desc, id desc"""
+          .formatted(ENTRY_COLUMNS);
+
+  // The type and name of each subject: a registered node's, or else from the subject's latest entry
+  // (one step backwards along the primary key; every entry names its subject).
+  private static final String SUBJECTS_SQL =
+      """
+            select s.id, coalesce(h.subject_type, 'NODE') as subject_type,
+                   coalesce(n.name, h.data->>'subjectName') as name
+              from unnest(?::uuid[]) as s(id)
+              left join bikesched_nodes n on n.id = s.id
+              left join lateral (
+                  select subject_type, data from bikesched_history
+                   where subject_id = s.id
+                   order by id desc
+                   limit 1) h on true
+             where n.id is not null or h.subject_type is not null""";
+
+  private record PageRow(HistoryEntry entry, boolean lastScanned) {
+    static PageRow of(Sql.Row row) throws SQLException {
+      return new PageRow(HistoryStore.entry(row), row.bool("last_scanned"));
+    }
+  }
+
+  private static HistorySubject subject(Sql.Row row) throws SQLException {
+    return new HistorySubject(
+        row.uuid("id"), row.enumValue("subject_type", SubjectType.class), row.string("name"));
+  }
+
+  private static String kind(Class<? extends HistoryEntry> entryType) {
+    if (entryType == JobEntry.class) {
+      return "JOB";
+    } else if (entryType == StepEntry.class) {
+      return "STEP";
+    } else if (entryType == EventEntry.class) {
+      return "EVENT";
+    } else if (entryType == NodeEntry.class) {
+      return "NODE";
+    }
+    throw new IllegalArgumentException("Not a type of history entry: " + entryType.getName());
+  }
+
+  private static String kind(HistoryAction action) {
+    return switch (action) {
+      case JobAction ignored -> "JOB";
+      case StepAction ignored -> "STEP";
+      case EventAction ignored -> "EVENT";
+      case NodeAction ignored -> "NODE";
+    };
   }
 
   /** Maps a row of {@link #ENTRY_COLUMNS} to the entry of its subject type. */

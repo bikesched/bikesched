@@ -18,6 +18,8 @@ import org.bikesched.admin.EventNameSummary;
 import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.EventStep;
 import org.bikesched.admin.EventSummary;
+import org.bikesched.admin.HistoryPage;
+import org.bikesched.admin.HistoryQuery;
 import org.bikesched.admin.JobData;
 import org.bikesched.admin.JobNameSummary;
 import org.bikesched.admin.JobQuery;
@@ -233,6 +235,18 @@ final class DefaultAdmin implements Admin {
     Objects.requireNonNull(nodeId, "nodeId");
     ensureReady.run();
     return history.findHistoryWithCaused(SubjectType.NODE, nodeId);
+  }
+
+  @Override
+  public HistoryPage findHistory(HistoryQuery query) {
+    Objects.requireNonNull(query, "query");
+    ensureReady.run();
+    return history.findHistory(query, HistoryQuery.SCAN_LIMIT);
+  }
+
+  @Override
+  public boolean isRecordingHistory() {
+    return history.isEnabled();
   }
 
   // The hex digits of an id suffix, lower case and without hyphens.

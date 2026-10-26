@@ -8,7 +8,7 @@ weight: 1
 The module `bikesched-admin` (package `org.bikesched.admin.web`) serves a small page showing what
 the jobs of a bikesched database are doing: jobs by name and state, a job with its steps, history,
 child jobs and last error, events with the jobs that published, received or still wait for them, and
-the nodes, online or offline. Failed jobs can be retried and active ones cancelled, and jobs
+the nodes, online or offline, and the history of all of them. Failed jobs can be retried and active ones cancelled, and jobs
 scheduled and events published, from the page. It is embedded in the application that runs
 bikesched; there is no separate service.
 
@@ -125,9 +125,9 @@ always shown.
 
 ## The page
 
-- **Header**: the Jobs, Events and Nodes tabs with their number of jobs, unexpired events and
-  registered nodes (with "1 offline" while a node has no heartbeat within the node timeout), and a
-  reload button. Each tab returns to its list with the filters it was left with; the open tab
+- **Header**: the Jobs, Events, Nodes and History tabs, the first three with their number of jobs,
+  unexpired events and registered nodes (with "1 offline" while a node has no heartbeat within the
+  node timeout), and a reload button. Each tab returns to its list with the filters it was left with; the open tab
   clears them.
 - **Job and event names**: above the job list a select box with the job names and their number of
   jobs (and failed jobs or the recurrence), above the event list one with the event names and their
@@ -192,9 +192,24 @@ always shown.
   released after it died); an offline node says that other nodes release its jobs and later remove
   it. A node that is no longer registered still opens while its history has entries. A running
   job's Node field links to the node.
+- **History**: every entry of the [history](../jobs/README.md#history), newest first: time,
+  subject (job, step, event or node, linked to its page), action, the state it led to, actor (a
+  user's name, "job", "node" or "application"), the node that wrote it (by name, also after it was
+  removed) and its details. Filters: actor (everyone, users, application, jobs, nodes), subject
+  type, the actions of that type (several), and "Before" a time. Filters other than users, time
+  and cause scan at most 5000 entries per page, so a page with a rare action can stop early:
+  "Older entries" continues the scan. An entry's detail shows its fields, its data and the entries
+  its subject caused (a job's child jobs, an event's receivers, a dead node's released jobs). The
+  list is live: every 3 seconds it re-reads the minute before its newest entry and adds what is
+  new, so an entry of a transaction that committed late still shows up. An entry of a transaction
+  open for longer than that minute shows up only after Reload, and when more than 500 new
+  entries arrive between two refreshes, live refresh stops and asks for a Reload. The tab says when the serving
+  instance does not record the history; it still shows what other nodes recorded. Viewers see
+  everything, user names and messages included.
 
 Every view is a link (`#/jobs?name=send-invoice&state=FAILED`, `#/jobs?search=order-4711`, `#/jobs/{id}`,
-`#/jobs/{id}/steps/{stepId}`, `#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`, `#/nodes/{id}`), so
+`#/jobs/{id}/steps/{stepId}`, `#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`, `#/nodes/{id}`,
+`#/history?actor=USER`), so
 it can be shared or put into an alert. The page follows the browser's light or dark mode.
 
 ## Other HTTP servers
@@ -244,6 +259,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/waiting?name=&key=&limit=` | `{"steps": [...]}`: event waits still waiting for the name, longest waiting first |
 | GET | `api/nodes` | `{"nodes": [{"id", "name", "startedAt", "lastHeartbeatAt", "alive", "runningJobs"}]}`: by name |
 | GET | `api/nodes/{id}` | `{"node": {...}, "history": [...]}`, the same fields, plus the node's history entries and those it caused; once the node is removed `node` is `null`, and `404` without history entries |
+| GET | `api/history?subject=&actor=&action=&since=&until=&causedBy=&after=&limit=` | `{"entries": [...], "next": cursor, "subjects": {id: {"type", "name"}}, "recording"}`: history entries of every subject, newest first; `subject` is `JOB`, `STEP`, `EVENT` or `NODE`, `actor` an actor type, `action` actions of the subject separated by commas, `since` (inclusive) and `until` (exclusive) ISO-8601 instants, `causedBy` the id of the job, event or node that caused the entries, `after` the previous page's `next`; `subjects` names the writing nodes and the causing subjects, `recording` says whether the serving instance records the history |
 | GET | `api/me` | `{"user", "level", "readOnly", "payloadsShown"}` |
 | POST | `api/jobs/{id}/retry` | `{"retried": true or false}` (only failed jobs are retried) |
 | POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI", the user is on the history entry) |
@@ -291,6 +307,8 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findNodes()` | the registered nodes, alive or not, with the number of jobs each runs |
 | `findNode(id)` | one registered node |
 | `findNodeHistory(id)` | a node's history entries and those it caused, also after it was removed |
+| `findHistory(HistoryQuery)` | history entries of every subject by entry type, actor type, actions, cause and time, newest first, in pages (`after(page.next())`), with the writing nodes and causing subjects |
+| `isRecordingHistory()` | whether this instance records the history |
 
 Summaries never contain payloads or results; only `findJobData` and `findEventPayload` read them.
 

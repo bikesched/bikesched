@@ -11,6 +11,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,6 +30,9 @@ import org.bikesched.admin.Admin;
 import org.bikesched.admin.CancelJobBuilder;
 import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.EventSummary;
+import org.bikesched.admin.HistoryPage;
+import org.bikesched.admin.HistoryPosition;
+import org.bikesched.admin.HistoryQuery;
 import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
@@ -41,7 +45,16 @@ import org.bikesched.admin.web.access.AccessLevel;
 import org.bikesched.admin.web.access.AdminAccess;
 import org.bikesched.event.NodeEventBuilder;
 import org.bikesched.history.Actor;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.EventAction;
+import org.bikesched.history.EventEntry;
+import org.bikesched.history.HistoryAction;
 import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.JobAction;
+import org.bikesched.history.JobEntry;
+import org.bikesched.history.NodeAction;
+import org.bikesched.history.NodeEntry;
+import org.bikesched.history.StepAction;
 import org.bikesched.history.StepEntry;
 import org.bikesched.job.IdempotentJobBuilder;
 import org.bikesched.job.JobBuilder;
@@ -180,6 +193,7 @@ final class AdminHandler {
                                       .put("count", n.count())
                                       .put("waiting", n.waiting()))
                           .toList());
+          case "/api/history" -> history(admin, params);
           case "/api/waiting" -> waiting(admin, params);
           case "/api/recurring-runs" -> recurringRuns(admin, params);
           case "/api/nodes" ->
@@ -633,6 +647,103 @@ final class AdminHandler {
           .ifPresent(payload -> body.put("payload", new Json.Raw(payload)));
     }
     return Optional.of(body);
+  }
+
+  /**
+   * A page of the history: {@code subject} (JOB, STEP, EVENT or NODE), {@code actor} (an actor
+   * type), {@code action} (comma-separated actions of the subject), {@code since} and {@code until}
+   * (ISO-8601 instants), {@code causedBy} (a subject id), {@code after} (the {@code next} of the
+   * previous page) and {@code limit}.
+   */
+  private static Json.Obj history(Admin admin, Map<String, String> params) {
+    HistoryQuery query = HistoryQuery.newest(limit(params));
+    String subject = blankToNull(params.get("subject"));
+    if (subject != null) {
+      query = query.withEntryType(entryType(subject.trim()));
+    }
+    String actor = blankToNull(params.get("actor"));
+    if (actor != null) {
+      try {
+        query = query.withActorType(ActorType.valueOf(actor.trim()));
+      } catch (IllegalArgumentException e) {
+        throw new BadRequest("Unknown actor type: " + actor);
+      }
+    }
+    String actions = blankToNull(params.get("action"));
+    if (actions != null) {
+      if (subject == null) {
+        throw new BadRequest("Parameter action needs a subject");
+      }
+      Set<HistoryAction> set = new HashSet<>();
+      for (String action : actions.split(",")) {
+        set.add(action(subject.trim(), action.trim()));
+      }
+      query = query.withActions(set);
+    }
+    String since = blankToNull(params.get("since"));
+    if (since != null) {
+      query = query.withSince(instant("since", since));
+    }
+    String until = blankToNull(params.get("until"));
+    if (until != null) {
+      query = query.withUntil(instant("until", until));
+    }
+    String causedBy = blankToNull(params.get("causedBy"));
+    if (causedBy != null) {
+      query = query.withCausedBy(id(causedBy));
+    }
+    String after = blankToNull(params.get("after"));
+    if (after != null) {
+      int comma = after.indexOf(',');
+      if (comma < 0) {
+        throw new BadRequest("Malformed after: " + after);
+      }
+      query =
+          query.after(
+              new HistoryPosition(
+                  instant("after", after.substring(0, comma)), id(after.substring(comma + 1))));
+    }
+    HistoryPage page = admin.findHistory(query);
+    HistoryPosition next = page.next();
+    return Json.object()
+        .put("entries", page.entries().stream().map(AdminJson::history).toList())
+        .put("next", next == null ? null : next.createdAt() + "," + next.id())
+        .put("subjects", subjects(page))
+        .put("recording", admin.isRecordingHistory());
+  }
+
+  /** The writing nodes and causing subjects of a page, by id: {@code {type, name}}. */
+  private static Map<UUID, Json.Obj> subjects(HistoryPage page) {
+    Map<UUID, Json.Obj> subjects = new LinkedHashMap<>();
+    page.subjects()
+        .forEach(
+            (id, subject) ->
+                subjects.put(
+                    id, Json.object().put("type", subject.type()).put("name", subject.name())));
+    return subjects;
+  }
+
+  private static Class<? extends HistoryEntry> entryType(String subject) {
+    return switch (subject) {
+      case "JOB" -> JobEntry.class;
+      case "STEP" -> StepEntry.class;
+      case "EVENT" -> EventEntry.class;
+      case "NODE" -> NodeEntry.class;
+      default -> throw new BadRequest("Unknown subject: " + subject);
+    };
+  }
+
+  private static HistoryAction action(String subject, String action) {
+    try {
+      return switch (subject) {
+        case "JOB" -> JobAction.valueOf(action);
+        case "STEP" -> StepAction.valueOf(action);
+        case "EVENT" -> EventAction.valueOf(action);
+        default -> NodeAction.valueOf(action);
+      };
+    } catch (IllegalArgumentException e) {
+      throw new BadRequest("Unknown " + subject + " action: " + action);
+    }
   }
 
   private static Json.Obj waiting(Admin admin, Map<String, String> params) {

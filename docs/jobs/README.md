@@ -409,6 +409,15 @@ A job that waited for an event and was retried once could show (step names and s
   occurrences `MOVED` to a changed recurrence or `DELETED` with their recurring job. A duplicate
   of an idempotency key and a retry of a job that did not fail record nothing: nothing changed.
 - Entries are ordered by the database's time of the write, then by their id (UUIDv7).
+- `admin().findHistory(HistoryQuery)` reads the entries of every subject, newest first, filtered
+  by entry type, actor type, actions, cause and time, in pages; the admin UI's
+  [History tab](../operations/admin.md#the-page) shows them.
+
+  ```java
+  HistoryPage page = bikesched.admin().findHistory(HistoryQuery.newest(50)
+      .withActorType(ActorType.USER)
+      .withSince(Instant.now().minus(Duration.ofDays(1))));
+  ```
 - Only nodes with the history enabled record: enable it on all nodes, or the history has gaps.
   `findJobHistory` reads the table on any node.
 

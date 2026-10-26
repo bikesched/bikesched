@@ -11,6 +11,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.HashSet;
@@ -26,6 +27,7 @@ import org.bikesched.Bikesched;
 import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.web.access.AdminAccess;
+import org.bikesched.history.Actor;
 import org.bikesched.history.ActorType;
 import org.bikesched.history.HistoryEntry;
 import org.bikesched.job.JobState;
@@ -101,6 +103,7 @@ class BikeschedAdminTest {
           .contains(
               "jobs.js",
               "events.js",
+              "history.js",
               "vendor/preact.module.js",
               "vendor/hooks.module.js",
               "vendor/htm.module.js");
@@ -485,6 +488,91 @@ class BikeschedAdminTest {
         statement.execute(
             "delete from bikesched_history where data ->> 'subjectName' like '" + prefix + "%'");
       }
+    }
+  }
+
+  @Test
+  void listsTheHistoryWithFiltersAndPages() throws Exception {
+    String type = prefix + "feed";
+    String event = prefix + "feed-event";
+    try (Bikesched recording =
+            BikeschedTest.testNode(AdminServer.DATA_SOURCE, prefix + "feed")
+                .history(Duration.ofDays(1))
+                .autoStartPolling(false)
+                .build();
+        var server = AdminServer.serve(BikeschedAdmin.of(recording));
+        var plain = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
+      recording.registerJobHandler(type, () -> {});
+      String since = encode(databaseNow().toString());
+      UUID first = recording.newJob(type).schedule(Duration.ofHours(1));
+      UUID second = recording.newJob(type).actor(Actor.user("simon")).schedule(Duration.ofHours(1));
+      UUID eventId = recording.newEvent(event, "k").publish();
+
+      JsonObject all = AdminServer.json(server.get("/api/history?since=" + since));
+      assertThat(subjectIds(all)).containsExactly(eventId, second, first);
+      assertThat(all.isNull("next")).isTrue();
+      assertThat(all.getBoolean("recording")).isTrue();
+      JsonObject entry = all.getArray("entries").getObject(1);
+      assertThat(entry.getString("actorName")).isEqualTo("simon");
+      assertThat(entry.getObject("data").getString("subjectName")).isEqualTo(type);
+
+      JsonObject page = AdminServer.json(server.get("/api/history?limit=2&since=" + since));
+      assertThat(subjectIds(page)).containsExactly(eventId, second);
+      JsonObject rest =
+          AdminServer.json(
+              server.get(
+                  "/api/history?limit=2&since="
+                      + since
+                      + "&after="
+                      + encode(page.getString("next"))));
+      assertThat(subjectIds(rest)).containsExactly(first);
+      assertThat(rest.isNull("next")).isTrue();
+
+      String filtered = "/api/history?since=" + since + "&";
+      assertThat(subjectIds(AdminServer.json(server.get(filtered + "actor=USER"))))
+          .containsExactly(second);
+      assertThat(subjectIds(AdminServer.json(server.get(filtered + "subject=EVENT"))))
+          .containsExactly(eventId);
+      assertThat(
+              subjectIds(
+                  AdminServer.json(server.get(filtered + "subject=JOB&action=SCHEDULED,CLAIMED"))))
+          .containsExactly(second, first);
+      assertThat(subjectIds(AdminServer.json(server.get(filtered + "subject=STEP")))).isEmpty();
+
+      for (String bad :
+          List.of(
+              "action=SCHEDULED",
+              "subject=TABLE",
+              "actor=ROBOT",
+              "subject=EVENT&action=SCHEDULED",
+              "after=yesterday",
+              "until=yesterday")) {
+        assertThat(server.get("/api/history?" + bad).statusCode()).as(bad).isEqualTo(400);
+      }
+      assertThat(AdminServer.json(plain.get("/api/history?limit=1")).getBoolean("recording"))
+          .as("an instance without the history")
+          .isFalse();
+    } finally {
+      try (var connection = AdminServer.DATA_SOURCE.getConnection();
+          var statement = connection.createStatement()) {
+        statement.execute(
+            "delete from bikesched_history where data ->> 'subjectName' like '" + prefix + "%'");
+      }
+    }
+  }
+
+  private static List<UUID> subjectIds(JsonObject page) {
+    return page.getArray("entries").stream()
+        .map(e -> UUID.fromString(((JsonObject) e).getString("subjectId")))
+        .toList();
+  }
+
+  private static Instant databaseNow() throws Exception {
+    try (var connection = AdminServer.DATA_SOURCE.getConnection();
+        var statement = connection.createStatement();
+        var rs = statement.executeQuery("select clock_timestamp()")) {
+      rs.next();
+      return rs.getObject(1, OffsetDateTime.class).toInstant();
     }
   }
 

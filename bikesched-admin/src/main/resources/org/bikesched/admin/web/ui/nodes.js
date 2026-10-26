@@ -14,7 +14,7 @@ const nodeState = (node) => (node.alive ? 'ONLINE' : 'OFFLINE');
  * Calls load every 3 seconds while the tab is visible, and right away when it becomes visible
  * again; load returns false to stop. onError gets a failure and returns false to stop too.
  */
-function usePolling(load, onError, deps) {
+export function usePolling(load, onError, deps) {
   useEffect(() => {
     let timer = null;
     let stopped = false;

@@ -464,6 +464,9 @@ button { font: inherit; }
 .history-entry.step-entry { padding-left: var(--space-4); }
 /* What happened, next to the state it led to. */
 .history-action { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+/* The History tab: filters as chips in the toolbar, the rendered data cut to one line. */
+.field .chips { margin-bottom: 0; }
+.table td.history-detail { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
 .links li { padding: 6px 0; }
 .error-text { color: var(--danger); font-size: 13px; }
 

@@ -213,6 +213,30 @@ public interface Admin {
   List<HistoryEntry> findNodeHistory(UUID nodeId);
 
   /**
+   * Finds history entries of every subject matching the query, newest first (by {@link
+   * HistoryEntry#createdAt()}, then {@link HistoryEntry#id()}), with the names of the nodes that
+   * wrote them. Reads the entries of every node, also if this instance records none ({@link
+   * #isRecordingHistory()}).
+   *
+   * <p>The time bounds, the position, the cause and {@link org.bikesched.history.ActorType#USER}
+   * follow indexes. The other filters (entry type, actions, other actor types) are applied to at
+   * most {@value HistoryQuery#SCAN_LIMIT} entries per page: a page can then hold fewer entries than
+   * its limit and still have a {@linkplain HistoryPage#next() next one}.
+   *
+   * @param query the filters, the page size and the position after the previous page
+   * @return the page
+   */
+  HistoryPage findHistory(HistoryQuery query);
+
+  /**
+   * Tells whether this instance records the history ({@link
+   * org.bikesched.BikeschedBuilder#history(java.time.Duration)}); other nodes may differ.
+   *
+   * @return {@code true} if the history is enabled here
+   */
+  boolean isRecordingHistory();
+
+  /**
    * Starts cancelling a job, see {@link org.bikesched.Bikesched#cancel(UUID, String)}.
    *
    * @param jobId the job id
