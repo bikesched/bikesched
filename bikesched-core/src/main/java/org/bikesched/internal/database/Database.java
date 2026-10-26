@@ -79,7 +79,7 @@ public final class Database {
     this.jsonMapper = jsonMapper;
     this.access = new DatabaseAccess(dataSource, statementTimeout);
     this.history = new HistoryStore(access, history);
-    this.nodes = new NodeStore(access);
+    this.nodes = new NodeStore(access, this.history);
     this.jobs = new JobStore(access, this.history, jsonMapper);
     this.steps = new StepStore(access, this.history);
     this.events = new EventStore(access, this.history);

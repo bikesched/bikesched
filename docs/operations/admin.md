@@ -166,8 +166,9 @@ always shown.
   with that name already has, that job opens instead and nothing is scheduled. The server logs every
   scheduled job with the user.
 - **Events**: newest first, by name and key prefix. The detail shows who published the event (a
-  job's step or outside a job), the jobs that received it and its payload; "latest" marks the event
-  a new wait for its name and key would receive. The "Waiting jobs" tab lists the event waits still
+  job's step or outside a job), the jobs that received it, its payload and, when recorded, its
+  history: the publish and what it caused (the steps that received it, the jobs it resumed);
+  "latest" marks the event a new wait for its name and key would receive. The "Waiting jobs" tab lists the event waits still
   waiting for the name.
 - **Publish event** (operators): a form in the detail panel, opened by the button above the event
   list, by "Publish…" on a waiting job or "Publish event…" on a waiting step in a job's detail (name
@@ -181,8 +182,10 @@ always shown.
 - **Nodes**: every registered node by name, online or offline, with its start, last heartbeat and
   the number of jobs it runs. The list and the open node refresh every 3 seconds while the tab is
   visible. The node detail shows how long ago its last heartbeat was, its uptime and the jobs it
-  runs, each linked; an offline node says that other nodes release its jobs and later remove it. A
-  running job's Node field links to the node.
+  runs, each linked, and its history when recorded (registered, stopped, removed, and the jobs
+  released after it died); an offline node says that other nodes release its jobs and later remove
+  it. A node that is no longer registered still opens while its history has entries. A running
+  job's Node field links to the node.
 
 Every view is a link (`#/jobs?name=send-invoice&state=FAILED`, `#/jobs?search=order-4711`, `#/jobs/{id}`,
 `#/jobs/{id}/steps/{stepId}`, `#/events/{id}`, `#/events/new?pubName=payment-received&pubKey=order-42`, `#/nodes/{id}`), so
@@ -229,12 +232,12 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/events?name=&key=&reference=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix, `reference` an exact match |
 | GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `id`, as for jobs |
 | GET | `api/events?search=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `search` or whose reference is `search`, as for jobs |
-| GET | `api/events/{id}` | `{"event", "steps", "payloadsShown"}`, plus `payload` with `showPayloads(true)` |
+| GET | `api/events/{id}` | `{"event", "steps", "history", "payloadsShown"}`, plus `payload` with `showPayloads(true)`; `history` holds the event's entries and those it caused |
 | GET | `api/event-names` | `{"names": [{"name", "count", "waiting"}]}`: unexpired events and waiting steps per name |
 | GET | `api/recurring-runs?name=&limit=` | `{"name", "pending", "previous": [...]}`: the pending run of a recurring job (`null` if none) and its latest ended runs, newest first |
 | GET | `api/waiting?name=&key=&limit=` | `{"steps": [...]}`: event waits still waiting for the name, longest waiting first |
 | GET | `api/nodes` | `{"nodes": [{"id", "name", "startedAt", "lastHeartbeatAt", "alive", "runningJobs"}]}`: by name |
-| GET | `api/nodes/{id}` | `{"node": {...}}`, the same fields; `404` once the node is removed |
+| GET | `api/nodes/{id}` | `{"node": {...}, "history": [...]}`, the same fields, plus the node's history entries and those it caused; once the node is removed `node` is `null`, and `404` without history entries |
 | GET | `api/me` | `{"user", "level", "readOnly", "payloadsShown"}` |
 | POST | `api/jobs/{id}/retry` | `{"retried": true or false}` (only failed jobs are retried) |
 | POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI") |

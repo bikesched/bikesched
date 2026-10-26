@@ -1,6 +1,7 @@
 # Specification: history of jobs, events, nodes and user actions
 
-Status: **implementing**: step 1 of 4 (table and entries) is implemented, see
+Status: **implementing**: steps 1 and 2 of 4 (table and entries; events, nodes and causes) are
+implemented, see
 [ADR 0062](../decisions/0062-one-history-with-actions-and-actors.md) and the
 [History](../jobs/README.md#history) docs.
 
@@ -473,3 +474,11 @@ None.
    `Bikesched` stay and record `APPLICATION`; the builders with `actor(…)` live under
    `bikesched.admin()`, so the change is not breaking. `JobBuilder` and `NodeEventBuilder` get
    `actor(…)` as planned.
+6. A node's own entries name it as their writer even before it registered (`REGISTERED` is
+   written in the registering transaction, `STOPPED` in the deregistering one); `REMOVED` names
+   the removing node. A removed node that registers again records `REGISTERED` again.
+7. `PUBLISHED` data: `subjectName`, `key`, `retention` (ISO-8601), `received`, and the
+   `idempotencyKey` and `reference` it was published with.
+8. The node page reads `Admin.findNodeHistory(UUID)` (the node's entries and those it caused),
+   next to `Bikesched.findEventHistory`; `api/nodes/{id}` answers for a removed node while it has
+   history entries, with `node` `null`.

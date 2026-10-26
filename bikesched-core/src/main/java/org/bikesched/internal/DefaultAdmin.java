@@ -25,7 +25,10 @@ import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.RecurringJobRuns;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.SubjectType;
 import org.bikesched.internal.database.AdminStore;
+import org.bikesched.internal.database.HistoryStore;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -39,6 +42,8 @@ final class DefaultAdmin implements Admin {
 
   private final AdminStore store;
 
+  private final HistoryStore history;
+
   private final Duration nodeTimeout;
 
   private final Runnable ensureReady;
@@ -47,8 +52,13 @@ final class DefaultAdmin implements Admin {
   private final Set<String> handledNames;
 
   DefaultAdmin(
-      AdminStore store, Duration nodeTimeout, Runnable ensureReady, Set<String> handledNames) {
+      AdminStore store,
+      HistoryStore history,
+      Duration nodeTimeout,
+      Runnable ensureReady,
+      Set<String> handledNames) {
     this.store = store;
+    this.history = history;
     this.nodeTimeout = nodeTimeout;
     this.ensureReady = ensureReady;
     this.handledNames = handledNames;
@@ -198,6 +208,13 @@ final class DefaultAdmin implements Admin {
     Objects.requireNonNull(nodeId, "nodeId");
     ensureReady.run();
     return store.findNode(nodeId, nodeTimeout);
+  }
+
+  @Override
+  public List<HistoryEntry> findNodeHistory(UUID nodeId) {
+    Objects.requireNonNull(nodeId, "nodeId");
+    ensureReady.run();
+    return history.findHistoryWithCaused(SubjectType.NODE, nodeId);
   }
 
   // The hex digits of an id suffix, lower case and without hyphens.

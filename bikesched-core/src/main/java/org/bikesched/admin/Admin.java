@@ -4,6 +4,7 @@ package org.bikesched.admin;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.bikesched.history.HistoryEntry;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -195,4 +196,15 @@ public interface Admin {
    * @return the node, empty if no node with this id is registered (any more)
    */
   Optional<NodeInfo> findNode(UUID nodeId);
+
+  /**
+   * Reads the recorded history of a node: its {@link org.bikesched.history.NodeEntry} entries
+   * ({@code REGISTERED}, {@code STOPPED}, {@code REMOVED}) and the entries it caused (its jobs
+   * released after it died), oldest first. Also for a node that is no longer registered, until the
+   * history's retention.
+   *
+   * @param nodeId the node id
+   * @return the node's history; empty if nothing was recorded (or it was deleted)
+   */
+  List<HistoryEntry> findNodeHistory(UUID nodeId);
 }

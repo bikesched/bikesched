@@ -283,8 +283,8 @@ public final class EventStore {
                 eventId);
             history.record(
                 db,
-                Change.step(
-                    jobId, stepId, StepAction.RECEIVED, StepState.SUCCEEDED, ActorType.JOB));
+                Change.step(jobId, stepId, StepAction.RECEIVED, StepState.SUCCEEDED, ActorType.JOB)
+                    .causedBy(eventId));
             return new EventWaitResult.Received(payload);
           }
           StepRef created = new StepRef(UuidUtil.timeOrdered(), stepName);
@@ -372,7 +372,8 @@ public final class EventStore {
                 retention,
                 idempotencyKey,
                 reference,
-                ActorType.APPLICATION),
+                ActorType.APPLICATION,
+                null),
         e ->
             new BikeschedException(
                 "Publishing event " + eventName + "/" + eventKey + " failed", e));
@@ -419,7 +420,8 @@ public final class EventStore {
               retention,
               idempotencyKey,
               reference,
-              ActorType.APPLICATION);
+              ActorType.APPLICATION,
+              null);
         },
         e ->
             new BikeschedException(
@@ -479,7 +481,16 @@ public final class EventStore {
                 "Compensation replay has no succeeded publishing step '" + stepName + "'");
           }
           Publication publication =
-              publish(db, eventName, eventKey, payload, retention, null, reference, ActorType.JOB);
+              publish(
+                  db,
+                  eventName,
+                  eventKey,
+                  payload,
+                  retention,
+                  null,
+                  reference,
+                  ActorType.JOB,
+                  jobId);
           UUID stepId = UuidUtil.timeOrdered();
           db.update(
               INSERT_PUBLISH_STEP_SQL,
@@ -540,7 +551,8 @@ public final class EventStore {
       Duration retention,
       @Nullable String idempotencyKey,
       @Nullable String reference,
-      ActorType actor)
+      ActorType actor,
+      @Nullable UUID publishingJobId)
       throws SQLException {
     lockEvent(db, eventName, eventKey);
     if (idempotencyKey != null) {
@@ -574,24 +586,33 @@ public final class EventStore {
             eventId,
             eventName,
             eventKey);
+    // The publication first, then what it caused: the receiving steps and the jobs they resume.
     List<Change> changes = new ArrayList<>();
+    changes.add(
+        Change.published(eventId, actor)
+            .causedBy(publishingJobId)
+            .keys(idempotencyKey, reference)
+            .retention(retention)
+            .received(resumptions.size()));
     for (Resumption resumption : resumptions) {
       changes.add(
           Change.step(
-              resumption.jobId(),
-              resumption.stepId(),
-              StepAction.RECEIVED,
-              StepState.SUCCEEDED,
-              actor));
+                  resumption.jobId(),
+                  resumption.stepId(),
+                  StepAction.RECEIVED,
+                  StepState.SUCCEEDED,
+                  actor)
+              .causedBy(eventId));
       if (resumption.jobResumed()) {
         db.dueNow(resumption.jobName());
         changes.add(
             Change.job(
-                resumption.jobId(),
-                JobAction.RESUMED,
-                JobState.SCHEDULED,
-                resumption.attempts(),
-                actor));
+                    resumption.jobId(),
+                    JobAction.RESUMED,
+                    JobState.SCHEDULED,
+                    resumption.attempts(),
+                    actor)
+                .causedBy(eventId));
       }
     }
     history.record(db, changes);

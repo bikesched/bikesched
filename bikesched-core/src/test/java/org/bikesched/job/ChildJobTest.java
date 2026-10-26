@@ -193,6 +193,15 @@ class ChildJobTest extends AbstractBikeschedTest {
       assertThat(HistoryTesting.action(scheduled)).isEqualTo("SCHEDULED");
       assertThat(scheduled.actorType()).isEqualTo(ActorType.JOB);
       assertThat(HistoryTesting.data(scheduled, "dueAt")).isNotNull();
+      // The child was caused by its parent; its end caused the parent's step and resumption.
+      assertThat(scheduled.causedById()).isEqualTo(parentId);
+      assertThat(bikesched.findJobHistory(parentId))
+          .filteredOn(
+              entry ->
+                  List.of("start child-basic-child CHILD_ENDED", "RESUMED")
+                      .contains(HistoryTesting.action(entry)))
+          .extracting(HistoryEntry::causedById)
+          .containsExactly(childId, childId);
       assertThat(logs.messages())
           .contains(
               "Step start child-basic-child of job "

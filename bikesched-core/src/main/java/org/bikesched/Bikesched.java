@@ -333,6 +333,19 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
   List<HistoryEntry> findJobHistory(UUID jobId);
 
   /**
+   * Reads the recorded history of an event, in a read-only transaction: its {@code PUBLISHED} entry
+   * ({@link org.bikesched.history.EventEntry}) and the entries it caused (the steps that received
+   * it and the jobs it resumed, whose {@link HistoryEntry#causedById()} is the event's id), oldest
+   * first. The entries stay readable after the event and its receivers were deleted, until the
+   * history's retention.
+   *
+   * @param eventId the event id
+   * @return the event's history; empty if nothing was recorded (or it was deleted)
+   * @throws BikeschedException if the database cannot be accessed
+   */
+  List<HistoryEntry> findEventHistory(UUID eventId);
+
+  /**
    * Read-only lookups for operating bikesched: jobs by name and state, their steps, payloads and
    * results, job names with counts per state, events, waiting steps and nodes. The admin UI ({@code
    * bikesched-admin}) is built on them; they also suit custom dashboards and support tools.

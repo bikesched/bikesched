@@ -8,6 +8,7 @@ import {
   SearchChip,
   SearchField,
   SortedTh,
+  SubjectHistory,
   dateTime,
   duration,
   isFullId,
@@ -217,7 +218,7 @@ function EventDetail({ eventId, onClose, onPublishSimilar }) {
     </aside>`;
   }
 
-  const { event, steps } = data;
+  const { event, steps, history } = data;
   const publishers = steps.filter((step) => step.publisher);
   const receivers = steps.filter((step) => !step.publisher);
   const fields = [
@@ -259,6 +260,7 @@ function EventDetail({ eventId, onClose, onPublishSimilar }) {
       <div class="tabs" role="tablist" aria-label="Event detail sections">
         <button type="button" role="tab" class="tab" aria-selected=${tab === 'jobs'} onClick=${() => setTab('jobs')}>Jobs</button>
         <button type="button" role="tab" class="tab" aria-selected=${tab === 'payload'} onClick=${() => setTab('payload')}>Payload</button>
+        <button type="button" role="tab" class="tab" aria-selected=${tab === 'history'} onClick=${() => setTab('history')}>History</button>
       </div>
       <div class="detail-body" role="tabpanel">
         ${tab === 'jobs' &&
@@ -273,6 +275,11 @@ function EventDetail({ eventId, onClose, onPublishSimilar }) {
             : html`<p class="muted small">No job has received this event yet. A step that starts waiting for it
                 before it expires receives it right away.</p>`}`}
         ${tab === 'payload' && html`<${Payload} data=${data} owner="event" />`}
+        ${tab === 'history' &&
+        (history.length > 0
+          ? html`<${SubjectHistory} entries=${history} />`
+          : html`<p class="muted small">Nothing recorded: the history is off on the publishing node, or its
+              entries were deleted after the retention.</p>`)}
       </div>
     </aside>`;
 }
