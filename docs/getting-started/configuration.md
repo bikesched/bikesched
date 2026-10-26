@@ -39,8 +39,8 @@ afterwards (see `autoStartPolling` below).
 | `eventCleanUpInterval(Duration)` | 1 hour | how often the node deletes expired events |
 | `nodeCleanUpInterval(Duration)` | 15 seconds | how often the node releases the running jobs of dead nodes and removes dead nodes; also the retry delay of the one-time check for missing occurrences of its recurring jobs |
 | `defaultEventTimeout(Duration)` | none | maximum wait for events without a `.timeout(...)` of their own; afterwards the job fails with an `EventTimeoutException`, unless the wait's `onFailure(…)` resolves it |
-| `jobHistory(Duration retention)` | off | records every change of jobs and their steps in `bikesched_job_history` and keeps it for the retention, see [Job history](../jobs/README.md#job-history); enable it on all nodes |
-| `jobHistoryCleanUpInterval(Duration)` | 1 hour | how often a node with the job history deletes entries older than the retention |
+| `history(Duration retention)` | off | records what happens to jobs and their steps in `bikesched_history` and keeps it for the retention, see [History](../jobs/README.md#history); enable it on all nodes |
+| `historyCleanUpInterval(Duration)` | 1 hour | how often a node with the history deletes entries older than the retention |
 | `jobRetention(Duration)` | 7 days | deletes ended jobs (`SUCCEEDED`, `FAILED`, `CANCELLED`) with their steps once they finished longer ago, see [Job retention](../jobs/README.md#job-retention) |
 | `jobCleanUpInterval(Duration)` | 1 hour | how often the node deletes ended jobs older than the retention |
 | `statementTimeout(Duration)` | data source | maximum duration of each database statement of the node, applied as JDBC query timeout (whole seconds, rounded up); a statement running longer is cancelled and fails like any other database error, see [Statement timeout](#statement-timeout) |

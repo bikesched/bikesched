@@ -15,7 +15,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.HistoryTesting;
 import org.bikesched.LogCapture;
+import org.bikesched.history.HistoryEntry;
 import org.bikesched.internal.job.JobProcessor;
 import org.bikesched.job.listener.JobAttemptOutcome;
 import org.bikesched.job.listener.JobAttemptResult;
@@ -39,7 +41,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
     var logs = LogCapture.of(JobProcessor.class);
     try (logs;
         Bikesched bikesched =
-            testNode("node-failure-handler").jobHistory(Duration.ofHours(1)).build()) {
+            testNode("node-failure-handler").history(Duration.ofHours(1)).build()) {
       bikesched.registerJobFailureHandler(
           type,
           failed -> {
@@ -75,12 +77,14 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
                       + " and finished_at is not null"
                       + " and last_error = 'java.lang.IllegalStateException: boom'"))
           .isOne();
-      assertThat(bikesched.findJobHistory(jobId))
-          .extracting(entry -> entry.state() + " " + entry.detail())
-          .containsSubsequence(
-              "FAILING java.lang.IllegalStateException: boom",
-              "RUNNING failure handler run 1",
-              "FAILED failure handler ran");
+      List<HistoryEntry> history = bikesched.findJobHistory(jobId);
+      assertThat(HistoryTesting.actionsAndStates(history))
+          .containsSubsequence("FAILING:FAILING", "CLAIMED:RUNNING", "FAILED:FAILED");
+      assertThat(HistoryTesting.data(HistoryTesting.entry(history, "FAILING"), "error"))
+          .isEqualTo("java.lang.IllegalStateException: boom");
+      assertThat(history.get(history.size() - 2).data())
+          .contains("\"reason\": \"FAILURE_HANDLER\"", "\"run\": 1");
+      assertThat(HistoryTesting.data(history.getLast(), "reason")).isEqualTo("FAILURE_HANDLER_RAN");
       assertThat(logs.messages())
           .contains(
               "Job "
@@ -258,7 +262,7 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
         Bikesched bikesched =
             testNode("node-failure-handler-retry")
                 .failureHandlerAttempts(2)
-                .jobHistory(Duration.ofHours(1))
+                .history(Duration.ofHours(1))
                 .build()) {
       bikesched.registerJobFailureHandler(
           recovers,
@@ -288,11 +292,13 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
                       + " and last_error = 'java.lang.IllegalStateException: boom'"))
           .as("the job keeps its own error")
           .isOne();
-      assertThat(bikesched.findJobHistory(givesUpId))
-          .extracting(entry -> entry.state() + " " + entry.detail())
-          .contains(
-              "FAILED failure handler gave up after 2 run(s): java.io.IOException: dead letters"
-                  + " down");
+      List<HistoryEntry> history = bikesched.findJobHistory(givesUpId);
+      assertThat(HistoryTesting.actions(history)).contains("FAILURE_HANDLER_FAILED");
+      HistoryEntry failed = history.getLast();
+      assertThat(HistoryTesting.action(failed)).isEqualTo("FAILED");
+      assertThat(HistoryTesting.data(failed, "reason")).isEqualTo("FAILURE_HANDLER_GAVE_UP");
+      assertThat(HistoryTesting.data(failed, "error"))
+          .isEqualTo("java.io.IOException: dead letters down");
       assertThat(logs.messages())
           .contains(
               "Failure handler of job "

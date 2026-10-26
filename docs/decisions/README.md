@@ -17,7 +17,7 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0004](0004-typed-job-and-event-types.md) | Typed job and event types next to the string-based API | Accepted, renamed by [0059](0059-job-name-and-job-type.md) |
 | [0005](0005-recurring-jobs-via-schedule-recurrence.md) | Recurring jobs via schedule(Recurrence) | Accepted |
 | [0006](0006-text-columns-with-length-checks.md) | Text columns with length checks; messages truncated | Accepted |
-| [0007](0007-job-history-in-separate-table.md) | Job history in a separate, opt-in table | Accepted |
+| [0007](0007-job-history-in-separate-table.md) | Job history in a separate, opt-in table | Superseded by [0062](0062-one-history-with-actions-and-actors.md) |
 | [0008](0008-event-expiry-fixed-at-publish.md) | Event expiry fixed when publishing | Accepted |
 | [0009](0009-step-writes-fenced-by-job-lock.md) | Step writes fenced by the job's lock | Accepted |
 | [0010](0010-lock-token-per-claim.md) | A lock token per claim instead of a version column | Accepted |
@@ -67,8 +67,9 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0054](0054-time-ordered-ids.md) | Time-ordered ids (UUIDv7) | Accepted |
 | [0055](0055-byte-limits-for-names-and-keys.md) | Byte limits for names and keys | Accepted |
 | [0056](0056-schema-naming-column-order-and-invariants.md) | Schema naming, column order and invariants | Accepted |
-| [0057](0057-steps-keyed-by-a-time-ordered-id.md) | Steps keyed by a time-ordered id | Accepted |
+| [0057](0057-steps-keyed-by-a-time-ordered-id.md) | Steps keyed by a time-ordered id | Accepted (history part superseded by [0062](0062-one-history-with-actions-and-actors.md)) |
 | [0058](0058-fixed-delay-recurrences-and-planned-runs.md) | Fixed-delay recurrences and a planned run on every occurrence | Accepted |
 | [0059](0059-job-name-and-job-type.md) | Job name and job type | Accepted |
 | [0060](0060-data-source-passed-to-the-builder.md) | Data source passed to the builder | Accepted |
 | [0061](0061-references-for-jobs-and-events.md) | References for jobs and events | Accepted |
+| [0062](0062-one-history-with-actions-and-actors.md) | One history with actions and actors | Accepted |

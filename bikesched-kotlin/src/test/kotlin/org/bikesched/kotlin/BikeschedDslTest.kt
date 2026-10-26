@@ -33,8 +33,8 @@ class BikeschedDslTest {
         eventRetention = 1.minutes
         eventCleanUpInterval = 10.minutes
         nodeCleanUpInterval = 30.seconds
-        jobHistoryRetention = 1.hours
-        jobHistoryCleanUpInterval = 10.minutes
+        historyRetention = 1.hours
+        historyCleanUpInterval = 10.minutes
         jobRetention = 30.days
         jobCleanUpInterval = 10.minutes
         statementTimeout = 30.seconds
@@ -57,7 +57,8 @@ class BikeschedDslTest {
         assertThat(id).isNotNull()
 
         val jobId = bikesched.createJob(name = unique("dsl-history"), delay = 1.hours) {}
-        assertThat(bikesched.findJobHistory(jobId).map { it.state() }).containsExactly("SCHEDULED")
+        assertThat(bikesched.findJobHistory(jobId).map { it.action().name() })
+          .containsExactly("SCHEDULED")
 
         val recurring = unique("dsl-recurring")
         bikesched.newJob(recurring).handler { _ -> }.schedule("PT1H")

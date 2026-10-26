@@ -140,6 +140,6 @@ the repository and run the [simple example](../../bikesched-examples/README.md#s
 
 ## Next steps
 
-- [Jobs](../jobs/README.md): retries, failure handlers, cancellation, timeouts and the job history
+- [Jobs](../jobs/README.md): retries, failure handlers, cancellation, timeouts and the history
 - [Multi-step jobs](../multi-step-jobs/README.md): durable steps, event waits and child jobs
 - [Patterns](../patterns.md): common problems and the examples solving them

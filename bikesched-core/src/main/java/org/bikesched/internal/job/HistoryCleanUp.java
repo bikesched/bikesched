@@ -9,10 +9,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Deletes job history entries older than the job history retention, run by the clean-up thread of a
- * polling node with the job history enabled, every job history clean-up interval. Deletes in
- * batches, each in its own short transaction, so a large backlog does not hold locks for long (see
- * {@link DeletedBatch}). Safe to run concurrently on several nodes.
+ * Deletes history entries older than the history retention, run by the clean-up thread of a polling
+ * node with the history enabled, every history clean-up interval. Deletes in batches, each in its
+ * own short transaction, so a large backlog does not hold locks for long (see {@link
+ * DeletedBatch}). Safe to run concurrently on several nodes.
  */
 public final class HistoryCleanUp {
 
@@ -30,7 +30,7 @@ public final class HistoryCleanUp {
    * @param database the database
    * @param nodeId the node doing the clean-up, for logging
    * @param nodeName its name, for logging
-   * @param retention how long job history entries are kept
+   * @param retention how long history entries are kept
    */
   public HistoryCleanUp(Database database, UUID nodeId, String nodeName, Duration retention) {
     this.database = database;
@@ -51,10 +51,10 @@ public final class HistoryCleanUp {
               (after, cutoff) ->
                   database.history().deleteHistory(after, cutoff, retention, BATCH_SIZE));
       if (deleted > 0) {
-        LOG.debug("Deleted {} job history entries older than {}", deleted, retention);
+        LOG.debug("Deleted {} history entries older than {}", deleted, retention);
       }
     } catch (RuntimeException e) {
-      LOG.warn("Deleting old job history failed on node {} ({})", nodeName, nodeId, e);
+      LOG.warn("Deleting old history failed on node {} ({})", nodeName, nodeId, e);
     }
   }
 }

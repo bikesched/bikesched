@@ -1,6 +1,8 @@
 # Specification: history of jobs, events, nodes and user actions
 
-Status: **draft**
+Status: **implementing**: step 1 of 4 (table and entries) is implemented, see
+[ADR 0062](../decisions/0062-one-history-with-actions-and-actors.md) and the
+[History](../jobs/README.md#history) docs.
 
 ## 1. Goal
 
@@ -447,3 +449,27 @@ None.
 17. The admin's live refresh re-reads a trailing window (4.8).
 18. Viewers see user names and messages (4.8).
 19. A separate retention for user entries is deferred (`IDEAS.md`).
+
+## 10. Decided while implementing
+
+1. `node_id` is the node writing the entry, set once the node registered (`HistoryStore.writtenBy`),
+   not the node in the job row: the application's calls through a node carry it too, an instance
+   that does not poll (and so never registers) records none. This replaces "`attempt` and
+   `node_id` of step entries keep coming from the job row" (4.3); `attempt` still does.
+2. A poll records `WAITING` (with `checks`: 1) after its first check, then only its outcome
+   (`SUCCEEDED`, `FAILED` or `TIMED_OUT` with `checks`); further claims and suspensions are left
+   out as before.
+3. The `data` keys: `subjectName`, `stepName`, `error`, `message`, `reason`, `run`, `checks`,
+   `dueAt`, `waitUntil`, `recurrence`, `previousRecurrence`, `idempotencyKey`, `reference`,
+   `childJobId`, `childState`, `eventId`, `eventName`, `eventKey`. Each action's Javadoc lists its
+   keys. `reason` is a constant: `FAILURE_HANDLER`, `COMPENSATION` or `CANCELLATION` on a
+   `CLAIMED`, `NODE_STOPPED`, `NODE_DEAD` or `OUTCOME_NOT_RECORDED` on a `RELEASED`,
+   `NO_FAILURE_HANDLER`, `FAILURE_HANDLER_RAN` or `FAILURE_HANDLER_GAVE_UP` on the end of a
+   failing job or step.
+4. Step names are joined from `bikesched_steps` by `step_id`; a caller passes the name only where
+   the step row is not written in the transaction (a job's `SUSPENDED` and `POSTPONED` name their
+   step).
+5. Users (step 3), revised: the plain `cancel`, `retry` and `removeRecurringJob` methods of
+   `Bikesched` stay and record `APPLICATION`; the builders with `actor(…)` live under
+   `bikesched.admin()`, so the change is not breaking. `JobBuilder` and `NodeEventBuilder` get
+   `actor(…)` as planned.

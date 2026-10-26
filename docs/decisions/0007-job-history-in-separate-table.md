@@ -9,7 +9,7 @@ Date: 2026-10-05
 
 ## Status
 
-Accepted
+Superseded by [ADR 0062](0062-one-history-with-actions-and-actors.md)
 
 ## Context
 

@@ -194,8 +194,8 @@ pending suspends the job until the next one, as one step (`poll-payment`) for al
 
 `PollExampleTest` checks that the delivered webhook needs no status call, that a webhook delivered
 twice returns the same event both times and stores one row in `bikesched_events`, and that for
-the lost one the number of status calls equals the poll step's checks, with a single history entry
-(`ready after n checks`) for the poll.
+the lost one the number of status calls equals the poll step's checks, with two history entries
+for the poll: its first wait and its outcome (`SUCCEEDED` with the number of checks).
 
 ## Rate limit
 
@@ -443,8 +443,8 @@ server.createContext("/bikesched", BikeschedAdmin.of(bikesched).showPayloads(tru
 server.start();
 ```
 
-The node records the [job history](../docs/jobs/README.md#job-history) for seven days
-(`BikeschedUtil.builder(…).jobHistory(…)`), so every job detail has a History tab; it is off by
+The node records the [history](../docs/jobs/README.md#history) for seven days
+(`BikeschedUtil.builder(…).history(…)`), so every job detail has a History tab; it is off by
 default. The demo data holds no secrets, so the example shows payloads; they are hidden by default.
 Open http://localhost:8081/bikesched/ (`ADMIN_PORT` changes the port), retry a failed invoice or
 cancel a waiting order. `AdminExampleTest` serves the page on a random port and waits until the

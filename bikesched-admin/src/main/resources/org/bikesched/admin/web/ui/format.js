@@ -93,6 +93,44 @@ export function RecurringIcon({ label = 'recurring' }) {
 }
 
 /** The header of the column a table is sorted by, with an arrow; title says how. */
+/** Who made a history entry's change: a user's name, or the type of actor. */
+export function actor(entry) {
+  return entry.actorType === 'USER' ? entry.actorName : entry.actorType.toLowerCase();
+}
+
+// How the specifics in a history entry's data read, in this order; names are shown elsewhere.
+const DETAIL_LABELS = [
+  ['reason', null],
+  ['run', 'run'],
+  ['checks', 'checks'],
+  ['dueAt', 'due'],
+  ['waitUntil', 'until'],
+  ['recurrence', 'recurrence'],
+  ['previousRecurrence', 'moved from'],
+  ['idempotencyKey', 'idempotency key'],
+  ['reference', 'reference'],
+  ['eventName', 'event'],
+  ['eventKey', 'key'],
+  ['eventId', 'event'],
+  ['childJobId', 'child'],
+  ['childState', 'child ended'],
+];
+
+/** The specifics of a history entry as one line: its error or message first, then the rest. */
+export function historyDetail(entry) {
+  const data = entry.data || {};
+  const parts = DETAIL_LABELS.filter(([key]) => data[key] !== undefined).map(([key, label]) => {
+    let value = data[key];
+    if (key === 'reason') value = String(value).toLowerCase().replaceAll('_', ' ');
+    else if (key === 'dueAt' || key === 'waitUntil') value = dateTime(value);
+    else if (key === 'eventId' || key === 'childJobId') value = shortId(value);
+    return label ? `${label} ${value}` : value;
+  });
+  // A job entry naming a step (SUSPENDED, POSTPONED): the step it happened in.
+  if (!entry.stepId && data.stepName) parts.unshift(`step ${data.stepName}`);
+  return [data.error, data.message, parts.join(' · ')].filter(Boolean).join(' · ');
+}
+
 export function SortedTh({ label, descending, title }) {
   return html`<th aria-sort=${descending ? 'descending' : 'ascending'} title=${title}>
     ${label}<span class="sort-arrow" aria-hidden="true">${descending ? '↓' : '↑'}</span>

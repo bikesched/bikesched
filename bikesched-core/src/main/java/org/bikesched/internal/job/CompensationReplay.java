@@ -9,12 +9,12 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.StepRef;
-import org.bikesched.internal.database.StepState;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.database.StepType;
 import org.bikesched.job.CompensationHandler;
 import org.bikesched.job.JobResult;
 import org.bikesched.job.Step;
+import org.bikesched.job.StepState;
 import org.jspecify.annotations.Nullable;
 
 /**

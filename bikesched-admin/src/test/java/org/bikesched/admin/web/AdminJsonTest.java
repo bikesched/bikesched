@@ -12,9 +12,14 @@ import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
-import org.bikesched.job.JobHistoryEntry;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.JobAction;
+import org.bikesched.history.JobEntry;
+import org.bikesched.history.StepAction;
+import org.bikesched.history.StepEntry;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
+import org.bikesched.job.StepState;
 import org.junit.jupiter.api.Test;
 
 /** Exact wire contracts, including explicit nulls and names that differ from record accessors. */
@@ -96,12 +101,53 @@ class AdminJsonTest {
   }
 
   @Test
-  void historyRenamesCreatedAtToAtWithoutDerivedFields() throws Exception {
+  void jobHistoryEntryCarriesItsDataAsJson() throws Exception {
     assertContract(
-        AdminJson.history(new JobHistoryEntry(AT, null, "FAILED", 2, ID, "error")),
+        AdminJson.history(
+            new JobEntry(
+                ID,
+                ID,
+                AT,
+                JobAction.ATTEMPT_FAILED,
+                JobState.SCHEDULED,
+                2,
+                ActorType.NODE,
+                null,
+                ID,
+                null,
+                "{\"error\": \"boom\", \"subjectName\": \"mail\"}")),
         """
-        {"at":"2026-10-11T12:00:00.123456Z","stepName":null,"state":"FAILED","attempt":2,
-         "nodeId":"7f0c2a1e-0000-4000-8000-000000000001","detail":"error"}
+        {"id":"7f0c2a1e-0000-4000-8000-000000000001","subjectType":"JOB",
+         "subjectId":"7f0c2a1e-0000-4000-8000-000000000001","stepId":null,"state":"SCHEDULED",
+         "attempt":2,"at":"2026-10-11T12:00:00.123456Z","action":"ATTEMPT_FAILED",
+         "actorType":"NODE","actorName":null,"nodeId":"7f0c2a1e-0000-4000-8000-000000000001",
+         "causedById":null,"data":{"error":"boom","subjectName":"mail"}}
+        """);
+  }
+
+  @Test
+  void stepHistoryEntryNamesItsStepAndMayHaveNoData() throws Exception {
+    assertContract(
+        AdminJson.history(
+            new StepEntry(
+                ID,
+                ID,
+                ID,
+                AT,
+                StepAction.STARTED,
+                StepState.RUNNING,
+                1,
+                ActorType.JOB,
+                null,
+                null,
+                null,
+                null)),
+        """
+        {"id":"7f0c2a1e-0000-4000-8000-000000000001","subjectType":"JOB",
+         "subjectId":"7f0c2a1e-0000-4000-8000-000000000001",
+         "stepId":"7f0c2a1e-0000-4000-8000-000000000001","state":"RUNNING","attempt":1,
+         "at":"2026-10-11T12:00:00.123456Z","action":"STARTED","actorType":"JOB",
+         "actorName":null,"nodeId":null,"causedById":null,"data":null}
         """);
   }
 

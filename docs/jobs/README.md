@@ -123,7 +123,7 @@ UUID id = bikesched.newJob("process-payment")
   transaction waits until the first transaction ends; if it rolls back, the key is free again.
 - Recurring jobs have no key (the builder has no `schedule(Recurrence)`): they have at most one
   pending occurrence anyway. Child jobs don't need one: their step starts them once.
-- The [job history](#job-history) records the key in the new job's `SCHEDULED` entry; a duplicate
+- The [history](#history) records the key in the new job's `SCHEDULED` entry; a duplicate
   records nothing.
 - The key guards scheduling, not the job's own calls: a handler calling a provider derives that
   provider's idempotency key from the job (job id and step name), see
@@ -219,7 +219,7 @@ bikesched.retry(jobId);   // false if the job does not exist or has not failed
 ```
 
 It is scheduled right away with all its attempts again and continues where it failed: completed
-steps return their stored results (compensated steps run again). The job history records the
+steps return their stored results (compensated steps run again). The history records the
 retry. Occurrences of recurring jobs can't be retried (`IllegalArgumentException`); the next
 occurrence runs anyway. Neither can [child jobs](../multi-step-jobs/child-jobs.md): their parent may
 have the outcome already, so the parent starts a new child instead.
@@ -325,56 +325,72 @@ completes it). Its unfinished steps, e.g. a wait for an event, become `CANCELLED
 receive events; completed steps are kept. Steps with a compensation are undone first, see
 [Compensation](../multi-step-jobs/steps.md#compensation).
 
-## Job history
+## History
 
-With `jobHistory(retention)` on the builder, a node records every change of a job and of its steps
-in `bikesched_job_history`, in the same transaction as the change, and deletes entries older than
-the retention (every `jobHistoryCleanUpInterval`). Without it, nothing is recorded and no extra
-statement runs.
+With `history(retention)` on the builder, a node records what happens to a job and its steps in
+`bikesched_history`, in the same transaction as the change, and deletes entries older than the
+retention (every `historyCleanUpInterval`). Without it, nothing is recorded and no extra statement
+runs.
 
 ```java
-Bikesched bikesched = Bikesched.builder(dataSource).jobHistory(Duration.ofDays(7)).build();
+Bikesched bikesched = Bikesched.builder(dataSource).history(Duration.ofDays(7)).build();
 
-for (JobHistoryEntry entry : bikesched.findJobHistory(jobId)) {   // oldest first
-    System.out.println(entry);
+for (HistoryEntry entry : bikesched.findJobHistory(jobId)) {   // oldest first
+    switch (entry) {
+        case JobEntry job -> System.out.println(job.action() + " " + job.state());
+        case StepEntry step -> System.out.println("  " + step.action() + " " + step.data());
+        default -> {}
+    }
 }
 ```
 
-A job that waited for an event and was retried once could show:
+A job that waited for an event and was retried once could show (step names and specifics are in
+`data`):
 
-| `stepName` | `state` | `attempt` | `nodeId` | `detail` |
-|---|---|---|---|---|
-| | `SCHEDULED` | 0 | | `due at 2026-10-04T10:00:00Z` |
-| | `RUNNING` | 1 | node-a | |
-| `charge` | `RUNNING` | 1 | node-a | |
-| `charge` | `FAILED` | 1 | node-a | `java.lang.IllegalStateException: card declined` |
-| | `SCHEDULED` | 1 | node-a | `java.lang.IllegalStateException: card declined (retry at …)` |
-| | `RUNNING` | 2 | node-b | |
-| `charge` | `RUNNING` | 2 | node-b | `step attempt 2` |
-| `charge` | `SUCCEEDED` | 2 | node-b | |
-| `await` | `WAITING` | 2 | node-b | `waiting for event paid/order-1` |
-| | `WAITING` | 1 | node-b | `suspended at step 'await'` |
-| `await` | `SUCCEEDED` | 1 | | `received event 3f2a…` |
-| | `SCHEDULED` | 1 | | `resumed by event 3f2a…` |
-| | `RUNNING` | 2 | node-a | |
-| | `SUCCEEDED` | 2 | node-a | |
+| step | `action` | `state` | `attempt` | `actorType` | `data` (besides the names) |
+|---|---|---|---|---|---|
+| | `SCHEDULED` | `SCHEDULED` | 0 | `APPLICATION` | `dueAt` |
+| | `CLAIMED` | `RUNNING` | 1 | `NODE` | |
+| `charge` | `STARTED` | `RUNNING` | 1 | `JOB` | |
+| `charge` | `FAILED` | `FAILED` | 1 | `JOB` | `error`: `java.lang.IllegalStateException: card declined` |
+| | `ATTEMPT_FAILED` | `SCHEDULED` | 1 | `NODE` | `error`, `dueAt` |
+| | `CLAIMED` | `RUNNING` | 2 | `NODE` | |
+| `charge` | `STARTED` | `RUNNING` | 2 | `JOB` | `run`: 2 |
+| `charge` | `SUCCEEDED` | `SUCCEEDED` | 2 | `JOB` | |
+| `await` | `WAITING` | `WAITING` | 2 | `JOB` | `eventName`, `eventKey`, `waitUntil` |
+| | `SUSPENDED` | `WAITING` | 1 | `NODE` | `stepName`: `await` |
+| `await` | `RECEIVED` | `SUCCEEDED` | 1 | `APPLICATION` | |
+| | `RESUMED` | `SCHEDULED` | 1 | `APPLICATION` | |
+| | `CLAIMED` | `RUNNING` | 2 | `NODE` | |
+| | `SUCCEEDED` | `SUCCEEDED` | 2 | `NODE` | |
 
-- Entries without a step name are changes of the job, the others of a step. `state` is the new
-  state, or the unchanged one for recorded requests (a cancel request, a failed compensation of a
-  step).
+- `findJobHistory` returns a `JobEntry` for each change of the job and a `StepEntry` for each
+  change of one of its steps (`stepId`). Both are `HistoryEntry`s in `org.bikesched.history`.
+- `action` says what happened (`JobAction`, `StepAction`; their Javadoc lists each action's `data`
+  keys), `state` is the job's or step's state afterwards: unchanged for recorded requests (a cancel
+  request, a failed compensation of a step).
 - `attempt` is the job's attempt count after the change: suspending at an event wait gives the
   attempt back, resuming counts a new one.
-- A [postponed](#postponing) job shows `SCHEDULED` with `postponed until …` (or `postponed in
-  step 'charge' until …`); the step it was postponed in shows `POSTPONED` with `until …` before
-  it, and its next run has no `step attempt` detail, since it got its attempt back.
-- `nodeId` is the node that made the change; it is empty for changes made by the application:
-  scheduling, cancel requests and publishing events.
-- A [poll](../multi-step-jobs/steps.md#polling) records its first wait and its outcome, not every
-  check: its further claims and suspensions are left out.
-- Also recorded: cancellations, compensation (`COMPENSATING`, compensation attempts,
-  `COMPENSATED` steps), failure handlers (`FAILING`, their runs and failures, steps resolved by
-  their failure handler), jobs released by a stopping node or from a dead node, occurrences moved to
-  a changed recurrence or deleted with their recurring job.
+- `actorType` says who acted: `NODE` (the node by itself: claims, timeouts, releases, wake-ups),
+  `APPLICATION` (calls of the `Bikesched` API: scheduling, publishing, cancel requests, retries)
+  or `JOB` (a job handler: its steps, child jobs, events it publishes). `nodeId` is the node that
+  wrote the entry, also for the application's calls; it is empty for writes of an instance that
+  does not poll and so never registered.
+- `data` is a JSON object as text, or `null` without specifics: the job's name (`subjectName`), the
+  step's name (`stepName`), and the action's specifics, such as `error` and `message` (cut to 4000
+  characters), `dueAt`, `waitUntil`, `reason` or `checks`. The names are stored, so the entries
+  still read well after the job was deleted.
+- A [postponed](#postponing) job shows `POSTPONED` with `dueAt` (and the `stepName` it was
+  postponed in); that step shows `POSTPONED` before it, and its next run has no `run`, since it got
+  its attempt back.
+- A [poll](../multi-step-jobs/steps.md#polling) records its first wait and its outcome (`checks`),
+  not every check: its further claims and suspensions are left out.
+- Also recorded: cancellations, compensation (`COMPENSATING`, failed compensations,
+  `COMPENSATED` steps), failure handlers (`FAILING`, their runs and failures, steps `RESOLVED` by
+  their failure handler), jobs `RELEASED` by a stopping node or from a dead node (`reason`),
+  occurrences `MOVED` to a changed recurrence or `DELETED` with their recurring job. A duplicate
+  of an idempotency key and a retry of a job that did not fail record nothing: nothing changed.
+- Entries are ordered by the database's time of the write, then by their id (UUIDv7).
 - Only nodes with the history enabled record: enable it on all nodes, or the history has gaps.
   `findJobHistory` reads the table on any node.
 
@@ -393,8 +409,8 @@ Bikesched bikesched = Bikesched.builder(dataSource).jobRetention(Duration.ofDays
   jobs, only their ended ones.
 - The clean-up deletes in batches of 1000 jobs, oldest first, each in a short transaction, so a
   large backlog does not lock the table for long. Several nodes share the work. The clean-ups of
-  the job history and of expired events work the same way.
-- `findJob` returns empty for a deleted job. The [job history](#job-history) has its own retention
+  the history and of expired events work the same way.
+- `findJob` returns empty for a deleted job. The [history](#history) has its own retention
   and keeps entries of deleted jobs until then.
 
 ## Timeouts

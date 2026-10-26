@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.HistoryTesting;
+import org.bikesched.history.HistoryEntry;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -46,11 +48,9 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
       assertThat(count("id = '" + first + "' and payload = '\"first\"' and priority = 0"))
           .as("the duplicate's settings are ignored")
           .isOne();
-      List<JobHistoryEntry> history = bikesched.findJobHistory(first);
+      List<HistoryEntry> history = bikesched.findJobHistory(first);
       assertThat(history).hasSize(1);
-      assertThat(history.getFirst().detail())
-          .startsWith("due at ")
-          .endsWith(", idempotency key delivery-1");
+      assertThat(HistoryTesting.data(history.getFirst(), "idempotencyKey")).isEqualTo("delivery-1");
     } finally {
       deleteJobs(type);
     }
@@ -265,14 +265,14 @@ class IdempotencyKeyTest extends AbstractBikeschedTest {
                 .schedule(Duration.ofHours(1)));
   }
 
-  /** A node that does not poll and records the job history. */
+  /** A node that does not poll and records the history. */
   private static Bikesched node(String name) {
-    return testNode(name).autoStartPolling(false).jobHistory(Duration.ofDays(1)).build();
+    return testNode(name).autoStartPolling(false).history(Duration.ofDays(1)).build();
   }
 
   private static void deleteJobs(String type) throws Exception {
     execute(
-        "delete from bikesched_job_history where job_id in"
+        "delete from bikesched_history where subject_id in"
             + " (select id from bikesched_jobs where name = '"
             + type
             + "')");

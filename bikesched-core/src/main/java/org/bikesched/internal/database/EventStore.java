@@ -10,14 +10,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.JobAction;
+import org.bikesched.history.StepAction;
 import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.UuidUtil;
+import org.bikesched.job.JobState;
+import org.bikesched.job.StepState;
 import org.jspecify.annotations.Nullable;
 
 /**
  * The {@code bikesched_events} table and steps waiting for events: waiting for, suspending at and
  * publishing events, each in one transaction holding a transaction-scoped advisory lock per event
- * name and key. Changes of steps and jobs are recorded in the {@link HistoryStore job history}, if
+ * name and key. Changes of steps and jobs are recorded in the {@link HistoryStore history}, if
  * enabled. Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  */
 public final class EventStore {
@@ -93,14 +98,14 @@ public final class EventStore {
                 update bikesched_steps
                    set state = 'SUCCEEDED', result = ?::jsonb, event_id = ?, finished_at = now()
                  where type = 'EVENT_WAIT' and event_name = ? and event_key = ? and state = 'WAITING'
-                returning job_id, name),
+                returning job_id, id),
             resumed as (
                 update bikesched_jobs j
                    set state = 'SCHEDULED', scheduled_at = now(), updated_at = now()
                   from received r
                  where j.id = r.job_id and j.state = 'WAITING'
                 returning j.id, j.attempts, j.name)
-            select r.job_id, r.name, x.id is not null as job_resumed,
+            select r.job_id, r.id as step_id, x.id is not null as job_resumed,
                    coalesce(x.attempts, 0) as attempts, x.name as job_name
               from received r left join resumed x on x.id = r.job_id""";
 
@@ -243,7 +248,14 @@ public final class EventStore {
               case WAITING, RUNNING, COMPENSATED, CANCELLED, POSTPONED -> {
                 if (found.deadlinePassed()) {
                   db.update(TIME_OUT_EVENT_STEP_SQL, found.step().id());
-                  history.record(db, Change.step(jobId, stepName, "TIMED_OUT", null, null));
+                  history.record(
+                      db,
+                      Change.step(
+                          jobId,
+                          found.step().id(),
+                          StepAction.TIMED_OUT,
+                          StepState.TIMED_OUT,
+                          ActorType.NODE));
                   yield new EventWaitResult.TimedOut(found.step());
                 }
                 yield new EventWaitResult.Waiting(found.step(), found.waitUntil());
@@ -259,9 +271,10 @@ public final class EventStore {
           if (published.isPresent()) {
             String payload = published.get().payload();
             UUID eventId = published.get().id();
+            UUID stepId = UuidUtil.timeOrdered();
             db.update(
                 RECEIVE_EVENT_STEP_SQL,
-                UuidUtil.timeOrdered(),
+                stepId,
                 jobId,
                 stepName,
                 payload,
@@ -271,11 +284,7 @@ public final class EventStore {
             history.record(
                 db,
                 Change.step(
-                    jobId,
-                    stepName,
-                    "SUCCEEDED",
-                    null,
-                    "received event " + eventId + " right away"));
+                    jobId, stepId, StepAction.RECEIVED, StepState.SUCCEEDED, ActorType.JOB));
             return new EventWaitResult.Received(payload);
           }
           StepRef created = new StepRef(UuidUtil.timeOrdered(), stepName);
@@ -292,16 +301,9 @@ public final class EventStore {
                   .orElseThrow();
           history.record(
               db,
-              Change.step(
-                  jobId,
-                  stepName,
-                  "WAITING",
-                  null,
-                  "waiting for event "
-                      + eventName
-                      + "/"
-                      + eventKey
-                      + (waiting.waitUntil() == null ? "" : " until " + waiting.waitUntil())));
+              Change.step(jobId, created.id(), StepAction.WAITING, StepState.WAITING, ActorType.JOB)
+                  .event(eventName, eventKey)
+                  .waitUntil(waiting.waitUntil()));
           return waiting;
         },
         e ->
@@ -334,7 +336,7 @@ public final class EventStore {
     return access.inTransaction(
         db -> {
           lockEvent(db, eventName, eventKey);
-          return StepStore.suspend(db, history, jobId, lock, step, null);
+          return StepStore.suspend(db, history, jobId, lock, step);
         },
         e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
   }
@@ -361,7 +363,16 @@ public final class EventStore {
       @Nullable String idempotencyKey,
       @Nullable String reference) {
     return access.inTransaction(
-        db -> publish(db, eventName, eventKey, payload, retention, idempotencyKey, reference),
+        db ->
+            publish(
+                db,
+                eventName,
+                eventKey,
+                payload,
+                retention,
+                idempotencyKey,
+                reference,
+                ActorType.APPLICATION),
         e ->
             new BikeschedException(
                 "Publishing event " + eventName + "/" + eventKey + " failed", e));
@@ -400,7 +411,15 @@ public final class EventStore {
                 "Publishing an event on the caller's connection requires a transaction:"
                     + " the connection must not be in auto-commit mode");
           }
-          return publish(db, eventName, eventKey, payload, retention, idempotencyKey, reference);
+          return publish(
+              db,
+              eventName,
+              eventKey,
+              payload,
+              retention,
+              idempotencyKey,
+              reference,
+              ActorType.APPLICATION);
         },
         e ->
             new BikeschedException(
@@ -460,10 +479,11 @@ public final class EventStore {
                 "Compensation replay has no succeeded publishing step '" + stepName + "'");
           }
           Publication publication =
-              publish(db, eventName, eventKey, payload, retention, null, reference);
+              publish(db, eventName, eventKey, payload, retention, null, reference, ActorType.JOB);
+          UUID stepId = UuidUtil.timeOrdered();
           db.update(
               INSERT_PUBLISH_STEP_SQL,
-              UuidUtil.timeOrdered(),
+              stepId,
               jobId,
               stepName,
               eventName,
@@ -471,20 +491,8 @@ public final class EventStore {
               publication.eventId());
           history.record(
               db,
-              Change.step(
-                  jobId,
-                  stepName,
-                  "SUCCEEDED",
-                  lock.nodeId(),
-                  "published event "
-                      + publication.eventId()
-                      + " "
-                      + eventName
-                      + "/"
-                      + eventKey
-                      + " to "
-                      + publication.received()
-                      + " step(s)"));
+              Change.step(jobId, stepId, StepAction.PUBLISHED, StepState.SUCCEEDED, ActorType.JOB)
+                  .eventId(publication.eventId()));
           return new StepPublication(publication.eventId(), publication);
         },
         e ->
@@ -531,7 +539,8 @@ public final class EventStore {
       @Nullable String payload,
       Duration retention,
       @Nullable String idempotencyKey,
-      @Nullable String reference)
+      @Nullable String reference,
+      ActorType actor)
       throws SQLException {
     lockEvent(db, eventName, eventKey);
     if (idempotencyKey != null) {
@@ -557,7 +566,7 @@ public final class EventStore {
             row ->
                 new Resumption(
                     row.uuid("job_id"),
-                    row.string("name"),
+                    row.uuid("step_id"),
                     row.bool("job_resumed"),
                     row.integer("attempts"),
                     row.string("job_name")),
@@ -570,19 +579,19 @@ public final class EventStore {
       changes.add(
           Change.step(
               resumption.jobId(),
-              resumption.stepName(),
-              "SUCCEEDED",
-              null,
-              "received event " + eventId));
+              resumption.stepId(),
+              StepAction.RECEIVED,
+              StepState.SUCCEEDED,
+              actor));
       if (resumption.jobResumed()) {
         db.dueNow(resumption.jobName());
         changes.add(
             Change.job(
                 resumption.jobId(),
-                "SCHEDULED",
+                JobAction.RESUMED,
+                JobState.SCHEDULED,
                 resumption.attempts(),
-                null,
-                "resumed by event " + eventId));
+                actor));
       }
     }
     history.record(db, changes);
@@ -639,7 +648,7 @@ public final class EventStore {
 
   /** A row of {@code RESUME_WAITING_STEPS_SQL}: a step that received the event. */
   private record Resumption(
-      UUID jobId, String stepName, boolean jobResumed, int attempts, String jobName) {}
+      UUID jobId, UUID stepId, boolean jobResumed, int attempts, String jobName) {}
 
   /** A row of {@code FIND_EVENT_STEP_SQL}: a step (of any type) of a job. */
   private record EventStep(

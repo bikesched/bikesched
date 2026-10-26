@@ -123,13 +123,13 @@ public class BikeschedSpec internal constructor() {
   public var nodeCleanUpInterval: Duration? = null
 
   /**
-   * Enables the job history, keeping entries for this long (see `BikeschedBuilder.jobHistory`);
-   * defaults to no history.
+   * Enables the history, keeping entries for this long (see `BikeschedBuilder.history`); defaults
+   * to no history.
    */
-  public var jobHistoryRetention: Duration? = null
+  public var historyRetention: Duration? = null
 
-  /** How often history entries older than [jobHistoryRetention] are deleted; defaults to 1 hour. */
-  public var jobHistoryCleanUpInterval: Duration? = null
+  /** How often history entries older than [historyRetention] are deleted; defaults to 1 hour. */
+  public var historyCleanUpInterval: Duration? = null
 
   /**
    * Deletes ended jobs with their steps once they finished this long ago (see
@@ -190,8 +190,8 @@ public class BikeschedSpec internal constructor() {
     eventRetention?.let { builder.eventRetention(it.toJavaDuration()) }
     eventCleanUpInterval?.let { builder.eventCleanUpInterval(it.toJavaDuration()) }
     nodeCleanUpInterval?.let { builder.nodeCleanUpInterval(it.toJavaDuration()) }
-    jobHistoryRetention?.let { builder.jobHistory(it.toJavaDuration()) }
-    jobHistoryCleanUpInterval?.let { builder.jobHistoryCleanUpInterval(it.toJavaDuration()) }
+    historyRetention?.let { builder.history(it.toJavaDuration()) }
+    historyCleanUpInterval?.let { builder.historyCleanUpInterval(it.toJavaDuration()) }
     jobRetention?.let { builder.jobRetention(it.toJavaDuration()) }
     jobCleanUpInterval?.let { builder.jobCleanUpInterval(it.toJavaDuration()) }
     statementTimeout?.let { builder.statementTimeout(it.toJavaDuration()) }

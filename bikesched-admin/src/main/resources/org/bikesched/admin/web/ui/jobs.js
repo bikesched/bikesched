@@ -13,7 +13,9 @@ import {
   SortedTh,
   dateTime,
   elapsed,
+  actor,
   firstLine,
+  historyDetail,
   isFullId,
   jobHref,
   plural,
@@ -418,10 +420,8 @@ export function JobDetail({ jobId, me, nodes, stepHref, onUpdate, onChanged, onC
         html`<${Steps} steps=${steps} ended=${ENDED.includes(job.state)} operator=${operator} stepHref=${stepHref} />`}
         ${shownTab === 'recurrence' && html`<${Recurrence} job=${job} />`}
         ${shownTab === 'history' &&
-        html`<${History} history=${history} nodes=${nodes} stepHref=${(name) => {
-          const step = steps.find((candidate) => candidate.name === name);
-          return step && stepHref(step.id);
-        }} />`}
+        html`<${History} history=${history} nodes=${nodes}
+          stepHref=${(id) => steps.some((step) => step.id === id) && stepHref(id)} />`}
         ${shownTab === 'data' && html`<${JobData} data=${data} ended=${ENDED.includes(job.state)} />`}
       </div>
     </aside>`;
@@ -557,7 +557,7 @@ function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
           <h3 class="section-label">History</h3>
           ${history.length > 0
             ? html`<${History} history=${history} nodes=${nodes} stepHref=${() => null} />`
-            : html`<p class="muted">No history: the job history is off, or the step has no entries.</p>`}
+            : html`<p class="muted">No history: the history is off, or the step has no entries.</p>`}
         </section>
       </div>
     </aside>`;
@@ -747,25 +747,29 @@ function History({ history, nodes, stepHref: hrefOf }) {
   const nodeName = (id) => nodes.find((node) => node.id === id)?.name || shortId(id) || '-';
   return html`
     <ol class="steps history">
-      ${history.map(
-        (entry) => html`
-          <li class=${entry.stepName ? 'step history-entry step-entry' : 'step history-entry'}>
+      ${history.map((entry) => {
+        const stepName = entry.stepId && (entry.data?.stepName || shortId(entry.stepId));
+        const href = entry.stepId && hrefOf(entry.stepId);
+        const detail = historyDetail(entry);
+        return html`
+          <li class=${entry.stepId ? 'step history-entry step-entry' : 'step history-entry'}>
             <div class="step-head">
               <div class="row">
-                <span class="tag">${entry.stepName ? 'STEP' : 'JOB'}</span>
-                ${entry.stepName && (hrefOf(entry.stepName)
-                  ? html`<a class="mono strong" href=${hrefOf(entry.stepName)}>${entry.stepName}</a>`
-                  : html`<span class="mono strong">${entry.stepName}</span>`)}
+                <span class="tag">${entry.stepId ? 'STEP' : 'JOB'}</span>
+                ${stepName && (href
+                  ? html`<a class="mono strong" href=${href}>${stepName}</a>`
+                  : html`<span class="mono strong">${stepName}</span>`)}
+                <span class="history-action">${entry.action}</span>
                 <${Badge} state=${entry.state} />
               </div>
               <span class="mono muted small">${preciseTime(entry.at)}</span>
             </div>
             <div class="muted small">
-              attempt ${entry.attempt}${entry.nodeId && html` · <span class="mono">${nodeName(entry.nodeId)}</span>`}
+              attempt ${entry.attempt} · ${actor(entry)}${entry.nodeId && html` · <span class="mono">${nodeName(entry.nodeId)}</span>`}
             </div>
-            ${entry.detail && html`<div class="small break">${entry.detail}</div>`}
-          </li>`,
-      )}
+            ${detail && html`<div class="small break">${detail}</div>`}
+          </li>`;
+      })}
     </ol>`;
 }
 

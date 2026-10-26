@@ -17,20 +17,24 @@ import java.util.Set;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
 import org.bikesched.JsonMapper;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.JobAction;
+import org.bikesched.history.StepAction;
 import org.bikesched.internal.database.ClaimEnd.FollowUp;
 import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.UuidUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobState;
 import org.bikesched.job.JobType;
+import org.bikesched.job.StepState;
 import org.jspecify.annotations.Nullable;
 
 /**
  * The {@code bikesched_jobs} table: inserting, claiming and finishing jobs, releasing the jobs of
  * stopped or dead nodes, the occurrences of recurring jobs, and child jobs (started as steps of
  * their parent, whose step receives their outcome when they end). Changes are recorded in the
- * {@link HistoryStore job history}, if enabled. Thread-safe; every call borrows its own connection
- * from the {@link DatabaseAccess}.
+ * {@link HistoryStore history}, if enabled. Thread-safe; every call borrows its own connection from
+ * the {@link DatabaseAccess}.
  */
 public final class JobStore {
 
@@ -102,7 +106,7 @@ public final class JobStore {
               from bikesched_jobs c
              where c.id = ? and s.job_id = c.parent_job_id and s.child_job_id = c.id
                and s.type = 'CHILD_JOB' and s.state = 'WAITING'
-            returning s.job_id, s.name, c.state as child_state""";
+            returning s.job_id, s.id, c.state as child_state""";
 
   // A WAITING parent is due again (it may wait for another step: it replays and suspends again); a
   // RUNNING one is left alone, its wait or suspension finds the step completed.
@@ -143,7 +147,7 @@ public final class JobStore {
       """
             delete from bikesched_jobs
              where name = ? and type = 'RECURRING' and state in ('SCHEDULED', 'WAITING')
-            returning id, state, attempts""";
+            returning id, state, attempts, name""";
 
   // The jobs among the given ones whose poll waits for its next check.
   private static final String WAITING_AT_POLL_SQL =
@@ -237,7 +241,7 @@ public final class JobStore {
                and exists (select 1 from bikesched_jobs
                             where id = ? and lock_token = ? and state = 'RUNNING' and compensation_end_state is null
                               and failure_end_state is null)
-            returning name""";
+            returning id""";
 
   // Bikesched.retry(jobId): a FAILED job runs again with all its attempts, keeping its completed
   // steps (compensated ones are COMPENSATED and run again). Not for occurrences of recurring jobs
@@ -419,7 +423,7 @@ public final class JobStore {
 
   /** A row of {@code RELEASE_JOBS_OF_DEAD_NODES_SQL}. */
   private record ReleasedJob(
-      UUID nodeId, String nodeName, UUID jobId, String state, int attempts) {}
+      UUID nodeId, String nodeName, UUID jobId, JobState state, int attempts) {}
 
   // The ORDER BY in CLAIM_JOBS_SQL only selects which jobs are claimed; UPDATE ... RETURNING
   // returns the claimed rows in no particular order, so they are sorted into claim order here.
@@ -438,7 +442,7 @@ public final class JobStore {
    */
   public UUID insertJob(UUID jobId, NewJob job) {
     return history.change(
-        db -> insertJob(db, jobId, job),
+        db -> insertJob(db, jobId, job, ActorType.APPLICATION),
         e -> new BikeschedException("Scheduling bikesched job '" + job.name() + "' failed", e));
   }
 
@@ -454,20 +458,20 @@ public final class JobStore {
   public UUID insertJob(Connection connection, UUID jobId, NewJob job) {
     return access.onCallerConnection(
         connection,
-        db -> insertJob(db, jobId, job),
+        db -> insertJob(db, jobId, job, ActorType.APPLICATION),
         e -> new BikeschedException("Scheduling bikesched job '" + job.name() + "' failed", e));
   }
 
-  private UUID insertJob(Sql db, UUID jobId, NewJob job) throws SQLException {
+  private UUID insertJob(Sql db, UUID jobId, NewJob job, ActorType actor) throws SQLException {
     if (job.idempotencyKey() == null) {
       db.update(INSERT_JOB_SQL, insertParameters(jobId, job));
-      return inserted(db, jobId, job);
+      return inserted(db, jobId, job, actor);
     }
     // A conflicting job deleted (retention) before it is found: insert again, once.
     Optional<UUID> existing = Optional.empty();
     for (int attempt = 1; attempt <= 2 && existing.isEmpty(); attempt++) {
       if (db.update(INSERT_KEYED_JOB_SQL, insertParameters(jobId, job)) == 1) {
-        return inserted(db, jobId, job);
+        return inserted(db, jobId, job, actor);
       }
       // A new statement: sees the conflicting job, also one committed while the insert waited.
       existing =
@@ -479,25 +483,18 @@ public final class JobStore {
                 "The job with idempotency key '" + job.idempotencyKey() + "' disappeared twice"));
   }
 
-  private UUID inserted(Sql db, UUID jobId, NewJob job) throws SQLException {
+  private UUID inserted(Sql db, UUID jobId, NewJob job, ActorType actor) throws SQLException {
     db.due(job.name(), job.scheduledAt());
-    history.record(db, created(jobId, job));
+    history.record(db, created(jobId, job, actor));
     return jobId;
   }
 
   /** The history entry of a new job (or occurrence). */
-  private static Change created(UUID jobId, NewJob job) {
-    String detail = "due at " + job.scheduledAt();
-    if (job.recurrence() != null) {
-      detail = "occurrence of '" + job.recurrence() + "', " + detail;
-    }
-    if (job.idempotencyKey() != null) {
-      detail += ", idempotency key " + job.idempotencyKey();
-    }
-    if (job.reference() != null) {
-      detail += ", reference " + job.reference();
-    }
-    return Change.job(jobId, "SCHEDULED", 0, null, detail);
+  private static Change created(UUID jobId, NewJob job, ActorType actor) {
+    return Change.job(jobId, JobAction.SCHEDULED, JobState.SCHEDULED, 0, actor)
+        .dueAt(job.scheduledAt())
+        .recurrence(job.recurrence(), null)
+        .keys(job.idempotencyKey(), job.reference());
   }
 
   private static Object[] insertParameters(UUID jobId, NewJob job) {
@@ -567,14 +564,7 @@ public final class JobStore {
                   db,
                   claimed.stream()
                       .filter(job -> !polling.contains(job.id()))
-                      .map(
-                          job ->
-                              Change.job(
-                                  job.id(),
-                                  JobState.RUNNING,
-                                  job.attempts(),
-                                  nodeId,
-                                  claimDetail(job)))
+                      .map(JobStore::claimed)
                       .toList());
               return claimed;
             },
@@ -601,11 +591,16 @@ public final class JobStore {
             Sql.array("uuid", claimed.stream().map(ClaimedJob::id).toArray())));
   }
 
-  private static @Nullable String claimDetail(ClaimedJob job) {
+  /** The history entry of a claim: what the job was claimed for. */
+  private static Change claimed(ClaimedJob job) {
+    Change change =
+        Change.job(job.id(), JobAction.CLAIMED, JobState.RUNNING, job.attempts(), ActorType.NODE);
     return switch (job.phase()) {
-      case JobPhase.HandleFailure(JobState ignored, int run) -> "failure handler run " + run;
-      case JobPhase.Compensate(JobState ignored, int attempt) -> "compensation attempt " + attempt;
-      case JobPhase.Run ignored -> job.cancelRequested() ? "cancellation requested" : null;
+      case JobPhase.HandleFailure(JobState ignored, int run) ->
+          change.reason("FAILURE_HANDLER").run(run);
+      case JobPhase.Compensate(JobState ignored, int attempt) ->
+          change.reason("COMPENSATION").run(attempt);
+      case JobPhase.Run ignored -> change.reason(job.cancelRequested() ? "CANCELLATION" : null);
     };
   }
 
@@ -633,10 +628,10 @@ public final class JobStore {
           db,
           Change.job(
               end.jobId(),
+              JobAction.SUCCEEDED,
               JobState.SUCCEEDED,
               attempts.get(),
-              end.lock().nodeId(),
-              result == null ? null : "succeeded with result"));
+              ActorType.NODE));
     }
     return attempts.isPresent();
   }
@@ -737,12 +732,13 @@ public final class JobStore {
               parentJobId,
               child.reference());
           db.due(child.name(), child.scheduledAt());
+          UUID stepId = step.isPresent() ? step.get().id() : UuidUtil.timeOrdered();
           if (step.isPresent()) {
-            db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, step.get().id());
+            db.update(RESTART_CHILD_JOB_STEP_SQL, childJobId, compensable, stepId);
           } else {
             db.update(
                 INSERT_CHILD_JOB_STEP_SQL,
-                UuidUtil.timeOrdered(),
+                stepId,
                 parentJobId,
                 stepName,
                 childJobId,
@@ -752,24 +748,16 @@ public final class JobStore {
           history.record(
               db,
               List.of(
-                  Change.job(
-                      childJobId,
-                      "SCHEDULED",
-                      0,
-                      null,
-                      "started by job "
-                          + parentJobId
-                          + " step '"
-                          + stepName
-                          + "', due at "
-                          + child.scheduledAt()
-                          + (child.reference() == null ? "" : ", reference " + child.reference())),
+                  Change.job(childJobId, JobAction.SCHEDULED, JobState.SCHEDULED, 0, ActorType.JOB)
+                      .dueAt(child.scheduledAt())
+                      .keys(null, child.reference()),
                   Change.step(
-                      parentJobId,
-                      stepName,
-                      "WAITING",
-                      lock.nodeId(),
-                      "started job " + childJobId + (step.isPresent() ? " again" : ""))));
+                          parentJobId,
+                          stepId,
+                          StepAction.CHILD_STARTED,
+                          StepState.WAITING,
+                          ActorType.JOB)
+                      .child(childJobId, null)));
           return new ChildJob(childJobId, true);
         },
         e ->
@@ -812,7 +800,7 @@ public final class JobStore {
         childEnded(db, end.jobId());
         yield false;
       }
-      case FollowUp.ScheduleNext(var next) -> insertOccurrence(db, next);
+      case FollowUp.ScheduleNext(var next) -> insertOccurrence(db, next, ActorType.NODE);
       case FollowUp.None ignored -> false;
     };
   }
@@ -830,7 +818,7 @@ public final class JobStore {
             COMPLETE_CHILD_JOB_STEP_SQL,
             row ->
                 new CompletedChildStep(
-                    row.uuid("job_id"), row.string("name"), row.string("child_state")),
+                    row.uuid("job_id"), row.uuid("id"), row.string("child_state")),
             jobId);
     if (completed.isEmpty()) {
       return; // the step was cancelled or timed out, or the parent was deleted
@@ -839,23 +827,28 @@ public final class JobStore {
     List<Change> changes = new ArrayList<>();
     changes.add(
         Change.step(
-            parent,
-            completed.get().stepName(),
-            "SUCCEEDED",
-            null,
-            "job " + jobId + " ended " + completed.get().childState()));
+                parent,
+                completed.get().stepId(),
+                StepAction.CHILD_ENDED,
+                StepState.SUCCEEDED,
+                ActorType.NODE)
+            .child(null, completed.get().childState()));
     Optional<ChangedJob> resumed = db.one(RESUME_PARENT_SQL, ChangedJob::from, parent);
     if (resumed.isPresent()) {
       db.dueNow(resumed.get().name());
       changes.add(
           Change.job(
-              parent, "SCHEDULED", resumed.get().attempts(), null, "resumed by job " + jobId));
+              parent,
+              JobAction.RESUMED,
+              JobState.SCHEDULED,
+              resumed.get().attempts(),
+              ActorType.NODE));
     }
     history.record(db, changes);
   }
 
   /** A row of {@code COMPLETE_CHILD_JOB_STEP_SQL}. */
-  private record CompletedChildStep(UUID parentJobId, String stepName, String childState) {}
+  private record CompletedChildStep(UUID parentJobId, UUID stepId, String childState) {}
 
   /**
    * Marks a job claimed by the node as {@code CANCELLED}; it is not retried.
@@ -886,12 +879,19 @@ public final class JobStore {
     JobLock lock = end.lock();
     return access.inTransaction(
         db -> {
-          List<String> cancelledSteps =
-              db.list(CANCEL_STEPS_SQL, row -> row.string("name"), jobId, jobId, lock.token());
+          List<UUID> cancelledSteps =
+              db.list(CANCEL_STEPS_SQL, row -> row.uuid("id"), jobId, jobId, lock.token());
           history.record(
               db,
               cancelledSteps.stream()
-                  .map(step -> Change.step(jobId, step, "CANCELLED", lock.nodeId(), null))
+                  .map(
+                      step ->
+                          Change.step(
+                              jobId,
+                              step,
+                              StepAction.CANCELLED,
+                              StepState.CANCELLED,
+                              ActorType.NODE))
                   .toList());
           Optional<ChangedJob> cancelled =
               db.one(
@@ -910,7 +910,14 @@ public final class JobStore {
             db.dueAt(cancelled.get().name(), cancelled.get().scheduledAt());
           }
           history.record(
-              db, Change.job(jobId, state, cancelled.get().attempts(), lock.nodeId(), message));
+              db,
+              Change.job(
+                      jobId,
+                      state == JobState.CANCELLED ? JobAction.CANCELLED : JobAction.COMPENSATING,
+                      state,
+                      cancelled.get().attempts(),
+                      ActorType.NODE)
+                  .message(message));
           return Optional.of(new EndedJob(state, followUp(db, end, state)));
         },
         e -> new BikeschedException("Cancelling bikesched job " + jobId + " failed", e));
@@ -949,11 +956,12 @@ public final class JobStore {
             history.record(
                 db,
                 Change.job(
-                    jobId,
-                    job.get().state(),
-                    job.get().attempts(),
-                    null,
-                    "cancellation requested" + (message == null ? "" : ": " + message)));
+                        jobId,
+                        JobAction.CANCEL_REQUESTED,
+                        job.get().state(),
+                        job.get().attempts(),
+                        ActorType.APPLICATION)
+                    .message(message));
           }
           return job.isPresent();
         },
@@ -974,7 +982,13 @@ public final class JobStore {
           if (job.isPresent()) {
             db.dueNow(job.get().name());
             history.record(
-                db, Change.job(jobId, job.get().state(), job.get().attempts(), null, "retried"));
+                db,
+                Change.job(
+                    jobId,
+                    JobAction.RETRIED,
+                    job.get().state(),
+                    job.get().attempts(),
+                    ActorType.APPLICATION));
             return true;
           }
           Optional<NotRetryable> notRetryable =
@@ -1047,7 +1061,8 @@ public final class JobStore {
           }
           history.record(
               db,
-              Change.job(jobId, state, ended.get().attempts(), end.lock().nodeId(), "compensated"));
+              Change.job(
+                  jobId, JobAction.COMPENSATED, state, ended.get().attempts(), ActorType.NODE));
           return Optional.of(new EndedJob(state, followUp(db, end, state)));
         },
         e ->
@@ -1088,11 +1103,13 @@ public final class JobStore {
           history.record(
               db,
               Change.job(
-                  jobId,
-                  job.state(),
-                  job.attempts(),
-                  end.lock().nodeId(),
-                  "compensation failed: " + error));
+                      jobId,
+                      JobAction.COMPENSATION_FAILED,
+                      job.state(),
+                      job.attempts(),
+                      ActorType.NODE)
+                  .error(error)
+                  .dueAt(job.state().isEnded() ? null : job.scheduledAt()));
           return Optional.of(job.withNextOccurrence(followUp(db, end, job.state())));
         },
         e ->
@@ -1108,19 +1125,19 @@ public final class JobStore {
    */
   public boolean insertOccurrence(NewJob occurrence) {
     return access.inTransaction(
-        db -> insertOccurrence(db, occurrence),
+        db -> insertOccurrence(db, occurrence, ActorType.NODE),
         e ->
             new BikeschedException(
                 "Scheduling an occurrence of recurring job " + occurrence.name() + " failed", e));
   }
 
-  private boolean insertOccurrence(Sql db, NewJob occurrence) throws SQLException {
+  private boolean insertOccurrence(Sql db, NewJob occurrence, ActorType actor) throws SQLException {
     UUID jobId = UuidUtil.timeOrdered();
     if (db.update(INSERT_OCCURRENCE_SQL, insertParameters(jobId, occurrence)) == 0) {
       return false;
     }
     db.due(occurrence.name(), occurrence.scheduledAt());
-    history.record(db, created(jobId, occurrence));
+    history.record(db, created(jobId, occurrence, actor));
     return true;
   }
 
@@ -1135,7 +1152,7 @@ public final class JobStore {
   public RecurringRegistration registerRecurringJob(NewJob first) {
     return access.inTransaction(
         db -> {
-          boolean created = insertOccurrence(db, first);
+          boolean created = insertOccurrence(db, first, ActorType.APPLICATION);
           Optional<Moved> moved =
               created
                   ? Optional.empty()
@@ -1154,16 +1171,13 @@ public final class JobStore {
             history.record(
                 db,
                 Change.job(
-                    moved.get().jobId(),
-                    "SCHEDULED",
-                    moved.get().attempts(),
-                    null,
-                    "moved from recurrence '"
-                        + moved.get().previousRecurrence()
-                        + "' to '"
-                        + first.recurrence()
-                        + "', due at "
-                        + first.scheduledAt()));
+                        moved.get().jobId(),
+                        JobAction.MOVED,
+                        JobState.SCHEDULED,
+                        moved.get().attempts(),
+                        ActorType.APPLICATION)
+                    .recurrence(first.recurrence(), moved.get().previousRecurrence())
+                    .dueAt(first.scheduledAt()));
           }
           String previousRecurrence = moved.map(Moved::previousRecurrence).orElse(null);
           return db.one(
@@ -1219,11 +1233,12 @@ public final class JobStore {
                   DELETE_PENDING_OCCURRENCES_SQL,
                   row ->
                       Change.job(
-                          row.uuid("id"),
-                          row.string("state"),
-                          row.integer("attempts"),
-                          null,
-                          "deleted: recurring job removed"),
+                              row.uuid("id"),
+                              JobAction.DELETED,
+                              row.enumValue("state", JobState.class),
+                              row.integer("attempts"),
+                              ActorType.APPLICATION)
+                          .subjectName(row.string("name")),
                   name);
           history.record(db, deleted);
           return deleted.size();
@@ -1285,16 +1300,19 @@ public final class JobStore {
           }
           FailedJob job = failed.get();
           job.reportDue(db);
+          JobAction action =
+              switch (job.state()) {
+                case SCHEDULED -> JobAction.ATTEMPT_FAILED;
+                case COMPENSATING -> JobAction.COMPENSATING;
+                case FAILING -> JobAction.FAILING;
+                case FAILED, RUNNING, WAITING, SUCCEEDED, CANCELLED, COMPENSATION_FAILED ->
+                    JobAction.FAILED;
+              };
           history.record(
               db,
-              Change.job(
-                  jobId,
-                  job.state(),
-                  job.attempts(),
-                  end.lock().nodeId(),
-                  job.state() == JobState.SCHEDULED
-                      ? error + " (retry at " + job.scheduledAt() + ")"
-                      : error));
+              Change.job(jobId, action, job.state(), job.attempts(), ActorType.NODE)
+                  .error(error)
+                  .dueAt(job.state() == JobState.SCHEDULED ? job.scheduledAt() : null));
           return Optional.of(job.withNextOccurrence(followUp(db, end, job.state())));
         },
         e -> new BikeschedException("Recording failure of bikesched job " + jobId + " failed", e));
@@ -1306,10 +1324,12 @@ public final class JobStore {
    * same transaction.
    *
    * @param end the ending claim
-   * @param detail recorded in the job history
+   * @param reason why it ends, recorded in the history: {@code NO_FAILURE_HANDLER}, {@code
+   *     FAILURE_HANDLER_RAN} or {@code FAILURE_HANDLER_GAVE_UP}
+   * @param error the failure handler's last error if it gave up, {@code null} otherwise
    * @return the job's new state; empty if the job is not failing on this node (anymore)
    */
-  public Optional<EndedJob> endFailing(ClaimEnd end, @Nullable String detail) {
+  public Optional<EndedJob> endFailing(ClaimEnd end, String reason, @Nullable String error) {
     UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
@@ -1320,7 +1340,15 @@ public final class JobStore {
           }
           JobState state = ended.get().state();
           history.record(
-              db, Change.job(jobId, state, ended.get().attempts(), end.lock().nodeId(), detail));
+              db,
+              Change.job(
+                      jobId,
+                      state == JobState.FAILED ? JobAction.FAILED : JobAction.COMPENSATION_FAILED,
+                      state,
+                      ended.get().attempts(),
+                      ActorType.NODE)
+                  .reason(reason)
+                  .error(error));
           return Optional.of(new EndedJob(state, followUp(db, end, state)));
         },
         e ->
@@ -1356,15 +1384,13 @@ public final class JobStore {
           history.record(
               db,
               Change.job(
-                  jobId,
-                  JobState.FAILING,
-                  failing.get().attempts(),
-                  lock.nodeId(),
-                  "failure handler failed: "
-                      + error
-                      + " (runs again at "
-                      + failing.get().scheduledAt()
-                      + ")"));
+                      jobId,
+                      JobAction.FAILURE_HANDLER_FAILED,
+                      JobState.FAILING,
+                      failing.get().attempts(),
+                      ActorType.NODE)
+                  .error(error)
+                  .dueAt(failing.get().scheduledAt()));
           return Optional.of(failing.get().scheduledAt());
         },
         e ->
@@ -1418,6 +1444,17 @@ public final class JobStore {
     }
   }
 
+  /** The history entry of a job released from its node, a row of a {@code RELEASE_…_SQL}. */
+  private static Change released(Sql.Row row, String reason) throws SQLException {
+    return Change.job(
+            row.uuid("id"),
+            JobAction.RELEASED,
+            row.enumValue("state", JobState.class),
+            row.integer("attempts"),
+            ActorType.NODE)
+        .reason(reason);
+  }
+
   /**
    * Puts all jobs still running on the node back to {@code SCHEDULED}, e.g. on shutdown.
    *
@@ -1432,12 +1469,7 @@ public final class JobStore {
                   RELEASE_JOBS_SQL,
                   row -> {
                     db.dueNow(row.string("name"));
-                    return Change.job(
-                        row.uuid("id"),
-                        row.string("state"),
-                        row.integer("attempts"),
-                        nodeId,
-                        "released by its node (stopped or restarted)");
+                    return released(row, "NODE_STOPPED");
                   },
                   nodeId);
           history.record(db, released);
@@ -1462,12 +1494,7 @@ public final class JobStore {
                   RELEASE_INACTIVE_JOBS_SQL,
                   row -> {
                     db.dueNow(row.string("name"));
-                    return Change.job(
-                        row.uuid("id"),
-                        row.string("state"),
-                        row.integer("attempts"),
-                        nodeId,
-                        "released after its outcome could not be recorded");
+                    return released(row, "OUTCOME_NOT_RECORDED");
                   },
                   nodeId,
                   Sql.seconds(grace),
@@ -1498,7 +1525,7 @@ public final class JobStore {
                         row.uuid("node_id"),
                         row.string("node_name"),
                         row.uuid("job_id"),
-                        row.string("state"),
+                        row.enumValue("state", JobState.class),
                         row.integer("attempts"));
                   },
                   callingNodeId,
@@ -1508,11 +1535,12 @@ public final class JobStore {
           for (ReleasedJob job : released) {
             changes.add(
                 Change.job(
-                    job.jobId(),
-                    job.state(),
-                    job.attempts(),
-                    callingNodeId,
-                    "released from dead node " + job.nodeName()));
+                        job.jobId(),
+                        JobAction.RELEASED,
+                        job.state(),
+                        job.attempts(),
+                        ActorType.NODE)
+                    .reason("NODE_DEAD"));
             perNode.merge(
                 job.nodeId(),
                 new DeadNodeJobs(job.nodeId(), job.nodeName(), 1),

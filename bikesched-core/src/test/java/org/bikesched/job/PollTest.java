@@ -14,8 +14,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.HistoryTesting;
 import org.bikesched.LogCapture;
 import org.bikesched.RetryBackoff;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.StepEntry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -629,9 +632,8 @@ class PollTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void aPollRecordsItsFirstWaitAndItsOutcomeInTheJobHistory() {
-    try (Bikesched bikesched =
-        testNode("node-poll-history").jobHistory(Duration.ofHours(1)).build()) {
+  void aPollRecordsItsFirstWaitAndItsOutcomeInTheHistory() {
+    try (Bikesched bikesched = testNode("node-poll-history").history(Duration.ofHours(1)).build()) {
       UUID jobId =
           bikesched
               .newJob("poll-history")
@@ -642,28 +644,21 @@ class PollTest extends AbstractBikeschedTest {
               .schedule();
       awaitState(jobId, "SUCCEEDED");
 
-      assertThat(bikesched.findJobHistory(jobId))
-          .extracting(
-              entry ->
-                  (entry.stepName() == null ? "job" : entry.stepName())
-                      + " "
-                      + entry.state()
-                      + (entry.stepName() == null && !entry.state().equals("WAITING")
-                          ? ""
-                          : " " + entry.detail()))
+      List<HistoryEntry> history = bikesched.findJobHistory(jobId);
+      assertThat(HistoryTesting.actions(history))
           .containsExactly(
-              "job SCHEDULED",
-              "job RUNNING",
-              "job WAITING suspended at step 'p', polling",
-              "p SUCCEEDED ready after 3 checks",
-              "job SUCCEEDED");
+              "SCHEDULED", "CLAIMED", "p WAITING", "SUSPENDED", "p SUCCEEDED", "SUCCEEDED");
+      assertThat(HistoryTesting.data(HistoryTesting.entry(history, "p WAITING"), "checks"))
+          .isEqualTo("1");
+      assertThat(HistoryTesting.data(HistoryTesting.entry(history, "p SUCCEEDED"), "checks"))
+          .isEqualTo("3");
     }
   }
 
   @Test
-  void aFailedCheckAndATimeoutAreRecordedInTheJobHistory() {
+  void aFailedCheckAndATimeoutAreRecordedInTheHistory() {
     try (Bikesched bikesched =
-        testNode("node-poll-history-failure").jobHistory(Duration.ofHours(1)).build()) {
+        testNode("node-poll-history-failure").history(Duration.ofHours(1)).build()) {
       UUID jobId =
           bikesched
               .newJob("poll-history-failure")
@@ -682,17 +677,18 @@ class PollTest extends AbstractBikeschedTest {
               .schedule();
       awaitState(jobId, "FAILED");
 
-      assertThat(bikesched.findJobHistory(jobId))
-          .filteredOn(entry -> entry.stepName() != null)
-          .extracting(entry -> entry.state() + " " + entry.detail())
-          .first()
-          .isEqualTo("FAILED check 2 failed: java.lang.IllegalStateException: outage");
-      assertThat(bikesched.findJobHistory(jobId))
-          .filteredOn(entry -> entry.stepName() != null)
-          .extracting(entry -> entry.state() + " " + entry.detail())
+      List<HistoryEntry> history = bikesched.findJobHistory(jobId);
+      HistoryEntry failed = HistoryTesting.entry(history, "p FAILED");
+      assertThat(HistoryTesting.data(failed, "error"))
+          .isEqualTo("java.lang.IllegalStateException: outage");
+      assertThat(HistoryTesting.data(failed, "checks")).isEqualTo("2");
+      assertThat(history)
+          .filteredOn(entry -> entry instanceof StepEntry)
           .last()
-          .asString()
-          .matches("TIMED_OUT timed out after \\d+ checks");
+          .extracting(HistoryTesting::action)
+          .isEqualTo("p TIMED_OUT");
+      assertThat(HistoryTesting.data(HistoryTesting.entry(history, "p TIMED_OUT"), "checks"))
+          .matches("\\d+");
     }
   }
 

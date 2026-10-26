@@ -21,7 +21,7 @@ import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.event.listener.EventListener;
 import org.bikesched.event.listener.EventPublication;
-import org.bikesched.job.JobHistoryEntry;
+import org.bikesched.history.HistoryEntry;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.JobState;
 import org.bikesched.job.Recurrence;
@@ -54,8 +54,8 @@ class ReferenceTest extends AbstractBikeschedTest {
       assertThat(bikesched.findJob(withReference).map(JobInfo::reference)).contains("order-4711");
       assertThat(bikesched.findJob(without).map(JobInfo::reference)).isEmpty();
       assertThat(bikesched.findJob(cleared).map(JobInfo::reference)).isEmpty();
-      List<JobHistoryEntry> history = bikesched.findJobHistory(withReference);
-      assertThat(history.getFirst().detail()).endsWith(", reference order-4711");
+      List<HistoryEntry> history = bikesched.findJobHistory(withReference);
+      assertThat(HistoryTesting.data(history.getFirst(), "reference")).isEqualTo("order-4711");
     } finally {
       deleteJobs(name);
     }
@@ -371,14 +371,14 @@ class ReferenceTest extends AbstractBikeschedTest {
     return plan.toString();
   }
 
-  /** A node that does not poll and records the job history. */
+  /** A node that does not poll and records the history. */
   private static Bikesched node(String name) {
-    return testNode(name).autoStartPolling(false).jobHistory(Duration.ofDays(1)).build();
+    return testNode(name).autoStartPolling(false).history(Duration.ofDays(1)).build();
   }
 
   private static void deleteJobs(String name) throws Exception {
     execute(
-        "delete from bikesched_job_history where job_id in"
+        "delete from bikesched_history where subject_id in"
             + " (select id from bikesched_jobs where name = '"
             + name
             + "')");

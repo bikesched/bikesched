@@ -188,8 +188,8 @@ friends).
 | `bikesched.event-retention` | 7 days | |
 | `bikesched.event-clean-up-interval` | 1 hour | |
 | `bikesched.node-clean-up-interval` | 15 seconds | |
-| `bikesched.job-history-retention` | off | enables the [job history](../jobs/README.md#job-history) |
-| `bikesched.job-history-clean-up-interval` | 1 hour | |
+| `bikesched.history-retention` | off | enables the [history](../jobs/README.md#history) |
+| `bikesched.history-clean-up-interval` | 1 hour | |
 | `bikesched.job-retention` | 7 days | |
 | `bikesched.job-clean-up-interval` | 1 hour | |
 | `bikesched.statement-timeout` | data source | |

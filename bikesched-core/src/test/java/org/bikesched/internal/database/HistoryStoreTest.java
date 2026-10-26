@@ -2,15 +2,22 @@
 package org.bikesched.internal.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.groups.Tuple.tuple;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
-import org.bikesched.job.JobHistoryEntry;
+import org.bikesched.BikeschedException;
+import org.bikesched.HistoryTesting;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.JobAction;
+import org.bikesched.history.JobEntry;
+import org.bikesched.history.StepEntry;
+import org.bikesched.internal.database.HistoryStore.Change;
+import org.bikesched.job.JobState;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -21,7 +28,7 @@ import org.junit.jupiter.api.Test;
 class HistoryStoreTest extends AbstractStoreTest {
 
   @Test
-  void jobsReleasedFromADeadNodeAreRecordedForTheReleasingNode() throws SQLException {
+  void jobsReleasedFromADeadNodeAreRecordedByTheReleasingNode() throws SQLException {
     UUID dead = registerNode("dead");
     UUID caller = registerNode("caller");
     execute(
@@ -30,51 +37,58 @@ class HistoryStoreTest extends AbstractStoreTest {
             + "'");
     UUID jobId = scheduleAndClaim(dead);
 
-    database.jobs().releaseJobsOfDeadNodes(caller, Duration.ofSeconds(30));
+    writtenBy(caller).jobs().releaseJobsOfDeadNodes(caller, Duration.ofSeconds(30));
 
-    JobHistoryEntry released = database.history().findHistory(jobId).getLast();
-    assertThat(released.state()).isEqualTo("SCHEDULED");
+    JobEntry released = (JobEntry) database.history().findJobHistory(jobId).getLast();
+    assertThat(released.action()).isEqualTo(JobAction.RELEASED);
+    assertThat(released.state()).isEqualTo(JobState.SCHEDULED);
     assertThat(released.attempt()).isEqualTo(1);
+    assertThat(released.actorType()).isEqualTo(ActorType.NODE);
     assertThat(released.nodeId()).isEqualTo(caller);
-    assertThat(released.detail()).isEqualTo("released from dead node dead");
+    assertThat(HistoryTesting.data(released, "reason")).isEqualTo("NODE_DEAD");
   }
 
   @Test
-  void failedStepAndTimedOutWaitAreRecordedForTheRunningNode() throws Exception {
+  void failedStepAndTimedOutWaitAreRecordedForTheJobsAttempt() throws Exception {
     UUID node = registerNode("node-steps");
     UUID jobId = scheduleAndClaim(node);
+    Database steps = writtenBy(node);
 
-    database.steps().startStep(jobId, lock(jobId), "charge");
-    database.steps().failStep(jobId, lock(jobId), step(jobId, "charge"), "card declined");
-    database.steps().startStep(jobId, lock(jobId), "charge");
-    database
-        .events()
-        .awaitEvent(jobId, lock(jobId), "wait", "paid", "order-1", Duration.ofMillis(1));
+    steps.steps().startStep(jobId, lock(jobId), "charge");
+    steps.steps().failStep(jobId, lock(jobId), step(jobId, "charge"), "card declined");
+    steps.steps().startStep(jobId, lock(jobId), "charge");
+    steps.events().awaitEvent(jobId, lock(jobId), "wait", "paid", "order-1", Duration.ofMillis(1));
     Thread.sleep(20);
-    database
-        .events()
-        .awaitEvent(jobId, lock(jobId), "wait", "paid", "order-1", Duration.ofMillis(1));
+    steps.events().awaitEvent(jobId, lock(jobId), "wait", "paid", "order-1", Duration.ofMillis(1));
 
-    List<JobHistoryEntry> history = database.history().findHistory(jobId);
-    assertThat(history.subList(2, history.size()))
-        .extracting(e -> e.stepName() + ":" + e.state() + ":" + e.detail())
+    List<HistoryEntry> history = database.history().findJobHistory(jobId);
+    List<HistoryEntry> stepEntries = history.subList(2, history.size());
+    assertThat(HistoryTesting.actionsAndStates(stepEntries))
         .containsExactly(
-            "charge:RUNNING:null",
-            "charge:FAILED:card declined",
-            "charge:RUNNING:step attempt 2",
-            "wait:WAITING:waiting for event paid/order-1 until " + waitUntil(jobId, "wait"),
-            "wait:TIMED_OUT:null");
-    // Step changes take the job's attempt and the node running it.
-    assertThat(history.subList(2, history.size()))
+            "charge STARTED:RUNNING",
+            "charge FAILED:FAILED",
+            "charge STARTED:RUNNING",
+            "wait WAITING:WAITING",
+            "wait TIMED_OUT:TIMED_OUT");
+    assertThat(HistoryTesting.data(stepEntries.get(1), "error")).isEqualTo("card declined");
+    assertThat(HistoryTesting.data(stepEntries.get(2), "run")).isEqualTo("2");
+    HistoryEntry waiting = stepEntries.get(3);
+    assertThat(HistoryTesting.data(waiting, "eventName")).isEqualTo("paid");
+    assertThat(HistoryTesting.data(waiting, "eventKey")).isEqualTo("order-1");
+    assertThat(HistoryTesting.data(waiting, "waitUntil")).isNotNull();
+    // Step changes take the job's attempt; the node is the one writing them.
+    assertThat(stepEntries)
         .allSatisfy(
             entry -> {
-              assertThat(entry.attempt()).isEqualTo(1);
+              assertThat(entry.actorType()).isIn(ActorType.JOB, ActorType.NODE);
               assertThat(entry.nodeId()).isEqualTo(node);
-            });
+            })
+        .map(entry -> ((StepEntry) entry).attempt())
+        .containsOnly(1);
   }
 
   @Test
-  void deletedOccurrenceIsRecorded() {
+  void deletedOccurrenceIsRecordedWithItsName() {
     Instant at = Instant.now().plusSeconds(3600);
     var registration =
         database
@@ -83,29 +97,105 @@ class HistoryStoreTest extends AbstractStoreTest {
 
     assertThat(database.jobs().deletePendingOccurrences("report")).isEqualTo(1);
 
-    assertThat(database.history().findHistory(registration.jobId()))
-        .extracting(JobHistoryEntry::state, JobHistoryEntry::detail)
-        .last()
-        .isEqualTo(tuple("SCHEDULED", "deleted: recurring job removed"));
+    List<HistoryEntry> history = database.history().findJobHistory(registration.jobId());
+    assertThat(HistoryTesting.actions(history)).containsExactly("SCHEDULED", "DELETED");
+    assertThat(history.getLast().actorType()).isEqualTo(ActorType.APPLICATION);
+    assertThat(HistoryTesting.data(history.getLast(), "subjectName")).isEqualTo("report");
+  }
+
+  @Test
+  void longTextsAreTruncatedAndEntriesWithoutSpecificsHaveNoData() {
+    UUID jobId = scheduleAndClaim(registerNode("node-data"));
+    UUID missing = UUID.randomUUID();
+
+    record(
+        Change.job(jobId, JobAction.ATTEMPT_FAILED, JobState.SCHEDULED, 1, ActorType.NODE)
+            .error("x".repeat(5000)),
+        Change.job(missing, JobAction.RETRIED, JobState.SCHEDULED, null, ActorType.APPLICATION));
+
+    HistoryEntry failed = database.history().findJobHistory(jobId).getLast();
+    assertThat(HistoryTesting.data(failed, "error")).isEqualTo("x".repeat(4000));
+    assertThat(HistoryTesting.data(failed, "subjectName")).isEqualTo("history");
+    JobEntry retried = (JobEntry) database.history().findJobHistory(missing).getFirst();
+    assertThat(retried.data()).as("no job row to name it").isNull();
+    assertThat(retried.attempt()).isZero();
+  }
+
+  @Test
+  void theSchemaChecksEntries() {
+    UUID jobId = UUID.randomUUID();
+    assertThatThrownBy(() -> insert(jobId, "'JOB', 'PUBLISHED', 'SCHEDULED', 0, 'NODE', null"))
+        .hasMessageContaining("bikesched_history_action_check");
+    assertThatThrownBy(() -> insert(jobId, "'EVENT', 'PUBLISHED', 'SCHEDULED', 0, 'NODE', null"))
+        .hasMessageContaining("bikesched_history_job_check");
+    assertThatThrownBy(() -> insert(jobId, "'JOB', 'SCHEDULED', 'SCHEDULED', 0, 'USER', null"))
+        .hasMessageContaining("bikesched_history_actor_type_check");
+    assertThatThrownBy(() -> insert(jobId, "'JOB', 'SCHEDULED', 'SCHEDULED', 0, 'NODE', 'simon'"))
+        .hasMessageContaining("bikesched_history_actor_type_check");
+    assertThatThrownBy(
+            () ->
+                insert(
+                    jobId, "'JOB', 'SCHEDULED', 'SCHEDULED', 0, 'USER', '" + "u".repeat(201) + "'"))
+        .hasMessageContaining("bikesched_history_actor_name_check");
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "insert into bikesched_history (subject_id, id, subject_type, action, state,"
+                        + " attempt, actor_type, data) values ('"
+                        + jobId
+                        + "', gen_random_uuid(), 'JOB', 'SCHEDULED', 'SCHEDULED', 0, 'NODE',"
+                        + " '[]')"))
+        .hasMessageContaining("bikesched_history_data_check");
   }
 
   @Test
   void entriesOlderThanTheRetentionAreDeleted() throws SQLException {
     UUID jobId = UUID.randomUUID();
     execute(
-        "insert into bikesched_job_history (job_id, created_at, state, attempt) values ('"
+        "insert into bikesched_history"
+            + " (subject_id, id, subject_type, action, state, attempt, actor_type, created_at)"
+            + " values ('"
             + jobId
-            + "', now() - interval '2 days', 'SCHEDULED', 0), ('"
+            + "', gen_random_uuid(), 'JOB', 'SCHEDULED', 'SCHEDULED', 0, 'APPLICATION',"
+            + " now() - interval '2 days'), ('"
             + jobId
-            + "', now(), 'RUNNING', 1)");
+            + "', gen_random_uuid(), 'JOB', 'CLAIMED', 'RUNNING', 1, 'NODE', now())");
 
     assertThat(database.history().deleteHistory(null, null, Duration.ofDays(1), 1000).count())
         .isEqualTo(1);
 
-    assertThat(database.history().findHistory(jobId))
-        .extracting(JobHistoryEntry::state)
-        .containsExactly("RUNNING");
-    assertThat(database.history().findHistory(UUID.randomUUID())).isEmpty();
+    assertThat(HistoryTesting.actions(database.history().findJobHistory(jobId)))
+        .containsExactly("CLAIMED");
+    assertThat(database.history().findJobHistory(UUID.randomUUID())).isEmpty();
+  }
+
+  /** Stores recording their entries as written by the node. */
+  private static Database writtenBy(UUID node) {
+    Database writing = new Database(dataSource, JSON_TEXT, true);
+    writing.history().writtenBy(node);
+    return writing;
+  }
+
+  private static void record(Change... changes) {
+    database
+        .history()
+        .change(
+            db -> {
+              database.history().record(db, List.of(changes));
+              return null;
+            },
+            e -> new BikeschedException("Recording failed", e));
+  }
+
+  /** Inserts a job entry with the given subject type, action, state, attempt and actor. */
+  private static void insert(UUID jobId, String values) throws SQLException {
+    execute(
+        "insert into bikesched_history (subject_id, id, subject_type, action, state, attempt,"
+            + " actor_type, actor_name) values ('"
+            + jobId
+            + "', gen_random_uuid(), "
+            + values
+            + ")");
   }
 
   /** Schedules a job and claims it for the node; returns its id. */
@@ -116,19 +206,5 @@ class HistoryStoreTest extends AbstractStoreTest {
         .insertJob(jobId, new NewJob("history", null, Instant.now(), 0, 3, null, null, null));
     assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).contains(jobId);
     return jobId;
-  }
-
-  private static Instant waitUntil(UUID jobId, String stepName) throws SQLException {
-    try (var connection = dataSource.getConnection();
-        var query =
-            connection.prepareStatement(
-                "select wake_at from bikesched_steps where job_id = ? and name = ?")) {
-      query.setObject(1, jobId);
-      query.setString(2, stepName);
-      try (var rs = query.executeQuery()) {
-        assertThat(rs.next()).isTrue();
-        return rs.getObject(1, OffsetDateTime.class).toInstant();
-      }
-    }
   }
 }

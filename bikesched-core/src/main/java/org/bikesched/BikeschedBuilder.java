@@ -34,7 +34,7 @@ public final class BikeschedBuilder {
   static final Duration DEFAULT_EVENT_RETENTION = Duration.ofDays(7);
   static final Duration DEFAULT_NODE_CLEAN_UP_INTERVAL = Duration.ofSeconds(15);
   static final Duration DEFAULT_EVENT_CLEAN_UP_INTERVAL = Duration.ofHours(1);
-  static final Duration DEFAULT_JOB_HISTORY_CLEAN_UP_INTERVAL = Duration.ofHours(1);
+  static final Duration DEFAULT_HISTORY_CLEAN_UP_INTERVAL = Duration.ofHours(1);
   static final Duration DEFAULT_JOB_RETENTION = Duration.ofDays(7);
   static final Duration DEFAULT_JOB_CLEAN_UP_INTERVAL = Duration.ofHours(1);
   static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
@@ -59,8 +59,8 @@ public final class BikeschedBuilder {
   private Duration eventRetention = DEFAULT_EVENT_RETENTION;
   private Duration nodeCleanUpInterval = DEFAULT_NODE_CLEAN_UP_INTERVAL;
   private Duration eventCleanUpInterval = DEFAULT_EVENT_CLEAN_UP_INTERVAL;
-  private @Nullable Duration jobHistoryRetention; // null: no job history
-  private Duration jobHistoryCleanUpInterval = DEFAULT_JOB_HISTORY_CLEAN_UP_INTERVAL;
+  private @Nullable Duration historyRetention; // null: no history
+  private Duration historyCleanUpInterval = DEFAULT_HISTORY_CLEAN_UP_INTERVAL;
   private Duration jobRetention = DEFAULT_JOB_RETENTION;
   private Duration jobCleanUpInterval = DEFAULT_JOB_CLEAN_UP_INTERVAL;
   private @Nullable Duration statementTimeout; // null: left to the data source
@@ -278,31 +278,30 @@ public final class BikeschedBuilder {
   }
 
   /**
-   * Enables the job history on this node (optional, default off): every change of a job or of one
-   * of its steps made through this node is recorded in {@code bikesched_job_history}, in the same
-   * transaction as the change, and kept for the given period. Read it with {@link
-   * Bikesched#findJobHistory(java.util.UUID)}. Enable it on all nodes: a node without it records
-   * nothing, so the history of jobs it touches has gaps.
+   * Enables the history on this node (optional, default off): every change of a job or of one of
+   * its steps made through this node is recorded in {@code bikesched_history} with what happened
+   * and who did it, in the same transaction as the change, and kept for the given period. Read it
+   * with {@link Bikesched#findJobHistory(java.util.UUID)}. Enable it on all nodes: a node without
+   * it records nothing, so the history of jobs it touches has gaps.
    *
    * @param retention how long history entries are kept, positive
    * @return this builder
    */
-  public BikeschedBuilder jobHistory(Duration retention) {
-    this.jobHistoryRetention = ValidationUtil.requirePositive(retention, "jobHistory retention");
+  public BikeschedBuilder history(Duration retention) {
+    this.historyRetention = ValidationUtil.requirePositive(retention, "history retention");
     return this;
   }
 
   /**
-   * Sets how often this node deletes job history entries older than the {@linkplain
-   * #jobHistory(Duration) retention} (optional, default 1 hour). Only nodes with the job history
-   * enabled do this.
+   * Sets how often this node deletes history entries older than the {@linkplain #history(Duration)
+   * retention} (optional, default 1 hour). Only nodes with the history enabled do this.
    *
    * @param interval the time between clean-ups, positive
    * @return this builder
    */
-  public BikeschedBuilder jobHistoryCleanUpInterval(Duration interval) {
-    this.jobHistoryCleanUpInterval =
-        ValidationUtil.requirePositive(interval, "jobHistoryCleanUpInterval");
+  public BikeschedBuilder historyCleanUpInterval(Duration interval) {
+    this.historyCleanUpInterval =
+        ValidationUtil.requirePositive(interval, "historyCleanUpInterval");
     return this;
   }
 
@@ -311,8 +310,8 @@ public final class BikeschedBuilder {
    * they finished longer than the given period ago (optional, default 7 days). Every polling node
    * does this every {@link #jobCleanUpInterval(Duration)}; several do not get in each other's way,
    * so give all nodes the same retention. Pending and running jobs, including the pending
-   * occurrences of recurring jobs, are never deleted; the job history has its own {@link
-   * #jobHistory(Duration) retention}.
+   * occurrences of recurring jobs, are never deleted; the history has its own {@link
+   * #history(Duration) retention}.
    *
    * @param retention how long ended jobs are kept, positive
    * @return this builder
@@ -525,8 +524,8 @@ public final class BikeschedBuilder {
             defaultEventTimeout,
             nodeCleanUpInterval,
             eventCleanUpInterval,
-            jobHistoryRetention,
-            jobHistoryCleanUpInterval,
+            historyRetention,
+            historyCleanUpInterval,
             jobRetention,
             jobCleanUpInterval,
             statementTimeout,

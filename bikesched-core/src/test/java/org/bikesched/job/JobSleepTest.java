@@ -15,7 +15,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.HistoryTesting;
 import org.bikesched.LogCapture;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.HistoryEntry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -70,9 +73,9 @@ class JobSleepTest extends AbstractBikeschedTest {
   }
 
   @Test
-  void sleepingAndWakingUpAreRecordedInTheJobHistory() {
+  void sleepingAndWakingUpAreRecordedInTheHistory() {
     try (Bikesched bikesched =
-        testNode("node-sleep-history").jobHistory(Duration.ofHours(1)).build()) {
+        testNode("node-sleep-history").history(Duration.ofHours(1)).build()) {
       UUID jobId =
           bikesched
               .newJob("sleep-history")
@@ -80,22 +83,19 @@ class JobSleepTest extends AbstractBikeschedTest {
               .schedule();
       awaitState(jobId, "SUCCEEDED");
 
-      assertThat(bikesched.findJobHistory(jobId))
-          .extracting(
-              entry ->
-                  (entry.stepName() == null ? "job" : entry.stepName())
-                      + " "
-                      + entry.state()
-                      + " "
-                      + (entry.detail() == null
-                          ? ""
-                          : entry.detail().replaceAll("until .*", "until")))
+      List<HistoryEntry> history = bikesched.findJobHistory(jobId);
+      assertThat(HistoryTesting.actionsAndStates(history))
           .containsSubsequence(
-              "nap WAITING sleeping until",
-              "job WAITING suspended at step 'nap'",
-              "job RUNNING ",
-              "nap SUCCEEDED woke up",
-              "job SUCCEEDED ");
+              "nap WAITING:WAITING",
+              "SUSPENDED:WAITING",
+              "CLAIMED:RUNNING",
+              "nap WOKE_UP:SUCCEEDED",
+              "SUCCEEDED:SUCCEEDED");
+      HistoryEntry wokeUp = HistoryTesting.entry(history, "nap WOKE_UP");
+      assertThat(wokeUp.actorType()).isEqualTo(ActorType.NODE);
+      assertThat(HistoryTesting.data(wokeUp, "waitUntil"))
+          .isEqualTo(
+              HistoryTesting.data(HistoryTesting.entry(history, "nap WAITING"), "waitUntil"));
     }
   }
 

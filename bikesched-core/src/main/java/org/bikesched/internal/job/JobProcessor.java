@@ -611,9 +611,7 @@ public final class JobProcessor {
               case JobSuspended.SleepSuspension sleep ->
                   database.steps().suspendJob(job.id(), job.lock(), sleep.step());
               case JobSuspended.JobSuspension wait ->
-                  database
-                      .steps()
-                      .suspendAtChildJob(job.id(), job.lock(), wait.step(), wait.childJobId());
+                  database.steps().suspendAtChildJob(job.id(), job.lock(), wait.step());
               case JobSuspended.PollSuspension poll ->
                   database
                       .steps()
@@ -914,7 +912,10 @@ public final class JobProcessor {
           job.id(),
           failing.endState());
       return recordFailingEnded(
-          job, "ended without failure handler: none registered on bikesched node " + nodeName);
+          job,
+          "NO_FAILURE_HANDLER",
+          null,
+          "ended without failure handler: none registered on bikesched node " + nodeName);
     }
     AttemptBody body =
         () -> {
@@ -943,7 +944,8 @@ public final class JobProcessor {
       case AttemptEnd.Ended(JobAttempt.End ignored, Exception failure, JobAttempt alsoIgnored)
           when failure != null ->
           recordFailureHandlerFailure(job, failing, failure);
-      case AttemptEnd.Ended ignored -> recordFailingEnded(job, "failure handler ran");
+      case AttemptEnd.Ended ignored ->
+          recordFailingEnded(job, "FAILURE_HANDLER_RAN", null, "failure handler ran");
     };
   }
 
@@ -963,7 +965,10 @@ public final class JobProcessor {
           failing.endState(),
           failure);
       return recordFailingEnded(
-          job, "failure handler gave up after " + run + " run(s): " + failure);
+          job,
+          "FAILURE_HANDLER_GAVE_UP",
+          failure.toString(),
+          "failure handler gave up after " + run + " run(s): " + failure);
     }
     Duration retryAfter = backoffDelay(job, run);
     return recording(
@@ -1001,14 +1006,21 @@ public final class JobProcessor {
                 failure));
   }
 
-  /** Ends a {@code FAILING} job in the state it was failing for. */
-  private Reported recordFailingEnded(DefaultJob job, String detail) {
+  /**
+   * Ends a {@code FAILING} job in the state it was failing for.
+   *
+   * @param reason why, for the history (see {@code JobStore.endFailing})
+   * @param error the failure handler's last error, for the history; {@code null} if none
+   * @param detail why, for the log
+   */
+  private Reported recordFailingEnded(
+      DefaultJob job, String reason, @Nullable String error, String detail) {
     ClaimEnd end = end(job);
     return recording(
         job,
         "Ending failing",
         null,
-        () -> database.jobs().endFailing(end, detail),
+        () -> database.jobs().endFailing(end, reason, error),
         ended -> {
           LOG.info("Job {} named {} is {}: {}", job.id(), job.name(), ended.state(), detail);
           JobAttemptOutcome kind =

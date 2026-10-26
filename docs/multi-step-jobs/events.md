@@ -129,7 +129,8 @@ Other paths:
 - **Later runs** (after another wait or a retry) return the step's copy of the payload, also after
   the event was deleted.
 
-With the [job history](../jobs/README.md#job-history) enabled, each of these changes is recorded.
+With the [history](../jobs/README.md#history) enabled, each of these changes is recorded: the
+step `WAITING`, `RECEIVED` or `TIMED_OUT`, the job `SUSPENDED` and `RESUMED`.
 
 ## Publishing from jobs
 

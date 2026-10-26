@@ -71,6 +71,9 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 - `org.bikesched.job`, `org.bikesched.job.listener`, `org.bikesched.event` and
   `org.bikesched.event.listener`: public API interfaces, records, enums, and exceptions; the
   listener SPIs and their reported types live in the `listener` subpackages.
+- `org.bikesched.history`: the history's sealed `HistoryEntry` (a record per subject: `JobEntry`,
+  `StepEntry`, `EventEntry`, `NodeEntry`), the sealed `HistoryAction` (an enum per subject and for
+  steps) and `ActorType`.
 - `org.bikesched.admin`: read-only lookups behind `Bikesched.admin()` (`Admin`, query and summary
   records) for the admin UI and custom tooling; summaries never carry payloads or results.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
@@ -136,7 +139,7 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   `registerJobHandler(TypedJob, TypedJobHandler)`, `newEvent(TypedEvent, key)`,
   `waitForEvent(step, TypedEvent, key)`). Builders carry the payload type as `P` (`JobBuilder<P>`,
   `EventBuilder<P>`; `Object` for strings). Keep the Kotlin API on reified generics instead.
-- Results get their own type in the feature package (`job.JobHistoryEntry`); lookups return
+- Results get their own type in the feature package (`history.HistoryEntry`); lookups return
   `Optional` of a minimal interface (`findJob` → `JobInfo` with a `JobState` enum).
 - A job's `name` selects its handler (`newJob(name)`, `registerJobHandler(name, …)`); its `type`
   is the `JobType` enum (`SINGLE`, `RECURRING`, `CHILD`) bikesched derives from how it was started
@@ -185,9 +188,16 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
   changes; they get a terminal state (`CANCELLED`, `COMPENSATED`) other code paths ignore.
 - A new table also goes into `SchemaMigratorTest` (drop list and expected tables) and the table list
   in `docs/operations/database.md`.
-- Changes of jobs and steps are recorded in the job history (optional): a store makes the change
-  through `history.change(…)` (a transaction only if the history is enabled) and passes the
-  changed rows to `history.record(db, …)` in the same transaction. New state changes do the same.
+- Changes of jobs and steps are recorded in the history (optional, `bikesched_history`, ADR 0062):
+  a store makes the change through `history.change(…)` (a transaction only if the history is
+  enabled) and passes a `HistoryStore.Change` per changed row to `history.record(db, …)` in the
+  same transaction. New state changes do the same. A change names its action (a new one goes into
+  its enum, the table's `action` CHECK and the CHECK test in `HistoryStoreTest`), the resulting
+  state and its actor type (`NODE` for what a node does by itself, `APPLICATION` for `Bikesched`
+  API calls, `JOB` for a handler); specifics go into `data` through the `Change` setters (a new key
+  is a parameter of the recording statement, documented on the action's enum constant), names are
+  joined from the written rows and passed only when the row is gone. No-ops and idempotency
+  duplicates record nothing.
 - JDBC only inside the stores (`JobStore`, `StepStore`, `EventStore`, `NodeStore`,
   `HistoryStore`, and the read-only `AdminStore` across the tables), which receive a
   `DatabaseAccess` (no reference to `Database`, which only wires them). Statements go through the

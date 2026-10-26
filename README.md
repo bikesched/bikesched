@@ -91,7 +91,7 @@ modelling and no orchestration across services. If that's what you're after, hav
   values may be `null`
 - Crash recovery: jobs of dead nodes are released and retried by others; a node that lost a job
   can no longer change its steps
-- Ended jobs are deleted after a retention (7 days by default); optional job history and
+- Ended jobs are deleted after a retention (7 days by default); optional history and
   statement timeout
 - Pluggable JSON mapping and node, job and step ids in the SLF4J logging context
 - An optional **admin UI** to find, retry and cancel jobs, with read-only lookups behind

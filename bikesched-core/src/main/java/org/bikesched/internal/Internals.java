@@ -31,10 +31,7 @@ public final class Internals {
     JsonMapper mapper = jsonMapper != null ? jsonMapper : RawJsonMapper.INSTANCE;
     var database =
         new Database(
-            dataSource,
-            mapper,
-            settings.jobHistoryRetention() != null,
-            settings.statementTimeout());
+            dataSource, mapper, settings.historyRetention() != null, settings.statementTimeout());
     return DefaultBikesched.create(database, settings);
   }
 }

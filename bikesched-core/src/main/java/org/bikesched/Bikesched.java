@@ -11,12 +11,12 @@ import org.bikesched.event.EventBuilder;
 import org.bikesched.event.EventPublisher;
 import org.bikesched.event.NodeEventBuilder;
 import org.bikesched.event.TypedEvent;
+import org.bikesched.history.HistoryEntry;
 import org.bikesched.internal.util.Version;
 import org.bikesched.job.Job;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
-import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.Recurrence;
 import org.bikesched.job.StandaloneJobFailureHandler;
@@ -309,21 +309,28 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
 
   /**
    * Reads the recorded history of a job, in a read-only transaction: every change of the job and of
-   * its steps, oldest first.
+   * its steps, oldest first, as {@link org.bikesched.history.JobEntry} and {@link
+   * org.bikesched.history.StepEntry} entries.
    *
    * <pre>{@code
-   * bikesched.findJobHistory(jobId).forEach(entry -> log.info("{}", entry));
+   * for (HistoryEntry entry : bikesched.findJobHistory(jobId)) {
+   *   switch (entry) {
+   *     case JobEntry job -> log.info("{} {} by {}", job.action(), job.state(), job.actorType());
+   *     case StepEntry step -> log.info("step {} {}", step.stepId(), step.action());
+   *     default -> {}
+   *   }
+   * }
    * }</pre>
    *
    * <p>Changes are only recorded by nodes with the history enabled ({@link
-   * BikeschedBuilder#jobHistory(java.time.Duration)}), and kept for its retention period. This
-   * method reads the table on any node, also on one that does not record itself.
+   * BikeschedBuilder#history(java.time.Duration)}), and kept for its retention period. This method
+   * reads the table on any node, also on one that does not record itself.
    *
    * @param jobId the job id
    * @return the job's history; empty if nothing was recorded (or it was deleted)
    * @throws BikeschedException if the database cannot be accessed
    */
-  List<JobHistoryEntry> findJobHistory(UUID jobId);
+  List<HistoryEntry> findJobHistory(UUID jobId);
 
   /**
    * Read-only lookups for operating bikesched: jobs by name and state, their steps, payloads and

@@ -1351,12 +1351,7 @@ public final class DefaultJob implements Job {
         id,
         runs,
         lastFailure);
-    fenced(
-        () ->
-            database
-                .steps()
-                .failFailingStep(
-                    id, lock, step, "failure handler gave up after " + runs + " run(s)"));
+    fenced(() -> database.steps().failFailingStep(id, lock, step, runs));
     return new FailureHandling.Unresolved<>();
   }
 

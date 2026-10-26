@@ -26,4 +26,4 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-14 | [Scheduling jobs from the admin UI](admin-schedule-jobs.md) | implemented | [ADR 0046](../decisions/0046-scheduling-jobs-from-the-admin-ui.md) |
 | 2026-10-23 | [Fixed-delay recurrences](fixed-delay-recurrences.md) | implemented | [ADR 0058](../decisions/0058-fixed-delay-recurrences-and-planned-runs.md) |
 | 2026-10-25 | [References for jobs and events](references.md) | implemented | [ADR 0061](../decisions/0061-references-for-jobs-and-events.md) |
-| 2026-10-26 | [History of jobs, events, nodes and user actions](history.md) | draft | — |
+| 2026-10-26 | [History of jobs, events, nodes and user actions](history.md) | implementing (step 1 of 4) | [ADR 0062](../decisions/0062-one-history-with-actions-and-actors.md) |
