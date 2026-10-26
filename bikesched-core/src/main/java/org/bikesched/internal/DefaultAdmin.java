@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import org.bikesched.admin.Admin;
+import org.bikesched.admin.CancelJobBuilder;
 import org.bikesched.admin.EventNameSummary;
 import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.EventStep;
@@ -23,19 +24,32 @@ import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.RecurringJobRuns;
+import org.bikesched.admin.RemoveRecurringJobBuilder;
+import org.bikesched.admin.RetryJobBuilder;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
+import org.bikesched.history.Actor;
 import org.bikesched.history.HistoryEntry;
 import org.bikesched.history.SubjectType;
 import org.bikesched.internal.database.AdminStore;
 import org.bikesched.internal.database.HistoryStore;
+import org.bikesched.internal.util.ValidationUtil;
 import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link Admin} of a node: checks that the node is ready, then reads through the {@link
- * AdminStore}.
+ * AdminStore}; its actions run through the node's {@link Actions}.
  */
 final class DefaultAdmin implements Admin {
+
+  /** The actions of the owning node, with the user acting ({@code null} for the application). */
+  interface Actions {
+    boolean cancel(UUID jobId, @Nullable String message, @Nullable Actor actor);
+
+    boolean retry(UUID jobId, @Nullable Actor actor);
+
+    boolean removeRecurringJob(String name, @Nullable Actor actor);
+  }
 
   // The digits of the short id the admin UI shows.
   private static final int MIN_ID_SUFFIX = 8;
@@ -48,6 +62,8 @@ final class DefaultAdmin implements Admin {
 
   private final Runnable ensureReady;
 
+  private final Actions actions;
+
   // The job names with a handler on this node, a live view.
   private final Set<String> handledNames;
 
@@ -56,11 +72,13 @@ final class DefaultAdmin implements Admin {
       HistoryStore history,
       Duration nodeTimeout,
       Runnable ensureReady,
+      Actions actions,
       Set<String> handledNames) {
     this.store = store;
     this.history = history;
     this.nodeTimeout = nodeTimeout;
     this.ensureReady = ensureReady;
+    this.actions = actions;
     this.handledNames = handledNames;
   }
 
@@ -232,6 +250,91 @@ final class DefaultAdmin implements Admin {
     if (limit < 1 || limit > JobQuery.MAX_LIMIT) {
       throw new IllegalArgumentException(
           "limit must be between 1 and " + JobQuery.MAX_LIMIT + ": " + limit);
+    }
+  }
+
+  @Override
+  public CancelJobBuilder cancelJob(UUID jobId) {
+    Objects.requireNonNull(jobId, "jobId");
+    return new DefaultCancelJobBuilder(jobId);
+  }
+
+  @Override
+  public RetryJobBuilder retryJob(UUID jobId) {
+    Objects.requireNonNull(jobId, "jobId");
+    return new DefaultRetryJobBuilder(jobId);
+  }
+
+  @Override
+  public RemoveRecurringJobBuilder removeRecurringJob(String name) {
+    ValidationUtil.requireName(name, "job name");
+    return new DefaultRemoveRecurringJobBuilder(name);
+  }
+
+  private final class DefaultCancelJobBuilder implements CancelJobBuilder {
+    private final UUID jobId;
+    private @Nullable String message;
+    private @Nullable Actor actor;
+
+    DefaultCancelJobBuilder(UUID jobId) {
+      this.jobId = jobId;
+    }
+
+    @Override
+    public CancelJobBuilder message(@Nullable String message) {
+      this.message = message;
+      return this;
+    }
+
+    @Override
+    public CancelJobBuilder actor(Actor actor) {
+      this.actor = Objects.requireNonNull(actor, "actor");
+      return this;
+    }
+
+    @Override
+    public boolean cancel() {
+      return actions.cancel(jobId, message, actor);
+    }
+  }
+
+  private final class DefaultRetryJobBuilder implements RetryJobBuilder {
+    private final UUID jobId;
+    private @Nullable Actor actor;
+
+    DefaultRetryJobBuilder(UUID jobId) {
+      this.jobId = jobId;
+    }
+
+    @Override
+    public RetryJobBuilder actor(Actor actor) {
+      this.actor = Objects.requireNonNull(actor, "actor");
+      return this;
+    }
+
+    @Override
+    public boolean retry() {
+      return actions.retry(jobId, actor);
+    }
+  }
+
+  private final class DefaultRemoveRecurringJobBuilder implements RemoveRecurringJobBuilder {
+    private final String name;
+    private @Nullable Actor actor;
+
+    DefaultRemoveRecurringJobBuilder(String name) {
+      this.name = name;
+    }
+
+    @Override
+    public RemoveRecurringJobBuilder actor(Actor actor) {
+      this.actor = Objects.requireNonNull(actor, "actor");
+      return this;
+    }
+
+    @Override
+    public boolean remove() {
+      return actions.removeRecurringJob(name, actor);
     }
   }
 }

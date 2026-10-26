@@ -4,6 +4,7 @@ package org.bikesched.event;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.UUID;
+import org.bikesched.history.Actor;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -42,6 +43,21 @@ public interface NodeEventBuilder<P extends @Nullable Object> extends EventBuild
    * @throws IllegalArgumentException if the key is blank or too long
    */
   NodeEventBuilder<P> idempotencyKey(String idempotencyKey);
+
+  /**
+   * Names the user publishing the event on its {@code PUBLISHED} history entry (optional; without
+   * it, the entry names the application). The steps receiving the event and the jobs it resumes are
+   * recorded as the application's, caused by the event. Has no effect without the history.
+   *
+   * <pre>{@code
+   * bikesched.newEvent("payment-received", orderId).actor(Actor.user("simon")).publish();
+   * }</pre>
+   *
+   * @param actor the user
+   * @return this builder
+   * @see org.bikesched.BikeschedBuilder#history(Duration)
+   */
+  NodeEventBuilder<P> actor(Actor actor);
 
   @Override
   NodeEventBuilder<P> payload(@Nullable P payload);

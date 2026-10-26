@@ -2,6 +2,7 @@
 package org.bikesched.job;
 
 import java.util.Objects;
+import org.bikesched.history.Actor;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -75,4 +76,20 @@ public interface JobHandlerSettings<B extends JobHandlerSettings<B, P>, P extend
    * @see org.bikesched.Bikesched#registerJobFailureHandler(TypedJob, TypedJobFailureHandler)
    */
   B failureHandler(TypedJobFailureHandler<? super P> handler);
+
+  /**
+   * Names the user scheduling the job on its {@code SCHEDULED} history entry, or, for a recurring
+   * job, on the entry of the occurrence its registration creates or moves (optional; without it,
+   * the entry names the application). Later occurrences are scheduled by the nodes. Has no effect
+   * without the history.
+   *
+   * <pre>{@code
+   * bikesched.newJob("export").payload(request).actor(Actor.user("simon")).schedule();
+   * }</pre>
+   *
+   * @param actor the user
+   * @return this builder
+   * @see org.bikesched.BikeschedBuilder#history(java.time.Duration)
+   */
+  B actor(Actor actor);
 }

@@ -26,18 +26,21 @@ import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedException;
 import org.bikesched.admin.Admin;
+import org.bikesched.admin.CancelJobBuilder;
 import org.bikesched.admin.EventQuery;
 import org.bikesched.admin.EventSummary;
 import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.RecurringJobRuns;
+import org.bikesched.admin.RetryJobBuilder;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.admin.web.access.AccessGrant;
 import org.bikesched.admin.web.access.AccessLevel;
 import org.bikesched.admin.web.access.AdminAccess;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.history.Actor;
 import org.bikesched.history.HistoryEntry;
 import org.bikesched.history.StepEntry;
 import org.bikesched.job.IdempotentJobBuilder;
@@ -58,6 +61,11 @@ final class AdminHandler {
   static final String CSRF_HEADER = "X-Bikesched-Admin";
 
   static final String CANCEL_MESSAGE = "cancelled from the admin UI";
+
+  // The limits of a name in the history (actor_name), as for every name in bikesched.
+  private static final int MAX_ACTOR_CHARACTERS = 200;
+
+  private static final int MAX_ACTOR_BYTES = 600;
 
   private static final int DEFAULT_LIMIT = 50;
 
@@ -224,22 +232,32 @@ final class AdminHandler {
                   : schedule ? "Viewers cannot schedule jobs" : "Viewers cannot change jobs",
           Map.of());
     }
+    // The signed-in user is named on the history entries of the actions.
+    Actor actor = actor(user);
     String by = user == null ? "" : " by " + user;
     if (publish) {
-      return publish(request, by);
+      return publish(request, actor, by);
     }
     if (schedule) {
-      return schedule(request, by);
+      return schedule(request, actor, by);
     }
     UUID jobId = id(action.group(1));
     if (action.group(2).equals("retry")) {
-      boolean retried = bikesched.retry(jobId);
+      RetryJobBuilder retry = bikesched.admin().retryJob(jobId);
+      if (actor != null) {
+        retry.actor(actor);
+      }
+      boolean retried = retry.retry();
       if (retried) {
         LOG.info("Job {} retried from the admin UI{}", jobId, by);
       }
       return json(request, 200, Json.object().put("retried", retried));
     }
-    boolean cancelled = bikesched.cancel(jobId, CANCEL_MESSAGE + by);
+    CancelJobBuilder cancel = bikesched.admin().cancelJob(jobId).message(CANCEL_MESSAGE);
+    if (actor != null) {
+      cancel.actor(actor);
+    }
+    boolean cancelled = cancel.cancel();
     if (cancelled) {
       LOG.info("Job {} cancelled from the admin UI{}", jobId, by);
     }
@@ -247,11 +265,35 @@ final class AdminHandler {
   }
 
   /**
+   * The signed-in user as the actor of the history entries, {@code null} without a (non-blank)
+   * user. A name longer than a history name may be (200 characters, 600 bytes in UTF-8) is cut, so
+   * every user an access accepts can act.
+   */
+  static Actor actor(String user) {
+    if (user == null || user.isBlank()) {
+      return null;
+    }
+    StringBuilder name = new StringBuilder();
+    int characters = 0;
+    int bytes = 0;
+    for (int codePoint : user.codePoints().toArray()) {
+      int size = new String(Character.toChars(codePoint)).getBytes(StandardCharsets.UTF_8).length;
+      if (characters == MAX_ACTOR_CHARACTERS || bytes + size > MAX_ACTOR_BYTES) {
+        break;
+      }
+      name.appendCodePoint(codePoint);
+      characters++;
+      bytes += size;
+    }
+    return Actor.user(name.toString());
+  }
+
+  /**
    * Publishes an event from the form-encoded body: {@code name}, {@code key}, {@code payload} (JSON
    * text), {@code retention} (ISO-8601), {@code idempotencyKey} and {@code reference}, empty ones
    * left out.
    */
-  private AdminResponse publish(AdminRequest request, String by) {
+  private AdminResponse publish(AdminRequest request, Actor actor, String by) {
     Map<String, String> form = parseQuery(request.body());
     String name = blankToNull(form.get("name"));
     String key = blankToNull(form.get("key"));
@@ -279,6 +321,9 @@ final class AdminHandler {
       event.idempotencyKey(idempotencyKey);
     }
     event.reference(reference(form));
+    if (actor != null) {
+      event.actor(actor);
+    }
     UUID eventId = event.publish();
     // Waiting steps receive the event as it is published, so they are counted right away.
     int received = bikesched.admin().findEvent(eventId).map(EventSummary::receivedBy).orElse(0);
@@ -299,7 +344,7 @@ final class AdminHandler {
    * reference}, empty ones left out. Answers the job's id and whether it is new: a job of the name
    * with the idempotency key is returned instead of a new one.
    */
-  private AdminResponse schedule(AdminRequest request, String by) {
+  private AdminResponse schedule(AdminRequest request, Actor actor, String by) {
     Map<String, String> form = parseQuery(request.body());
     String name = blankToNull(form.get("name"));
     if (name == null) {
@@ -331,6 +376,9 @@ final class AdminHandler {
       job.timeout(duration("timeout", timeout));
     }
     job.reference(reference(form));
+    if (actor != null) {
+      job.actor(actor);
+    }
     String idempotencyKey = blankToNull(form.get("idempotencyKey"));
     if (idempotencyKey != null) {
       Optional<JobSummary> existing = bikesched.admin().findJob(name, idempotencyKey);

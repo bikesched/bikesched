@@ -380,9 +380,20 @@ A job that waited for an event and was retried once could show (step names and s
   attempt back, resuming counts a new one.
 - `actorType` says who acted: `NODE` (the node by itself: claims, timeouts, releases, wake-ups),
   `APPLICATION` (calls of the `Bikesched` API: scheduling, publishing, cancel requests, retries)
-  or `JOB` (a job handler: its steps, child jobs, events it publishes). `nodeId` is the node that
-  wrote the entry, also for the application's calls; it is empty for writes of an instance that
-  does not poll and so never registered.
+  or `JOB` (a job handler: its steps, child jobs, events it publishes), or `USER` with the user's
+  name in `actorName`. `nodeId` is the node that wrote the entry, also for the application's
+  calls; it is empty for writes of an instance that does not poll and so never registered.
+- A user is named with `actor(Actor.user(name))` on `newJob(…)` and `newEvent(…)` and on the
+  actions under [`bikesched.admin()`](../operations/admin.md#lookups-and-actions-in-code)
+  (`cancelJob`, `retryJob`, `removeRecurringJob`); the admin UI names the signed-in user. The user
+  goes only on the entry of the action itself (`SCHEDULED`, `PUBLISHED`, `CANCEL_REQUESTED`,
+  `RETRIED`): what it causes, such as the jobs an event resumes, keeps the code path's actor and
+  names the cause in `causedById`. Job handlers cannot name a user.
+
+  ```java
+  bikesched.newEvent("payment-received", orderId).actor(Actor.user("simon")).publish();
+  bikesched.admin().retryJob(jobId).actor(Actor.user("simon")).retry();
+  ```
 - `data` is a JSON object as text, or `null` without specifics: the job's name (`subjectName`), the
   step's name (`stepName`), and the action's specifics, such as `error` and `message` (cut to 4000
   characters), `dueAt`, `waitUntil`, `reason` or `checks`. The names are stored, so the entries

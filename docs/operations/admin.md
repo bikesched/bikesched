@@ -103,6 +103,12 @@ AdminAccess byProxy = request -> {
 
 A custom access without a `challenge()` answers denied requests with `403`.
 
+The user an access grant names (the Basic authentication user, or the custom access's) is recorded
+on the [history](../jobs/README.md#history) entries of the actions taken with the admin: the jobs
+it schedules, retries and cancels and the events it publishes name the user, so the history says
+"`RETRIED` by simon" (a name longer than 200 characters is cut). The open access names nobody:
+its actions are recorded as the application's.
+
 Retry, cancel, schedule and publish are `POST` requests that must carry the header
 `X-Bikesched-Admin: 1`, which the page sets. A form or image on another site cannot send it, so a
 signed-in browser cannot be made to change jobs or publish events from elsewhere. Every response
@@ -240,7 +246,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/nodes/{id}` | `{"node": {...}, "history": [...]}`, the same fields, plus the node's history entries and those it caused; once the node is removed `node` is `null`, and `404` without history entries |
 | GET | `api/me` | `{"user", "level", "readOnly", "payloadsShown"}` |
 | POST | `api/jobs/{id}/retry` | `{"retried": true or false}` (only failed jobs are retried) |
-| POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI") |
+| POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI", the user is on the history entry) |
 | POST | `api/jobs` | `{"id", "created"}`: schedules a job from a form-encoded body (`name`, `payload` as JSON text, `delay` as ISO-8601 or `at` as an ISO-8601 instant, `priority`, `maxAttempts`, `timeout` as ISO-8601, `idempotencyKey`, `reference`); `created` is `false` when a job with that name has the idempotency key, whose id is returned |
 | POST | `api/events` | `{"id", "received"}`: publishes an event from a form-encoded body (`name`, `key`, `payload` as JSON text, `retention` as ISO-8601, `idempotencyKey`, `reference`); `received` counts the steps that got it at once |
 
@@ -252,10 +258,10 @@ Errors are `{"error": "..."}` with `400` (malformed parameter, id, job or event,
 a handler on the serving node), `401`/`403` (access), `404` (unknown job, step, event or path),
 `405` (wrong method) or `503` (the database cannot be reached).
 
-## Lookups in code
+## Lookups and actions in code
 
-The page reads through `bikesched.admin()`, read-only lookups in `bikesched-core` (package
-`org.bikesched.admin`) that also suit custom dashboards and support tools:
+The page reads and acts through `bikesched.admin()`, lookups and actions in `bikesched-core`
+(package `org.bikesched.admin`) that also suit custom dashboards and support tools:
 
 ```java
 Admin admin = bikesched.admin();
@@ -284,5 +290,20 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findWaitingSteps(name, keyPrefix, limit)` | event waits still waiting for the name |
 | `findNodes()` | the registered nodes, alive or not, with the number of jobs each runs |
 | `findNode(id)` | one registered node |
+| `findNodeHistory(id)` | a node's history entries and those it caused, also after it was removed |
 
 Summaries never contain payloads or results; only `findJobData` and `findEventPayload` read them.
+
+The actions do what `Bikesched.cancel`, `retry` and `removeRecurringJob` do, and can name the user
+acting on the history entry they record (`Actor.user(name)` from `org.bikesched.history`), as the
+admin does with the signed-in user:
+
+```java
+Actor simon = Actor.user("simon");
+admin.cancelJob(jobId).message("customer called").actor(simon).cancel();
+admin.retryJob(jobId).actor(simon).retry();
+admin.removeRecurringJob("report").actor(simon).remove();
+```
+
+Scheduling jobs and publishing events name a user with `actor(…)` on their builders
+(`bikesched.newJob(…).actor(simon)`, `bikesched.newEvent(…).actor(simon)`).

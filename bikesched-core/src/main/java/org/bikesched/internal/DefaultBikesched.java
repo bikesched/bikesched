@@ -23,6 +23,7 @@ import org.bikesched.event.NodeEventBuilder;
 import org.bikesched.event.TypedEvent;
 import org.bikesched.event.listener.EventPublication;
 import org.bikesched.event.listener.EventSource;
+import org.bikesched.history.Actor;
 import org.bikesched.history.HistoryEntry;
 import org.bikesched.history.SubjectType;
 import org.bikesched.internal.database.Database;
@@ -125,6 +126,7 @@ public final class DefaultBikesched implements Bikesched {
             database.history(),
             settings.nodeTimeout(),
             this::ensureReady,
+            new AdminActions(),
             registry.names());
     this.jobScheduler =
         new JobScheduler(
@@ -348,7 +350,11 @@ public final class DefaultBikesched implements Bikesched {
   @Override
   public boolean removeRecurringJob(String name) {
     requireValidName(name);
-    return jobScheduler.removeRecurringJob(name);
+    return removeRecurringJob(name, null);
+  }
+
+  private boolean removeRecurringJob(String name, @Nullable Actor actor) {
+    return jobScheduler.removeRecurringJob(name, actor);
   }
 
   @Override
@@ -396,10 +402,18 @@ public final class DefaultBikesched implements Bikesched {
   @Override
   public boolean cancel(UUID jobId, @Nullable String message) {
     Objects.requireNonNull(jobId, "jobId");
+    return cancel(jobId, message, null);
+  }
+
+  private boolean cancel(UUID jobId, @Nullable String message, @Nullable Actor actor) {
     ensureReady();
-    boolean requested = database.jobs().requestCancel(jobId, message);
+    boolean requested = database.jobs().requestCancel(jobId, message, actor);
     if (requested) {
-      LOG.info("Cancellation of job {} requested{}", jobId, message == null ? "" : ": " + message);
+      LOG.info(
+          "Cancellation of job {} requested{}{}",
+          jobId,
+          actor == null ? "" : " by " + actor.name(),
+          message == null ? "" : ": " + message);
     } else {
       LOG.debug(
           "Job {} cannot be cancelled: it does not exist, has ended or is compensating", jobId);
@@ -410,10 +424,17 @@ public final class DefaultBikesched implements Bikesched {
   @Override
   public boolean retry(UUID jobId) {
     Objects.requireNonNull(jobId, "jobId");
+    return retry(jobId, null);
+  }
+
+  private boolean retry(UUID jobId, @Nullable Actor actor) {
     ensureReady();
-    boolean retried = database.jobs().retryJob(jobId);
+    boolean retried = database.jobs().retryJob(jobId, actor);
     if (retried) {
-      LOG.info("Failed job {} scheduled to be retried", jobId);
+      LOG.info(
+          "Failed job {} scheduled to be retried{}",
+          jobId,
+          actor == null ? "" : " by " + actor.name());
     } else {
       LOG.debug("Job {} cannot be retried: it does not exist or has not failed", jobId);
     }
@@ -428,6 +449,7 @@ public final class DefaultBikesched implements Bikesched {
       @Nullable Duration eventRetention,
       @Nullable String idempotencyKey,
       @Nullable String reference,
+      @Nullable Actor actor,
       @Nullable Connection connection) {
     ensureReady();
     Duration retention = eventRetention != null ? eventRetention : settings.eventRetention();
@@ -435,11 +457,19 @@ public final class DefaultBikesched implements Bikesched {
         connection == null
             ? database
                 .events()
-                .publishEvent(eventName, eventKey, payload, retention, idempotencyKey, reference)
+                .publishEvent(
+                    eventName, eventKey, payload, retention, idempotencyKey, reference, actor)
             : database
                 .events()
                 .publishEventInTransaction(
-                    connection, eventName, eventKey, payload, retention, idempotencyKey, reference);
+                    connection,
+                    eventName,
+                    eventKey,
+                    payload,
+                    retention,
+                    idempotencyKey,
+                    reference,
+                    actor);
     if (publication.duplicate()) {
       LOG.debug(
           "Event {}/{} with idempotency key {} already published as {}, not publishing it again",
@@ -613,5 +643,23 @@ public final class DefaultBikesched implements Bikesched {
 
   private static void requireValidName(String name) {
     ValidationUtil.requireName(name, "job name");
+  }
+
+  /** The admin's actions, run like the plain methods of this node with the user acting. */
+  private final class AdminActions implements DefaultAdmin.Actions {
+    @Override
+    public boolean cancel(UUID jobId, @Nullable String message, @Nullable Actor actor) {
+      return DefaultBikesched.this.cancel(jobId, message, actor);
+    }
+
+    @Override
+    public boolean retry(UUID jobId, @Nullable Actor actor) {
+      return DefaultBikesched.this.retry(jobId, actor);
+    }
+
+    @Override
+    public boolean removeRecurringJob(String name, @Nullable Actor actor) {
+      return DefaultBikesched.this.removeRecurringJob(name, actor);
+    }
   }
 }

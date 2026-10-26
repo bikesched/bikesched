@@ -74,8 +74,9 @@ Core packages (JPMS module `org.bikesched`, see `module-info.java`):
 - `org.bikesched.history`: the history's sealed `HistoryEntry` (a record per subject: `JobEntry`,
   `StepEntry`, `EventEntry`, `NodeEntry`), the sealed `HistoryAction` (an enum per subject and for
   steps) and `ActorType`.
-- `org.bikesched.admin`: read-only lookups behind `Bikesched.admin()` (`Admin`, query and summary
-  records) for the admin UI and custom tooling; summaries never carry payloads or results.
+- `org.bikesched.admin`: lookups behind `Bikesched.admin()` (`Admin`, query and summary records)
+  for the admin UI and custom tooling, and the action builders naming a user (`cancelJob`,
+  `retryJob`, `removeRecurringJob`); summaries never carry payloads or results.
 - `org.bikesched.internal` and its subpackages: every implementation (`Default<X>`), not exported.
   Members used across these packages are `public`; dependencies only point downwards:
   - `internal`: `DefaultBikesched` (wiring, lifecycle, API), `DefaultAdmin`, `Settings` (validated

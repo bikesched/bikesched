@@ -5,17 +5,21 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.history.HistoryEntry;
+import org.bikesched.job.TypedJob;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Read-only lookups for operating bikesched, see {@link org.bikesched.Bikesched#admin()}. Every
- * method reads in its own read-only transaction; none changes anything (retrying and cancelling
- * stay on {@link org.bikesched.Bikesched}).
+ * Lookups and actions for operating bikesched, see {@link org.bikesched.Bikesched#admin()}. Every
+ * lookup reads in its own read-only transaction. The actions ({@link #cancelJob(UUID)}, {@link
+ * #retryJob(UUID)}, {@link #removeRecurringJob(String)}) do what the methods of {@link
+ * org.bikesched.Bikesched} do and can name the user acting, e.g. the one signed in to an admin UI,
+ * on the history entry they record.
  *
  * <pre>{@code
  * Admin admin = bikesched.admin();
  * admin.findJobs(JobQuery.newest(50).withStates(JobState.FAILED))
  *     .forEach(job -> log.warn("{} {} failed: {}", job.name(), job.id(), job.lastError()));
+ * admin.retryJob(jobId).actor(Actor.user("simon")).retry();
  * }</pre>
  *
  * <p>Payloads and results are only read by {@link #findJobData(UUID)} and {@link
@@ -207,4 +211,40 @@ public interface Admin {
    * @return the node's history; empty if nothing was recorded (or it was deleted)
    */
   List<HistoryEntry> findNodeHistory(UUID nodeId);
+
+  /**
+   * Starts cancelling a job, see {@link org.bikesched.Bikesched#cancel(UUID, String)}.
+   *
+   * @param jobId the job id
+   * @return a builder for the message and the user, ending in {@link CancelJobBuilder#cancel()}
+   */
+  CancelJobBuilder cancelJob(UUID jobId);
+
+  /**
+   * Starts retrying a failed job, see {@link org.bikesched.Bikesched#retry(UUID)}.
+   *
+   * @param jobId the job id
+   * @return a builder for the user, ending in {@link RetryJobBuilder#retry()}
+   */
+  RetryJobBuilder retryJob(UUID jobId);
+
+  /**
+   * Starts removing a recurring job, see {@link
+   * org.bikesched.Bikesched#removeRecurringJob(String)}.
+   *
+   * @param name the job name of the recurring job
+   * @return a builder for the user, ending in {@link RemoveRecurringJobBuilder#remove()}
+   * @throws IllegalArgumentException if the name is blank or too long
+   */
+  RemoveRecurringJobBuilder removeRecurringJob(String name);
+
+  /**
+   * Starts removing a recurring job of a {@link TypedJob}, see {@link #removeRecurringJob(String)}.
+   *
+   * @param typedJob the job's name and payload class of the recurring job
+   * @return a builder for the user, ending in {@link RemoveRecurringJobBuilder#remove()}
+   */
+  default RemoveRecurringJobBuilder removeRecurringJob(TypedJob<?> typedJob) {
+    return removeRecurringJob(typedJob.name());
+  }
 }

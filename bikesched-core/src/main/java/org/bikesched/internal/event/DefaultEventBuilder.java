@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.bikesched.JsonMapper;
 import org.bikesched.event.EventBuilder;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.history.Actor;
 import org.bikesched.internal.util.ValidationUtil;
 import org.jspecify.annotations.Nullable;
 
@@ -19,8 +20,9 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
   public interface Publisher {
     /**
      * {@code retention} is the event's retention, {@code null} for the node default; {@code
-     * idempotencyKey} and {@code reference} are {@code null} for none; {@code connection} is the
-     * caller's connection, or {@code null} to use bikesched's own.
+     * idempotencyKey} and {@code reference} are {@code null} for none; {@code actor} is the user
+     * publishing it, {@code null} for the application; {@code connection} is the caller's
+     * connection, or {@code null} to use bikesched's own.
      */
     UUID publish(
         String eventName,
@@ -29,6 +31,7 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
         @Nullable Duration retention,
         @Nullable String idempotencyKey,
         @Nullable String reference,
+        @Nullable Actor actor,
         @Nullable Connection connection);
   }
 
@@ -40,6 +43,7 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
   private @Nullable Duration retention; // null: the node default
   private @Nullable String idempotencyKey;
   private @Nullable String reference;
+  private @Nullable Actor actor;
   private @Nullable Connection connection;
 
   public DefaultEventBuilder(
@@ -85,6 +89,12 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
   }
 
   @Override
+  public NodeEventBuilder<P> actor(Actor actor) {
+    this.actor = Objects.requireNonNull(actor, "actor");
+    return this;
+  }
+
+  @Override
   public NodeEventBuilder<P> connection(@Nullable Connection connection) {
     this.connection = connection;
     return this;
@@ -93,6 +103,6 @@ public final class DefaultEventBuilder<P extends @Nullable Object> implements No
   @Override
   public UUID publish() {
     return publisher.publish(
-        eventName, eventKey, payload, retention, idempotencyKey, reference, connection);
+        eventName, eventKey, payload, retention, idempotencyKey, reference, actor, connection);
   }
 }

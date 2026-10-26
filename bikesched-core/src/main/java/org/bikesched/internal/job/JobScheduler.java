@@ -4,6 +4,7 @@ package org.bikesched.internal.job;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.UUID;
+import org.bikesched.history.Actor;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.NewJob;
 import org.bikesched.internal.util.UuidUtil;
@@ -113,14 +114,15 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
       RecurringJob job,
       @Nullable JobHandler handler,
       @Nullable JobFailureHandler failureHandler,
-      @Nullable Instant firstRun) {
+      @Nullable Instant firstRun,
+      @Nullable Actor actor) {
     beforeDatabaseAccess.run();
     String name = job.name();
     requireHandler(name, handler);
     registerFailureHandler(name, failureHandler);
     Instant now = Instant.now();
     Instant first = firstRun != null ? firstRun : job.nextRun(now, now);
-    var registration = database.jobs().registerRecurringJob(job.occurrence(first));
+    var registration = database.jobs().registerRecurringJob(job.occurrence(first).withActor(actor));
     registry.addRecurringJob(job);
     String recurrence = job.recurrence().description();
     if (registration.created()) {
@@ -151,12 +153,13 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
    * Removes a recurring job from this node and deletes its pending occurrence.
    *
    * @param name the recurring job's name
+   * @param actor the user removing it, {@code null} for the application
    * @return whether a pending occurrence was deleted
    */
-  public boolean removeRecurringJob(String name) {
+  public boolean removeRecurringJob(String name, @Nullable Actor actor) {
     beforeDatabaseAccess.run();
     boolean registered = registry.removeRecurringJob(name);
-    int deleted = database.jobs().deletePendingOccurrences(name);
+    int deleted = database.jobs().deletePendingOccurrences(name, actor);
     LOG.info(
         "Removed recurring job {}{}{}",
         name,

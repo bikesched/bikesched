@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.history.Actor;
 import org.bikesched.history.ActorType;
 import org.bikesched.history.JobAction;
 import org.bikesched.history.StepAction;
@@ -353,6 +354,7 @@ public final class EventStore {
    * @param idempotencyKey while an event with the same name, key and idempotency key is unexpired,
    *     it is returned instead of publishing again; {@code null} for none
    * @param reference the external entity the event is about (not unique), {@code null} for none
+   * @param actor the user publishing it, {@code null} for the application
    * @return the published event, or the earlier one with the idempotency key
    */
   public Publication publishEvent(
@@ -361,7 +363,8 @@ public final class EventStore {
       @Nullable String payload,
       Duration retention,
       @Nullable String idempotencyKey,
-      @Nullable String reference) {
+      @Nullable String reference,
+      @Nullable Actor actor) {
     return access.inTransaction(
         db ->
             publish(
@@ -373,6 +376,7 @@ public final class EventStore {
                 idempotencyKey,
                 reference,
                 ActorType.APPLICATION,
+                actor,
                 null),
         e ->
             new BikeschedException(
@@ -381,8 +385,8 @@ public final class EventStore {
 
   /**
    * Publishes an event as part of the caller's transaction (see {@link #publishEvent(String,
-   * String, String, Duration, String, String)}): the connection is neither committed nor closed,
-   * and the event's advisory lock is held until the caller ends the transaction.
+   * String, String, Duration, String, String, Actor)}): the connection is neither committed nor
+   * closed, and the event's advisory lock is held until the caller ends the transaction.
    *
    * @param connection the caller's connection, not in auto-commit mode
    * @param eventName the event name
@@ -390,8 +394,9 @@ public final class EventStore {
    * @param payload the payload as JSON text, may be {@code null}
    * @param retention how long steps starting to wait later still receive it; may be zero
    * @param idempotencyKey see {@link #publishEvent(String, String, String, Duration, String,
-   *     String)}
+   *     String, Actor)}
    * @param reference the external entity the event is about, {@code null} for none
+   * @param actor the user publishing it, {@code null} for the application
    * @return the published event (visible to others once the caller commits), or the earlier one
    *     with the idempotency key
    * @throws IllegalArgumentException if the connection is in auto-commit mode
@@ -403,7 +408,8 @@ public final class EventStore {
       @Nullable String payload,
       Duration retention,
       @Nullable String idempotencyKey,
-      @Nullable String reference) {
+      @Nullable String reference,
+      @Nullable Actor actor) {
     return access.onCallerConnection(
         connection,
         db -> {
@@ -421,6 +427,7 @@ public final class EventStore {
               idempotencyKey,
               reference,
               ActorType.APPLICATION,
+              actor,
               null);
         },
         e ->
@@ -490,6 +497,7 @@ public final class EventStore {
                   null,
                   reference,
                   ActorType.JOB,
+                  null,
                   jobId);
           UUID stepId = UuidUtil.timeOrdered();
           db.update(
@@ -551,7 +559,8 @@ public final class EventStore {
       Duration retention,
       @Nullable String idempotencyKey,
       @Nullable String reference,
-      ActorType actor,
+      ActorType actorType,
+      @Nullable Actor actor,
       @Nullable UUID publishingJobId)
       throws SQLException {
     lockEvent(db, eventName, eventKey);
@@ -589,7 +598,8 @@ public final class EventStore {
     // The publication first, then what it caused: the receiving steps and the jobs they resume.
     List<Change> changes = new ArrayList<>();
     changes.add(
-        Change.published(eventId, actor)
+        Change.published(eventId, actorType)
+            .actor(actor)
             .causedBy(publishingJobId)
             .keys(idempotencyKey, reference)
             .retention(retention)
@@ -601,7 +611,7 @@ public final class EventStore {
                   resumption.stepId(),
                   StepAction.RECEIVED,
                   StepState.SUCCEEDED,
-                  actor)
+                  actorType)
               .causedBy(eventId));
       if (resumption.jobResumed()) {
         db.dueNow(resumption.jobName());
@@ -611,7 +621,7 @@ public final class EventStore {
                     JobAction.RESUMED,
                     JobState.SCHEDULED,
                     resumption.attempts(),
-                    actor)
+                    actorType)
                 .causedBy(eventId));
       }
     }

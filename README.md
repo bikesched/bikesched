@@ -94,7 +94,7 @@ modelling and no orchestration across services. If that's what you're after, hav
 - Ended jobs are deleted after a retention (7 days by default); optional history and
   statement timeout
 - Pluggable JSON mapping and node, job and step ids in the SLF4J logging context
-- An optional **admin UI** to find, retry and cancel jobs, with read-only lookups behind
+- An optional **admin UI** to find, retry and cancel jobs, with the lookups and actions behind
   `bikesched.admin()`
 
 ## Quick start

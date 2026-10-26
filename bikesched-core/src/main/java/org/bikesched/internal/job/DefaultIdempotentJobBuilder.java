@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import org.bikesched.history.Actor;
 import org.bikesched.job.IdempotentJobBuilder;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
@@ -45,6 +46,11 @@ final class DefaultIdempotentJobBuilder<P extends @Nullable Object>
   @Override
   public IdempotentJobBuilder<P> failureHandler(TypedJobFailureHandler<? super P> handler) {
     return setFailureHandler(handler);
+  }
+
+  @Override
+  public IdempotentJobBuilder<P> actor(Actor actor) {
+    return setActor(actor);
   }
 
   @Override

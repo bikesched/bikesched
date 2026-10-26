@@ -346,9 +346,10 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
   List<HistoryEntry> findEventHistory(UUID eventId);
 
   /**
-   * Read-only lookups for operating bikesched: jobs by name and state, their steps, payloads and
-   * results, job names with counts per state, events, waiting steps and nodes. The admin UI ({@code
-   * bikesched-admin}) is built on them; they also suit custom dashboards and support tools.
+   * Lookups and actions for operating bikesched: jobs by name and state, their steps, payloads and
+   * results, job names with counts per state, events, waiting steps and nodes, and cancelling,
+   * retrying and removing jobs in the name of a user. The admin UI ({@code bikesched-admin}) is
+   * built on them; they also suit custom dashboards and support tools.
    *
    * <pre>{@code
    * bikesched.admin().findJobs(JobQuery.newest(20).withStates(JobState.FAILED));
@@ -356,7 +357,7 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    *
    * <p>Like {@link #findJob(UUID)}, the lookups work on every node, also one that is not polling.
    *
-   * @return the lookups of this node
+   * @return the lookups and actions of this node
    */
   Admin admin();
 

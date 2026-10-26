@@ -141,6 +141,13 @@ for (HistoryEntry entry : bikesched.findEventHistory(eventId)) {
 }
 ```
 
+A publish in the name of a user, e.g. from a support tool, names the user on the `PUBLISHED` entry
+with `actor(Actor.user(name))`; the entries it causes stay the application's:
+
+```java
+bikesched.newEvent("payment-received", orderId).actor(Actor.user("simon")).publish();
+```
+
 ## Publishing from jobs
 
 Use `Job.newEvent` to publish as a durable step. The event, delivery to waiting jobs and completion

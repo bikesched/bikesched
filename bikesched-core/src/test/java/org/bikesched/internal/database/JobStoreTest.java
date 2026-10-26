@@ -131,17 +131,17 @@ class JobStoreTest extends AbstractStoreTest {
             + succeeded
             + "', 'test', 'SINGLE', 'SUCCEEDED', 1, null, now(), null, 0, null, null, null)");
 
-    assertThat(database.jobs().retryJob(failed)).isTrue();
-    assertThat(database.jobs().retryJob(compensated)).isTrue();
-    assertThatThrownBy(() -> database.jobs().retryJob(occurrence))
+    assertThat(database.jobs().retryJob(failed, null)).isTrue();
+    assertThat(database.jobs().retryJob(compensated, null)).isTrue();
+    assertThatThrownBy(() -> database.jobs().retryJob(occurrence, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(
             "Job "
                 + occurrence
                 + " is an occurrence of recurring job daily and cannot be retried; its next"
                 + " occurrence runs as scheduled");
-    assertThat(database.jobs().retryJob(succeeded)).isFalse();
-    assertThat(database.jobs().retryJob(failed)).as("already retried").isFalse();
+    assertThat(database.jobs().retryJob(succeeded, null)).isFalse();
+    assertThat(database.jobs().retryJob(failed, null)).as("already retried").isFalse();
 
     assertThat(
             count(
