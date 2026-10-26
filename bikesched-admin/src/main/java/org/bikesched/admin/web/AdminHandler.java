@@ -62,6 +62,11 @@ final class AdminHandler {
 
   static final String CANCEL_MESSAGE = "cancelled from the admin UI";
 
+  // The limits of a name in the history (actor_name), as for every name in bikesched.
+  private static final int MAX_ACTOR_CHARACTERS = 200;
+
+  private static final int MAX_ACTOR_BYTES = 600;
+
   private static final int DEFAULT_LIMIT = 50;
 
   /** Ancestors of a child job shown above its detail; deeper ones are not looked up. */
@@ -228,7 +233,7 @@ final class AdminHandler {
           Map.of());
     }
     // The signed-in user is named on the history entries of the actions.
-    Actor actor = user == null ? null : Actor.user(user);
+    Actor actor = actor(user);
     String by = user == null ? "" : " by " + user;
     if (publish) {
       return publish(request, actor, by);
@@ -257,6 +262,30 @@ final class AdminHandler {
       LOG.info("Job {} cancelled from the admin UI{}", jobId, by);
     }
     return json(request, 200, Json.object().put("cancelled", cancelled));
+  }
+
+  /**
+   * The signed-in user as the actor of the history entries, {@code null} without a (non-blank)
+   * user. A name longer than a history name may be (200 characters, 600 bytes in UTF-8) is cut, so
+   * every user an access accepts can act.
+   */
+  static Actor actor(String user) {
+    if (user == null || user.isBlank()) {
+      return null;
+    }
+    StringBuilder name = new StringBuilder();
+    int characters = 0;
+    int bytes = 0;
+    for (int codePoint : user.codePoints().toArray()) {
+      int size = new String(Character.toChars(codePoint)).getBytes(StandardCharsets.UTF_8).length;
+      if (characters == MAX_ACTOR_CHARACTERS || bytes + size > MAX_ACTOR_BYTES) {
+        break;
+      }
+      name.appendCodePoint(codePoint);
+      characters++;
+      bytes += size;
+    }
+    return Actor.user(name.toString());
   }
 
   /**

@@ -83,6 +83,23 @@ class AdminAccessTest {
   }
 
   @Test
+  void usersOfAnyNameLengthCanAct() {
+    String longName = "o".repeat(250);
+    BikeschedAdmin admin =
+        BikeschedAdmin.of(bikesched)
+            .access(AdminAccess.basicAuth().operator(longName, OPS_PASSWORD).build());
+    assertThat(cancel(admin, basic(longName, OPS_PASSWORD)).status()).isEqualTo(200);
+
+    // The history keeps the first 200 characters and 600 bytes of the name.
+    assertThat(AdminHandler.actor(longName).name()).isEqualTo("o".repeat(200));
+    assertThat(AdminHandler.actor("\uD83D\uDE00".repeat(200)).name())
+        .isEqualTo("\uD83D\uDE00".repeat(150));
+    assertThat(AdminHandler.actor("ops").name()).isEqualTo("ops");
+    assertThat(AdminHandler.actor(" ")).isNull();
+    assertThat(AdminHandler.actor(null)).isNull();
+  }
+
+  @Test
   void readOnlyTurnsOperatorsIntoViewers() {
     BikeschedAdmin readOnly = basicAuth.readOnly(true);
     AdminResponse me =

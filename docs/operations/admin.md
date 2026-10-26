@@ -106,7 +106,8 @@ A custom access without a `challenge()` answers denied requests with `403`.
 The user an access grant names (the Basic authentication user, or the custom access's) is recorded
 on the [history](../jobs/README.md#history) entries of the actions taken with the admin: the jobs
 it schedules, retries and cancels and the events it publishes name the user, so the history says
-"`RETRIED` by simon". The open access names nobody: its actions are recorded as the application's.
+"`RETRIED` by simon" (a name longer than 200 characters is cut). The open access names nobody:
+its actions are recorded as the application's.
 
 Retry, cancel, schedule and publish are `POST` requests that must carry the header
 `X-Bikesched-Admin: 1`, which the page sets. A form or image on another site cannot send it, so a
