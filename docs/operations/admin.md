@@ -142,7 +142,8 @@ always shown.
 - **Job detail**: all fields (the type says single, recurring or child job), the idempotency key,
   the reference (with links to the jobs and the events that have it),
   the last error, retry and cancel, the steps with their duration (a child job step links to the
-  child, a child job shows the path to its parents), the job history when recorded, and a Data tab
+  child, a child job shows the path to its parents), the [history](../jobs/README.md#history) when
+  recorded (each entry's action, resulting state, who acted and its details), and a Data tab
   with the payload above the result. A running or waiting step's duration counts up; a retried step
   shows its last attempt's. A run of a [recurring job](../jobs/recurring-jobs.md) has a Recurrence
   tab: the pending run (the next one with a countdown, or the current one while it runs or waits),
@@ -154,7 +155,7 @@ always shown.
   the step on its own (`#/jobs/{jobId}/steps/{stepId}`, keyed by the step's id): its type,
   attempts (checks of a poll), times, deadline, failure handler runs, compensation, the node
   running it, its event or child job, the last error, its result (with `showPayloads(true)`) and
-  its entries of the job history. It refreshes every 3 seconds until its job ended.
+  its entries of the history. It refreshes every 3 seconds until its job ended.
 - **Schedule job** (operators): a form in the detail panel, opened by the button above the job list
   (with the name of the list filled in) or by "Schedule similar…" in a job's detail (name, payload,
   priority and max attempts copied from that job). It offers only the job names the serving node has
@@ -239,6 +240,10 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | POST | `api/jobs/{id}/cancel` | `{"cancelled": true or false}` (message "cancelled from the admin UI") |
 | POST | `api/jobs` | `{"id", "created"}`: schedules a job from a form-encoded body (`name`, `payload` as JSON text, `delay` as ISO-8601 or `at` as an ISO-8601 instant, `priority`, `maxAttempts`, `timeout` as ISO-8601, `idempotencyKey`, `reference`); `created` is `false` when a job with that name has the idempotency key, whose id is returned |
 | POST | `api/events` | `{"id", "received"}`: publishes an event from a form-encoded body (`name`, `key`, `payload` as JSON text, `retention` as ISO-8601, `idempotencyKey`, `reference`); `received` counts the steps that got it at once |
+
+A history entry in the JSON API has its `id`, `subjectType`, `subjectId`, `stepId`, `state`,
+`attempt`, `at`, `action`, `actorType`, `actorName`, `nodeId`, `causedById` and `data` (the
+entry's JSON object, or `null`).
 
 Errors are `{"error": "..."}` with `400` (malformed parameter, id, job or event, a job name without
 a handler on the serving node), `401`/`403` (access), `404` (unknown job, step, event or path),

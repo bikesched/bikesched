@@ -10,6 +10,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.HistoryTesting;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.JobEntry;
 import org.junit.jupiter.api.Test;
 
 /** Retrying failed jobs with {@link Bikesched#retry(UUID)}. */
@@ -20,7 +24,7 @@ class JobRetryTest extends AbstractBikeschedTest {
     var reserved = new AtomicInteger();
     var charged = new AtomicInteger();
     var fixed = new AtomicBoolean();
-    try (Bikesched bikesched = testNode("node-retry").jobHistory(Duration.ofDays(1)).build()) {
+    try (Bikesched bikesched = testNode("node-retry").history(Duration.ofDays(1)).build()) {
       UUID jobId =
           bikesched
               .newJob("retry-" + UUID.randomUUID())
@@ -53,16 +57,19 @@ class JobRetryTest extends AbstractBikeschedTest {
       assertThat(charged).hasValue(2);
       assertThat(count("id = '" + jobId + "' and attempts = 1 and finished_at is not null"))
           .isOne();
-      List<JobHistoryEntry> history = bikesched.findJobHistory(jobId);
-      assertThat(history)
-          .filteredOn(e -> !e.isStepEntry())
-          .extracting(JobHistoryEntry::state)
-          .containsExactly("SCHEDULED", "RUNNING", "FAILED", "SCHEDULED", "RUNNING", "SUCCEEDED");
-      JobHistoryEntry retried =
-          history.stream().filter(e -> "retried".equals(e.detail())).findFirst().orElseThrow();
-      assertThat(retried.state()).isEqualTo("SCHEDULED");
+      List<HistoryEntry> history = bikesched.findJobHistory(jobId);
+      assertThat(HistoryTesting.actionsAndStates(history))
+          .filteredOn(action -> !action.contains(" "))
+          .containsExactly(
+              "SCHEDULED:SCHEDULED",
+              "CLAIMED:RUNNING",
+              "FAILED:FAILED",
+              "RETRIED:SCHEDULED",
+              "CLAIMED:RUNNING",
+              "SUCCEEDED:SUCCEEDED");
+      JobEntry retried = (JobEntry) HistoryTesting.entry(history, "RETRIED");
       assertThat(retried.attempt()).isZero();
-      assertThat(retried.nodeId()).as("retried by the application").isNull();
+      assertThat(retried.actorType()).isEqualTo(ActorType.APPLICATION);
       assertThat(bikesched.retry(jobId)).as("only failed jobs").isFalse();
     }
   }

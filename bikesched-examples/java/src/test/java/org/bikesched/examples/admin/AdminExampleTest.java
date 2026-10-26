@@ -28,7 +28,7 @@ class AdminExampleTest {
     try (Bikesched bikesched =
         BikeschedTest.testNode(DATA_SOURCE, "admin")
             .jsonMapper(new JacksonJsonMapper())
-            .jobHistory(AdminExample.JOB_HISTORY)
+            .history(AdminExample.HISTORY)
             .build()) {
       var example = new AdminExample(bikesched);
       example.seed();
@@ -49,7 +49,7 @@ class AdminExampleTest {
                     () -> get(client, base + "api/jobs?name=send-invoice&state=FAILED"),
                     body -> body.contains("SMTP timeout while sending invoice 4"));
 
-        // The node records the job history, so a failed invoice's detail has its entries.
+        // The node records the history, so a failed invoice's detail has its entries.
         Matcher id = Pattern.compile("\"id\":\"([0-9a-f-]{36})\"").matcher(failed);
         assertThat(id.find()).isTrue();
         assertThat(get(client, base + "api/jobs/" + id.group(1))).contains("\"history\":[{");

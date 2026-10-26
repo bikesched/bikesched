@@ -14,6 +14,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.HistoryTesting;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.JobEntry;
 import org.bikesched.job.listener.JobAttemptOutcome;
 import org.bikesched.job.listener.JobAttemptResult;
 import org.bikesched.job.listener.JobListener;
@@ -50,11 +53,11 @@ class PostponeTest extends AbstractBikeschedTest {
       assertThat(attempts).as("the attempt is given back").containsExactly(1, 1);
       assertThat(Duration.ofNanos(runs.get(1) - runs.get(0))).isGreaterThanOrEqualTo(SHORT);
       assertThat(count("id = '" + jobId + "' and attempts = 1 and last_error is null")).isOne();
-      List<JobHistoryEntry> history = bikesched.findJobHistory(jobId);
-      assertThat(changes(history))
-          .containsExactly("SCHEDULED", "RUNNING", "SCHEDULED", "RUNNING", "SUCCEEDED");
-      assertThat(history).extracting(JobHistoryEntry::attempt).containsExactly(0, 1, 0, 1, 1);
-      assertThat(history.get(2).detail()).startsWith("postponed until ");
+      List<HistoryEntry> history = bikesched.findJobHistory(jobId);
+      assertThat(HistoryTesting.actions(history))
+          .containsExactly("SCHEDULED", "CLAIMED", "POSTPONED", "CLAIMED", "SUCCEEDED");
+      assertThat(history).map(entry -> ((JobEntry) entry).attempt()).containsExactly(0, 1, 0, 1, 1);
+      assertThat(HistoryTesting.data(history.get(2), "dueAt")).isNotNull();
     }
   }
 
@@ -89,23 +92,25 @@ class PostponeTest extends AbstractBikeschedTest {
       assertThat(reserved).as("the completed step is skipped").hasValue(1);
       assertThat(stepAttempts).as("the step's attempt is given back").containsExactly(1, 1);
       assertThat(stepResult(jobId, "charge")).isEqualTo("\"c-1\"");
-      List<JobHistoryEntry> history = bikesched.findJobHistory(jobId);
-      assertThat(changes(history))
+      List<HistoryEntry> history = bikesched.findJobHistory(jobId);
+      assertThat(HistoryTesting.actions(history))
           .containsExactly(
               "SCHEDULED",
-              "RUNNING",
-              "reserve:RUNNING",
-              "reserve:SUCCEEDED",
-              "charge:RUNNING",
-              "charge:POSTPONED",
-              "SCHEDULED",
-              "RUNNING",
-              "charge:RUNNING",
-              "charge:SUCCEEDED",
+              "CLAIMED",
+              "reserve STARTED",
+              "reserve SUCCEEDED",
+              "charge STARTED",
+              "charge POSTPONED",
+              "POSTPONED",
+              "CLAIMED",
+              "charge STARTED",
+              "charge SUCCEEDED",
               "SUCCEEDED");
-      assertThat(history.get(5).detail()).startsWith("until ");
-      assertThat(history.get(6).detail()).startsWith("postponed in step 'charge' until ");
-      assertThat(history.get(8).detail()).as("no 'step attempt 2'").isNull();
+      assertThat(HistoryTesting.data(history.get(5), "dueAt")).isNotNull();
+      assertThat(HistoryTesting.data(history.get(6), "stepName")).isEqualTo("charge");
+      assertThat(HistoryTesting.data(history.get(6), "dueAt"))
+          .isEqualTo(HistoryTesting.data(history.get(5), "dueAt"));
+      assertThat(HistoryTesting.data(history.get(8), "run")).as("no second run").isNull();
     }
   }
 
@@ -355,16 +360,9 @@ class PostponeTest extends AbstractBikeschedTest {
     }
   }
 
-  /** The changes as {@code STATE} (job) or {@code step:STATE} (step). */
-  private static List<String> changes(List<JobHistoryEntry> history) {
-    return history.stream()
-        .map(e -> e.isStepEntry() ? e.stepName() + ":" + e.state() : e.state())
-        .toList();
-  }
-
-  /** A polling node recording the job history. */
+  /** A polling node recording the history. */
   private static Bikesched node(String name) {
-    return testNode(name).jobHistory(Duration.ofDays(1)).build();
+    return testNode(name).history(Duration.ofDays(1)).build();
   }
 
   private static String unique(String name) {

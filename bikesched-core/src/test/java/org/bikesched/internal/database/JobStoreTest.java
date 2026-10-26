@@ -158,11 +158,11 @@ class JobStoreTest extends AbstractStoreTest {
     assertThat(count("id = '" + occurrence + "' and state = 'FAILED'")).isOne();
     assertThat(
             countRows(
-                "bikesched_job_history",
-                "job_id = '"
+                "bikesched_history",
+                "subject_id = '"
                     + failed
-                    + "' and state = 'SCHEDULED' and attempt = 0"
-                    + " and node_id is null and detail = 'retried'"))
+                    + "' and action = 'RETRIED' and state = 'SCHEDULED' and attempt = 0"
+                    + " and actor_type = 'APPLICATION'"))
         .isOne();
   }
 

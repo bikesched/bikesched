@@ -45,8 +45,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param eventRetention how long published events are kept for steps waiting later
  * @param eventCleanUpInterval how often expired events are deleted
  * @param nodeCleanUpInterval how often the node releases the jobs of dead nodes
- * @param jobHistoryRetention how long the job history is kept; enables it
- * @param jobHistoryCleanUpInterval how often the job history is cleaned up
+ * @param historyRetention how long the history is kept; enables it
+ * @param historyCleanUpInterval how often the history is cleaned up
  * @param jobRetention how long ended jobs are kept
  * @param jobCleanUpInterval how often ended jobs are deleted
  * @param statementTimeout maximum duration of a database statement
@@ -73,8 +73,8 @@ public record BikeschedProperties(
     Duration eventRetention,
     Duration eventCleanUpInterval,
     Duration nodeCleanUpInterval,
-    Duration jobHistoryRetention,
-    Duration jobHistoryCleanUpInterval,
+    Duration historyRetention,
+    Duration historyCleanUpInterval,
     Duration jobRetention,
     Duration jobCleanUpInterval,
     Duration statementTimeout,
@@ -160,11 +160,11 @@ public record BikeschedProperties(
     if (nodeCleanUpInterval != null) {
       builder.nodeCleanUpInterval(nodeCleanUpInterval);
     }
-    if (jobHistoryRetention != null) {
-      builder.jobHistory(jobHistoryRetention);
+    if (historyRetention != null) {
+      builder.history(historyRetention);
     }
-    if (jobHistoryCleanUpInterval != null) {
-      builder.jobHistoryCleanUpInterval(jobHistoryCleanUpInterval);
+    if (historyCleanUpInterval != null) {
+      builder.historyCleanUpInterval(historyCleanUpInterval);
     }
     if (jobRetention != null) {
       builder.jobRetention(jobRetention);

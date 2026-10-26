@@ -50,7 +50,7 @@ and without any coordinator besides PostgreSQL.
   a first job
   - [Configuration](getting-started/configuration.md): builder options, nodes, JSON mapping
     (`bikesched-jackson`), logging
-- [Jobs](jobs/README.md): scheduling, writing handlers, retries, cancellation, job history,
+- [Jobs](jobs/README.md): scheduling, writing handlers, retries, cancellation, history,
   timeouts
   - [Recurring jobs](jobs/recurring-jobs.md): schedules, cron expressions (`bikesched-cron`) and
     occurrences

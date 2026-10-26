@@ -7,7 +7,11 @@ import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
-import org.bikesched.job.JobHistoryEntry;
+import org.bikesched.history.EventEntry;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.JobEntry;
+import org.bikesched.history.NodeEntry;
+import org.bikesched.history.StepEntry;
 
 /** Explicit wire projections, independent of routing and database lookups. */
 final class AdminJson {
@@ -62,14 +66,33 @@ final class AdminJson {
         .put("childJobExists", step.childJobExists());
   }
 
-  static Json.Obj history(JobHistoryEntry entry) {
-    return Json.object()
-        .put("at", entry.createdAt())
-        .put("stepName", entry.stepName())
-        .put("state", entry.state())
-        .put("attempt", entry.attempt())
+  /** A history entry; its data is passed on as the JSON object it is. */
+  static Json.Obj history(HistoryEntry entry) {
+    Json.Obj json = Json.object().put("id", entry.id());
+    switch (entry) {
+      case JobEntry job ->
+          json.put("subjectType", "JOB")
+              .put("subjectId", job.jobId())
+              .put("stepId", null)
+              .put("state", job.state())
+              .put("attempt", job.attempt());
+      case StepEntry step ->
+          json.put("subjectType", "JOB")
+              .put("subjectId", step.jobId())
+              .put("stepId", step.stepId())
+              .put("state", step.state())
+              .put("attempt", step.attempt());
+      case EventEntry event -> json.put("subjectType", "EVENT").put("subjectId", event.eventId());
+      case NodeEntry node -> json.put("subjectType", "NODE").put("subjectId", node.subjectId());
+    }
+    String data = entry.data();
+    return json.put("at", entry.createdAt())
+        .put("action", entry.action().name())
+        .put("actorType", entry.actorType())
+        .put("actorName", entry.actorName())
         .put("nodeId", entry.nodeId())
-        .put("detail", entry.detail());
+        .put("causedById", entry.causedById())
+        .put("data", data == null ? null : new Json.Raw(data));
   }
 
   static Json.Obj event(EventSummary event) {

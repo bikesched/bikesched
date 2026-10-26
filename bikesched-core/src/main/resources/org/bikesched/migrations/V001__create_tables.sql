@@ -1,4 +1,4 @@
--- bikesched schema v1: nodes, jobs, steps, events and the job history.
+-- bikesched schema v1: nodes, jobs, steps, events and the history.
 -- States are text + CHECK constraints (not Postgres enums) so adding states later is a cheap migration.
 -- Names (node, job, step and event names, recurrence descriptions) have at most 200
 -- characters, event keys and idempotency keys at most 500: most are indexed, and B-tree entries are
@@ -333,33 +333,83 @@ create index bikesched_events_short_id_idx on bikesched_events (right(id::text, 
 create index bikesched_events_reference_idx on bikesched_events (reference, id)
     where reference is not null;
 
--- Job history (only written by nodes with the history enabled): one row per change of a job
--- (step_name null) or of one of its steps, in the transaction of the change. attempt is the job's
--- attempt count after the change; node_id the node that made it (null: the application, e.g.
--- scheduling, cancel requests, publishing). No foreign keys: entries are kept for their own
--- retention period, also after their job was deleted.
-create table bikesched_job_history (
-    job_id     uuid        not null,
-    node_id    uuid,
-    seq        bigint      generated always as identity,
-    created_at timestamptz not null default now(),
-    attempt    integer     not null,
-    state      text        not null,
-    step_name  text,
-    detail     text,                   -- error, cancel message, deadline, ...; truncated to 4000 characters
-    constraint bikesched_job_history_pkey primary key (job_id, seq),
-    constraint bikesched_job_history_attempt_check
-        check (attempt >= 0),
-    constraint bikesched_job_history_state_check
-        check (step_name is null and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
-                                               'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED',
-                                               'FAILING')
-               or step_name is not null and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING',
-                                                      'FAILED', 'TIMED_OUT', 'COMPENSATED',
-                                                      'CANCELLED', 'POSTPONED')),
-    constraint bikesched_job_history_step_name_check
-        check (char_length(step_name) between 1 and 200 and octet_length(step_name) <= 600)
+-- History (only written by nodes with the history enabled): one row per change of a job or of one
+-- of its steps, per published event and per node registration, stop or removal, in the transaction
+-- of the change. The subject is the job (also for step entries), the event or the node; ids are
+-- UUIDv7 from the library and unique across subject types. Entries are ordered by (created_at, id):
+-- created_at is the database's clock when the row is written (clock_timestamp(), not the start of
+-- the transaction), id breaks ties within one statement.
+-- action says what happened (one list per subject type, and for steps), state is the job's or step's
+-- state afterwards. actor_type says who made the change: a node by itself, the application, a job
+-- handler or a user (actor_name: the user name, set exactly for users); node_id is the node that
+-- wrote the entry, whoever the actor was. caused_by_id is the event, job or node that caused it (the
+-- event a step received, the parent of a child job, the dead node whose jobs were released), never
+-- another entry. No foreign keys: entries are kept for their own retention, also after their
+-- subject was deleted.
+-- data holds what is only displayed, as a JSON object without null fields, built by the recording
+-- statement: the names, so a deleted job, step, event or node still reads well (subjectName,
+-- stepName), and the action's specifics (error, message, dueAt, ...; texts cut to 4000 characters).
+-- It is never filtered or indexed: everything that is has its own column.
+create table bikesched_history (
+    subject_id   uuid        not null,
+    id           uuid        not null,
+    step_id      uuid,                   -- JOB entries of a step
+    subject_type text        not null,
+    action       text        not null,
+    state        text,                   -- JOB entries: the job's or step's state afterwards
+    node_id      uuid,                   -- the node that wrote the entry, if registered
+    caused_by_id uuid,
+    created_at   timestamptz not null default clock_timestamp(),
+    attempt      integer,                -- JOB entries: the job's attempt count after the change
+    actor_type   text        not null,
+    actor_name   text,                   -- USER entries: the user name
+    data         jsonb,
+    constraint bikesched_history_pkey primary key (subject_id, id),
+    constraint bikesched_history_data_check
+        check (jsonb_typeof(data) = 'object'),
+    constraint bikesched_history_subject_type_check
+        check (subject_type in ('JOB', 'EVENT', 'NODE')),
+    constraint bikesched_history_actor_type_check
+        check (actor_type in ('NODE', 'APPLICATION', 'JOB', 'USER')
+               and (actor_name is not null) = (actor_type = 'USER')),
+    -- Only job entries have an attempt and a state; only they can reference a step.
+    constraint bikesched_history_job_check
+        check ((attempt is not null) = (subject_type = 'JOB')
+               and (state is not null) = (subject_type = 'JOB')
+               and (step_id is null or subject_type = 'JOB')
+               and attempt >= 0),
+    constraint bikesched_history_action_check
+        check (case
+                   when subject_type = 'JOB' and step_id is null then
+                       action in ('SCHEDULED', 'CLAIMED', 'SUCCEEDED', 'ATTEMPT_FAILED', 'FAILED',
+                                  'SUSPENDED', 'RESUMED', 'POSTPONED', 'RETRIED', 'CANCEL_REQUESTED',
+                                  'CANCELLED', 'RELEASED', 'MOVED', 'DELETED', 'FAILING',
+                                  'FAILURE_HANDLER_FAILED', 'COMPENSATING', 'COMPENSATED',
+                                  'COMPENSATION_FAILED')
+                       and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
+                                     'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING')
+                   when subject_type = 'JOB' then
+                       action in ('STARTED', 'SUCCEEDED', 'FAILED', 'WAITING', 'RECEIVED',
+                                  'CHILD_STARTED', 'CHILD_ENDED', 'WOKE_UP', 'TIMED_OUT', 'POSTPONED',
+                                  'FAILING', 'RESOLVED', 'PUBLISHED', 'CANCELLED', 'COMPENSATED',
+                                  'COMPENSATION_FAILED')
+                       and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING', 'FAILED',
+                                     'TIMED_OUT', 'COMPENSATED', 'CANCELLED', 'POSTPONED')
+                   when subject_type = 'EVENT' then action in ('PUBLISHED')
+                   else action in ('REGISTERED', 'STOPPED', 'REMOVED')
+               end),
+    constraint bikesched_history_actor_name_check
+        check (char_length(actor_name) between 1 and 200 and octet_length(actor_name) <= 600)
 );
 
--- Deleting entries after their retention period.
-create index bikesched_job_history_created_at_idx on bikesched_job_history (created_at);
+-- Deleting entries after their retention, and the newest entries first (keyset paging by
+-- (created_at, id): ties in created_at are rare and sorted by id after the fetch).
+create index bikesched_history_created_at_idx on bikesched_history (created_at);
+
+-- The entries an event, job or node caused (an event's receivers, a dead node's released jobs).
+create index bikesched_history_caused_by_id_idx on bikesched_history (caused_by_id)
+    where caused_by_id is not null;
+
+-- What users did, newest first.
+create index bikesched_history_user_idx on bikesched_history (created_at)
+    where actor_type = 'USER';

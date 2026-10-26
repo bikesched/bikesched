@@ -47,7 +47,7 @@ bikesched.registerJobHandler("fulfil-order", job -> {
   after its compensations has no result.
 - `bikesched.findJob(id)` returns it: `JobInfo.result(Class)` is `null` unless the job `SUCCEEDED`
   with a result.
-- The [job history](../jobs/README.md#job-history) records "succeeded with result", never the result
+- The [history](../jobs/README.md#history) records that the job `SUCCEEDED`, never the result
   itself (it may be large or sensitive).
 
 ## Starting children
@@ -136,11 +136,11 @@ or with `orElse(fallback)`, which returns the fallback for every outcome but `Su
 - **No limit on nesting depth or children per job**: a runaway job tree is a handler bug.
 - **No deadlock detection**: a job waits only for its own children, so waits between jobs cannot
   form a cycle. Cycles through events remain possible (a child waits for an event only its waiting
-  parent would publish); they show as `WAITING` jobs in `findJob` and the job history, and a wait
+  parent would publish); they show as `WAITING` jobs in `findJob` and the history, and a wait
   timeout bounds them.
 - **Compatible `JsonMapper`s**: the child's node maps the result with its mapper, the parent's
   node reads it with its own; when parent and child types run in different services, the mappers
   must agree on the format.
-- **Job history**: the child is "started by job … step …", the parent's step "started job …", the
-  parent "suspended at step …, waiting for job …"; the child's end completes the step ("job …
-  ended FAILED") and resumes the parent ("resumed by job …").
+- **History**: the child's `SCHEDULED` entry has the `JOB` actor, the parent's step records
+  `CHILD_STARTED` (with `childJobId`) and the parent `SUSPENDED`; the child's end records
+  `CHILD_ENDED` (with `childState`) on the step and `RESUMED` on the parent.

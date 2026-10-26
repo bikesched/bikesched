@@ -40,7 +40,7 @@ public final class Database {
   private final DatabaseAccess access;
 
   /**
-   * Creates the database access without job history.
+   * Creates the database access without history.
    *
    * @param dataSource the PostgreSQL data source
    * @param jsonMapper maps payloads and step results of the {@link Job}s this instance claims
@@ -54,10 +54,10 @@ public final class Database {
    *
    * @param dataSource the PostgreSQL data source
    * @param jsonMapper maps payloads and step results of the {@link Job}s this instance claims
-   * @param jobHistory whether the stores record their changes in the job history
+   * @param history whether the stores record their changes in the history
    */
-  public Database(DataSource dataSource, JsonMapper jsonMapper, boolean jobHistory) {
-    this(dataSource, jsonMapper, jobHistory, null);
+  public Database(DataSource dataSource, JsonMapper jsonMapper, boolean history) {
+    this(dataSource, jsonMapper, history, null);
   }
 
   /**
@@ -65,24 +65,24 @@ public final class Database {
    *
    * @param dataSource the PostgreSQL data source
    * @param jsonMapper maps payloads and step results of the {@link Job}s this instance claims
-   * @param jobHistory whether the stores record their changes in the job history
+   * @param history whether the stores record their changes in the history
    * @param statementTimeout the maximum duration of a statement of the stores, {@code null} to
    *     leave it to the data source
    */
   public Database(
       DataSource dataSource,
       JsonMapper jsonMapper,
-      boolean jobHistory,
+      boolean history,
       @Nullable Duration statementTimeout) {
 
     this.dataSource = dataSource;
     this.jsonMapper = jsonMapper;
     this.access = new DatabaseAccess(dataSource, statementTimeout);
-    this.history = new HistoryStore(access, jobHistory);
+    this.history = new HistoryStore(access, history);
     this.nodes = new NodeStore(access);
-    this.jobs = new JobStore(access, history, jsonMapper);
-    this.steps = new StepStore(access, history);
-    this.events = new EventStore(access, history);
+    this.jobs = new JobStore(access, this.history, jsonMapper);
+    this.steps = new StepStore(access, this.history);
+    this.events = new EventStore(access, this.history);
     this.admin = new AdminStore(access);
   }
 
@@ -106,7 +106,7 @@ public final class Database {
     return events;
   }
 
-  /** The {@code bikesched_job_history} table, written by the other stores if enabled. */
+  /** The {@code bikesched_history} table, written by the other stores if enabled. */
   public HistoryStore history() {
     return history;
   }

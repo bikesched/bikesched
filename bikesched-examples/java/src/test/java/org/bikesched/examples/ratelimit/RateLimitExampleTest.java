@@ -51,9 +51,10 @@ class RateLimitExampleTest {
           .isEqualTo(10);
       assertThat(
               count(
-                  "bikesched_job_history where job_id in ('"
+                  "bikesched_history where subject_id in ('"
                       + ids
-                      + "') and step_name = 'send' and state = 'POSTPONED'"))
+                      + "') and step_id is not null and action = 'POSTPONED'"
+                      + " and data ->> 'stepName' = 'send'"))
           .as("the bucket postponed some steps")
           .isPositive();
       assertThat(output.toString(StandardCharsets.UTF_8)).contains("postponed by");
@@ -71,7 +72,7 @@ class RateLimitExampleTest {
 
   private static Bikesched node() {
     return BikeschedTest.testNode(DATA_SOURCE, "ratelimit")
-        .jobHistory(Duration.ofHours(1))
+        .history(Duration.ofHours(1))
         .jsonMapper(new JacksonJsonMapper())
         .build();
   }

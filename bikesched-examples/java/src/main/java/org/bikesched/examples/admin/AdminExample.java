@@ -18,8 +18,7 @@ import org.bikesched.job.TypedJob;
 /**
  * The admin UI next to a few demo jobs: invoices (some fail), orders with a child job and a wait
  * for the payment event, parcels, and an inventory sync recurring every 10 seconds. Serves the page
- * with the JDK's {@link HttpServer}; the node records the job history, so every job detail shows
- * it.
+ * with the JDK's {@link HttpServer}; the node records the history, so every job detail shows it.
  *
  * <p>Run with {@code ./gradlew :bikesched-examples:java:runAdmin} against the Postgres from {@code
  * compose.yaml}, then open http://localhost:8081/bikesched/ ({@code ADMIN_PORT} changes the port).
@@ -49,8 +48,8 @@ public final class AdminExample {
   /** How often the inventory sync runs. */
   public static final Recurrence EVERY_10_SECONDS = Recurrence.every(Duration.ofSeconds(10));
 
-  /** How long the job history is kept, so the job detail has a History tab. */
-  public static final Duration JOB_HISTORY = Duration.ofDays(7);
+  /** How long the history is kept, so the job detail has a History tab. */
+  public static final Duration HISTORY = Duration.ofDays(7);
 
   private final Bikesched bikesched;
 
@@ -129,8 +128,7 @@ public final class AdminExample {
 
   static void main() throws InterruptedException {
     int port = Integer.parseInt(System.getenv().getOrDefault("ADMIN_PORT", "8081"));
-    try (Bikesched bikesched =
-        BikeschedUtil.builder("admin-example").jobHistory(JOB_HISTORY).build()) {
+    try (Bikesched bikesched = BikeschedUtil.builder("admin-example").history(HISTORY).build()) {
       var example = new AdminExample(bikesched);
       example.seed();
       HttpServer server = example.serve(port);

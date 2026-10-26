@@ -40,9 +40,9 @@ import org.jspecify.annotations.Nullable;
  *     {@code null} for none
  * @param nodeCleanUpInterval interval between node clean-ups ({@link NodeCleanUp})
  * @param eventCleanUpInterval interval between event clean-ups ({@link EventCleanUp})
- * @param jobHistoryRetention how long job history entries are kept; {@code null} if the node does
- *     not record job history
- * @param jobHistoryCleanUpInterval interval between job history clean-ups ({@link HistoryCleanUp})
+ * @param historyRetention how long history entries are kept; {@code null} if the node does not
+ *     record the history
+ * @param historyCleanUpInterval interval between history clean-ups ({@link HistoryCleanUp})
  * @param jobRetention how long ended jobs are kept
  * @param jobCleanUpInterval interval between job clean-ups ({@link JobCleanUp})
  * @param statementTimeout maximum duration of a database statement; {@code null} to leave it to the
@@ -71,8 +71,8 @@ public record Settings(
     @Nullable Duration defaultEventTimeout,
     Duration nodeCleanUpInterval,
     Duration eventCleanUpInterval,
-    @Nullable Duration jobHistoryRetention,
-    Duration jobHistoryCleanUpInterval,
+    @Nullable Duration historyRetention,
+    Duration historyCleanUpInterval,
     Duration jobRetention,
     Duration jobCleanUpInterval,
     @Nullable Duration statementTimeout,

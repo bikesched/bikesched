@@ -15,7 +15,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.HistoryTesting;
 import org.bikesched.LogCapture;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.JobEntry;
+import org.bikesched.history.StepEntry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -35,8 +40,7 @@ class ChildJobTest extends AbstractBikeschedTest {
 
   @Test
   void theResultIsStoredWhenTheJobSucceeds() throws Exception {
-    try (Bikesched bikesched =
-        testNode("node-child-result").jobHistory(Duration.ofHours(1)).build()) {
+    try (Bikesched bikesched = testNode("node-child-result").history(Duration.ofHours(1)).build()) {
       UUID jobId =
           bikesched
               .newJob("child-result")
@@ -52,12 +56,10 @@ class ChildJobTest extends AbstractBikeschedTest {
       assertThat(info.result(String.class)).isEqualTo("{\"secret\": \"s3cr3t\"}");
       assertThat(info.parentJobId()).isNull();
       assertThat(bikesched.findJobHistory(jobId))
-          .anyMatch(
-              entry ->
-                  entry.stepName() == null
-                      && entry.state().equals("SUCCEEDED")
-                      && "succeeded with result".equals(entry.detail()))
-          .noneMatch(entry -> entry.detail() != null && entry.detail().contains("s3cr3t"));
+          .extracting(HistoryTesting::action)
+          .contains("SUCCEEDED");
+      assertThat(bikesched.findJobHistory(jobId))
+          .noneMatch(entry -> entry.data() != null && entry.data().contains("s3cr3t"));
     }
   }
 
@@ -133,8 +135,7 @@ class ChildJobTest extends AbstractBikeschedTest {
     var childIds = new CopyOnWriteArrayList<UUID>();
     var logs = LogCapture.of(Job.class);
     try (logs;
-        Bikesched bikesched =
-            testNode("node-child-basic").jobHistory(Duration.ofHours(1)).build()) {
+        Bikesched bikesched = testNode("node-child-basic").history(Duration.ofHours(1)).build()) {
       // The child ends only once its parent waits for it, so the test always takes the path it
       // asserts: the parent suspends WAITING, the child's end resumes it. (A child ending before
       // the suspension is covered by aChildEndingWhileTheParentSuspendsMakesTheParentDue.)
@@ -183,19 +184,15 @@ class ChildJobTest extends AbstractBikeschedTest {
       assertThat(bikesched.findJobHistory(parentId))
           .extracting(ChildJobTest::describe)
           .containsSubsequence(
-              "start child-basic-child WAITING started job " + childId,
-              "job WAITING suspended at step 'start child-basic-child', waiting for job " + childId,
-              "start child-basic-child SUCCEEDED job " + childId + " ended SUCCEEDED",
-              "job SCHEDULED resumed by job " + childId,
-              "job SUCCEEDED succeeded with result");
-      assertThat(bikesched.findJobHistory(childId))
-          .extracting(ChildJobTest::describe)
-          .first()
-          .asString()
-          .startsWith(
-              "job SCHEDULED started by job "
-                  + parentId
-                  + " step 'start child-basic-child', due at ");
+              "start child-basic-child CHILD_STARTED WAITING childJobId=" + childId,
+              "SUSPENDED WAITING stepName=start child-basic-child",
+              "start child-basic-child CHILD_ENDED SUCCEEDED childState=SUCCEEDED",
+              "RESUMED SCHEDULED",
+              "SUCCEEDED SUCCEEDED");
+      HistoryEntry scheduled = bikesched.findJobHistory(childId).getFirst();
+      assertThat(HistoryTesting.action(scheduled)).isEqualTo("SCHEDULED");
+      assertThat(scheduled.actorType()).isEqualTo(ActorType.JOB);
+      assertThat(HistoryTesting.data(scheduled, "dueAt")).isNotNull();
       assertThat(logs.messages())
           .contains(
               "Step start child-basic-child of job "
@@ -798,7 +795,7 @@ class ChildJobTest extends AbstractBikeschedTest {
     var child = new AtomicReference<UUID>();
     List<JobResult<String>> outcomes = new CopyOnWriteArrayList<>();
     try (Bikesched bikesched =
-        testNode("node-child-timeout").jobHistory(Duration.ofHours(1)).build()) {
+        testNode("node-child-timeout").history(Duration.ofHours(1)).build()) {
       bikesched.registerJobHandler(
           "child-timeout-child",
           job -> job.waitForEvent("go", "child-timeout-go", "k", String.class).receive());
@@ -838,21 +835,28 @@ class ChildJobTest extends AbstractBikeschedTest {
           .isEqualTo(1);
       assertThat(bikesched.findJobHistory(parentId))
           .extracting(ChildJobTest::describe)
-          .anyMatch(
-              entry ->
-                  entry.startsWith(
-                      "start child-timeout-child WAITING waiting for job "
-                          + child.get()
-                          + " until"))
-          .contains("start child-timeout-child TIMED_OUT waiting for job " + child.get());
+          .contains(
+              "start child-timeout-child WAITING WAITING childJobId=" + child.get(),
+              "start child-timeout-child TIMED_OUT TIMED_OUT childJobId=" + child.get());
     }
   }
 
-  private static String describe(JobHistoryEntry entry) {
-    return (entry.stepName() == null ? "job" : entry.stepName())
-        + " "
-        + entry.state()
-        + (entry.detail() == null ? "" : " " + entry.detail());
+  /** An entry as {@code [step ]ACTION STATE}, with its step name, child and child's state. */
+  private static String describe(HistoryEntry entry) {
+    String state =
+        switch (entry) {
+          case JobEntry job -> job.state().name();
+          case StepEntry step -> step.state().name();
+          default -> "";
+        };
+    String description = HistoryTesting.action(entry) + " " + state;
+    for (String key : List.of("stepName", "childJobId", "childState")) {
+      String value = HistoryTesting.data(entry, key);
+      if (value != null && !(entry instanceof StepEntry && key.equals("stepName"))) {
+        description += " " + key + "=" + value;
+      }
+    }
+    return description;
   }
 
   private static long countSteps(UUID jobId, String where) throws SQLException {

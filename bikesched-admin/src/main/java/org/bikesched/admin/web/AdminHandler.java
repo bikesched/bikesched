@@ -37,6 +37,7 @@ import org.bikesched.admin.web.access.AccessGrant;
 import org.bikesched.admin.web.access.AccessLevel;
 import org.bikesched.admin.web.access.AdminAccess;
 import org.bikesched.event.NodeEventBuilder;
+import org.bikesched.history.StepEntry;
 import org.bikesched.job.IdempotentJobBuilder;
 import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobState;
@@ -451,7 +452,7 @@ final class AdminHandler {
     return Optional.of(body);
   }
 
-  /** One step with its job and the step's entries of the job history. */
+  /** One step with its job and the step's entries of the history. */
   private Optional<Json.Obj> step(Admin admin, UUID stepId) {
     Optional<StepInfo> found = admin.findStep(stepId);
     if (found.isEmpty()) {
@@ -465,7 +466,9 @@ final class AdminHandler {
             .put(
                 "history",
                 bikesched.findJobHistory(step.jobId()).stream()
-                    .filter(entry -> step.name().equals(entry.stepName()))
+                    .filter(
+                        entry ->
+                            entry instanceof StepEntry entryOf && entryOf.stepId().equals(stepId))
                     .map(AdminJson::history)
                     .toList())
             .put("payloadsShown", showPayloads);

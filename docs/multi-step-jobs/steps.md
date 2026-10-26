@@ -169,8 +169,8 @@ Report report = job.newPoll("await-report", Report.class, Duration.ofSeconds(30)
 - An expected negative answer (e.g. the report failed) is a ready value too, see
   [Business outcomes as results](#business-outcomes-as-results); exceptions are for errors a retry
   may fix.
-- The [job history](../jobs/README.md#job-history) records the poll's first wait and its outcome
-  (`ready after 3 checks`), not every check.
+- The [history](../jobs/README.md#history) records the poll's first wait and its outcome (with
+  the number of `checks`), not every check.
 - Polling inside a step handler or a compensation is rejected, like nested steps. Cancelling a
   polling job marks the poll `CANCELLED` and runs the compensations of its completed steps.
 

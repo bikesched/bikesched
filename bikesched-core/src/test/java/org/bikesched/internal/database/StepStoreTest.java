@@ -229,8 +229,16 @@ class StepStoreTest extends AbstractStoreTest {
     steps.completePoll(jobId, lock(jobId), step(jobId, "p"), "\"ready\"", 2);
     assertThat(steps.startPoll(jobId, lock(jobId), "p", null))
         .isEqualTo(new StepStore.PollStep.Ready(step(jobId, "p"), "\"ready\""));
-    assertThat(countRows("bikesched_job_history", "job_id = '" + jobId + "' and step_name = 'p'"))
-        .as("only the outcome is recorded")
+    assertThat(
+            countRows(
+                "bikesched_history",
+                "subject_id = '" + jobId + "' and step_id is not null and action <> 'WAITING'"))
+        .as("only the first wait and the outcome are recorded")
+        .isOne();
+    assertThat(
+            countRows(
+                "bikesched_history",
+                "subject_id = '" + jobId + "' and step_id is not null and action = 'WAITING'"))
         .isOne();
   }
 
@@ -257,11 +265,11 @@ class StepStoreTest extends AbstractStoreTest {
         .isEqualTo(new StepStore.PollStep.PollTimedOut(step(jobId, "p"), 2));
     assertThat(
             countRows(
-                "bikesched_job_history",
-                "job_id = '"
+                "bikesched_history",
+                "subject_id = '"
                     + jobId
-                    + "' and step_name = 'p' and state = 'TIMED_OUT'"
-                    + " and detail = 'timed out after 2 checks'"))
+                    + "' and step_id is not null and action = 'TIMED_OUT' and state = 'TIMED_OUT'"
+                    + " and data ->> 'checks' = '2'"))
         .isOne();
   }
 
@@ -295,8 +303,8 @@ class StepStoreTest extends AbstractStoreTest {
     steps.startPoll(jobId, lock(jobId), "p", null);
     steps.waitPoll(jobId, lock(jobId), step(jobId, "p"), Duration.ZERO);
     assertThat(steps.suspendAtPoll(jobId, lock(jobId), step(jobId, "p"), true)).isPresent();
-    String jobEntries = "job_id = '" + jobId + "' and step_name is null";
-    long recorded = countRows("bikesched_job_history", jobEntries);
+    String jobEntries = "subject_id = '" + jobId + "' and step_id is null";
+    long recorded = countRows("bikesched_history", jobEntries);
 
     // The next check: claimed while the poll waits, and suspended again.
     assertThat(claimJobs(node, 1)).extracting(JobStore.ClaimedJob::id).containsExactly(jobId);
@@ -304,7 +312,7 @@ class StepStoreTest extends AbstractStoreTest {
     steps.waitPoll(jobId, lock(jobId), step(jobId, "p"), Duration.ZERO);
     assertThat(steps.suspendAtPoll(jobId, lock(jobId), step(jobId, "p"), false)).isPresent();
 
-    assertThat(countRows("bikesched_job_history", jobEntries)).isEqualTo(recorded);
+    assertThat(countRows("bikesched_history", jobEntries)).isEqualTo(recorded);
     assertThat(count("id = '" + jobId + "' and state = 'WAITING'")).isOne();
   }
 

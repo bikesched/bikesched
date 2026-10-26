@@ -2,19 +2,33 @@
 package org.bikesched.internal.database;
 
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.EventAction;
+import org.bikesched.history.EventEntry;
+import org.bikesched.history.HistoryAction;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.JobAction;
+import org.bikesched.history.JobEntry;
+import org.bikesched.history.NodeAction;
+import org.bikesched.history.NodeEntry;
+import org.bikesched.history.StepAction;
+import org.bikesched.history.StepEntry;
+import org.bikesched.history.SubjectType;
 import org.bikesched.internal.database.DatabaseAccess.SqlExceptionHandler;
-import org.bikesched.internal.util.ValidationUtil;
-import org.bikesched.job.JobHistoryEntry;
+import org.bikesched.internal.util.UuidUtil;
 import org.bikesched.job.JobState;
+import org.bikesched.job.StepState;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The {@code bikesched_job_history} table: one row per change of a job or of one of its steps.
+ * The {@code bikesched_history} table: one row per change of a job, of one of its steps, of an
+ * event or of a node.
  *
  * <p>The other stores {@link #record record} their changes through this store, on the {@link Sql}
  * of the transaction making the change, so an entry commits or rolls back with it. With the history
@@ -26,30 +40,69 @@ public final class HistoryStore {
   private final DatabaseAccess access;
   private final boolean enabled;
 
+  /** The node writing the entries, once it registered; {@code null} until then. */
+  private volatile @Nullable UUID nodeId;
+
   HistoryStore(DatabaseAccess access, boolean enabled) {
     this.access = access;
     this.enabled = enabled;
   }
 
-  // One statement for any number of changes. Step changes take the job's attempt count and (if no
-  // node is given) the node running the job from bikesched_jobs; job changes pass both. The
-  // identity column numbers the rows in the order of the given changes.
+  // One statement for any number of changes, in the given order. data is built here from the given
+  // specifics and the names of the rows the transaction just wrote (joined by primary key), so the
+  // callers pass a name only for a row that is gone. Step entries and job entries without an
+  // attempt count take the job's from bikesched_jobs.
   private static final String RECORD_SQL =
       """
-            insert into bikesched_job_history (job_id, step_name, state, attempt, node_id, detail)
-            select t.job_id, t.step_name, t.state,
-                   coalesce(t.attempt, j.attempts, 0),
-                   case when t.step_name is null then t.node_id else coalesce(t.node_id, j.locked_by_node_id) end,
-                   t.detail
-              from unnest(?::uuid[], ?::text[], ?::text[], ?::integer[], ?::uuid[], ?::text[])
-                   with ordinality as t (job_id, step_name, state, attempt, node_id, detail, position)
-              left join bikesched_jobs j on j.id = t.job_id
+            insert into bikesched_history (subject_id, id, step_id, subject_type, action, state, node_id,
+                                           caused_by_id, attempt, actor_type, data)
+            select t.subject_id, t.id, t.step_id, t.subject_type, t.action, t.state, ?::uuid,
+                   t.caused_by_id,
+                   case when t.subject_type = 'JOB' then coalesce(t.attempt, j.attempts, 0) end,
+                   t.actor_type,
+                   nullif(jsonb_strip_nulls(jsonb_build_object(
+                       'subjectName', coalesce(t.subject_name, j.name),
+                       'stepName', coalesce(s.name, t.step_name),
+                       'error', left(t.error, 4000),
+                       'message', left(t.message, 4000),
+                       'reason', t.reason,
+                       'run', t.run,
+                       'checks', t.checks,
+                       'dueAt', t.due_at,
+                       'waitUntil', t.wait_until,
+                       'recurrence', t.recurrence,
+                       'previousRecurrence', t.previous_recurrence,
+                       'idempotencyKey', t.idempotency_key,
+                       'reference', t.reference,
+                       'childJobId', t.child_job_id,
+                       'childState', t.child_state,
+                       'eventId', t.event_id,
+                       'eventName', t.event_name,
+                       'eventKey', t.event_key)), '{}'::jsonb)
+              from unnest(?::uuid[], ?::uuid[], ?::uuid[], ?::text[], ?::text[], ?::text[], ?::uuid[],
+                          ?::integer[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[],
+                          ?::integer[], ?::integer[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[],
+                          ?::text[], ?::uuid[], ?::text[], ?::uuid[], ?::text[], ?::text[])
+                   with ordinality as t (subject_id, id, step_id, subject_type, action, state, caused_by_id,
+                                         attempt, actor_type, subject_name, step_name, error, message, reason,
+                                         run, checks, due_at, wait_until, recurrence, previous_recurrence,
+                                         idempotency_key, reference, child_job_id, child_state, event_id,
+                                         event_name, event_key, position)
+              left join bikesched_jobs j on t.subject_type = 'JOB' and j.id = t.subject_id
+              left join bikesched_steps s on s.id = t.step_id
              order by t.position""";
 
-  private static final String FIND_HISTORY_SQL =
+  private static final String ENTRY_COLUMNS =
       """
-            select created_at, step_name, state, attempt, node_id, detail
-              from bikesched_job_history where job_id = ? order by seq""";
+            subject_id, id, step_id, subject_type, action, state, node_id, caused_by_id, created_at,
+            attempt, actor_type, actor_name, data::text as data""";
+
+  private static final String FIND_JOB_HISTORY_SQL =
+      """
+            select %s
+              from bikesched_history where subject_id = ? and subject_type = 'JOB'
+             order by created_at, id"""
+          .formatted(ENTRY_COLUMNS);
 
   // A batch of entries past the retention, oldest first from the given created_at on (see
   // DeletedBatch). Skips locked rows, so concurrent clean-ups on several nodes delete different
@@ -58,60 +111,208 @@ public final class HistoryStore {
       """
             with cutoff as (select coalesce(?, now() - make_interval(secs => ?)) as at),
             batch as (
-                select job_id, seq from bikesched_job_history
+                select subject_id, id from bikesched_history
                  where created_at >= coalesce(?, '-infinity'::timestamptz)
                    and created_at < (select at from cutoff)
                  order by created_at
                  limit ? for update skip locked),
             deleted as (
-                delete from bikesched_job_history h using batch b
-                 where h.job_id = b.job_id and h.seq = b.seq
+                delete from bikesched_history h using batch b
+                 where h.subject_id = b.subject_id and h.id = b.id
                 returning h.created_at)
             select count(*) as count, max(created_at) as last, (select at from cutoff) as cutoff
               from deleted""";
 
   /**
-   * A change of a job or of one of its steps, to be recorded.
-   *
-   * @param jobId the job
-   * @param stepName the step, {@code null} for a change of the job itself
-   * @param state the new (or, for requests, unchanged) state
-   * @param attempt the job's attempt count after the change; {@code null} to read it from the job
-   * @param nodeId the node making the change; {@code null} for the application (for step changes:
-   *     the node running the job)
-   * @param detail what happened, may be {@code null}; truncated like other messages
+   * A change to be recorded: its subject, action, resulting state and actor, plus the specifics
+   * that go into the entry's {@code data} (each set with its own method, all optional). Built and
+   * recorded by one thread.
    */
-  public record Change(
-      UUID jobId,
-      @Nullable String stepName,
-      String state,
-      @Nullable Integer attempt,
-      @Nullable UUID nodeId,
-      @Nullable String detail) {
+  public static final class Change {
 
-    /** A change of the job itself. */
-    public static Change job(
-        UUID jobId, String state, int attempt, @Nullable UUID nodeId, @Nullable String detail) {
-      return new Change(jobId, null, state, attempt, nodeId, detail);
+    private final SubjectType subjectType;
+    private final UUID subjectId;
+    private final @Nullable UUID stepId;
+    private final HistoryAction action;
+    private final @Nullable String state;
+    private final @Nullable Integer attempt;
+    private final ActorType actorType;
+    private @Nullable UUID causedById;
+    private @Nullable String subjectName;
+    private @Nullable String stepName;
+    private @Nullable String error;
+    private @Nullable String message;
+    private @Nullable String reason;
+    private @Nullable Integer run;
+    private @Nullable Integer checks;
+    private @Nullable Instant dueAt;
+    private @Nullable Instant waitUntil;
+    private @Nullable String recurrence;
+    private @Nullable String previousRecurrence;
+    private @Nullable String idempotencyKey;
+    private @Nullable String reference;
+    private @Nullable UUID childJobId;
+    private @Nullable String childState;
+    private @Nullable UUID eventId;
+    private @Nullable String eventName;
+    private @Nullable String eventKey;
+
+    private Change(
+        SubjectType subjectType,
+        UUID subjectId,
+        @Nullable UUID stepId,
+        HistoryAction action,
+        @Nullable String state,
+        @Nullable Integer attempt,
+        ActorType actorType) {
+      this.subjectType = subjectType;
+      this.subjectId = subjectId;
+      this.stepId = stepId;
+      this.action = action;
+      this.state = state;
+      this.attempt = attempt;
+      this.actorType = actorType;
     }
 
-    /** A change of the job itself. */
+    /**
+     * A change of a job itself.
+     *
+     * @param jobId the job
+     * @param action what happened
+     * @param state the job's state afterwards
+     * @param attempt the job's attempt count afterwards; {@code null} to read it from the job
+     * @param actorType who made the change
+     */
     public static Change job(
-        UUID jobId, JobState state, int attempt, @Nullable UUID nodeId, @Nullable String detail) {
-      return job(jobId, state.name(), attempt, nodeId, detail);
+        UUID jobId,
+        JobAction action,
+        JobState state,
+        @Nullable Integer attempt,
+        ActorType actorType) {
+      return new Change(SubjectType.JOB, jobId, null, action, state.name(), attempt, actorType);
     }
 
-    /** A change of a step, made by the node running the job (or the given node). */
+    /**
+     * A change of a step; the job's attempt count is read from the job.
+     *
+     * @param jobId the step's job
+     * @param stepId the step
+     * @param action what happened
+     * @param state the step's state afterwards
+     * @param actorType who made the change
+     */
     public static Change step(
-        UUID jobId, String stepName, String state, @Nullable UUID nodeId, @Nullable String detail) {
+        UUID jobId, UUID stepId, StepAction action, StepState state, ActorType actorType) {
+      return new Change(SubjectType.JOB, jobId, stepId, action, state.name(), null, actorType);
+    }
 
-      return new Change(jobId, stepName, state, null, nodeId, detail);
+    /** The event, job or node that caused the change. */
+    public Change causedBy(@Nullable UUID causedById) {
+      this.causedById = causedById;
+      return this;
+    }
+
+    /** The subject's name, for a subject whose row is gone (deleted in the transaction). */
+    public Change subjectName(@Nullable String subjectName) {
+      this.subjectName = subjectName;
+      return this;
+    }
+
+    /** The step a job entry is about (e.g. where it suspended); step entries have their own. */
+    public Change stepName(@Nullable String stepName) {
+      this.stepName = stepName;
+      return this;
+    }
+
+    /** The error of a failure; cut to 4000 characters. */
+    public Change error(@Nullable String error) {
+      this.error = error;
+      return this;
+    }
+
+    /** A message, e.g. of a cancellation; cut to 4000 characters. */
+    public Change message(@Nullable String message) {
+      this.message = message;
+      return this;
+    }
+
+    /** Why it happened, one of the constants documented with the action. */
+    public Change reason(@Nullable String reason) {
+      this.reason = reason;
+      return this;
+    }
+
+    /** The number of the run: a compensation attempt, a failure handler run, a step's attempt. */
+    public Change run(@Nullable Integer run) {
+      this.run = run;
+      return this;
+    }
+
+    /** The number of checks of a poll. */
+    public Change checks(@Nullable Integer checks) {
+      this.checks = checks;
+      return this;
+    }
+
+    /** When the job is due (again). */
+    public Change dueAt(@Nullable Instant dueAt) {
+      this.dueAt = dueAt;
+      return this;
+    }
+
+    /** Until when a step waits (or a sleep's wake-up time). */
+    public Change waitUntil(@Nullable Instant waitUntil) {
+      this.waitUntil = waitUntil;
+      return this;
+    }
+
+    /** The recurrence of an occurrence, and the one it was moved from. */
+    public Change recurrence(@Nullable String recurrence, @Nullable String previousRecurrence) {
+      this.recurrence = recurrence;
+      this.previousRecurrence = previousRecurrence;
+      return this;
+    }
+
+    /** The idempotency key and the reference a new job was scheduled with. */
+    public Change keys(@Nullable String idempotencyKey, @Nullable String reference) {
+      this.idempotencyKey = idempotencyKey;
+      this.reference = reference;
+      return this;
+    }
+
+    /** The child job a step started, and the state it ended in. */
+    public Change child(@Nullable UUID childJobId, @Nullable String childState) {
+      this.childJobId = childJobId;
+      this.childState = childState;
+      return this;
+    }
+
+    /** The event a step published. */
+    public Change eventId(@Nullable UUID eventId) {
+      this.eventId = eventId;
+      return this;
+    }
+
+    /** The event a step waits for. */
+    public Change event(@Nullable String eventName, @Nullable String eventKey) {
+      this.eventName = eventName;
+      this.eventKey = eventKey;
+      return this;
     }
   }
 
   /** Whether changes are recorded. */
   public boolean isEnabled() {
     return enabled;
+  }
+
+  /**
+   * Sets the node that writes the entries from now on, once it registered.
+   *
+   * @param nodeId the node's id
+   */
+  public void writtenBy(UUID nodeId) {
+    this.nodeId = nodeId;
   }
 
   /**
@@ -134,29 +335,93 @@ public final class HistoryStore {
       return;
     }
     int size = changes.size();
-    var jobIds = new UUID[size];
-    var stepNames = new @Nullable String[size];
-    var states = new String[size];
+    var subjectIds = new UUID[size];
+    var ids = new UUID[size];
+    var stepIds = new @Nullable UUID[size];
+    var subjectTypes = new String[size];
+    var actions = new String[size];
+    var states = new @Nullable String[size];
+    var causedByIds = new @Nullable UUID[size];
     var attempts = new @Nullable Integer[size];
-    var nodeIds = new @Nullable UUID[size];
-    var details = new @Nullable String[size];
+    var actorTypes = new String[size];
+    var subjectNames = new @Nullable String[size];
+    var stepNames = new @Nullable String[size];
+    var errors = new @Nullable String[size];
+    var messages = new @Nullable String[size];
+    var reasons = new @Nullable String[size];
+    var runs = new @Nullable Integer[size];
+    var checks = new @Nullable Integer[size];
+    var dueAts = new @Nullable String[size];
+    var waitUntils = new @Nullable String[size];
+    var recurrences = new @Nullable String[size];
+    var previousRecurrences = new @Nullable String[size];
+    var idempotencyKeys = new @Nullable String[size];
+    var references = new @Nullable String[size];
+    var childJobIds = new @Nullable UUID[size];
+    var childStates = new @Nullable String[size];
+    var eventIds = new @Nullable UUID[size];
+    var eventNames = new @Nullable String[size];
+    var eventKeys = new @Nullable String[size];
     for (int i = 0; i < size; i++) {
       Change change = changes.get(i);
-      jobIds[i] = change.jobId();
-      stepNames[i] = change.stepName();
-      states[i] = change.state();
-      attempts[i] = change.attempt();
-      nodeIds[i] = change.nodeId();
-      details[i] = ValidationUtil.truncateMessage(change.detail());
+      subjectIds[i] = change.subjectId;
+      ids[i] = UuidUtil.timeOrdered();
+      stepIds[i] = change.stepId;
+      subjectTypes[i] = change.subjectType.name();
+      actions[i] = change.action.name();
+      states[i] = change.state;
+      causedByIds[i] = change.causedById;
+      attempts[i] = change.attempt;
+      actorTypes[i] = change.actorType.name();
+      subjectNames[i] = change.subjectName;
+      stepNames[i] = change.stepName;
+      errors[i] = change.error;
+      messages[i] = change.message;
+      reasons[i] = change.reason;
+      runs[i] = change.run;
+      checks[i] = change.checks;
+      dueAts[i] = text(change.dueAt);
+      waitUntils[i] = text(change.waitUntil);
+      recurrences[i] = change.recurrence;
+      previousRecurrences[i] = change.previousRecurrence;
+      idempotencyKeys[i] = change.idempotencyKey;
+      references[i] = change.reference;
+      childJobIds[i] = change.childJobId;
+      childStates[i] = change.childState;
+      eventIds[i] = change.eventId;
+      eventNames[i] = change.eventName;
+      eventKeys[i] = change.eventKey;
     }
     db.update(
         RECORD_SQL,
-        Sql.array("uuid", jobIds),
-        Sql.array("text", stepNames),
+        Sql.typed(nodeId, Types.OTHER),
+        Sql.array("uuid", subjectIds),
+        Sql.array("uuid", ids),
+        Sql.array("uuid", stepIds),
+        Sql.array("text", subjectTypes),
+        Sql.array("text", actions),
         Sql.array("text", states),
+        Sql.array("uuid", causedByIds),
         Sql.array("integer", attempts),
-        Sql.array("uuid", nodeIds),
-        Sql.array("text", details));
+        Sql.array("text", actorTypes),
+        Sql.array("text", subjectNames),
+        Sql.array("text", stepNames),
+        Sql.array("text", errors),
+        Sql.array("text", messages),
+        Sql.array("text", reasons),
+        Sql.array("integer", runs),
+        Sql.array("integer", checks),
+        Sql.array("text", dueAts),
+        Sql.array("text", waitUntils),
+        Sql.array("text", recurrences),
+        Sql.array("text", previousRecurrences),
+        Sql.array("text", idempotencyKeys),
+        Sql.array("text", references),
+        Sql.array("uuid", childJobIds),
+        Sql.array("text", childStates),
+        Sql.array("uuid", eventIds),
+        Sql.array("text", eventNames),
+        Sql.array("text", eventKeys));
   }
 
   /** Records one change, see {@link #record(Sql, List)}. */
@@ -164,28 +429,88 @@ public final class HistoryStore {
     record(db, List.of(change));
   }
 
+  /** An instant as ISO-8601 text in UTC (e.g. {@code 2026-10-26T08:30:58.207Z}), as stored. */
+  private static @Nullable String text(@Nullable Instant instant) {
+    return instant == null ? null : instant.toString();
+  }
+
   /**
-   * Reads the recorded changes of a job in a read-only transaction.
+   * Reads the recorded changes of a job and its steps in a read-only transaction.
    *
    * @param jobId the job id
-   * @return its changes, oldest first; empty if none were recorded (or they were deleted)
+   * @return its job and step entries, oldest first; empty if none were recorded (or they were
+   *     deleted)
    */
-  public List<JobHistoryEntry> findHistory(UUID jobId) {
+  public List<HistoryEntry> findJobHistory(UUID jobId) {
     return access.inReadOnlyTransaction(
-        db ->
-            db.list(
-                FIND_HISTORY_SQL,
-                row ->
-                    new JobHistoryEntry(
-                        row.instant("created_at"),
-                        row.string("step_name"),
-                        row.string("state"),
-                        row.integer("attempt"),
-                        row.uuid("node_id"),
-                        row.string("detail")),
-                jobId),
+        db -> db.list(FIND_JOB_HISTORY_SQL, HistoryStore::entry, jobId),
         e ->
             new BikeschedException("Reading the history of bikesched job " + jobId + " failed", e));
+  }
+
+  /** Maps a row of {@link #ENTRY_COLUMNS} to the entry of its subject type. */
+  static HistoryEntry entry(Sql.Row row) throws SQLException {
+    UUID id = row.uuid("id");
+    UUID subjectId = row.uuid("subject_id");
+    Instant createdAt = row.instant("created_at");
+    String action = row.string("action");
+    ActorType actorType = row.enumValue("actor_type", ActorType.class);
+    String actorName = row.string("actor_name");
+    UUID nodeId = row.uuid("node_id");
+    UUID causedById = row.uuid("caused_by_id");
+    String data = row.string("data");
+    UUID stepId = row.uuid("step_id");
+    return switch (row.enumValue("subject_type", SubjectType.class)) {
+      case JOB ->
+          stepId == null
+              ? new JobEntry(
+                  id,
+                  subjectId,
+                  createdAt,
+                  JobAction.valueOf(action),
+                  row.enumValue("state", JobState.class),
+                  row.integer("attempt"),
+                  actorType,
+                  actorName,
+                  nodeId,
+                  causedById,
+                  data)
+              : new StepEntry(
+                  id,
+                  subjectId,
+                  stepId,
+                  createdAt,
+                  StepAction.valueOf(action),
+                  row.enumValue("state", StepState.class),
+                  row.integer("attempt"),
+                  actorType,
+                  actorName,
+                  nodeId,
+                  causedById,
+                  data);
+      case EVENT ->
+          new EventEntry(
+              id,
+              subjectId,
+              createdAt,
+              EventAction.valueOf(action),
+              actorType,
+              actorName,
+              nodeId,
+              causedById,
+              data);
+      case NODE ->
+          new NodeEntry(
+              id,
+              subjectId,
+              createdAt,
+              NodeAction.valueOf(action),
+              actorType,
+              actorName,
+              nodeId,
+              causedById,
+              data);
+    };
   }
 
   /**
@@ -209,6 +534,6 @@ public final class HistoryStore {
                     Sql.timestamp(after),
                     limit)
                 .orElseThrow(),
-        e -> new BikeschedException("Deleting old bikesched job history failed", e));
+        e -> new BikeschedException("Deleting old bikesched history failed", e));
   }
 }

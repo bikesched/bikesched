@@ -9,16 +9,20 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.BikeschedException;
+import org.bikesched.history.ActorType;
+import org.bikesched.history.JobAction;
+import org.bikesched.history.StepAction;
 import org.bikesched.internal.database.HistoryStore.Change;
 import org.bikesched.internal.util.UuidUtil;
 import org.bikesched.internal.util.ValidationUtil;
 import org.bikesched.job.JobState;
+import org.bikesched.job.StepState;
 import org.jspecify.annotations.Nullable;
 
 /**
  * The {@code bikesched_steps} table: durable steps of jobs, sleeps, waits for child jobs, polls,
  * and suspending a job at a waiting step (event steps are handled by {@link EventStore}, starting
- * child jobs by {@link JobStore}). Changes are recorded in the {@link HistoryStore job history}, if
+ * child jobs by {@link JobStore}). Changes are recorded in the {@link HistoryStore history}, if
  * enabled. Thread-safe; every call borrows its own connection from the {@link DatabaseAccess}.
  *
  * <p>Every write is fenced by the job's lock ({@link JobLock}): it only takes effect while the job
@@ -472,11 +476,17 @@ public final class StepStore {
             return step.childWait();
           }
           StepRef waiting = wait.step();
-          String name = waiting.name();
           if (step.deadlinePassed()) {
             db.update(TIME_OUT_CHILD_WAIT_SQL, waiting.id());
             history.record(
-                db, Change.step(jobId, name, "TIMED_OUT", null, "waiting for job " + childJobId));
+                db,
+                Change.step(
+                        jobId,
+                        waiting.id(),
+                        StepAction.TIMED_OUT,
+                        StepState.TIMED_OUT,
+                        ActorType.NODE)
+                    .child(childJobId, null));
             return new ChildWait.ChildTimedOut(waiting);
           }
           if (timeout != null && wait.waitUntil() == null) {
@@ -490,11 +500,9 @@ public final class StepStore {
             history.record(
                 db,
                 Change.step(
-                    jobId,
-                    name,
-                    "WAITING",
-                    null,
-                    "waiting for job " + childJobId + " until " + deadline));
+                        jobId, waiting.id(), StepAction.WAITING, StepState.WAITING, ActorType.JOB)
+                    .child(childJobId, null)
+                    .waitUntil(deadline));
             return new ChildWait.ChildWaiting(waiting, deadline);
           }
           return wait;
@@ -543,15 +551,13 @@ public final class StepStore {
    * @param jobId the job id
    * @param lock the lock of the job's claim (node and token)
    * @param step the step waiting for the child
-   * @param childJobId the child, for the history
    * @return the job after suspending; empty if the job is not running on this node (anymore)
    */
-  public Optional<SuspendedJob> suspendAtChildJob(
-      UUID jobId, JobLock lock, StepRef step, UUID childJobId) {
+  public Optional<SuspendedJob> suspendAtChildJob(UUID jobId, JobLock lock, StepRef step) {
     return access.inTransaction(
         db -> {
           db.one(LOCK_STEP_SQL, row -> row.string("state"), step.id());
-          return suspend(db, history, jobId, lock, step, "waiting for job " + childJobId);
+          return suspend(db, history, jobId, lock, step);
         },
         e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
   }
@@ -630,8 +636,15 @@ public final class StepStore {
             return attempt;
           }
           int number = attempt.get().attempt();
-          String detail = number > 1 ? "step attempt " + number : null;
-          history.record(db, Change.step(jobId, name, "RUNNING", lock.nodeId(), detail));
+          history.record(
+              db,
+              Change.step(
+                      jobId,
+                      attempt.get().step().id(),
+                      StepAction.STARTED,
+                      StepState.RUNNING,
+                      ActorType.JOB)
+                  .run(number > 1 ? number : null));
           return attempt;
         },
         e ->
@@ -674,7 +687,7 @@ public final class StepStore {
       StepRef step,
       @Nullable String result,
       boolean compensable,
-      @Nullable String detail) {
+      @Nullable Integer checks) {
     history.change(
         db -> {
           int updated =
@@ -687,7 +700,11 @@ public final class StepStore {
                   jobId,
                   lock.token());
           if (updated > 0) {
-            history.record(db, Change.step(jobId, step.name(), "SUCCEEDED", lock.nodeId(), detail));
+            history.record(
+                db,
+                Change.step(
+                        jobId, step.id(), StepAction.SUCCEEDED, StepState.SUCCEEDED, ActorType.JOB)
+                    .checks(checks));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -715,7 +732,14 @@ public final class StepStore {
     history.change(
         db -> {
           if (db.update(COMPENSATE_STEP_SQL, step.id(), jobId, lock.token()) > 0) {
-            history.record(db, Change.step(jobId, step.name(), "COMPENSATED", lock.nodeId(), null));
+            history.record(
+                db,
+                Change.step(
+                    jobId,
+                    step.id(),
+                    StepAction.COMPENSATED,
+                    StepState.COMPENSATED,
+                    ActorType.JOB));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -744,10 +768,10 @@ public final class StepStore {
     history.change(
         db -> {
           String message = ValidationUtil.truncateMessage(error);
-          Optional<String> state =
+          Optional<StepState> state =
               db.one(
                   FAIL_COMPENSATION_SQL,
-                  row -> row.string("state"),
+                  row -> row.enumValue("state", StepState.class),
                   message,
                   step.id(),
                   jobId,
@@ -756,11 +780,12 @@ public final class StepStore {
             history.record(
                 db,
                 Change.step(
-                    jobId,
-                    step.name(),
-                    state.get(),
-                    lock.nodeId(),
-                    "compensation failed: " + error));
+                        jobId,
+                        step.id(),
+                        StepAction.COMPENSATION_FAILED,
+                        state.get(),
+                        ActorType.JOB)
+                    .error(error));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -786,7 +811,7 @@ public final class StepStore {
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public void failStep(UUID jobId, JobLock lock, StepRef step, String error) {
-    fail(jobId, lock, step, error, error);
+    fail(jobId, lock, step, error, null);
   }
 
   /**
@@ -807,7 +832,10 @@ public final class StepStore {
           if (db.update(
                   MARK_STEP_FAILING_SQL, message, step.id(), lock.nodeId(), jobId, lock.token())
               > 0) {
-            history.record(db, Change.step(jobId, step.name(), "FAILING", lock.nodeId(), error));
+            history.record(
+                db,
+                Change.step(jobId, step.id(), StepAction.FAILING, StepState.FAILING, ActorType.JOB)
+                    .error(error));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -840,7 +868,10 @@ public final class StepStore {
           String message = ValidationUtil.truncateMessage(error);
           if (db.update(MARK_TIMED_OUT_STEP_FAILING_SQL, message, step.id(), jobId, lock.token())
               > 0) {
-            history.record(db, Change.step(jobId, step.name(), "FAILING", lock.nodeId(), error));
+            history.record(
+                db,
+                Change.step(jobId, step.id(), StepAction.FAILING, StepState.FAILING, ActorType.JOB)
+                    .error(error));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -862,14 +893,21 @@ public final class StepStore {
    * @param jobId the job id
    * @param lock the lock of the job's claim (node and token)
    * @param step the step
-   * @param detail recorded in the job history, {@code null} for none
+   * @param givenUpAfter the number of runs of a failure handler that was given up, {@code null} if
+   *     it ran
    * @throws JobLockLostException if the job is no longer running on the node
    */
-  public void failFailingStep(UUID jobId, JobLock lock, StepRef step, @Nullable String detail) {
+  public void failFailingStep(
+      UUID jobId, JobLock lock, StepRef step, @Nullable Integer givenUpAfter) {
     history.change(
         db -> {
           if (db.update(FAIL_FAILING_STEP_SQL, step.id(), jobId, lock.token()) > 0) {
-            history.record(db, Change.step(jobId, step.name(), "FAILED", lock.nodeId(), detail));
+            history.record(
+                db,
+                Change.step(jobId, step.id(), StepAction.FAILED, StepState.FAILED, ActorType.JOB)
+                    .reason(
+                        givenUpAfter == null ? "FAILURE_HANDLER_RAN" : "FAILURE_HANDLER_GAVE_UP")
+                    .run(givenUpAfter));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -936,11 +974,7 @@ public final class StepStore {
             history.record(
                 db,
                 Change.step(
-                    jobId,
-                    step.name(),
-                    "SUCCEEDED",
-                    lock.nodeId(),
-                    "resolved by its failure handler"));
+                    jobId, step.id(), StepAction.RESOLVED, StepState.SUCCEEDED, ActorType.JOB));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -982,13 +1016,18 @@ public final class StepStore {
                 "Reading step '" + name + "' of bikesched job " + jobId + " failed", e));
   }
 
-  private void fail(UUID jobId, JobLock lock, StepRef step, String error, String detail) {
+  private void fail(
+      UUID jobId, JobLock lock, StepRef step, String error, @Nullable Integer checks) {
     history.change(
         db -> {
           String message = ValidationUtil.truncateMessage(error);
           if (db.update(FAIL_STEP_SQL, message, step.id(), lock.nodeId(), jobId, lock.token())
               > 0) {
-            history.record(db, Change.step(jobId, step.name(), "FAILED", lock.nodeId(), detail));
+            history.record(
+                db,
+                Change.step(jobId, step.id(), StepAction.FAILED, StepState.FAILED, ActorType.JOB)
+                    .error(error)
+                    .checks(checks));
           } else {
             requireJobLock(db, jobId, lock);
           }
@@ -1056,7 +1095,15 @@ public final class StepStore {
                   yield new Sleep(found.step(), false, found.wakeUpAt());
                 }
                 db.update(WAKE_UP_SQL, found.step().id());
-                history.record(db, Change.step(jobId, name, "SUCCEEDED", null, "woke up"));
+                history.record(
+                    db,
+                    Change.step(
+                            jobId,
+                            found.step().id(),
+                            StepAction.WOKE_UP,
+                            StepState.SUCCEEDED,
+                            ActorType.NODE)
+                        .waitUntil(found.wakeUpAt()));
                 yield new Sleep(found.step(), true, found.wakeUpAt());
               }
               case RUNNING, FAILING, FAILED, TIMED_OUT, COMPENSATED, CANCELLED, POSTPONED ->
@@ -1081,14 +1128,20 @@ public final class StepStore {
                   .orElseThrow();
           history.record(
               db,
-              Change.step(
-                  jobId,
-                  name,
-                  started.awake() ? "SUCCEEDED" : "WAITING",
-                  null,
-                  (started.awake()
-                      ? "wake-up time " + started.wakeUpAt() + " already passed"
-                      : "sleeping until " + started.wakeUpAt())));
+              (started.awake()
+                      ? Change.step(
+                          jobId,
+                          created.id(),
+                          StepAction.WOKE_UP,
+                          StepState.SUCCEEDED,
+                          ActorType.NODE)
+                      : Change.step(
+                          jobId,
+                          created.id(),
+                          StepAction.WAITING,
+                          StepState.WAITING,
+                          ActorType.JOB))
+                  .waitUntil(started.wakeUpAt()));
           return started;
         },
         e ->
@@ -1231,7 +1284,7 @@ public final class StepStore {
    */
   public void completePoll(
       UUID jobId, JobLock lock, StepRef step, @Nullable String result, int checks) {
-    complete(jobId, lock, step, result, false, "ready after " + checks(checks));
+    complete(jobId, lock, step, result, false, checks);
   }
 
   /**
@@ -1245,7 +1298,7 @@ public final class StepStore {
    * @throws JobLockLostException if the job is no longer running on the node
    */
   public void failPoll(UUID jobId, JobLock lock, StepRef step, String error, int check) {
-    fail(jobId, lock, step, error, "check " + check + " failed: " + error);
+    fail(jobId, lock, step, error, check);
   }
 
   /**
@@ -1259,7 +1312,8 @@ public final class StepStore {
 
   /**
    * Ends a check that was not ready: the poll waits until the next check (at most until its
-   * deadline), or times out if the deadline has passed. Only a timeout is recorded in the history.
+   * deadline), or times out if the deadline has passed. Only the first wait and a timeout are
+   * recorded in the history.
    *
    * @param jobId the job id
    * @param lock the lock of the job's claim (node and token)
@@ -1289,15 +1343,19 @@ public final class StepStore {
             throw new IllegalStateException(
                 "Poll step '" + step.name() + "' of job " + jobId + " is not running");
           }
-          if (wait.get().timedOut()) {
+          PollWait poll = wait.get();
+          if (poll.timedOut()) {
             history.record(
                 db,
                 Change.step(
-                    jobId,
-                    step.name(),
-                    "TIMED_OUT",
-                    lock.nodeId(),
-                    "timed out after " + checks(wait.get().checks())));
+                        jobId, step.id(), StepAction.TIMED_OUT, StepState.TIMED_OUT, ActorType.NODE)
+                    .checks(poll.checks()));
+          } else if (poll.checks() == 1) {
+            history.record(
+                db,
+                Change.step(jobId, step.id(), StepAction.WAITING, StepState.WAITING, ActorType.JOB)
+                    .checks(poll.checks())
+                    .waitUntil(poll.waitUntil()));
           }
           return wait.get();
         },
@@ -1309,10 +1367,6 @@ public final class StepStore {
                     + jobId
                     + " failed",
                 e));
-  }
-
-  private static String checks(int checks) {
-    return checks == 1 ? "1 check" : checks + " checks";
   }
 
   /** A row of {@code FIND_POLL_STEP_SQL}. */
@@ -1346,7 +1400,7 @@ public final class StepStore {
    */
   public Optional<SuspendedJob> suspendJob(UUID jobId, JobLock lock, StepRef step) {
     return access.inTransaction(
-        db -> suspend(db, history, jobId, lock, step, null),
+        db -> suspend(db, history, jobId, lock, step),
         e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
   }
 
@@ -1366,34 +1420,20 @@ public final class StepStore {
   public Optional<SuspendedJob> suspendAtPoll(
       UUID jobId, JobLock lock, StepRef step, boolean recorded) {
     return access.inTransaction(
-        db -> suspend(db, history, jobId, lock, step, "polling", recorded),
+        db -> suspend(db, history, jobId, lock, step, recorded),
         e -> new BikeschedException("Suspending bikesched job " + jobId + " failed", e));
   }
 
   /**
    * Suspends the job at a waiting step in the caller's transaction, see {@code SUSPEND_JOB_SQL}.
-   *
-   * @param waitingFor what the step waits for, for the history; {@code null} to leave it out
    */
   static Optional<SuspendedJob> suspend(
-      Sql db,
-      HistoryStore history,
-      UUID jobId,
-      JobLock lock,
-      StepRef step,
-      @Nullable String waitingFor)
-      throws SQLException {
-    return suspend(db, history, jobId, lock, step, waitingFor, true);
+      Sql db, HistoryStore history, UUID jobId, JobLock lock, StepRef step) throws SQLException {
+    return suspend(db, history, jobId, lock, step, true);
   }
 
   private static Optional<SuspendedJob> suspend(
-      Sql db,
-      HistoryStore history,
-      UUID jobId,
-      JobLock lock,
-      StepRef step,
-      @Nullable String waitingFor,
-      boolean recorded)
+      Sql db, HistoryStore history, UUID jobId, JobLock lock, StepRef step, boolean recorded)
       throws SQLException {
     Optional<Suspension> suspended =
         db.one(
@@ -1423,15 +1463,13 @@ public final class StepStore {
     history.record(
         db,
         Change.job(
-            jobId,
-            suspension.state().name(),
-            suspension.attempts(),
-            lock.nodeId(),
-            "suspended at step '"
-                + step.name()
-                + "'"
-                + (waitingFor == null ? "" : ", " + waitingFor)
-                + (waiting ? "" : ", due again right away")));
+                jobId,
+                JobAction.SUSPENDED,
+                suspension.state(),
+                suspension.attempts(),
+                ActorType.NODE)
+            .stepName(step.name())
+            .waitUntil(suspension.waitUntil()));
     return Optional.of(new SuspendedJob(waiting, suspension.waitUntil()));
   }
 
@@ -1485,21 +1523,21 @@ public final class StepStore {
           Postponement postponement = job.get();
           // Due again after the delay, or right away: the node wakes itself up.
           db.dueAt(postponement.name(), postponement.scheduledAt());
-          String until = "until " + postponement.scheduledAt();
           if (step != null) {
-            changes.add(Change.step(jobId, step.name(), "POSTPONED", lock.nodeId(), until));
+            changes.add(
+                Change.step(
+                        jobId, step.id(), StepAction.POSTPONED, StepState.POSTPONED, ActorType.JOB)
+                    .dueAt(postponement.scheduledAt()));
           }
           changes.add(
               Change.job(
-                  jobId,
-                  "SCHEDULED",
-                  postponement.attempts(),
-                  lock.nodeId(),
-                  "postponed"
-                      + (step == null ? "" : " in step '" + step.name() + "'")
-                      + " "
-                      + until
-                      + (postponement.cancelRequested() ? ", due again right away" : "")));
+                      jobId,
+                      JobAction.POSTPONED,
+                      JobState.SCHEDULED,
+                      postponement.attempts(),
+                      ActorType.NODE)
+                  .stepName(step == null ? null : step.name())
+                  .dueAt(postponement.scheduledAt()));
           history.record(db, changes);
           return Optional.of(
               new PostponedJob(postponement.scheduledAt(), postponement.cancelRequested()));

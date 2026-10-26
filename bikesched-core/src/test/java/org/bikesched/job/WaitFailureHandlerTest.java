@@ -11,6 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.HistoryTesting;
 import org.bikesched.event.TypedEvent;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +34,7 @@ class WaitFailureHandlerTest extends AbstractBikeschedTest {
     List<String> results = new CopyOnWriteArrayList<>();
     List<String> errors = new CopyOnWriteArrayList<>();
     try (Bikesched bikesched =
-        testNode("node-wait-failure-resolve").jobHistory(Duration.ofHours(1)).build()) {
+        testNode("node-wait-failure-resolve").history(Duration.ofHours(1)).build()) {
       UUID jobId =
           bikesched
               .newJob("wait-failure-resolve")
@@ -65,11 +66,9 @@ class WaitFailureHandlerTest extends AbstractBikeschedTest {
                   "name = 'await' and state = 'SUCCEEDED' and result = '\"missing\"'::jsonb"
                       + " and event_id is null and failure_attempts = 1 and last_error is not null"))
           .isOne();
-      assertThat(
-              bikesched.findJobHistory(jobId).stream()
-                  .filter(entry -> "await".equals(entry.stepName()))
-                  .map(JobHistoryEntry::state))
-          .containsExactly("WAITING", "TIMED_OUT", "FAILING", "SUCCEEDED");
+      assertThat(HistoryTesting.actions(bikesched.findJobHistory(jobId)))
+          .filteredOn(action -> action.startsWith("await "))
+          .containsExactly("await WAITING", "await TIMED_OUT", "await FAILING", "await RESOLVED");
     }
   }
 

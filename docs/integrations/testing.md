@@ -32,7 +32,7 @@ The module never starts, resets or migrates a database itself: the caller suppli
   so tests run in parallel without clashing node names;
 - a poll interval of 50 ms, so a job scheduled "now" is claimed promptly.
 
-Every other option (JSON mapper, heartbeat interval, concurrency, listeners, job history, …) is set
+Every other option (JSON mapper, heartbeat interval, concurrency, listeners, history, …) is set
 on the returned builder like on any other `Bikesched.builder(dataSource)`. The caller still calls
 `build()` and closes the node, e.g. in a try-with-resources block or an `@AfterEach` method.
 

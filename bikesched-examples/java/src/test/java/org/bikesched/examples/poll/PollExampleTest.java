@@ -9,14 +9,16 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.poll.PollExample.Webhook;
 import org.bikesched.examples.util.Database;
+import org.bikesched.history.HistoryEntry;
+import org.bikesched.history.StepEntry;
 import org.bikesched.jackson.JacksonJsonMapper;
-import org.bikesched.job.JobHistoryEntry;
 import org.bikesched.test.BikeschedTest;
 import org.junit.jupiter.api.Test;
 
@@ -87,10 +89,16 @@ class PollExampleTest {
       int statusCalls = example.provider().statusCalls(paymentId);
       assertThat(statusCalls).as("pending at least once, then settled").isGreaterThanOrEqualTo(2);
       assertThat(pollChecks(jobId)).as("one check per status call").isEqualTo(statusCalls);
-      assertThat(bikesched.findJobHistory(jobId))
-          .filteredOn(entry -> "poll-payment".equals(entry.stepName()))
-          .extracting(JobHistoryEntry::detail)
-          .containsExactly("ready after " + statusCalls + " checks");
+      List<HistoryEntry> poll =
+          bikesched.findJobHistory(jobId).stream()
+              .filter(entry -> entry instanceof StepEntry)
+              .filter(entry -> entry.data().contains("\"stepName\": \"poll-payment\""))
+              .toList();
+      assertThat(poll)
+          .as("the first wait and the outcome")
+          .extracting(entry -> entry.action().name())
+          .containsExactly("WAITING", "SUCCEEDED");
+      assertThat(poll.getLast().data()).contains("\"checks\": " + statusCalls);
       assertThat(output.toString(StandardCharsets.UTF_8))
           .contains("[provider] settled " + paymentId + ", webhook lost")
           .contains("[shop]     order order-polled paid (" + paymentId + ", polled)");
@@ -130,7 +138,7 @@ class PollExampleTest {
 
   private static Bikesched node() {
     return BikeschedTest.testNode(DATA_SOURCE, "poll")
-        .jobHistory(Duration.ofHours(1))
+        .history(Duration.ofHours(1))
         .jsonMapper(new JacksonJsonMapper())
         .build();
   }

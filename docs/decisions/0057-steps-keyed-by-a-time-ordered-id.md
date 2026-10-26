@@ -9,7 +9,8 @@ Date: 2026-10-23
 
 ## Status
 
-Accepted
+Accepted; the job history part is superseded by
+[ADR 0062](0062-one-history-with-actions-and-actors.md)
 
 ## Context
 
