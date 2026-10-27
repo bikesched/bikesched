@@ -1,39 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="bikesched logo: a pelican riding a bicycle with clock wheels, carrying a bag of jobs">
-  <title>bikesched</title>
-  <g stroke-linecap="round" stroke-linejoin="round">
-    <!-- frame -->
-    <path d="M50 150h42L80 110zM80 110h52l-40 40M132 110l18 40M132 110l-4-18M118 90h16" fill="none" stroke="#9a9a9a" stroke-width="6"/>
-    <path d="M70 106h18" stroke="#1a1a1a" stroke-width="6"/>
-
-    <!-- clock wheels -->
-    <g fill="none" stroke="#1a1a1a" stroke-width="6">
-      <circle cx="50" cy="150" r="30" fill="#fde8ee" fill-opacity="0.3"/>
-      <circle cx="150" cy="150" r="30" fill="#fde8ee" fill-opacity="0.3"/>
-      <path d="M50 150l-4.6-10M50 150l14.6-6.5M150 150l-4.6-10M150 150l14.6-6.5" stroke-width="5"/>
-    </g>
-
-    <!-- bag of jobs -->
-    <g transform="rotate(-8 43 52)">
-      <rect x="32" y="38" width="22" height="28" rx="3" fill="#f4c6d0" stroke="#1a1a1a" stroke-width="4"/>
-      <path d="M37 50l5 5l8-10" fill="none" stroke="#1a1a1a" stroke-width="4"/>
-    </g>
-    <path d="M26 64q-8 36 16 40q22 2 18-40z" fill="#9a9a9a" stroke="#1a1a1a" stroke-width="4"/>
-
-    <!-- pelican: outline layer, then fill layer -->
-    <g fill="#1a1a1a" stroke="#1a1a1a">
-      <ellipse cx="84" cy="84" rx="28" ry="19" transform="rotate(-12 84 84)" stroke-width="8"/>
-      <path d="M100 74q14-12 10-30" fill="none" stroke-width="20"/>
-      <circle cx="114" cy="42" r="15"/>
-    </g>
-    <g fill="#f4c6d0" stroke="#f4c6d0">
-      <ellipse cx="84" cy="84" rx="28" ry="19" transform="rotate(-12 84 84)" stroke-width="0"/>
-      <path d="M100 74q14-12 10-30" fill="none" stroke-width="12"/>
-      <circle cx="114" cy="42" r="11" stroke-width="0"/>
-    </g>
-    <!-- leg, wing reaching the handlebar, beak, eye -->
-    <path d="M90 100l6 26l-4 24" fill="none" stroke="#1a1a1a" stroke-width="5"/>
-    <path d="M70 80q30-6 54 10q-28 4-48 0z" fill="#9a9a9a" stroke="#1a1a1a" stroke-width="4"/>
-    <path d="M122 36l42 18q-12 16-30 10q-12-4-12-18z" fill="#9a9a9a" stroke="#1a1a1a" stroke-width="4"/>
-    <circle cx="116" cy="39" r="3" fill="#1a1a1a"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="141 0 940 940" role="img" aria-labelledby="title desc">
+<title id="title">bikesched icon</title>
+<desc id="desc">Blue bicycle shaped like a B, with a subtle clock hand and motion streaks.</desc>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<!-- motion -->
+<path d="M255 235H440 M180 315H370 M250 395H300" stroke="#91A8FF" stroke-width="54"/>
+<!-- perfectly circular wheels -->
+<circle cx="420" cy="615" r="150" stroke="#2450FF" stroke-width="58"/>
+<circle cx="890" cy="615" r="150" stroke="#2450FF" stroke-width="58"/>
+<!-- bicycle / B silhouette -->
+<path d="M485 175H805 C880 175 927 220 927 285 C927 354 876 395 805 395 H585" stroke="#2450FF" stroke-width="58"/>
+<path d="M510 300H665 M575 300L420 615 M550 395H810 L890 465  395L485 515 M570 615H740 M810  615" stroke="#2450FF" stroke-width="58"/>
+<!-- understated clock hand -->
+<path d="M890 615L941 558" stroke="#91A8FF" stroke-width="22"/>
+</g>
+<circle cx="420" cy="615" r="30" fill="#2450FF"/>
+<circle cx="890" cy="615" r="30" fill="#2450FF"/>
 </svg>
