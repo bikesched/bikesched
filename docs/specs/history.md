@@ -176,11 +176,13 @@ create index bikesched_history_user_idx on bikesched_history (created_at)
 
   ```sql
   nullif(jsonb_strip_nulls(jsonb_build_object(
-      'subjectName', coalesce(j.name, e.name, n.name, t.subject_name),
-      'stepName', s.name,
+      'job', nullif(jsonb_strip_nulls(jsonb_build_object(
+          'name', coalesce(t.subject_name, j.name))), '{}'),
+      'step', nullif(jsonb_strip_nulls(jsonb_build_object(
+          'name', coalesce(s.name, t.step_name))), '{}'),
+      'event', …, 'node', …, 'childJob', …,
       'error', left(t.error, 4000),
       'message', left(t.message, 4000),
-      'key', e.key,
       …)), '{}'::jsonb)
   ```
 
@@ -209,8 +211,8 @@ public sealed interface HistoryAction permits JobAction, StepAction, EventAction
 
 - The lists are settled from the places recording history today (about 45 `Change` call sites);
   what used to be prose in `detail` becomes the action, the specifics go into `data`.
-- Events: `PUBLISHED` with `data` `{"subjectName", "key", "retention", "received"}`, written by the
-  same statement that records the receivers, so publishing gets no extra statement.
+- Events: `PUBLISHED` with `data` `{"event": {"name", "key"}, "retention", "received"}`,
+  written by the same statement that records the receivers, so publishing gets no extra statement.
 - Nodes: subject = node id (UUIDv7 already). `node_id` is the writer: the node itself for
   `REGISTERED` and `STOPPED`, the node whose clean-up removed it for `REMOVED`. A removed node that
   is still alive registers again under its own id (ADR 0042): `REGISTERED` again.
@@ -316,7 +318,7 @@ Module `bikesched-admin`. The layout below was reviewed as mockups (light, dark,
 filter) with the design; they are not part of the repository.
 
 - A History tab next to Jobs, Events and Nodes: one row per entry, newest first, with Time,
-  Subject (type tag, name from `data.subjectName`, short id; a step's name below), Action, State
+  Subject (type tag, name from `data`, short id; a step's name below), Action, State
   after, Actor (a user's name, a causing job, or "node" and "application"), Node and Detail (the
   rendered `data`).
 - Filters: Actor (everyone, users, application, jobs, nodes; Users uses the partial index),
@@ -460,10 +462,11 @@ None.
 2. A poll records `WAITING` (with `checks`: 1) after its first check, then only its outcome
    (`SUCCEEDED`, `FAILED` or `TIMED_OUT` with `checks`); further claims and suspensions are left
    out as before.
-3. The `data` keys: `subjectName`, `stepName`, `error`, `message`, `reason`, `run`, `checks`,
-   `dueAt`, `waitUntil`, `recurrence`, `previousRecurrence`, `idempotencyKey`, `reference`,
-   `childJobId`, `childState`, `eventId`, `eventName`, `eventKey`. Each action's Javadoc lists its
-   keys. `reason` is a constant: `FAILURE_HANDLER`, `COMPENSATION` or `CANCELLATION` on a
+3. The `data` keys: the objects `job` (`name`), `step` (`name`), `event` (`id`, `name`, `key`),
+   `node` (`name`) and `childJob` (`id`, `state`), see item 15, and the specifics `error`,
+   `message`, `reason`, `run`, `checks`, `dueAt`, `waitUntil`, `recurrence`, `previousRecurrence`,
+   `idempotencyKey`, `reference`, `retention`, `received`. Each action's Javadoc lists its keys.
+   `reason` is a constant: `FAILURE_HANDLER`, `COMPENSATION` or `CANCELLATION` on a
    `CLAIMED`, `NODE_STOPPED`, `NODE_DEAD` or `OUTCOME_NOT_RECORDED` on a `RELEASED`,
    `NO_FAILURE_HANDLER`, `FAILURE_HANDLER_RAN` or `FAILURE_HANDLER_GAVE_UP` on the end of a
    failing job or step.
@@ -477,7 +480,7 @@ None.
 6. A node's own entries name it as their writer even before it registered (`REGISTERED` is
    written in the registering transaction, `STOPPED` in the deregistering one); `REMOVED` names
    the removing node. A removed node that registers again records `REGISTERED` again.
-7. `PUBLISHED` data: `subjectName`, `key`, `retention` (ISO-8601), `received`, and the
+7. `PUBLISHED` data: `event` (`name`, `key`), `retention` (ISO-8601), `received`, and the
    `idempotencyKey` and `reference` it was published with.
 8. The node page reads `Admin.findNodeHistory(UUID)` (the node's entries and those it caused),
    next to `Bikesched.findEventHistory`; `api/nodes/{id}` answers for a removed node while it has
@@ -507,3 +510,9 @@ None.
 14. Live refresh never replaces the list: a re-read with more entries than it returns (500, or the
     scan bound) would leave a gap, so the tab keeps what it shows, stops refreshing and asks for a
     Reload. An "Older entries" response from before a Reload is dropped.
+15. Names in `data` go into an object per involved job, step, event, node and child job (`job`,
+    `step`, `event`, `node`, `childJob`), not a generic `subjectName` next to `stepName`,
+    `eventName`, `eventKey`, `key`, `eventId`, `childJobId` and `childState`: each key means the
+    same on every entry (`event.key` on a publish and on a wait), at the price of picking the
+    subject's object by `subject_type` to read its name. Decided after step 4, before 0.1.0, so
+    `V001` stays and no migration is needed.

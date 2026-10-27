@@ -15,6 +15,8 @@ import {
   pretty,
   shortId,
   stepHref,
+  stepName,
+  subjectName,
   toHash,
 } from './format.js';
 import { html, useEffect, useRef, useState } from './html.js';
@@ -304,8 +306,8 @@ function HistoryList({ filters, route, navigate, reloadKey }) {
 
 /** The subject of an entry: its type, its name linked to its page, the step's name below. */
 function Subject({ entry }) {
-  const name = entry.data?.subjectName || shortId(entry.subjectId);
-  const step = entry.stepId && (entry.data?.stepName || shortId(entry.stepId));
+  const name = subjectName(entry) || shortId(entry.subjectId);
+  const step = entry.stepId && (stepName(entry) || shortId(entry.stepId));
   return html`
     <span class="tag">${kind(entry)}</span>${' '}<a class="mono" href=${subjectHref(entry.subjectType, entry.subjectId, entry.stepId)}
       onClick=${(event) => event.stopPropagation()}>${name}</a>
@@ -350,8 +352,8 @@ function HistoryDetail({ entry, subjects, navigate, onClose }) {
   const fields = [
     ['Time', html`<span class="mono">${preciseTime(entry.at)}</span>`],
     ['Subject', html`<span class="tag">${kind(entry)}</span> <a class="mono" title=${entry.subjectId}
-      href=${subjectHref(entry.subjectType, entry.subjectId)}>${entry.data?.subjectName || ''} ${shortId(entry.subjectId)}</a>`],
-    entry.stepId && ['Step', html`<a class="mono" href=${stepHref(entry.subjectId, entry.stepId)}>${entry.data?.stepName || entry.stepId}</a>`],
+      href=${subjectHref(entry.subjectType, entry.subjectId)}>${subjectName(entry) || ''} ${shortId(entry.subjectId)}</a>`],
+    entry.stepId && ['Step', html`<a class="mono" href=${stepHref(entry.subjectId, entry.stepId)}>${stepName(entry) || entry.stepId}</a>`],
     ['Action', html`<span class="history-action">${entry.action}</span>`],
     entry.state && ['State after', html`<${Badge} state=${entry.state} />`],
     entry.attempt != null && ['Attempt', html`<span class="mono">${entry.attempt}</span>`],
@@ -367,7 +369,7 @@ function HistoryDetail({ entry, subjects, navigate, onClose }) {
   const causedEntries = caused ? [...caused.entries].reverse() : [];
   return html`
     <aside class="panel detail" aria-label="History entry">
-      <${DetailHead} title=${entry.data?.subjectName || shortId(entry.subjectId)} state=${entry.state} id=${entry.id}
+      <${DetailHead} title=${subjectName(entry) || shortId(entry.subjectId)} state=${entry.state} id=${entry.id}
         onClose=${onClose} />
       <dl class="meta">
         ${fields.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}

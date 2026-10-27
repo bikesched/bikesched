@@ -60,7 +60,8 @@ public final class HistoryStore {
   }
 
   // One statement for any number of changes, in the given order. data is built here from the given
-  // specifics and the names of the rows the transaction just wrote (joined by primary key), so the
+  // specifics and the names of the rows the transaction just wrote, each involved job, step, event,
+  // node and child job in an object of its own (joined by primary key), so the
   // callers pass a name only for a row that is gone. Step entries and job entries without an
   // attempt count take the job's from bikesched_jobs. node_id is the change's own writer (a node's
   // entries about itself) or else the store's registered node.
@@ -75,8 +76,23 @@ public final class HistoryStore {
                    t.actor_type,
                    t.actor_name,
                    nullif(jsonb_strip_nulls(jsonb_build_object(
-                       'subjectName', coalesce(t.subject_name, j.name, e.name, n.name),
-                       'stepName', coalesce(s.name, t.step_name),
+                       'job', nullif(jsonb_strip_nulls(jsonb_build_object(
+                           'name', case when t.subject_type = 'JOB'
+                                        then coalesce(t.subject_name, j.name) end)), '{}'),
+                       'step', nullif(jsonb_strip_nulls(jsonb_build_object(
+                           'name', coalesce(s.name, t.step_name))), '{}'),
+                       'event', nullif(jsonb_strip_nulls(jsonb_build_object(
+                           'id', t.event_id,
+                           'name', case when t.subject_type = 'EVENT'
+                                        then coalesce(t.subject_name, e.name) else t.event_name end,
+                           'key', case when t.subject_type = 'EVENT' then e.key
+                                       else t.event_key end)),
+                           '{}'),
+                       'node', nullif(jsonb_strip_nulls(jsonb_build_object(
+                           'name', case when t.subject_type = 'NODE'
+                                        then coalesce(t.subject_name, n.name) end)), '{}'),
+                       'childJob', nullif(jsonb_strip_nulls(jsonb_build_object(
+                           'id', t.child_job_id, 'state', t.child_state)), '{}'),
                        'error', left(t.error, 4000),
                        'message', left(t.message, 4000),
                        'reason', t.reason,
@@ -88,12 +104,6 @@ public final class HistoryStore {
                        'previousRecurrence', t.previous_recurrence,
                        'idempotencyKey', t.idempotency_key,
                        'reference', t.reference,
-                       'childJobId', t.child_job_id,
-                       'childState', t.child_state,
-                       'eventId', t.event_id,
-                       'eventName', t.event_name,
-                       'eventKey', t.event_key,
-                       'key', e.key,
                        'retention', t.retention,
                        'received', t.received)), '{}'::jsonb)
               from unnest(?::uuid[], ?::uuid[], ?::uuid[], ?::text[], ?::text[], ?::text[], ?::uuid[],
@@ -709,7 +719,7 @@ public final class HistoryStore {
   private static final String SUBJECTS_SQL =
       """
             select s.id, coalesce(h.subject_type, 'NODE') as subject_type,
-                   coalesce(n.name, h.data->>'subjectName') as name
+                   coalesce(n.name, h.data #>> array[lower(h.subject_type), 'name']) as name
               from unnest(?::uuid[]) as s(id)
               left join bikesched_nodes n on n.id = s.id
               left join lateral (

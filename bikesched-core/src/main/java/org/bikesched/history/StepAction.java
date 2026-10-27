@@ -3,8 +3,8 @@ package org.bikesched.history;
 
 /**
  * What happened to a step of a job, see {@link StepEntry}; {@link StepEntry#state()} is its state
- * afterwards. Every step entry's {@linkplain HistoryEntry#data() data} has the {@code stepName};
- * further keys are listed with the actions.
+ * afterwards. Every step entry's {@linkplain HistoryEntry#data() data} has the {@code job} and the
+ * {@code step} with their names; further keys are listed with the actions.
  */
 public enum StepAction implements HistoryAction {
 
@@ -22,17 +22,18 @@ public enum StepAction implements HistoryAction {
 
   /**
    * Waits: a sleep, an event wait, a wait for a child job or a poll. Data: {@code waitUntil},
-   * {@code eventName} and {@code eventKey}, {@code childJobId}, {@code checks}.
+   * {@code event} ({@code name} and {@code key} it waits for), {@code childJob} ({@code id}),
+   * {@code checks}.
    */
   WAITING,
 
   /** Received the event it waited for. */
   RECEIVED,
 
-  /** Started a child job and waits for it. Data: {@code childJobId}. */
+  /** Started a child job and waits for it. Data: {@code childJob} ({@code id}). */
   CHILD_STARTED,
 
-  /** The child job it waited for ended. Data: {@code childState}. */
+  /** The child job it waited for ended. Data: {@code childJob} ({@code state}). */
   CHILD_ENDED,
 
   /** A sleep's wake-up time has passed. Data: {@code waitUntil}. */
@@ -50,7 +51,7 @@ public enum StepAction implements HistoryAction {
   /** Resolved by its failure handler with a fallback result. */
   RESOLVED,
 
-  /** Published an event. Data: {@code eventId}. */
+  /** Published an event. Data: {@code event} ({@code id}). */
   PUBLISHED,
 
   /** Cancelled with its job before it completed. */

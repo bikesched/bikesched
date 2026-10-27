@@ -3,7 +3,8 @@ package org.bikesched.history;
 
 /**
  * What happened to a job, see {@link JobEntry}; {@link JobEntry#state()} is its state afterwards.
- * The {@linkplain HistoryEntry#data() data} keys each action may carry are listed with it.
+ * Every job entry's {@linkplain HistoryEntry#data() data} has the {@code job} with its {@code
+ * name}; the keys each action may carry besides are listed with it.
  */
 public enum JobAction implements HistoryAction {
 
@@ -35,14 +36,17 @@ public enum JobAction implements HistoryAction {
 
   /**
    * Its attempt suspended at a waiting step ({@code WAITING}, or {@code SCHEDULED} if it is due
-   * again right away). Data: {@code stepName}, {@code waitUntil}.
+   * again right away). Data: {@code step} ({@code name}), {@code waitUntil}.
    */
   SUSPENDED,
 
   /** Resumed while {@code WAITING}: an event arrived or a child job ended. */
   RESUMED,
 
-  /** Postponed by its handler. Data: {@code dueAt}, {@code stepName} (the postponing step). */
+  /**
+   * Postponed by its handler. Data: {@code dueAt}, {@code step} (the postponing step's {@code
+   * name}).
+   */
   POSTPONED,
 
   /** Retried after it failed. */

@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.skyscreamer.jsonassert.JSONAssert;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
@@ -21,7 +22,7 @@ class JacksonJsonMapperTest {
   private final JacksonJsonMapper mapper = new JacksonJsonMapper();
 
   @Test
-  void roundTripsRecordsWithJavaTimeTypes() {
+  void roundTripsRecordsWithJavaTimeTypes() throws Exception {
     var order =
         new Order(
             UUID.randomUUID(),
@@ -32,7 +33,8 @@ class JacksonJsonMapperTest {
 
     String json = mapper.toJson(order);
 
-    assertThat(json).contains("\"customer\":\"alice\"").contains("\"items\":[\"bike\",\"bell\"]");
+    JSONAssert.assertEquals(
+        "{\"customer\": \"alice\", \"items\": [\"bike\", \"bell\"]}", json, false);
     assertThat(mapper.fromJson(json, Order.class)).isEqualTo(order);
   }
 
@@ -43,7 +45,7 @@ class JacksonJsonMapperTest {
   }
 
   @Test
-  void usesTheConfiguredObjectMapper() {
+  void usesTheConfiguredObjectMapper() throws Exception {
     var snakeCase =
         new JacksonJsonMapper(
             JsonMapper.builder()
@@ -51,8 +53,8 @@ class JacksonJsonMapperTest {
                 .build());
     record Ride(String pickupAddress) {}
 
-    assertThat(snakeCase.toJson(new Ride("Main St 1")))
-        .isEqualTo("{\"pickup_address\":\"Main St 1\"}");
+    JSONAssert.assertEquals(
+        "{\"pickup_address\": \"Main St 1\"}", snakeCase.toJson(new Ride("Main St 1")), true);
   }
 
   @Test

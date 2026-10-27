@@ -54,7 +54,7 @@ class RateLimitExampleTest {
                   "bikesched_history where subject_id in ('"
                       + ids
                       + "') and step_id is not null and action = 'POSTPONED'"
-                      + " and data ->> 'stepName' = 'send'"))
+                      + " and data #>> '{step,name}' = 'send'"))
           .as("the bucket postponed some steps")
           .isPositive();
       assertThat(output.toString(StandardCharsets.UTF_8)).contains("postponed by");

@@ -97,6 +97,12 @@ export function actor(entry) {
   return entry.actorType === 'USER' ? entry.actorName : entry.actorType.toLowerCase();
 }
 
+/** The name of a history entry's subject: of its job, event or node, from its data. */
+export const subjectName = (entry) => entry.data?.[entry.subjectType.toLowerCase()]?.name;
+
+/** The name of the step a history entry is about or happened in, from its data. */
+export const stepName = (entry) => entry.data?.step?.name;
+
 // How the specifics in a history entry's data read, in this order; names are shown elsewhere.
 const DETAIL_LABELS = [
   ['reason', null],
@@ -108,29 +114,39 @@ const DETAIL_LABELS = [
   ['previousRecurrence', 'moved from'],
   ['idempotencyKey', 'idempotency key'],
   ['reference', 'reference'],
-  ['eventName', 'event'],
-  ['eventKey', 'key'],
-  ['eventId', 'event'],
-  ['childJobId', 'child'],
-  ['childState', 'child ended'],
-  ['key', 'key'],
   ['retention', 'retention'],
   ['received', 'received by'],
 ];
 
-/** The specifics of a history entry as one line: its error or message first, then the rest. */
+/**
+ * The specifics of a history entry as one line: its error or message first, then the event and
+ * child job involved and the rest.
+ */
 export function historyDetail(entry) {
   const data = entry.data || {};
+  const involved = [];
+  // An event entry names its own event elsewhere; its key is a specific.
+  if (data.event) {
+    const event = data.event;
+    if (entry.subjectType === 'EVENT') {
+      if (event.key) involved.push(`key ${event.key}`);
+    } else {
+      if (event.name) involved.push(`event ${event.name}`);
+      if (event.key) involved.push(`key ${event.key}`);
+      if (event.id) involved.push(`event ${shortId(event.id)}`);
+    }
+  }
+  if (data.childJob?.id) involved.push(`child ${shortId(data.childJob.id)}`);
+  if (data.childJob?.state) involved.push(`child ended ${data.childJob.state}`);
   const parts = DETAIL_LABELS.filter(([key]) => data[key] !== undefined).map(([key, label]) => {
     let value = data[key];
     if (key === 'reason') value = String(value).toLowerCase().replaceAll('_', ' ');
     else if (key === 'dueAt' || key === 'waitUntil') value = dateTime(value);
-    else if (key === 'eventId' || key === 'childJobId') value = shortId(value);
     return label ? `${label} ${value}` : value;
   });
   // A job entry naming a step (SUSPENDED, POSTPONED): the step it happened in.
-  if (!entry.stepId && data.stepName) parts.unshift(`step ${data.stepName}`);
-  return [data.error, data.message, parts.join(' · ')].filter(Boolean).join(' · ');
+  if (!entry.stepId && stepName(entry)) involved.unshift(`step ${stepName(entry)}`);
+  return [data.error, data.message, [...involved, ...parts].join(' · ')].filter(Boolean).join(' · ');
 }
 
 /**
@@ -141,8 +157,8 @@ export function SubjectHistory({ entries }) {
   return html`
     <ol class="steps history">
       ${entries.map((entry) => {
-        const name = entry.data?.subjectName;
-        const step = entry.stepId && (entry.data?.stepName || shortId(entry.stepId));
+        const name = subjectName(entry);
+        const step = entry.stepId && (stepName(entry) || shortId(entry.stepId));
         const href =
           entry.subjectType === 'JOB' &&
           (entry.stepId ? stepHref(entry.subjectId, entry.stepId) : jobHref(entry.subjectId));

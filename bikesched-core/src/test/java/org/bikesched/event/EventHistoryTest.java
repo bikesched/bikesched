@@ -54,7 +54,7 @@ class EventHistoryTest extends AbstractBikeschedTest {
       assertThat(published.actorType()).isEqualTo(ActorType.APPLICATION);
       assertThat(published.nodeId()).isEqualTo(bikesched.node().id());
       assertThat(published.causedById()).isNull();
-      assertThat(data(published, "key")).isEqualTo("k");
+      assertThat(data(published, "event.key")).isEqualTo("k");
       assertThat(data(published, "retention")).isEqualTo("PT2H");
       assertThat(data(published, "received")).isEqualTo("1");
       assertThat(data(published, "idempotencyKey")).isEqualTo("once");

@@ -107,7 +107,7 @@ class PostponeTest extends AbstractBikeschedTest {
               "charge SUCCEEDED",
               "SUCCEEDED");
       assertThat(HistoryTesting.data(history.get(5), "dueAt")).isNotNull();
-      assertThat(HistoryTesting.data(history.get(6), "stepName")).isEqualTo("charge");
+      assertThat(HistoryTesting.data(history.get(6), "step.name")).isEqualTo("charge");
       assertThat(HistoryTesting.data(history.get(6), "dueAt"))
           .isEqualTo(HistoryTesting.data(history.get(5), "dueAt"));
       assertThat(HistoryTesting.data(history.get(8), "run")).as("no second run").isNull();

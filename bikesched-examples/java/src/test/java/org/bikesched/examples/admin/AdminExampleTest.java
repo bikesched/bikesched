@@ -4,13 +4,15 @@ package org.bikesched.examples.admin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.grack.nanojson.JsonArray;
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonParser;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Optional;
 import javax.sql.DataSource;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.Database;
@@ -42,20 +44,29 @@ class AdminExampleTest {
         assertThat(page.statusCode()).isEqualTo(200);
         assertThat(page.body()).contains("bikesched admin");
 
-        String failed =
+        JsonObject failed =
             await()
                 .atMost(Duration.ofSeconds(30))
                 .until(
-                    () -> get(client, base + "api/jobs?name=send-invoice&state=FAILED"),
-                    body -> body.contains("SMTP timeout while sending invoice 4"));
+                    () ->
+                        get(client, base + "api/jobs?name=send-invoice&state=FAILED")
+                            .getArray("jobs")
+                            .stream()
+                            .map(JsonObject.class::cast)
+                            .filter(
+                                job ->
+                                    job.getString("lastError", "")
+                                        .contains("SMTP timeout while sending invoice 4"))
+                            .findFirst(),
+                    Optional::isPresent)
+                .orElseThrow();
 
         // The node records the history, so a failed invoice's detail has its entries.
-        Matcher id = Pattern.compile("\"id\":\"([0-9a-f-]{36})\"").matcher(failed);
-        assertThat(id.find()).isTrue();
-        assertThat(get(client, base + "api/jobs/" + id.group(1))).contains("\"history\":[{");
+        String id = failed.getString("id");
+        assertThat(get(client, base + "api/jobs/" + id).getArray("history")).isNotEmpty();
 
         // The inventory sync's first run is now and completes both steps.
-        String synced =
+        JsonArray synced =
             await()
                 .atMost(Duration.ofSeconds(30))
                 .until(
@@ -66,11 +77,12 @@ class AdminExampleTest {
                                 + "api/jobs?name="
                                 + AdminExample.SYNC_INVENTORY
                                 + "&state=SUCCEEDED"),
-                    body -> body.contains("\"state\":\"SUCCEEDED\""));
-        Matcher syncId = Pattern.compile("\"id\":\"([0-9a-f-]{36})\"").matcher(synced);
-        assertThat(syncId.find()).isTrue();
-        assertThat(get(client, base + "api/jobs/" + syncId.group(1)))
-            .contains("\"name\":\"count-stock\"", "\"name\":\"update-shop\"");
+                    body -> !body.getArray("jobs").isEmpty())
+                .getArray("jobs");
+        String syncId = synced.getObject(0).getString("id");
+        assertThat(get(client, base + "api/jobs/" + syncId).getArray("steps"))
+            .extracting(step -> ((JsonObject) step).getString("name"))
+            .contains("count-stock", "update-shop");
       } finally {
         server.stop(0);
         bikesched.removeRecurringJob(AdminExample.SYNC_INVENTORY);
@@ -78,9 +90,13 @@ class AdminExampleTest {
     }
   }
 
-  private static String get(HttpClient client, String uri) throws Exception {
-    return client
-        .send(HttpRequest.newBuilder(URI.create(uri)).build(), HttpResponse.BodyHandlers.ofString())
-        .body();
+  private static JsonObject get(HttpClient client, String uri) throws Exception {
+    return JsonParser.object()
+        .from(
+            client
+                .send(
+                    HttpRequest.newBuilder(URI.create(uri)).build(),
+                    HttpResponse.BodyHandlers.ofString())
+                .body());
   }
 }

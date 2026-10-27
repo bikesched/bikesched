@@ -82,8 +82,9 @@ class JobFailureHandlerTest extends AbstractBikeschedTest {
           .containsSubsequence("FAILING:FAILING", "CLAIMED:RUNNING", "FAILED:FAILED");
       assertThat(HistoryTesting.data(HistoryTesting.entry(history, "FAILING"), "error"))
           .isEqualTo("java.lang.IllegalStateException: boom");
-      assertThat(history.get(history.size() - 2).data())
-          .contains("\"reason\": \"FAILURE_HANDLER\"", "\"run\": 1");
+      HistoryEntry failureHandler = history.get(history.size() - 2);
+      assertThat(HistoryTesting.data(failureHandler, "reason")).isEqualTo("FAILURE_HANDLER");
+      assertThat(HistoryTesting.data(failureHandler, "run")).isEqualTo("1");
       assertThat(HistoryTesting.data(history.getLast(), "reason")).isEqualTo("FAILURE_HANDLER_RAN");
       assertThat(logs.messages())
           .contains(

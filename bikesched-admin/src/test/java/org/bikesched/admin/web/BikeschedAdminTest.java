@@ -342,9 +342,11 @@ class BikeschedAdminTest {
 
       HttpResponse<String> response = server.get("/api/steps/" + stepId);
       assertThat(response.statusCode()).isEqualTo(200);
-      assertThat(response.body()).doesNotContain(marker, "\"result\":");
+      assertThat(response.body()).doesNotContain(marker);
       JsonObject detail = AdminServer.json(response);
       JsonObject step = detail.getObject("step");
+      assertThat(detail).doesNotContainKey("result");
+      assertThat(step).doesNotContainKey("result");
       assertThat(step.getString("id")).isEqualTo(stepId);
       assertThat(step.getString("jobId")).isEqualTo(jobId.toString());
       assertThat(step.getString("name")).isEqualTo("prepare");
@@ -467,7 +469,7 @@ class BikeschedAdminTest {
           .containsExactly("PUBLISHED", "RECEIVED", "RESUMED");
       JsonObject published = eventHistory.getObject(0);
       assertThat(published.getString("subjectType")).isEqualTo("EVENT");
-      assertThat(published.getObject("data").getString("key")).isEqualTo("k");
+      assertThat(published.getObject("data").getObject("event").getString("key")).isEqualTo("k");
       assertThat(eventHistory.getObject(1).getString("causedById")).isEqualTo(eventId.toString());
 
       UUID nodeId = recording.node().id();
@@ -486,7 +488,11 @@ class BikeschedAdminTest {
       try (var connection = AdminServer.DATA_SOURCE.getConnection();
           var statement = connection.createStatement()) {
         statement.execute(
-            "delete from bikesched_history where data ->> 'subjectName' like '" + prefix + "%'");
+            "delete from bikesched_history where coalesce(data #>> '{job,name}',"
+                + " data #>> '{event,name}', data #>> '{node,name}')"
+                + " like '"
+                + prefix
+                + "%'");
       }
     }
   }
@@ -514,7 +520,7 @@ class BikeschedAdminTest {
       assertThat(all.getBoolean("recording")).isTrue();
       JsonObject entry = all.getArray("entries").getObject(1);
       assertThat(entry.getString("actorName")).isEqualTo("simon");
-      assertThat(entry.getObject("data").getString("subjectName")).isEqualTo(type);
+      assertThat(entry.getObject("data").getObject("job").getString("name")).isEqualTo(type);
 
       JsonObject page = AdminServer.json(server.get("/api/history?limit=2&since=" + since));
       assertThat(subjectIds(page)).containsExactly(eventId, second);
@@ -556,7 +562,11 @@ class BikeschedAdminTest {
       try (var connection = AdminServer.DATA_SOURCE.getConnection();
           var statement = connection.createStatement()) {
         statement.execute(
-            "delete from bikesched_history where data ->> 'subjectName' like '" + prefix + "%'");
+            "delete from bikesched_history where coalesce(data #>> '{job,name}',"
+                + " data #>> '{event,name}', data #>> '{node,name}')"
+                + " like '"
+                + prefix
+                + "%'");
       }
     }
   }
@@ -671,7 +681,11 @@ class BikeschedAdminTest {
       try (var connection = AdminServer.DATA_SOURCE.getConnection();
           var statement = connection.createStatement()) {
         statement.execute(
-            "delete from bikesched_history where data ->> 'subjectName' like '" + prefix + "%'");
+            "delete from bikesched_history where coalesce(data #>> '{job,name}',"
+                + " data #>> '{event,name}', data #>> '{node,name}')"
+                + " like '"
+                + prefix
+                + "%'");
       } catch (java.sql.SQLException e) {
         throw new IllegalStateException(e);
       }

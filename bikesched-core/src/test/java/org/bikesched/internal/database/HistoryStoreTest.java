@@ -73,8 +73,8 @@ class HistoryStoreTest extends AbstractStoreTest {
     assertThat(HistoryTesting.data(stepEntries.get(1), "error")).isEqualTo("card declined");
     assertThat(HistoryTesting.data(stepEntries.get(2), "run")).isEqualTo("2");
     HistoryEntry waiting = stepEntries.get(3);
-    assertThat(HistoryTesting.data(waiting, "eventName")).isEqualTo("paid");
-    assertThat(HistoryTesting.data(waiting, "eventKey")).isEqualTo("order-1");
+    assertThat(HistoryTesting.data(waiting, "event.name")).isEqualTo("paid");
+    assertThat(HistoryTesting.data(waiting, "event.key")).isEqualTo("order-1");
     assertThat(HistoryTesting.data(waiting, "waitUntil")).isNotNull();
     // Step changes take the job's attempt; the node is the one writing them.
     assertThat(stepEntries)
@@ -100,7 +100,7 @@ class HistoryStoreTest extends AbstractStoreTest {
     List<HistoryEntry> history = database.history().findJobHistory(registration.jobId());
     assertThat(HistoryTesting.actions(history)).containsExactly("SCHEDULED", "DELETED");
     assertThat(history.getLast().actorType()).isEqualTo(ActorType.APPLICATION);
-    assertThat(HistoryTesting.data(history.getLast(), "subjectName")).isEqualTo("report");
+    assertThat(HistoryTesting.data(history.getLast(), "job.name")).isEqualTo("report");
   }
 
   @Test
@@ -115,7 +115,7 @@ class HistoryStoreTest extends AbstractStoreTest {
 
     HistoryEntry failed = database.history().findJobHistory(jobId).getLast();
     assertThat(HistoryTesting.data(failed, "error")).isEqualTo("x".repeat(4000));
-    assertThat(HistoryTesting.data(failed, "subjectName")).isEqualTo("history");
+    assertThat(HistoryTesting.data(failed, "job.name")).isEqualTo("history");
     JobEntry retried = (JobEntry) database.history().findJobHistory(missing).getFirst();
     assertThat(retried.data()).as("no job row to name it").isNull();
     assertThat(retried.attempt()).isZero();

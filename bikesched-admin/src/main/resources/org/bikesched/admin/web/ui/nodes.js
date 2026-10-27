@@ -163,7 +163,7 @@ function NodeDetail({ nodeId, onClose }) {
   if (!node) {
     const registered = history.find((entry) => entry.subjectType === 'NODE');
     return html`<aside class="panel detail" aria-label="Node details">
-      <${DetailHead} title=${registered?.data?.subjectName || 'Node removed'} id=${nodeId} onClose=${onClose} />
+      <${DetailHead} title=${registered?.data?.node?.name || 'Node removed'} id=${nodeId} onClose=${onClose} />
       <div class="notice" role="status">This node is not registered anymore: it stopped, or other nodes
         removed it after twice the node timeout without heartbeat.</div>
       <div class="detail-body">${historySection}</div>

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched;
 
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonParser;
+import com.grack.nanojson.JsonParserException;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import org.bikesched.history.EventEntry;
 import org.bikesched.history.HistoryEntry;
 import org.bikesched.history.JobEntry;
+import org.bikesched.history.NodeEntry;
 import org.bikesched.history.StepEntry;
 
 /** Reading history entries in tests: their actions in a compact form and their data. */
@@ -15,7 +18,8 @@ public final class HistoryTesting {
 
   /**
    * The entries' actions: {@code ACTION} for job entries, {@code step ACTION} for step entries (the
-   * step's name from the data), {@code subjectName ACTION} for other entries.
+   * step's name from the data), {@code name ACTION} with the event's or node's name for other
+   * entries.
    */
   public static List<String> actions(List<? extends HistoryEntry> history) {
     return history.stream().map(HistoryTesting::action).toList();
@@ -25,8 +29,9 @@ public final class HistoryTesting {
   public static String action(HistoryEntry entry) {
     return switch (entry) {
       case JobEntry job -> job.action().name();
-      case StepEntry step -> data(step, "stepName") + " " + step.action();
-      default -> data(entry, "subjectName") + " " + entry.action().name();
+      case StepEntry step -> data(step, "step.name") + " " + step.action();
+      case EventEntry event -> data(event, "event.name") + " " + event.action();
+      case NodeEntry node -> data(node, "node.name") + " " + node.action();
     };
   }
 
@@ -44,21 +49,31 @@ public final class HistoryTesting {
   }
 
   /**
-   * A value of the entry's data as text: a string without its quotes, a number as written; {@code
-   * null} if the key is missing.
+   * A value of the entry's data as text: a string as is, a number as written; {@code null} if the
+   * key is missing. A key of a nested object is named by its path, e.g. {@code job.name}.
    */
-  public static String data(HistoryEntry entry, String key) {
+  public static String data(HistoryEntry entry, String path) {
+    Object value = data(entry);
+    for (String key : path.split("\\.")) {
+      if (!(value instanceof JsonObject object) || !object.containsKey(key)) {
+        return null;
+      }
+      value = object.get(key);
+    }
+    return value == null ? null : value.toString();
+  }
+
+  /** The entry's data as a JSON object; empty if it has none. */
+  public static JsonObject data(HistoryEntry entry) {
     String data = entry.data();
     if (data == null) {
-      return null;
+      return new JsonObject();
     }
-    Matcher matcher =
-        Pattern.compile("\"" + Pattern.quote(key) + "\": (\"((?:[^\"\\\\]++|\\\\.)*+)\"|[^,}]+)")
-            .matcher(data);
-    if (!matcher.find()) {
-      return null;
+    try {
+      return JsonParser.object().from(data);
+    } catch (JsonParserException e) {
+      throw new AssertionError("Not a JSON object: " + data, e);
     }
-    return matcher.group(2) != null ? matcher.group(2) : matcher.group(1);
   }
 
   /** The entry with this action (see {@link #actions}); fails if there is none. */

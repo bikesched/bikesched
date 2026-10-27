@@ -22,6 +22,7 @@ import {
   preciseTime,
   pretty,
   shortId,
+  stepName,
   toHash,
 } from './format.js';
 import { html, useEffect, useRef, useState } from './html.js';
@@ -748,7 +749,7 @@ function History({ history, nodes, stepHref: hrefOf }) {
   return html`
     <ol class="steps history">
       ${history.map((entry) => {
-        const stepName = entry.stepId && (entry.data?.stepName || shortId(entry.stepId));
+        const step = entry.stepId && (stepName(entry) || shortId(entry.stepId));
         const href = entry.stepId && hrefOf(entry.stepId);
         const detail = historyDetail(entry);
         return html`
@@ -756,9 +757,9 @@ function History({ history, nodes, stepHref: hrefOf }) {
             <div class="step-head">
               <div class="row">
                 <span class="tag">${entry.stepId ? 'STEP' : 'JOB'}</span>
-                ${stepName && (href
-                  ? html`<a class="mono strong" href=${href}>${stepName}</a>`
-                  : html`<span class="mono strong">${stepName}</span>`)}
+                ${step && (href
+                  ? html`<a class="mono strong" href=${href}>${step}</a>`
+                  : html`<span class="mono strong">${step}</span>`)}
                 <span class="history-action">${entry.action}</span>
                 <${Badge} state=${entry.state} />
               </div>

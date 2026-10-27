@@ -115,13 +115,13 @@ class AdminJsonTest {
                 null,
                 ID,
                 null,
-                "{\"error\": \"boom\", \"subjectName\": \"mail\"}")),
+                "{\"error\": \"boom\", \"job\": {\"name\": \"mail\"}}")),
         """
         {"id":"7f0c2a1e-0000-4000-8000-000000000001","subjectType":"JOB",
          "subjectId":"7f0c2a1e-0000-4000-8000-000000000001","stepId":null,"state":"SCHEDULED",
          "attempt":2,"at":"2026-10-11T12:00:00.123456Z","action":"ATTEMPT_FAILED",
          "actorType":"NODE","actorName":null,"nodeId":"7f0c2a1e-0000-4000-8000-000000000001",
-         "causedById":null,"data":{"error":"boom","subjectName":"mail"}}
+         "causedById":null,"data":{"error":"boom","job":{"name":"mail"}}}
         """);
   }
 

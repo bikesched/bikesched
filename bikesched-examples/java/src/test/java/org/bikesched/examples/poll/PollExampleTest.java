@@ -4,6 +4,9 @@ package org.bikesched.examples.poll;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonParser;
+import com.grack.nanojson.JsonParserException;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -92,13 +95,14 @@ class PollExampleTest {
       List<HistoryEntry> poll =
           bikesched.findJobHistory(jobId).stream()
               .filter(entry -> entry instanceof StepEntry)
-              .filter(entry -> entry.data().contains("\"stepName\": \"poll-payment\""))
+              .filter(
+                  entry -> "poll-payment".equals(data(entry).getObject("step").getString("name")))
               .toList();
       assertThat(poll)
           .as("the first wait and the outcome")
           .extracting(entry -> entry.action().name())
           .containsExactly("WAITING", "SUCCEEDED");
-      assertThat(poll.getLast().data()).contains("\"checks\": " + statusCalls);
+      assertThat(data(poll.getLast()).getInt("checks")).isEqualTo(statusCalls);
       assertThat(output.toString(StandardCharsets.UTF_8))
           .contains("[provider] settled " + paymentId + ", webhook lost")
           .contains("[shop]     order order-polled paid (" + paymentId + ", polled)");
@@ -141,5 +145,13 @@ class PollExampleTest {
         .history(Duration.ofHours(1))
         .jsonMapper(new JacksonJsonMapper())
         .build();
+  }
+
+  private static JsonObject data(HistoryEntry entry) {
+    try {
+      return JsonParser.object().from(entry.data());
+    } catch (JsonParserException e) {
+      throw new AssertionError("Not a JSON object: " + entry.data(), e);
+    }
   }
 }

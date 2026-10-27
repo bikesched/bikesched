@@ -38,6 +38,7 @@ junit = "6.1.3"
 assertj = "3.27.7"
 testcontainers = "2.0.5"
 nanojson = "1.10"
+jsonassert = "1.5.3"
 hikaricp = "7.1.0"
 awaitility = "4.3.0"
 micrometer = "1.17.1"
@@ -82,6 +83,7 @@ testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version
 testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
 nanojson = { module = "com.grack:nanojson", version.ref = "nanojson" }
+jsonassert = { module = "org.skyscreamer:jsonassert", version.ref = "jsonassert" }
 hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
 micrometer-core = { module = "io.micrometer:micrometer-core", version.ref = "micrometer" }
@@ -115,7 +117,7 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 moneta = { module = "org.javamoney:moneta", version.ref = "moneta" }
 
 [bundles]
-testing = ["junit-jupiter", "assertj-core", "logback-classic", "testcontainers-junit-jupiter", "testcontainers-postgresql", "nanojson", "hikaricp", "awaitility"]
+testing = ["junit-jupiter", "assertj-core", "logback-classic", "testcontainers-junit-jupiter", "testcontainers-postgresql", "nanojson", "jsonassert", "hikaricp", "awaitility"]
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
