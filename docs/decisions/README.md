@@ -73,3 +73,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0060](0060-data-source-passed-to-the-builder.md) | Data source passed to the builder | Accepted |
 | [0061](0061-references-for-jobs-and-events.md) | References for jobs and events | Accepted |
 | [0062](0062-one-history-with-actions-and-actors.md) | One history with actions and actors | Accepted |
+| [0063](0063-c-collation-for-identifiers.md) | C collation for identifiers | Accepted |

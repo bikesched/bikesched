@@ -1,6 +1,6 @@
 # Specification: `bikesched-test`, testing support for applications using bikesched
 
-Status: **draft**, open questions settled (§9)
+Status: **implemented**, see the [Testing](../integrations/testing.md) docs
 
 ## 1. Goal
 

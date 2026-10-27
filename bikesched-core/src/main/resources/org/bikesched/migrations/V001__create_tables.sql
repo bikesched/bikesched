@@ -5,6 +5,10 @@
 -- limited to 2704 bytes. Since a character takes up to 4 bytes, they also have at most 3 bytes per
 -- character in UTF-8 (600 and 1500), so an index on a name and a key stays at most 2100 bytes. The
 -- library checks the same limits (ValidationUtil) before writing.
+-- Every text column but the messages holds an identifier (names, keys, types, states, recurrences,
+-- references) and uses the "C" collation: comparisons and sorts are byte-wise, so indexes on them
+-- are faster, can serve prefix searches and are not affected by collation changes of glibc or ICU
+-- upgrades. Lists sorted by name are in byte order (upper case before lower case).
 -- The identifying columns and the state come first (a job's id, name, type and state; a step's id,
 -- job, name, type and state); the other columns are ordered by alignment: uuids, then timestamps and
 -- bigints, then integers and booleans, then text and jsonb, so rows have little padding.
@@ -20,10 +24,10 @@
 -- The heartbeat is the table's only frequent write; last_heartbeat_at has no index, so heartbeats
 -- are HOT updates. The table has a few rows, read by sequential scans.
 create table bikesched_nodes (
-    id                uuid        not null,
-    started_at        timestamptz not null default now(),
-    last_heartbeat_at timestamptz not null default now(),
-    name              text        not null,
+    id                uuid             not null,
+    started_at        timestamptz      not null default now(),
+    last_heartbeat_at timestamptz      not null default now(),
+    name              text collate "C" not null,
     constraint bikesched_nodes_pkey primary key (id),
     constraint bikesched_nodes_name_check
         check (char_length(name) between 1 and 200 and octet_length(name) <= 600)
@@ -48,34 +52,34 @@ create table bikesched_nodes (
 --   completes that step with its outcome. parent_job_id only references the parent (no FK): the
 -- parent may be deleted after its retention while the child still runs.
 create table bikesched_jobs (
-    id                     uuid        not null,
-    name                   text        not null,           -- identifies the handler that executes the job
-    type                   text        not null default 'SINGLE',
-    state                  text        not null default 'SCHEDULED',
-    parent_job_id          uuid,                           -- the job that started this one as a child
+    id                     uuid             not null,
+    name                   text collate "C" not null,           -- identifies the handler that executes the job
+    type                   text collate "C" not null default 'SINGLE',
+    state                  text collate "C" not null default 'SCHEDULED',
+    parent_job_id          uuid,                                -- the job that started this one as a child
     locked_by_node_id      uuid,
-    lock_token             uuid,                           -- new for every claim: fences the claim's writes
-    scheduled_at           timestamptz not null default now(),
-    created_at             timestamptz not null default now(),
-    updated_at             timestamptz not null default now(),
+    lock_token             uuid,                                -- new for every claim: fences the claim's writes
+    scheduled_at           timestamptz      not null default now(),
+    created_at             timestamptz      not null default now(),
+    updated_at             timestamptz      not null default now(),
     locked_at              timestamptz,
     finished_at            timestamptz,
-    cancel_requested_at    timestamptz,                    -- Bikesched.cancel(jobId): cancelled on its next claim
-    planned_run_at         timestamptz,                    -- planned run of an occurrence; unlike scheduled_at
-                                                           -- not moved by retries or event waits
-    timeout_millis         bigint,                         -- max. duration of an attempt; null: node default / none
-    priority               integer     not null default 0,
-    attempts               integer     not null default 0,
-    max_attempts           integer     not null default 3,
-    compensation_attempts  integer     not null default 0,
-    failure_attempts       integer     not null default 0, -- runs of its failure handler
-    compensation_end_state text,                           -- CANCELLED or FAILED: the state a compensating job ends in
-    failure_end_state      text,                           -- FAILED or COMPENSATION_FAILED: the state a FAILING job ends in
-    recurrence             text,                           -- occurrence of a recurring job: its recurrence's description
-    idempotency_key        text,                           -- dedups scheduling: unique per name while the job exists
-    reference              text,                           -- the external entity the job is about; not unique
+    cancel_requested_at    timestamptz,                         -- Bikesched.cancel(jobId): cancelled on its next claim
+    planned_run_at         timestamptz,                         -- planned run of an occurrence; unlike scheduled_at
+                                                                -- not moved by retries or event waits
+    timeout_millis         bigint,                              -- max. duration of an attempt; null: node default / none
+    priority               integer          not null default 0,
+    attempts               integer          not null default 0,
+    max_attempts           integer          not null default 3,
+    compensation_attempts  integer          not null default 0,
+    failure_attempts       integer          not null default 0, -- runs of its failure handler
+    compensation_end_state text collate "C",                    -- CANCELLED or FAILED: the state a compensating job ends in
+    failure_end_state      text collate "C",                    -- FAILED or COMPENSATION_FAILED: the state a FAILING job ends in
+    recurrence             text collate "C",                    -- occurrence of a recurring job: its recurrence's description
+    idempotency_key        text collate "C",                    -- dedups scheduling: unique per name while the job exists
+    reference              text collate "C",                    -- the external entity the job is about; not unique
     payload                jsonb,
-    result                 jsonb,                          -- Job.complete(result); only set when SUCCEEDED
+    result                 jsonb,                               -- Job.complete(result); only set when SUCCEEDED
     last_error             text,
     cancel_message         text,
     constraint bikesched_jobs_pkey primary key (id),
@@ -197,25 +201,25 @@ create index bikesched_jobs_reference_idx on bikesched_jobs (reference, id)
 -- across its attempts), which every write to a single step uses, and by its name within its job,
 -- which the handler's replay looks it up by.
 create table bikesched_steps (
-    id                uuid        not null,
-    job_id            uuid        not null,
-    name              text        not null,
-    type              text        not null default 'STEP',
-    state             text        not null default 'RUNNING',
-    locked_by_node_id uuid,                           -- the node running the step (no FK: may outlive a dead node)
-    event_id          uuid,                           -- the event received or published (no FK: see above)
-    child_job_id      uuid,                           -- the child job started (no FK: see above)
-    started_at        timestamptz not null default now(),
+    id                uuid             not null,
+    job_id            uuid             not null,
+    name              text collate "C" not null,
+    type              text collate "C" not null default 'STEP',
+    state             text collate "C" not null default 'RUNNING',
+    locked_by_node_id uuid,                                -- the node running the step (no FK: may outlive a dead node)
+    event_id          uuid,                                -- the event received or published (no FK: see above)
+    child_job_id      uuid,                                -- the child job started (no FK: see above)
+    started_at        timestamptz      not null default now(),
     finished_at       timestamptz,
     wake_at           timestamptz,
-    deadline_at       timestamptz,                    -- the deadline of a poll, none if null
-    attempts          integer     not null default 0,
-    failure_attempts  integer     not null default 0, -- runs of its failure handler while FAILING
-    compensable       boolean     not null default false,
-    child_end_state   text,                           -- the child's terminal state, once it ended
-    child_job_name    text,                           -- its name, checked on replays even after it was deleted
-    event_name        text,
-    event_key         text,
+    deadline_at       timestamptz,                         -- the deadline of a poll, none if null
+    attempts          integer          not null default 0,
+    failure_attempts  integer          not null default 0, -- runs of its failure handler while FAILING
+    compensable       boolean          not null default false,
+    child_end_state   text collate "C",                    -- the child's terminal state, once it ended
+    child_job_name    text collate "C",                    -- its name, checked on replays even after it was deleted
+    event_name        text collate "C",
+    event_key         text collate "C",
     result            jsonb,
     last_error        text,
     constraint bikesched_steps_pkey primary key (id),
@@ -301,13 +305,13 @@ create index bikesched_steps_event_id_idx on bikesched_steps (event_id)
 -- is unexpired, publishing again returns it (checked under the event's advisory lock, see
 -- EventStore; a partial index can't use now()).
 create table bikesched_events (
-    id              uuid        not null,
-    published_at    timestamptz not null default now(),
-    expires_at      timestamptz not null,
-    name            text        not null,
-    key             text        not null,
-    idempotency_key text,
-    reference       text,                -- the external entity the event is about; not unique
+    id              uuid             not null,
+    published_at    timestamptz      not null default now(),
+    expires_at      timestamptz      not null,
+    name            text collate "C" not null,
+    key             text collate "C" not null,
+    idempotency_key text collate "C",
+    reference       text collate "C",         -- the external entity the event is about; not unique
     payload         jsonb,
     constraint bikesched_events_pkey primary key (id),
     constraint bikesched_events_name_key_check
@@ -347,22 +351,22 @@ create index bikesched_events_reference_idx on bikesched_events (reference, id)
 -- another entry. No foreign keys: entries are kept for their own retention, also after their
 -- subject was deleted.
 -- data holds what is only displayed, as a JSON object without null fields, built by the recording
--- statement: the names, so a deleted job, step, event or node still reads well (subjectName,
--- stepName), and the action's specifics (error, message, dueAt, ...; texts cut to 4000 characters).
+-- statement: the names, so a deleted job, step, event or node still reads well (job.name,
+-- step.name, event.name, node.name), and the action's specifics (error, message, dueAt, ...; texts cut to 4000 characters).
 -- It is never filtered or indexed: everything that is has its own column.
 create table bikesched_history (
-    subject_id   uuid        not null,
-    id           uuid        not null,
-    step_id      uuid,                   -- JOB entries of a step
-    subject_type text        not null,
-    action       text        not null,
-    state        text,                   -- JOB entries: the job's or step's state afterwards
-    node_id      uuid,                   -- the node that wrote the entry, if registered
+    subject_id   uuid             not null,
+    id           uuid             not null,
+    step_id      uuid,                        -- JOB entries of a step
+    subject_type text collate "C" not null,
+    action       text collate "C" not null,
+    state        text collate "C",            -- JOB entries: the job's or step's state afterwards
+    node_id      uuid,                        -- the node that wrote the entry, if registered
     caused_by_id uuid,
-    created_at   timestamptz not null default clock_timestamp(),
-    attempt      integer,                -- JOB entries: the job's attempt count after the change
-    actor_type   text        not null,
-    actor_name   text,                   -- USER entries: the user name
+    created_at   timestamptz      not null default clock_timestamp(),
+    attempt      integer,                     -- JOB entries: the job's attempt count after the change
+    actor_type   text collate "C" not null,
+    actor_name   text collate "C",            -- USER entries: the user name
     data         jsonb,
     constraint bikesched_history_pkey primary key (subject_id, id),
     constraint bikesched_history_data_check
