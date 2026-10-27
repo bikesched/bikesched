@@ -228,6 +228,9 @@ small SPI with a dependency-free default; concrete libraries are test dependenci
 - Wait for async outcomes with Awaitility (`await().untilAsserted { … }`, defaults set in the base
   classes); "nothing happens" checks are `Thread.sleep` + assert.
 - Log assertions use `LogCapture.of(X.class)`; log meaningful lifecycle steps and assert them.
+- Tests read JSON with libraries from the testing bundle, never with string matching, regular
+  expressions or hand-written parsing: JSONAssert compares whole documents, nanojson reads values
+  (`HistoryTesting.data` for history data).
 - Core tests use the default mapper (store tests: `AbstractStoreTest.JSON_TEXT`): payloads and step
   results must be valid JSON text
   (`"\"x\""`, not `"x"`).

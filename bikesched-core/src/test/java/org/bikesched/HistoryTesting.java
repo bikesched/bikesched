@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched;
 
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonParser;
+import com.grack.nanojson.JsonParserException;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.bikesched.history.EventEntry;
 import org.bikesched.history.HistoryEntry;
 import org.bikesched.history.JobEntry;
@@ -48,37 +49,31 @@ public final class HistoryTesting {
   }
 
   /**
-   * A value of the entry's data as text: a string without its quotes, a number as written; {@code
-   * null} if the key is missing. A key of a nested object is named by its path, e.g. {@code
-   * job.name}.
+   * A value of the entry's data as text: a string as is, a number as written; {@code null} if the
+   * key is missing. A key of a nested object is named by its path, e.g. {@code job.name}.
    */
   public static String data(HistoryEntry entry, String path) {
-    String data = entry.data();
-    if (data == null) {
-      return null;
-    }
-    String key = path;
-    int dot = path.indexOf('.');
-    if (dot >= 0) {
-      Matcher object =
-          Pattern.compile(
-                  "\""
-                      + Pattern.quote(path.substring(0, dot))
-                      + "\": \\{((?:[^}\"]++|\"(?:[^\"\\\\]++|\\\\.)*+\")*+)}")
-              .matcher(data);
-      if (!object.find()) {
+    Object value = data(entry);
+    for (String key : path.split("\\.")) {
+      if (!(value instanceof JsonObject object) || !object.containsKey(key)) {
         return null;
       }
-      data = object.group(1);
-      key = path.substring(dot + 1);
+      value = object.get(key);
     }
-    Matcher matcher =
-        Pattern.compile("\"" + Pattern.quote(key) + "\": (\"((?:[^\"\\\\]++|\\\\.)*+)\"|[^,}]+)")
-            .matcher(data);
-    if (!matcher.find()) {
-      return null;
+    return value == null ? null : value.toString();
+  }
+
+  /** The entry's data as a JSON object; empty if it has none. */
+  public static JsonObject data(HistoryEntry entry) {
+    String data = entry.data();
+    if (data == null) {
+      return new JsonObject();
     }
-    return matcher.group(2) != null ? matcher.group(2) : matcher.group(1);
+    try {
+      return JsonParser.object().from(data);
+    } catch (JsonParserException e) {
+      throw new AssertionError("Not a JSON object: " + data, e);
+    }
   }
 
   /** The entry with this action (see {@link #actions}); fails if there is none. */

@@ -22,6 +22,7 @@ import org.bikesched.history.StepEntry;
 import org.bikesched.internal.DefaultBikesched;
 import org.bikesched.internal.job.HistoryCleanUp;
 import org.junit.jupiter.api.Test;
+import org.skyscreamer.jsonassert.JSONAssert;
 
 /**
  * The history of jobs: {@code history(retention)} records every change of a job and its steps with
@@ -76,7 +77,8 @@ class JobHistoryTest extends AbstractBikeschedTest {
       assertThat(history).extracting(HistoryEntry::nodeId).containsOnly(bikesched.node().id());
       assertThat(history).extracting(entry -> data(entry, "job.name")).containsOnly(name);
       assertThat(data(history.getFirst(), "dueAt")).isNotNull();
-      assertThat(history.get(1).data()).isEqualTo("{\"job\": {\"name\": \"" + name + "\"}}");
+      JSONAssert.assertEquals(
+          "{\"job\": {\"name\": \"" + name + "\"}}", history.get(1).data(), true);
       assertThat(history).extracting(HistoryEntry::causedById).containsOnlyNulls();
       assertThat(history.get(2)).isInstanceOf(StepEntry.class);
       assertThat(((StepEntry) history.get(2)).stepId())

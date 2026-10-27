@@ -342,9 +342,11 @@ class BikeschedAdminTest {
 
       HttpResponse<String> response = server.get("/api/steps/" + stepId);
       assertThat(response.statusCode()).isEqualTo(200);
-      assertThat(response.body()).doesNotContain(marker, "\"result\":");
+      assertThat(response.body()).doesNotContain(marker);
       JsonObject detail = AdminServer.json(response);
       JsonObject step = detail.getObject("step");
+      assertThat(detail).doesNotContainKey("result");
+      assertThat(step).doesNotContainKey("result");
       assertThat(step.getString("id")).isEqualTo(stepId);
       assertThat(step.getString("jobId")).isEqualTo(jobId.toString());
       assertThat(step.getString("name")).isEqualTo("prepare");

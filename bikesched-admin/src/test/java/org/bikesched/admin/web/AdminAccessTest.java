@@ -4,6 +4,9 @@ package org.bikesched.admin.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonParser;
+import com.grack.nanojson.JsonParserException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.UUID;
@@ -46,11 +49,13 @@ class AdminAccessTest {
   @Test
   void openAccessAllowsEverything() {
     BikeschedAdmin admin = BikeschedAdmin.of(bikesched);
-    assertThat(admin.handle(AdminRequest.of("GET", "/api/me", null)).bodyText())
-        .contains("\"user\":null", "\"level\":\"OPERATE\"", "\"payloadsShown\":false");
+    JsonObject me = json(admin.handle(AdminRequest.of("GET", "/api/me", null)));
+    assertThat(me.isNull("user")).isTrue();
+    assertThat(me.getString("level")).isEqualTo("OPERATE");
+    assertThat(me.getBoolean("payloadsShown")).isFalse();
     AdminResponse cancel = cancel(admin, null);
     assertThat(cancel.status()).isEqualTo(200);
-    assertThat(cancel.bodyText()).contains("\"cancelled\":false"); // no such job
+    assertThat(json(cancel).getBoolean("cancelled")).isFalse(); // no such job
   }
 
   @Test
@@ -70,15 +75,17 @@ class AdminAccessTest {
 
   @Test
   void viewersReadAndOperatorsAlsoChangeJobs() {
-    assertThat(get("/api/me", basic("support", VIEWER_PASSWORD)).bodyText())
-        .contains("\"user\":\"support\"", "\"level\":\"VIEW\"");
+    JsonObject viewer = json(get("/api/me", basic("support", VIEWER_PASSWORD)));
+    assertThat(viewer.getString("user")).isEqualTo("support");
+    assertThat(viewer.getString("level")).isEqualTo("VIEW");
     assertThat(get("/api/jobs", basic("support", VIEWER_PASSWORD)).status()).isEqualTo(200);
     AdminResponse viewerCancel = cancel(basicAuth, basic("support", VIEWER_PASSWORD));
     assertThat(viewerCancel.status()).isEqualTo(403);
     assertThat(viewerCancel.bodyText()).contains("Viewers cannot change jobs");
 
-    assertThat(get("/api/me", basic("ops", OPS_PASSWORD)).bodyText())
-        .contains("\"user\":\"ops\"", "\"level\":\"OPERATE\"");
+    JsonObject operator = json(get("/api/me", basic("ops", OPS_PASSWORD)));
+    assertThat(operator.getString("user")).isEqualTo("ops");
+    assertThat(operator.getString("level")).isEqualTo("OPERATE");
     assertThat(cancel(basicAuth, basic("ops", OPS_PASSWORD)).status()).isEqualTo(200);
   }
 
@@ -106,7 +113,8 @@ class AdminAccessTest {
         readOnly.handle(
             AdminRequest.of("GET", "/api/me", null)
                 .withHeader("Authorization", basic("ops", OPS_PASSWORD)));
-    assertThat(me.bodyText()).contains("\"level\":\"VIEW\"", "\"readOnly\":true");
+    assertThat(json(me).getString("level")).isEqualTo("VIEW");
+    assertThat(json(me).getBoolean("readOnly")).isTrue();
     assertThat(cancel(readOnly, basic("ops", OPS_PASSWORD)).status()).isEqualTo(403);
   }
 
@@ -150,11 +158,10 @@ class AdminAccessTest {
     BikeschedAdmin admin = BikeschedAdmin.of(bikesched).access(byHeader);
     assertThat(admin.handle(AdminRequest.of("GET", "/api/me", null)).status()).isEqualTo(403);
     assertThat(
-            admin
-                .handle(
-                    AdminRequest.of("GET", "/api/me", null).withHeader("x-proxy-user", "trusted"))
-                .bodyText())
-        .contains("\"user\":\"trusted\"");
+            json(admin.handle(
+                    AdminRequest.of("GET", "/api/me", null).withHeader("x-proxy-user", "trusted")))
+                .getString("user"))
+        .isEqualTo("trusted");
   }
 
   @Test
@@ -191,5 +198,13 @@ class AdminAccessTest {
     return "Basic "
         + Base64.getEncoder()
             .encodeToString((user + ":" + password).getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static JsonObject json(AdminResponse response) {
+    try {
+      return JsonParser.object().from(response.bodyText());
+    } catch (JsonParserException e) {
+      throw new AssertionError("Not a JSON object: " + response.bodyText(), e);
+    }
   }
 }
