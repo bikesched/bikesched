@@ -36,7 +36,8 @@ The workflow then
 3. for a major or minor: creates `release/X.Y.x` (catalog `X.Y.1-SNAPSHOT`, docs showing
    `X.Y.Z`) and moves `main` on to the next minor snapshot; for a patch: moves the release branch
    on to the next patch snapshot,
-4. starts the builds publishing the new snapshots and the website deploy.
+4. whose pushes start the builds publishing the new snapshots and, for a major or minor, the
+   website deploy.
 
 The version is derived, never typed: minor and patch release the catalog version without
 `-SNAPSHOT`, major releases the next major (this is how 1.0.0 gets cut). To see what a release
@@ -81,5 +82,18 @@ same way.
 ## Setup
 
 - Settings → Environments → `release`: add yourself as required reviewer.
-- Branch protection or rulesets on `main`, `release/**` and `v*` tags must let GitHub Actions push:
-  the workflow pushes the tag, the release branch and the version bumps with `GITHUB_TOKEN`.
+- The workflow pushes the tag, the release branch and the version bumps with a deploy key, since
+  `GITHUB_TOKEN` cannot bypass rulesets:
+  1. Create a key pair without passphrase: `ssh-keygen -t ed25519 -N '' -C bikesched-release -f
+     release-key`.
+  2. Settings → Deploy keys → Add deploy key: the public key (`release-key.pub`), title
+     `release`, "Allow write access".
+  3. Settings → Environments → `release` → Environment secrets: `RELEASE_DEPLOY_KEY` with the
+     private key (`release-key`). Delete both files afterwards.
+  4. Settings → Rules → Rulesets: a branch ruleset for `main` and `release/**` (require a pull
+     request, require the `build` status check, block force pushes, restrict deletions) and a tag
+     ruleset for `v*` (restrict updates and deletions), each with Deploy keys on the bypass list.
+     Add the Repository admin role there too to keep pushing cherry-picks to release branches
+     directly (see [Patches](#patches)).
+- Pushes with the deploy key start workflows, unlike pushes with `GITHUB_TOKEN`: the version bumps
+  start the snapshot builds and the website deploy.

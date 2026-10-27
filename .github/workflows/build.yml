@@ -2,8 +2,8 @@
 # compiles all modules, runs Spotless, Javadoc and all tests. The tests start PostgreSQL with
 # Testcontainers, which uses the Docker daemon of the ubuntu-latest runner. After a successful
 # build of main or a release branch, the library modules are published to GitHub Packages (the
-# snapshot version from gradle/libs.versions.toml). The release workflow starts it by hand
-# (workflow_dispatch) after a release, for the new snapshots: its pushes start no workflows.
+# snapshot version from gradle/libs.versions.toml). After a release, the release workflow's
+# version bumps (pushed with its deploy key) start it for the new snapshots.
 #
 # Changes to Markdown files and SVG images only (docs, README, logo) skip the build: the build reads
 # none of them. The workflow still runs and the `changes` job decides, so a skipped `build` job

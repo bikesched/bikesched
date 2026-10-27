@@ -56,8 +56,9 @@ or commit and tag themselves.
   classpath. `build-logic` excludes JGit from Spotless, which only needs it to read line endings
   from `.gitattributes`; Spotless uses fixed LF line endings instead (the repository has no
   `.gitattributes`, and all sources use LF).
-- Pushes made with the workflow's `GITHUB_TOKEN` start no workflows, so the release workflow
-  starts the snapshot builds and the website deploy itself. Branch protection on `main` and
-  `release/**` must allow GitHub Actions to push.
+- The workflow pushes with a deploy key (secret `RELEASE_DEPLOY_KEY` in the `release`
+  environment), which the rulesets protecting `main`, `release/**` and `v*` tags list as a bypass
+  actor; `GITHUB_TOKEN` cannot bypass rulesets. Unlike `GITHUB_TOKEN` pushes, its pushes start
+  workflows, so the version bumps start the snapshot builds and the website deploy.
 - Fixes land on `main` first and are cherry-picked to the release branch.
 - Moving to Maven Central later adds signing and a JReleaser deployer to the same workflow.
