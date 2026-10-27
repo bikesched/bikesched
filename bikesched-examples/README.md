@@ -5,7 +5,7 @@ Runnable examples of [bikesched](../README.md), one package per scenario, in thr
 | Module | Examples | Dependencies |
 |---|---|---|
 | [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [rate limit](#rate-limit), [chat](#chat), [approval](#approval), [fan-out](#fan-out), [recurring](#recurring), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets), [admin](#admin) | `bikesched-jackson`, `bikesched-annotations`, `bikesched-admin`, Bucket4j |
-| [`kotlin`](kotlin) (`:bikesched-examples:kotlin`) | [Shop](#kotlin-shop) | `bikesched-kotlin`, Ktor, Exposed, kotlinx-serialization |
+| [`kotlin`](kotlin) (`:bikesched-examples:kotlin`) | [Simple](#kotlin-simple), [Shop](#kotlin-shop) | `bikesched-kotlin`, `bikesched-test`, `bikesched-jackson`, Ktor, Exposed, kotlinx-serialization |
 | [`spring`](spring) (`:bikesched-examples:spring`) | [Spring Boot](#spring-boot) | `bikesched-spring-boot-starter`, `bikesched-jackson`, Spring Data JPA |
 
 Each example has a `main` that runs against the PostgreSQL from the repository's `compose.yaml`,
@@ -33,6 +33,7 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:java:runCinema      # cinema tickets
 ./gradlew :bikesched-examples:java:runAdmin       # the admin UI next to demo jobs: http://localhost:8081/bikesched/
 ./gradlew :bikesched-examples:spring:bootRun      # Spring Boot application wired by the starter
+./gradlew :bikesched-examples:kotlin:runSimple    # two steps, then an event published after 15 seconds
 ./gradlew :bikesched-examples:kotlin:runShop      # Kotlin shop with Ktor, Exposed, and kotlinx-serialization
 ./gradlew :bikesched-examples:java:test :bikesched-examples:spring:test  # the example tests, against Testcontainers
 ```
@@ -450,6 +451,21 @@ Open http://localhost:8081/bikesched/ (`ADMIN_PORT` changes the port), retry a f
 cancel a waiting order. `AdminExampleTest` serves the page on a random port and waits until the
 failed invoices show up in the JSON API, with their history, and the inventory sync has run
 both steps.
+
+## Kotlin Simple
+
+[`SimpleExample`](kotlin/src/main/kotlin/org/bikesched/examples/kotlin/simple/SimpleExample.kt)
+is a single class with a `main` that schedules one job using the Kotlin DSL:
+
+1. `prepare-greeting` returns a string as a durable step.
+2. `print-greeting` prints it as a second durable step.
+3. `await-event` suspends the job until its event arrives.
+
+A background executor publishes the event after 15 seconds, keyed uniquely for this run. The
+handler resumes with the first two steps already completed, so their output appears only once.
+`main` uses `BikeschedTest.awaitJob(...).timeout(...).untilSucceeded()` to wait for success before
+closing the executor and node. The wait allows 30 seconds, longer than the utility's default
+10-second timeout. Like the other examples, it honors `POSTGRES_PORT`.
 
 ## Kotlin Shop
 
