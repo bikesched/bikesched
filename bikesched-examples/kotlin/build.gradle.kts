@@ -15,6 +15,9 @@ kotlin {
 dependencies {
     // bikesched-kotlin provides the Kotlin DSL extensions on the Java API.
     implementation(project(":bikesched-kotlin"))
+    // Wait for the simple example's job in main.
+    implementation(project(":bikesched-test"))
+    implementation(project(":bikesched-jackson"))
     // PostgreSQL JDBC driver (bikesched-core needs it at runtime; Exposed needs it too).
     implementation(libs.postgresql)
     implementation(libs.slf4j.api)
@@ -42,6 +45,14 @@ dependencies {
 
 application {
     mainClass = "org.bikesched.examples.kotlin.shop.ShopExampleKt"
+}
+
+tasks.register<JavaExec>("runSimple") {
+    group = "application"
+    description = "Runs one Kotlin job with two steps and an event published after 15 seconds."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.kotlin.simple.SimpleExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
 
 tasks.register<JavaExec>("runShop") {
