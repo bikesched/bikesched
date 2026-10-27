@@ -61,7 +61,10 @@ public final class HistoryTesting {
     int dot = path.indexOf('.');
     if (dot >= 0) {
       Matcher object =
-          Pattern.compile("\"" + Pattern.quote(path.substring(0, dot)) + "\": \\{([^}]*)}")
+          Pattern.compile(
+                  "\""
+                      + Pattern.quote(path.substring(0, dot))
+                      + "\": \\{((?:[^}\"]++|\"(?:[^\"\\\\]++|\\\\.)*+\")*+)}")
               .matcher(data);
       if (!object.find()) {
         return null;
