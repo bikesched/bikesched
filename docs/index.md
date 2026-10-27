@@ -14,7 +14,7 @@ instance connected to the database is a *node*: nodes claim due jobs with
 and without any coordinator besides PostgreSQL.
 
 <p align="center">
-  <img src="bikesched-admin-ui.png" alt="bikesched admin UI: a web interface for managing jobs, events and nodes" width="600">
+  <img src="bikesched-admin-ui.png" alt="bikesched admin UI: a web interface for managing jobs, events and nodes">
 </p>
 
 ## Concepts
