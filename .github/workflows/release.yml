@@ -9,9 +9,10 @@
 # `./gradlew releaseVersions` derives the release from it. The release is built with
 # -PreleaseVersion (no release commit), published to GitHub Packages, tagged, and JReleaser
 # (Gradle plugin, configured in bikesched.release) creates the GitHub Release with the changelog,
-# the only place it is kept. The version bumps afterwards are pushed by this workflow directly to
-# the branches (GITHUB_TOKEN pushes trigger no workflows, so it starts the build of the new
-# snapshots itself).
+# the only place it is kept. The tag, the release branch and the version bumps are pushed by this
+# workflow directly with the deploy key in the secret RELEASE_DEPLOY_KEY, which the rulesets on
+# main, release/** and v* tags let bypass them. Unlike GITHUB_TOKEN pushes, these pushes start the
+# build of the new snapshots and the website deploy.
 #
 # The `release` job runs in the `release` environment: configure required reviewers there to
 # approve each release after looking at the changelog the `prepare` job shows.
@@ -149,9 +150,8 @@ jobs:
     timeout-minutes: 45
     environment: release
     permissions:
-      contents: write # tag, GitHub Release, version bumps
+      contents: write # GitHub Release
       packages: write # GitHub Packages
-      actions: write # starting the build of the new snapshots
 
     env:
       CURRENT: ${{ needs.prepare.outputs.current }}
@@ -166,6 +166,9 @@ jobs:
         with:
           ref: ${{ github.sha }} # exactly the commit `prepare` looked at
           fetch-depth: 0
+          # Pushes the tag, the release branch and the version bumps: a deploy key with write
+          # access on the bypass list of the rulesets protecting main, release/** and v* tags.
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       # As in build.yml: 26 builds (`java`), 21 runs the tests (`java-release`).
       - name: Set up JDK 21 and 26
@@ -286,15 +289,6 @@ jobs:
           done
           echo "::error::Could not push the version bump to main"
           exit 1
-
-      # Pushes with GITHUB_TOKEN start no workflows: build and publish the new snapshots.
-      - name: Build new snapshots
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ -n "$RELEASE_BRANCH" ]; then gh workflow run build.yml --ref main; fi
-          gh workflow run build.yml --ref "${RELEASE_BRANCH:-$GITHUB_REF_NAME}"
-          gh workflow run website.yml --ref main
 
       - name: Upload JReleaser output
         if: always()
