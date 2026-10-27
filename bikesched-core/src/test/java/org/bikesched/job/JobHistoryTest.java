@@ -74,9 +74,9 @@ class JobHistoryTest extends AbstractBikeschedTest {
               ActorType.NODE);
       // The polling node wrote every entry, also the one of scheduling through its API.
       assertThat(history).extracting(HistoryEntry::nodeId).containsOnly(bikesched.node().id());
-      assertThat(history).extracting(entry -> data(entry, "subjectName")).containsOnly(name);
+      assertThat(history).extracting(entry -> data(entry, "job.name")).containsOnly(name);
       assertThat(data(history.getFirst(), "dueAt")).isNotNull();
-      assertThat(history.get(1).data()).isEqualTo("{\"subjectName\": \"" + name + "\"}");
+      assertThat(history.get(1).data()).isEqualTo("{\"job\": {\"name\": \"" + name + "\"}}");
       assertThat(history).extracting(HistoryEntry::causedById).containsOnlyNulls();
       assertThat(history.get(2)).isInstanceOf(StepEntry.class);
       assertThat(((StepEntry) history.get(2)).stepId())
@@ -148,9 +148,9 @@ class JobHistoryTest extends AbstractBikeschedTest {
           .filteredOn(JobEntry.class::isInstance)
           .extracting(entry -> ((JobEntry) entry).attempt())
           .containsExactly(0, 1, 0, 0, 1, 1);
-      assertThat(data(history.get(2), "eventName")).isEqualTo(event);
-      assertThat(data(history.get(2), "eventKey")).isEqualTo("order-1");
-      assertThat(data(history.get(3), "stepName")).isEqualTo("await");
+      assertThat(data(history.get(2), "event.name")).isEqualTo(event);
+      assertThat(data(history.get(2), "event.key")).isEqualTo("order-1");
+      assertThat(data(history.get(3), "step.name")).isEqualTo("await");
       // Publishing completes the step and resumes the job: the publisher's changes.
       assertThat(history.get(4).actorType()).isEqualTo(ActorType.APPLICATION);
       assertThat(history.get(5).actorType()).isEqualTo(ActorType.APPLICATION);
@@ -302,7 +302,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
 
       HistoryEntry published = entry(bikesched.findJobHistory(jobId), "publish PUBLISHED");
       assertThat(published.actorType()).isEqualTo(ActorType.JOB);
-      assertThat(data(published, "eventId")).isNotNull();
+      assertThat(data(published, "event.id")).isNotNull();
     }
   }
 
@@ -332,7 +332,7 @@ class JobHistoryTest extends AbstractBikeschedTest {
       assertThat(data(history.get(1), "previousRecurrence")).isEqualTo("every PT1H");
       // The job is gone: its name was stored with the entry.
       assertThat(second.findJob(occurrence)).isEmpty();
-      assertThat(data(history.get(2), "subjectName")).isEqualTo(name);
+      assertThat(data(history.get(2), "job.name")).isEqualTo(name);
       assertThat(history).extracting(HistoryEntry::actorType).containsOnly(ActorType.APPLICATION);
       // Not polling: not registered as a node.
       assertThat(history).extracting(HistoryEntry::nodeId).containsOnlyNulls();

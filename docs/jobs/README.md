@@ -357,8 +357,8 @@ A job that waited for an event and was retried once could show (step names and s
 | | `CLAIMED` | `RUNNING` | 2 | `NODE` | |
 | `charge` | `STARTED` | `RUNNING` | 2 | `JOB` | `run`: 2 |
 | `charge` | `SUCCEEDED` | `SUCCEEDED` | 2 | `JOB` | |
-| `await` | `WAITING` | `WAITING` | 2 | `JOB` | `eventName`, `eventKey`, `waitUntil` |
-| | `SUSPENDED` | `WAITING` | 1 | `NODE` | `stepName`: `await` |
+| `await` | `WAITING` | `WAITING` | 2 | `JOB` | `event` (`name`, `key`), `waitUntil` |
+| | `SUSPENDED` | `WAITING` | 1 | `NODE` | `step`: `{"name": "await"}` |
 | `await` | `RECEIVED` | `SUCCEEDED` | 1 | `APPLICATION` | |
 | | `RESUMED` | `SCHEDULED` | 1 | `APPLICATION` | |
 | | `CLAIMED` | `RUNNING` | 2 | `NODE` | |
@@ -394,11 +394,18 @@ A job that waited for an event and was retried once could show (step names and s
   bikesched.newEvent("payment-received", orderId).actor(Actor.user("simon")).publish();
   bikesched.admin().retryJob(jobId).actor(Actor.user("simon")).retry();
   ```
-- `data` is a JSON object as text, or `null` without specifics: the job's name (`subjectName`), the
-  step's name (`stepName`), and the action's specifics, such as `error` and `message` (cut to 4000
-  characters), `dueAt`, `waitUntil`, `reason` or `checks`. The names are stored, so the entries
-  still read well after the job was deleted.
-- A [postponed](#postponing) job shows `POSTPONED` with `dueAt` (and the `stepName` it was
+- `data` is a JSON object as text, or `null` without specifics. What the entry involves gets an
+  object of its own: `job` and `step` with their `name`, `event` with `id`, `name` and `key` (the
+  event published, or the one a step waits for), `node` with its `name`, `childJob` with `id`
+  and `state`. The action's specifics are top-level keys, such as `error` and `message` (cut to
+  4000 characters), `dueAt`, `waitUntil`, `reason` or `checks`. The names are stored, so the
+  entries still read well after the job was deleted:
+
+  ```json
+  {"job": {"name": "fulfil-order"}, "step": {"name": "await"},
+   "event": {"name": "payment-received", "key": "order-3"}, "waitUntil": "2026-10-27T09:00:00Z"}
+  ```
+- A [postponed](#postponing) job shows `POSTPONED` with `dueAt` (and the `step` it was
   postponed in); that step shows `POSTPONED` before it, and its next run has no `run`, since it got
   its attempt back.
 - A [poll](../multi-step-jobs/steps.md#polling) records its first wait and its outcome (`checks`),

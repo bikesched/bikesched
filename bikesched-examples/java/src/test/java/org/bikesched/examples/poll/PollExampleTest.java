@@ -92,7 +92,7 @@ class PollExampleTest {
       List<HistoryEntry> poll =
           bikesched.findJobHistory(jobId).stream()
               .filter(entry -> entry instanceof StepEntry)
-              .filter(entry -> entry.data().contains("\"stepName\": \"poll-payment\""))
+              .filter(entry -> entry.data().contains("\"step\": {\"name\": \"poll-payment\"}"))
               .toList();
       assertThat(poll)
           .as("the first wait and the outcome")

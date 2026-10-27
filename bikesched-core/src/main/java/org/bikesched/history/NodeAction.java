@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.bikesched.history;
 
-/** What happened to a node, see {@link NodeEntry}. */
+/**
+ * What happened to a node, see {@link NodeEntry}. Every node entry's {@linkplain
+ * HistoryEntry#data() data} has the {@code node} with its {@code name}.
+ */
 public enum NodeAction implements HistoryAction {
 
   /** Registered when it started polling (again, after another node removed it). */

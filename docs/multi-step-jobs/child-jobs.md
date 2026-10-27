@@ -142,5 +142,5 @@ or with `orElse(fallback)`, which returns the fallback for every outcome but `Su
   node reads it with its own; when parent and child types run in different services, the mappers
   must agree on the format.
 - **History**: the child's `SCHEDULED` entry has the `JOB` actor, the parent's step records
-  `CHILD_STARTED` (with `childJobId`) and the parent `SUSPENDED`; the child's end records
-  `CHILD_ENDED` (with `childState`) on the step and `RESUMED` on the parent.
+  `CHILD_STARTED` (with `childJob.id`) and the parent `SUSPENDED`; the child's end records
+  `CHILD_ENDED` (with `childJob.state`) on the step and `RESUMED` on the parent.

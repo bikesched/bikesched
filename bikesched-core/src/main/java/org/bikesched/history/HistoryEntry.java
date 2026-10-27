@@ -84,9 +84,12 @@ public sealed interface HistoryEntry permits JobEntry, StepEntry, EventEntry, No
 
   /**
    * Returns the names and the action's specifics as a JSON object, stored with the entry so it
-   * reads well after its subject was deleted: {@code subjectName} (the job's, event's or node's
-   * name), {@code stepName}, and the keys listed with each action (e.g. {@code error}, {@code
-   * dueAt}). Fields without a value are left out; texts are cut to 4000 characters.
+   * reads well after its subject was deleted. What the entry involves gets an object of its own:
+   * {@code job} ({@code name}), {@code step} ({@code name}), {@code event} ({@code id}, {@code
+   * name}, {@code key}: the event published, or the one a step waits for), {@code node} ({@code
+   * name}) and {@code childJob} ({@code id}, {@code state}). The action's specifics are top-level
+   * keys, listed with each action (e.g. {@code error}, {@code dueAt}). Fields without a value are
+   * left out; texts are cut to 4000 characters.
    *
    * @return the JSON object as text, {@code null} if there is nothing to store
    */

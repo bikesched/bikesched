@@ -4,8 +4,10 @@ package org.bikesched;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.bikesched.history.EventEntry;
 import org.bikesched.history.HistoryEntry;
 import org.bikesched.history.JobEntry;
+import org.bikesched.history.NodeEntry;
 import org.bikesched.history.StepEntry;
 
 /** Reading history entries in tests: their actions in a compact form and their data. */
@@ -15,7 +17,8 @@ public final class HistoryTesting {
 
   /**
    * The entries' actions: {@code ACTION} for job entries, {@code step ACTION} for step entries (the
-   * step's name from the data), {@code subjectName ACTION} for other entries.
+   * step's name from the data), {@code name ACTION} with the event's or node's name for other
+   * entries.
    */
   public static List<String> actions(List<? extends HistoryEntry> history) {
     return history.stream().map(HistoryTesting::action).toList();
@@ -25,8 +28,9 @@ public final class HistoryTesting {
   public static String action(HistoryEntry entry) {
     return switch (entry) {
       case JobEntry job -> job.action().name();
-      case StepEntry step -> data(step, "stepName") + " " + step.action();
-      default -> data(entry, "subjectName") + " " + entry.action().name();
+      case StepEntry step -> data(step, "step.name") + " " + step.action();
+      case EventEntry event -> data(event, "event.name") + " " + event.action();
+      case NodeEntry node -> data(node, "node.name") + " " + node.action();
     };
   }
 
@@ -45,12 +49,25 @@ public final class HistoryTesting {
 
   /**
    * A value of the entry's data as text: a string without its quotes, a number as written; {@code
-   * null} if the key is missing.
+   * null} if the key is missing. A key of a nested object is named by its path, e.g. {@code
+   * job.name}.
    */
-  public static String data(HistoryEntry entry, String key) {
+  public static String data(HistoryEntry entry, String path) {
     String data = entry.data();
     if (data == null) {
       return null;
+    }
+    String key = path;
+    int dot = path.indexOf('.');
+    if (dot >= 0) {
+      Matcher object =
+          Pattern.compile("\"" + Pattern.quote(path.substring(0, dot)) + "\": \\{([^}]*)}")
+              .matcher(data);
+      if (!object.find()) {
+        return null;
+      }
+      data = object.group(1);
+      key = path.substring(dot + 1);
     }
     Matcher matcher =
         Pattern.compile("\"" + Pattern.quote(key) + "\": (\"((?:[^\"\\\\]++|\\\\.)*+)\"|[^,}]+)")

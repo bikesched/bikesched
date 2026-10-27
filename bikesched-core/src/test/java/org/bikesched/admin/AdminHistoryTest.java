@@ -129,7 +129,7 @@ class AdminHistoryTest extends AbstractBikeschedTest {
               + " actor_type, data) values ('"
               + eventId
               + "', gen_random_uuid(), 'EVENT', 'PUBLISHED', '2001-01-01T01:00:00Z',"
-              + " 'APPLICATION', '{\"subjectName\": \"scan\"}')");
+              + " 'APPLICATION', '{\"event\": {\"name\": \"scan\"}}')");
       execute(
           "insert into bikesched_history (subject_id, id, subject_type, action, state, attempt,"
               + " created_at, actor_type)"

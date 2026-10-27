@@ -184,9 +184,9 @@ class ChildJobTest extends AbstractBikeschedTest {
       assertThat(bikesched.findJobHistory(parentId))
           .extracting(ChildJobTest::describe)
           .containsSubsequence(
-              "start child-basic-child CHILD_STARTED WAITING childJobId=" + childId,
-              "SUSPENDED WAITING stepName=start child-basic-child",
-              "start child-basic-child CHILD_ENDED SUCCEEDED childState=SUCCEEDED",
+              "start child-basic-child CHILD_STARTED WAITING childJob.id=" + childId,
+              "SUSPENDED WAITING step.name=start child-basic-child",
+              "start child-basic-child CHILD_ENDED SUCCEEDED childJob.state=SUCCEEDED",
               "RESUMED SCHEDULED",
               "SUCCEEDED SUCCEEDED");
       HistoryEntry scheduled = bikesched.findJobHistory(childId).getFirst();
@@ -845,8 +845,8 @@ class ChildJobTest extends AbstractBikeschedTest {
       assertThat(bikesched.findJobHistory(parentId))
           .extracting(ChildJobTest::describe)
           .contains(
-              "start child-timeout-child WAITING WAITING childJobId=" + child.get(),
-              "start child-timeout-child TIMED_OUT TIMED_OUT childJobId=" + child.get());
+              "start child-timeout-child WAITING WAITING childJob.id=" + child.get(),
+              "start child-timeout-child TIMED_OUT TIMED_OUT childJob.id=" + child.get());
     }
   }
 
@@ -859,9 +859,9 @@ class ChildJobTest extends AbstractBikeschedTest {
           default -> "";
         };
     String description = HistoryTesting.action(entry) + " " + state;
-    for (String key : List.of("stepName", "childJobId", "childState")) {
+    for (String key : List.of("step.name", "childJob.id", "childJob.state")) {
       String value = HistoryTesting.data(entry, key);
-      if (value != null && !(entry instanceof StepEntry && key.equals("stepName"))) {
+      if (value != null && !(entry instanceof StepEntry && key.equals("step.name"))) {
         description += " " + key + "=" + value;
       }
     }
