@@ -92,7 +92,7 @@ class SchemaMigratorTest {
     String textColumns =
         """
         select table_name || '.' || column_name from information_schema.columns
-        where table_schema = current_schema() and table_name like 'bikesched\\_%'
+        where table_schema = current_schema() and table_name like 'bikesched\\_%%'
           and table_name <> 'bikesched_schema_migrations' and data_type = 'text'
           and %s order by 1""";
     assertThat(queryStrings(textColumns.formatted("collation_name is distinct from 'C'")))
