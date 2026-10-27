@@ -1,9 +1,17 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
+  "extends": ["config:recommended", ":semanticCommitTypeAll(chore)"],
   "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "schedule": ["* 0-5 * * 1"],
+  "baseBranchPatterns": ["$default", "/^release\\/.+$/"],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "minimumReleaseAge": null,
+    "automerge": true
+  },
   "packageRules": [
     {
       "description": "Stable releases only: no alpha, beta, RC, milestone, preview, experimental or snapshot versions",
@@ -11,8 +19,14 @@
       "allowedVersions": "!/(^|[.-])(alpha|beta|rc|cr|m|milestone|preview|experimental|snapshot|eap|ea|dev)[.-]?\\d*([.-]|$)/i"
     },
     {
+      "description": "Non-major updates merge themselves once the build is green",
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true
+    },
+    {
+      "description": "Release branches only get vulnerability fixes (vulnerabilityAlerts re-enables those), no regular updates",
+      "matchBaseBranches": ["/^release\\/.+$/"],
+      "enabled": false
     }
   ]
 }
