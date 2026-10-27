@@ -8,7 +8,7 @@
 minimal dependencies, no extra infrastructure and an optional admin UI**
 
 <p align="center">
-  <img src="docs/bikesched-admin-ui.png" alt="bikesched admin UI: a web interface for managing jobs, events and nodes" width="400">
+  <img src="docs/bikesched-admin-ui.png" alt="bikesched admin UI: a web interface for managing jobs, events and nodes">
 </p>
 
 > [!NOTE]
