@@ -1,6 +1,6 @@
 [versions]
 # Project
-bikesched = "0.1.0-SNAPSHOT"
+bikesched = "0.2.0-SNAPSHOT"
 # JDK the build runs on and compiles with (toolchain)
 java = "26"
 # Java version of the published bytecode and API: the language baseline (ADR 0049)

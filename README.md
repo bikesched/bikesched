@@ -12,7 +12,7 @@ minimal dependencies, no extra infrastructure and an optional admin UI**
 </p>
 
 > [!NOTE]
-> bikesched is at a super early stage (`0.1.0-SNAPSHOT`) and can break at any time: APIs and the
+> bikesched is at a super early stage (`0.2.0-SNAPSHOT`) and can break at any time: APIs and the
 > database schema may change without notice and without migrations.
 >
 > It is also a first experiment in building a library heavily with AI coding agents; hence the
@@ -209,7 +209,7 @@ Releases (see the [GitHub Releases](https://github.com/bikesched/bikesched/relea
 are published to GitHub Packages: `org.bikesched:bikesched-core`, `bikesched-jackson`,
 `bikesched-kotlin`, `bikesched-annotations`, `bikesched-cron`, `bikesched-micrometer`,
 `bikesched-spring-boot-starter`, `bikesched-admin`, `bikesched-admin-shaded` and `bikesched-test`,
-all with the same version (`0.1.0-SNAPSHOT` on this branch). Reading from GitHub Packages requires a
+all with the same version (`0.2.0-SNAPSHOT` on this branch). Reading from GitHub Packages requires a
 GitHub token with the `read:packages` scope, even for public packages. How releases are cut:
 [RELEASING.md](RELEASING.md).
 
@@ -225,7 +225,7 @@ repositories {
 }
 
 dependencies {
-    implementation("org.bikesched:bikesched-core:0.1.0-SNAPSHOT")
+    implementation("org.bikesched:bikesched-core:0.2.0-SNAPSHOT")
 }
 ```
 
