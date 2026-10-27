@@ -95,6 +95,16 @@ Messages are diagnostic text and are never rejected, so recording a failure cann
 length: errors (`last_error` of jobs and steps) and cancel messages (`cancel_message`) longer than
 4000 characters are stored truncated, ending in `… (truncated)`.
 
+## Collation
+
+Every `text` column except the messages holds an identifier (names, keys, idempotency keys,
+references, recurrences, types, states, history actions and actor names) and uses the `"C"`
+collation, whatever the database's default is: comparisons and sorts are byte-wise, which makes
+the indexes on these columns faster, lets them serve the admin's prefix searches, and keeps them
+valid across glibc or ICU upgrades that change a linguistic sort order. The admin therefore lists
+names in byte order, upper case before lower case. See
+[ADR 0063](../decisions/0063-c-collation-for-identifiers.md).
+
 ## Connection pool
 
 Every store call borrows its own connection; nothing beyond the listening connection (see [Due jobs

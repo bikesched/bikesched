@@ -86,6 +86,25 @@ class SchemaMigratorTest {
   }
 
   @Test
+  void identifierColumnsUseTheCCollation() throws SQLException {
+    new SchemaMigrator(dataSource).migrate();
+
+    String textColumns =
+        """
+        select table_name || '.' || column_name from information_schema.columns
+        where table_schema = current_schema() and table_name like 'bikesched\\_%'
+          and table_name <> 'bikesched_schema_migrations' and data_type = 'text'
+          and %s order by 1""";
+    assertThat(queryStrings(textColumns.formatted("collation_name is distinct from 'C'")))
+        .containsExactly(
+            "bikesched_jobs.cancel_message",
+            "bikesched_jobs.last_error",
+            "bikesched_steps.last_error");
+    assertThat(queryStrings(textColumns.formatted("collation_name = 'C'")))
+        .contains("bikesched_jobs.name", "bikesched_events.key", "bikesched_history.action");
+  }
+
+  @Test
   void secondRunIsNoOp() {
     var migrator = new SchemaMigrator(dataSource);
     migrator.migrate();
