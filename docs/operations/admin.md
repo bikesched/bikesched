@@ -38,9 +38,9 @@ Choose one of the two artifacts, not both:
 
 ```kotlin
 dependencies {
-    implementation("org.bikesched:bikesched-admin:0.1.0-SNAPSHOT")
+    implementation("org.bikesched:bikesched-admin:0.1.0")
     // Or, with nanojson bundled and relocated to avoid application version conflicts:
-    // implementation("org.bikesched:bikesched-admin-shaded:0.1.0-SNAPSHOT")
+    // implementation("org.bikesched:bikesched-admin-shaded:0.1.0")
 }
 ```
 

@@ -15,7 +15,7 @@ and call `newJob(…)` from anywhere. Core stays free of Spring; only this modul
 
 ```kotlin
 dependencies {
-    implementation("org.bikesched:bikesched-spring-boot-starter:0.1.0-SNAPSHOT")
+    implementation("org.bikesched:bikesched-spring-boot-starter:0.1.0")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")   // a pooled DataSource
 }
 ```

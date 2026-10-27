@@ -24,7 +24,7 @@ All modules share the group `org.bikesched` and one version. `bikesched-core` is
 brings the PostgreSQL JDBC driver and `slf4j-api` along.
 
 > [!NOTE]
-> These docs are for version `0.1.0-SNAPSHOT`; the
+> These docs are for version `0.1.0`; the
 > [GitHub Releases](https://github.com/bikesched/bikesched/releases) list the releases.
 > Releases and snapshots are published to GitHub Packages, which needs a GitHub token with the
 > `read:packages` scope even for public packages, hence the repository blocks below.
@@ -45,7 +45,7 @@ repositories {
 }
 
 dependencies {
-    implementation("org.bikesched:bikesched-core:0.1.0-SNAPSHOT")
+    implementation("org.bikesched:bikesched-core:0.1.0")
 }
 ```
 
@@ -64,7 +64,7 @@ Maven, with the token in a `<server>` entry with the id `github` in `~/.m2/setti
     <dependency>
         <groupId>org.bikesched</groupId>
         <artifactId>bikesched-core</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
+        <version>0.1.0</version>
     </dependency>
 </dependencies>
 ```
