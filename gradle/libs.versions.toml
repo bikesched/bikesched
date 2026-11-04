@@ -18,7 +18,7 @@ jreleaser = "1.26.0"
 
 # Static analysis: Error Prone with NullAway (bikesched-core)
 errorprone = "2.50.0"
-nullaway = "0.14.2"
+nullaway = "0.14.3"
 # Annotations of the PostgreSQL driver, read by NullAway at compile time only
 checker-qual = "4.3.1"
 
