@@ -41,7 +41,7 @@ nanojson = "1.10"
 jsonassert = "1.5.3"
 hikaricp = "7.1.0"
 awaitility = "4.3.0"
-micrometer = "1.17.1"
+micrometer = "1.17.2"
 # Spring Framework version managed by the Spring Boot version above; keep in sync when bumping it
 # (only needed for the optional spring-tx dependency).
 spring-framework = "7.0.9"
