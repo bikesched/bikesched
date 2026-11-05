@@ -54,7 +54,7 @@ webjars-preact = "10.29.8"
 webjars-htm = "3.1.1"
 
 # bikesched-jackson (jackson-module-kotlin: bikesched-kotlin tests only)
-jackson = "3.2.3"
+jackson = "3.2.4"
 
 # bikesched-examples:kotlin
 ktor = "3.6.0"
