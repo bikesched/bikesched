@@ -45,7 +45,7 @@ micrometer = "1.17.2"
 # Spring Framework version managed by the Spring Boot version above; keep in sync when bumping it
 # (only needed for the optional spring-tx dependency).
 spring-framework = "7.0.9"
-spring-boot = "4.1.1"
+spring-boot = "4.1.2"
 archunit = "1.5.1"
 cron-utils = "9.2.1"
 
