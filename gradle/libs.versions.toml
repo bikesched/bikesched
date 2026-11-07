@@ -8,7 +8,7 @@ java-release = "21"
 
 # Gradle plugins
 foojay-resolver = "1.0.0"
-spotless = "8.10.4"
+spotless = "8.11.0"
 kotlin = "2.4.21"
 dokka = "2.2.0"
 hugo-plugin = "0.13.0"
