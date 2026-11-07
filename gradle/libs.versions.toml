@@ -62,7 +62,7 @@ exposed = "1.6.0"
 kotlinx-serialization = "1.11.0"
 moneta = "1.4.5"
 # bikesched-examples:java (rate-limit example)
-bucket4j = "8.21.0"
+bucket4j = "8.22.0"
 
 [libraries]
 jsemver = { module = "com.github.zafarkhaja:java-semver", version.ref = "jsemver" }
