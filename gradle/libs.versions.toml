@@ -14,7 +14,7 @@ dokka = "2.2.0"
 hugo-plugin = "0.13.0"
 shadow = "9.6.1"
 errorprone-plugin = "5.2.0"
-jreleaser = "1.26.0"
+jreleaser = "1.27.0"
 
 # Static analysis: Error Prone with NullAway (bikesched-core)
 errorprone = "2.52.0"
