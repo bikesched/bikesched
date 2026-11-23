@@ -12,7 +12,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.bikesched.AbstractBikeschedTest;
 import org.bikesched.Bikesched;
+import org.bikesched.LogCapture;
 import org.bikesched.admin.JobNameSummary;
+import org.bikesched.internal.job.JobRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -32,11 +34,17 @@ class RemoteJobNamesTest extends AbstractBikeschedTest {
   void aRemoteJobNameIsScheduledWithoutAHandlerAndRunsOnTheNodeHandlingIt() throws Exception {
     String name = "remote-basic";
     var ranOn = new CompletableFuture<String>();
+    var ownJob = new CompletableFuture<Void>();
     try (Bikesched scheduler =
             testNode("node-remote-scheduler").remoteJobNames(name, "remote-other").build();
         Bikesched worker = testNode("node-remote-worker").build()) {
+      // A handler of its own makes the scheduling node poll; it runs its own job meanwhile.
+      scheduler.registerJobHandler("remote-own", () -> ownJob.complete(null));
       UUID jobId = scheduler.newJob(name).payload("{\"x\": 1}").schedule();
-      // The scheduling node polls too, but does not claim the job: it has no handler for it.
+      UUID ownJobId = scheduler.newJob("remote-own").schedule();
+      ownJob.get(10, TimeUnit.SECONDS);
+      awaitState(ownJobId, "SUCCEEDED");
+      // The scheduling node does not claim the remote job: it has no handler for it.
       Thread.sleep(500);
       assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED'")).isOne();
 
@@ -102,6 +110,61 @@ class RemoteJobNamesTest extends AbstractBikeschedTest {
   }
 
   @Test
+  void aRecurringJobOfARemoteJobNameCanBeRegisteredWithItsHandler() throws Exception {
+    String name = "remote-recurring-handled";
+    try (Bikesched node = testNode("node-remote-recurring-handled").remoteJobNames(name).build()) {
+      UUID occurrence =
+          node.newJob(name).handler(() -> {}).schedule(Recurrence.every(Duration.ofHours(1)));
+
+      assertThat(count("id = '" + occurrence + "' and state = 'SCHEDULED'")).isOne();
+      assertThat(node.removeRecurringJob(name)).isTrue();
+    }
+  }
+
+  @Test
+  void aFailureHandlerOfARemoteJobNameWithoutAHandlerIsRejected() throws Exception {
+    String name = "remote-failure-handler";
+    try (Bikesched scheduler = testNode("node-remote-failure").remoteJobNames(name).build()) {
+      assertThatThrownBy(() -> scheduler.newJob(name).failureHandler(failed -> {}).schedule())
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage(
+              "Job name 'remote-failure-handler' is a remote job name without a handler on this"
+                  + " node: its failure handler runs on the node failing the job, so register it"
+                  + " on the nodes handling the name");
+      assertThat(count("name = '" + name + "'")).isZero();
+    }
+  }
+
+  @Test
+  void aTypedJobOfARemoteJobNameIsScheduledWithoutAHandler() throws Exception {
+    TypedJob<String> typed = TypedJob.of("remote-typed", String.class);
+    try (Bikesched scheduler = testNode("node-remote-typed").remoteJobNames(typed.name()).build()) {
+      UUID jobId = scheduler.newJob(typed).payload("\"hello\"").schedule(Duration.ofHours(1));
+
+      assertThat(count("id = '" + jobId + "' and state = 'SCHEDULED'")).isOne();
+    }
+  }
+
+  @Test
+  void aHandlerRegisteredForARemoteJobNameRunsItsJobsAndIsLogged() throws Exception {
+    String name = "remote-later";
+    var ran = new CompletableFuture<UUID>();
+    var logs = LogCapture.of(JobRegistry.class);
+    try (logs;
+        Bikesched node = testNode("node-remote-later").remoteJobNames(name).build()) {
+      UUID jobId = node.newJob(name).schedule();
+      node.registerJobHandler(name, job -> ran.complete(job.id()));
+
+      assertThat(ran.get(10, TimeUnit.SECONDS)).isEqualTo(jobId);
+      awaitState(jobId, "SUCCEEDED");
+      assertThat(logs.messages())
+          .contains(
+              "Job name remote-later is declared as a remote job name, but this node now has a"
+                  + " handler for it and runs its jobs");
+    }
+  }
+
+  @Test
   void anUnknownJobNameFailsAndTheMessageListsTheRemoteJobNames() {
     try (Bikesched scheduler =
         testNode("node-remote-unknown").remoteJobNames("remote-b", "remote-a").build()) {
@@ -120,8 +183,7 @@ class RemoteJobNamesTest extends AbstractBikeschedTest {
     assertThatThrownBy(() -> testNode("node-remote-invalid").remoteJobNames("ok", " "))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("remote job name");
-    assertThatThrownBy(
-            () -> testNode("node-remote-invalid").remoteJobNames("x".repeat(201)).build())
+    assertThatThrownBy(() -> testNode("node-remote-invalid").remoteJobNames("x".repeat(201)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

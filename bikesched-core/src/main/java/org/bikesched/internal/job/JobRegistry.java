@@ -12,6 +12,8 @@ import org.bikesched.job.JobHandler;
 import org.bikesched.job.TypedJob;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The job names a node knows: their handlers, its recurring jobs, the payload classes of typed job
@@ -19,6 +21,8 @@ import org.jspecify.annotations.Nullable;
  * without polling) and by the poller.
  */
 public final class JobRegistry {
+
+  private static final Logger LOG = LoggerFactory.getLogger(JobRegistry.class);
 
   /** Job names other nodes handle, which this node may schedule without a handler. */
   private final Set<String> remoteNames;
@@ -36,10 +40,11 @@ public final class JobRegistry {
   /**
    * Creates a registry without handlers.
    *
-   * @param remoteNames the job names other nodes handle, see {@link #requireSchedulable(String)}
+   * @param remoteNames the job names other nodes handle, see {@link #requireSchedulable(String)};
+   *     an immutable set
    */
   public JobRegistry(Set<String> remoteNames) {
-    this.remoteNames = Set.copyOf(remoteNames);
+    this.remoteNames = remoteNames;
   }
 
   /**
@@ -63,6 +68,12 @@ public final class JobRegistry {
     Objects.requireNonNull(handler, "handler");
     if (handlers.putIfAbsent(name, handler) != null) {
       return false;
+    }
+    if (remoteNames.contains(name)) {
+      LOG.info(
+          "Job name {} is declared as a remote job name, but this node now has a handler for it"
+              + " and runs its jobs",
+          name);
     }
     onNewHandler.run();
     return true;
@@ -170,7 +181,7 @@ public final class JobRegistry {
    * The job names this node may schedule one-off jobs of: those with a handler and the remote job
    * names.
    *
-   * @return a new set
+   * @return a new, mutable set
    */
   public Set<String> schedulableNames() {
     Set<String> names = new TreeSet<>(handlers.keySet());

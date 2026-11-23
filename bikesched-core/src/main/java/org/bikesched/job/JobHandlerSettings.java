@@ -58,7 +58,10 @@ public interface JobHandlerSettings<B extends JobHandlerSettings<B, P>, P extend
   /**
    * Sets the failure handler of this job name (optional). It is registered under the job name when
    * the job is scheduled, like {@link #handler(JobHandler)}: <strong>if a failure handler is
-   * already registered for the name, that one is kept and this one is ignored</strong>.
+   * already registered for the name, that one is kept and this one is ignored</strong>. A failure
+   * handler runs on the node failing the job, so scheduling a {@linkplain
+   * org.bikesched.BikeschedBuilder#remoteJobNames(String...) remote job name} without a handler on
+   * this node rejects it with an {@link IllegalArgumentException}.
    *
    * @param handler handles failed jobs of this name
    * @return this builder

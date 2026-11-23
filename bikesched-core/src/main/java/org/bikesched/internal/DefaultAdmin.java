@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.bikesched.admin.Admin;
@@ -67,7 +66,7 @@ final class DefaultAdmin implements Admin {
 
   private final Actions actions;
 
-  // The job names this node can schedule: with a handler or remote.
+  // The job names this node can schedule (with a handler or remote), a new mutable set per call.
   private final Supplier<Set<String>> schedulableNames;
 
   DefaultAdmin(
@@ -154,7 +153,7 @@ final class DefaultAdmin implements Admin {
   @Override
   public List<JobNameSummary> findJobNames() {
     ensureReady.run();
-    Set<String> handled = new TreeSet<>(schedulableNames.get());
+    Set<String> handled = schedulableNames.get();
     List<JobNameSummary> names = new ArrayList<>();
     for (JobNameSummary name : store.findJobNames()) {
       boolean isHandled = handled.remove(name.name());

@@ -185,6 +185,11 @@ bikesched.newJob("send-invoice").payload(invoice).schedule();
   jobs](../multi-step-jobs/child-jobs.md#starting-children). A [recurring job](recurring-jobs.md)
   still needs its handler on the registering node: the node running an occurrence schedules the
   next one only if the recurring job is registered there.
+- A failure handler set on the builder of a remote job is rejected: it runs on the node failing
+  the job, so register it on the nodes handling the name (see [Failure
+  handlers](#failure-handlers)).
+- A handler registered for a remote job name makes the node handle it: it then claims and runs
+  those jobs (logged at info level).
 - The [admin UI](../operations/admin.md) offers remote job names in its schedule form.
 - Jobs of a remote name no node handles stay `SCHEDULED`, so keep the list in sync with the
   services handling them.

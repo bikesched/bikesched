@@ -111,7 +111,9 @@ public fun Bikesched.handleJobFailures(name: String, handler: FailedJob.() -> Un
  *   failure handler, see [handleJobFailures]
  * @param handler executes jobs of this name, registered unless the name already has a handler
  * @return the job id, or the id of the existing job with the idempotency key
- * @throws IllegalArgumentException if both [at] and [delay] are set, or the name has no handler
+ * @throws IllegalArgumentException if both [at] and [delay] are set, the name has no handler and is
+ *   no remote job name (`BikeschedBuilder.remoteJobNames`), or [onFailure] is set for a remote job
+ *   name without a handler on this node
  */
 public fun Bikesched.createJob(
   name: String,
@@ -158,7 +160,9 @@ public fun Bikesched.createJob(
  * payload as [T].
  *
  * @return the job id, or the id of the existing job with the idempotency key
- * @throws IllegalArgumentException if both [at] and [delay] are set, or the name has no handler
+ * @throws IllegalArgumentException if both [at] and [delay] are set, the name has no handler and is
+ *   no remote job name (`BikeschedBuilder.remoteJobNames`), or [onFailure] is set for a remote job
+ *   name without a handler on this node
  */
 public inline fun <reified T : Any> Bikesched.createJob(
   name: String,
@@ -205,7 +209,9 @@ public inline fun <reified T : Any> Bikesched.createJob(
  * the payload as [T].
  *
  * @return the job id, or the id of the existing job with the idempotency key
- * @throws IllegalArgumentException if both [at] and [delay] are set, or the name has no handler
+ * @throws IllegalArgumentException if both [at] and [delay] are set, the name has no handler and is
+ *   no remote job name (`BikeschedBuilder.remoteJobNames`), or [onFailure] is set for a remote job
+ *   name without a handler on this node
  */
 public fun <T : Any> Bikesched.createJob(
   typedJob: TypedJob<T>,

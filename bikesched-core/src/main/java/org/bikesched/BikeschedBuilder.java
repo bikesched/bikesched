@@ -4,6 +4,7 @@ package org.bikesched;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -424,11 +425,13 @@ public final class BikeschedBuilder {
    *
    * <p>A remote job name only skips the check: the node does not claim jobs of it (a node claims
    * the names it has handlers for), so a node that registers a handler for it later runs its jobs
-   * as usual. Applies to one-off jobs ({@link JobBuilder#schedule()} and its overloads, also in the
-   * caller's transaction or with an idempotency key) and child jobs ({@link Job#newJob(String)}).
-   * Recurring jobs still need a handler: the node running an occurrence schedules the next one only
-   * if the recurring job is registered on it, so recurring jobs are registered where they run.
-   * Replaces the names set so far.
+   * as usual. Applies to one-off jobs ({@link JobBuilder#schedule()}, {@link
+   * JobBuilder#schedule(Instant)} and {@link JobBuilder#schedule(Duration)}, also in the caller's
+   * transaction or with an idempotency key) and child jobs ({@link Job#newJob(String)}). Recurring
+   * jobs still need a handler: the node running an occurrence schedules the next one only if the
+   * recurring job is registered on it, so recurring jobs are registered where they run. A failure
+   * handler set on the builder of a remote job is rejected: it runs on the node failing the job, so
+   * it belongs on the nodes handling the name. Replaces the names set so far.
    *
    * @param remoteJobNames the job names, each 1 to 200 characters and not blank
    * @return this builder

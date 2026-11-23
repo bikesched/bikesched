@@ -165,12 +165,13 @@ always shown.
 - **Schedule job** (operators): a form in the detail panel, opened by the button above the job list
   (with the name of the list filled in) or by "Schedule similar…" in a job's detail (name, payload,
   priority and max attempts copied from that job). It offers only the job names the serving node has
-  a handler for or declares as [remote job names](../jobs/README.md#jobs-other-nodes-handle); picking one copies the payload of its latest job (only with `showPayloads(true)`).
-  The job runs now or after a delay; priority, max attempts, timeout, an idempotency key and a
-  reference are under "More options" ("Schedule similar…" also copies the reference). The payload must be JSON. For a recurring job it adds one run and leaves the
-  recurrence as it is. Once scheduled, the new job's detail opens; with an idempotency key a job
-  with that name already has, that job opens instead and nothing is scheduled. The server logs every
-  scheduled job with the user.
+  a handler for or declares as [remote job names](../jobs/README.md#jobs-other-nodes-handle);
+  picking one copies the payload of its latest job (only with `showPayloads(true)`). The job runs
+  now or after a delay; priority, max attempts, timeout, an idempotency key and a reference are
+  under "More options" ("Schedule similar…" also copies the reference). The payload must be JSON.
+  For a recurring job it adds one run and leaves the recurrence as it is. Once scheduled, the new
+  job's detail opens; with an idempotency key a job with that name already has, that job opens
+  instead and nothing is scheduled. The server logs every scheduled job with the user.
 - **Events**: newest first, by name and key prefix. The detail shows who published the event (a
   job's step or outside a job), the jobs that received it, its payload and, when recorded, its
   history: the publish and what it caused (the steps that received it, the jobs it resumed);

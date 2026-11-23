@@ -164,7 +164,7 @@ export function ScheduleForm({ jobNames, prefill, payloadsShown, onClose, onSche
   if (handled.length === 0) {
     return html`<aside class="panel detail" aria-label="Schedule job">
       <${DetailHead} title="Schedule job" plain=${true} onClose=${onClose} />
-      <p class="detail-body muted">This node has no job handlers, so it cannot schedule jobs. Serve the admin from a node that registers them.</p>
+      <p class="detail-body muted">This node has no job handlers and no remote job names, so it cannot schedule jobs. Serve the admin from a node that registers handlers, or declare the job names other nodes handle with remoteJobNames(…).</p>
     </aside>`;
   }
 

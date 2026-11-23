@@ -67,6 +67,13 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
     beforeDatabaseAccess.run();
     String name = job.name();
     requireSchedulable(name, handler);
+    if (failureHandler != null && registry.handler(name) == null) {
+      throw new IllegalArgumentException(
+          "Job name '"
+              + name
+              + "' is a remote job name without a handler on this node: its failure handler runs on"
+              + " the node failing the job, so register it on the nodes handling the name");
+    }
     registerFailureHandler(name, failureHandler);
     UUID jobId = UuidUtil.timeOrdered();
     UUID stored =

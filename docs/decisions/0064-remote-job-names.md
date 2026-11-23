@@ -42,7 +42,10 @@ one-off jobs (also in the caller's transaction and with an idempotency key) and 
 are declared once per node, so call sites stay unchanged and an undeclared typo still fails.
 
 A remote job name changes nothing else: the node claims only names it has handlers for, and a
-handler registered later for a remote name runs its jobs as usual. Recurring jobs still need a
+handler registered later for a remote name runs its jobs as usual (logged at info level, since the
+declaration then no longer holds). A failure handler on the builder of a remote job without a local
+handler is rejected: failure handlers run on the node failing the job, so it would never run.
+Recurring jobs still need a
 handler, because the node running an occurrence schedules the next one only if the recurring job is
 registered on it; the error for a remote name says so.
 
