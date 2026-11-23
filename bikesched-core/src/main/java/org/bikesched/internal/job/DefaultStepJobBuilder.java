@@ -55,7 +55,7 @@ final class DefaultStepJobBuilder<P extends @Nullable Object>
   @Override
   public UUID schedule(Instant at) {
     Objects.requireNonNull(at, "at");
-    scheduler.requireHandler(name, null);
+    scheduler.requireSchedulable(name, null);
     String childReference = referenceSet ? reference : parent.reference();
     return parent.startChildJob(stepName, newJob(at, childReference), compensation);
   }

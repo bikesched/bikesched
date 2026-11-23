@@ -165,7 +165,7 @@ always shown.
 - **Schedule job** (operators): a form in the detail panel, opened by the button above the job list
   (with the name of the list filled in) or by "Schedule similar…" in a job's detail (name, payload,
   priority and max attempts copied from that job). It offers only the job names the serving node has
-  a handler for; picking one copies the payload of its latest job (only with `showPayloads(true)`).
+  a handler for or declares as [remote job names](../jobs/README.md#jobs-other-nodes-handle); picking one copies the payload of its latest job (only with `showPayloads(true)`).
   The job runs now or after a delay; priority, max attempts, timeout, an idempotency key and a
   reference are under "More options" ("Schedule similar…" also copies the reference). The payload must be JSON. For a recurring job it adds one run and leaves the
   recurrence as it is. Once scheduled, the new job's detail opens; with an idempotency key a job
@@ -249,7 +249,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | GET | `api/jobs?search=&limit=` | `{"jobs": [...], "next": null}`: the page's search, jobs whose id ends with `search` (if it is 8 to 32 hex digits) or whose reference is `search`, newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
 | GET | `api/steps/{id}` | `{"step", "job", "history", "payloadsShown"}`: one step by its id with its job's summary and the step's history entries, plus `result` with `showPayloads(true)` |
-| GET | `api/job-names` | `{"names": [{"name", "total", "counts", "recurrence", "handled"}]}`: `handled` if the serving node has a handler for the name (handled names without jobs are listed too) |
+| GET | `api/job-names` | `{"names": [{"name", "total", "counts", "recurrence", "handled"}]}`: `handled` if the serving node can schedule the name: it has a handler for it or declares it as a remote job name (such names without jobs are listed too) |
 | GET | `api/events?name=&key=&reference=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix, `reference` an exact match |
 | GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `id`, as for jobs |
 | GET | `api/events?search=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `search` or whose reference is `search`, as for jobs |
@@ -296,7 +296,7 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findJobData(id)` | the payload and result as JSON text |
 | `findSteps(id)` | the job's steps in the order they started, with event and child job details |
 | `findStep(stepId)`, `findStepResult(stepId)` | one step by its id, its result as JSON text |
-| `findJobNames()` | every job name with its number of jobs per state and whether this node handles it (handled names without jobs too) |
+| `findJobNames()` | every job name with its number of jobs per state and whether this node can schedule it, with a handler or as a remote job name (such names without jobs too) |
 | `findRecurringJobRuns(name, limit)` | a recurring job's pending run and its latest ended runs, newest first |
 | `findEvents(EventQuery)` | unexpired events by name, key prefix and reference, newest first, in pages |
 | `findEventsByIdSuffix(suffix, limit)` | unexpired events whose id ends with at least 8 hex digits |

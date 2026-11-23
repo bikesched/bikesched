@@ -2,6 +2,7 @@
 package org.bikesched.spring;
 
 import java.time.Duration;
+import java.util.List;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.RetryBackoff;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -52,6 +53,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param statementTimeout maximum duration of a database statement
  * @param hardTimeoutGrace how long after its timeout an attempt that ignores the interrupt is
  *     abandoned
+ * @param remoteJobNames job names other services handle, which the node schedules without a handler
+ *     of its own
  */
 @ConfigurationProperties("bikesched")
 public record BikeschedProperties(
@@ -78,7 +81,8 @@ public record BikeschedProperties(
     Duration jobRetention,
     Duration jobCleanUpInterval,
     Duration statementTimeout,
-    Duration hardTimeoutGrace) {
+    Duration hardTimeoutGrace,
+    List<String> remoteJobNames) {
 
   /**
    * Whether the node starts automatically with the application.
@@ -177,6 +181,9 @@ public record BikeschedProperties(
     }
     if (hardTimeoutGrace != null) {
       builder.hardTimeoutGrace(hardTimeoutGrace);
+    }
+    if (remoteJobNames != null) {
+      builder.remoteJobNames(remoteJobNames.toArray(String[]::new));
     }
   }
 

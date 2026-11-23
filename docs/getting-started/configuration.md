@@ -45,6 +45,7 @@ afterwards (see `autoStartPolling` below).
 | `jobCleanUpInterval(Duration)` | 1 hour | how often the node deletes ended jobs older than the retention |
 | `statementTimeout(Duration)` | data source | maximum duration of each database statement of the node, applied as JDBC query timeout (whole seconds, rounded up); a statement running longer is cancelled and fails like any other database error, see [Statement timeout](#statement-timeout) |
 | `recurrenceParsers(RecurrenceParser...)` | `RecurrenceParser.isoDuration()` | parse the expressions of `schedule(String)` and `@JobHandler(schedule = …)`; replaces the default, see [Recurrence expressions](../jobs/recurring-jobs.md#recurrence-expressions) |
+| `remoteJobNames(String...)` | none | job names other nodes handle: this node schedules one-off and child jobs of them without a handler of its own, see [Jobs other nodes handle](../jobs/README.md#jobs-other-nodes-handle) |
 | `jobListener(JobListener)` | none | observes claims and attempt outcomes, e.g. for [Metrics](../operations/metrics.md) |
 | `eventListener(EventListener)` | none | observes published events (not those in the caller's transaction), e.g. for [Metrics](../operations/metrics.md) |
 | `hardTimeoutGrace(Duration)` | off | abandons attempts whose handler ignores the interrupt of its timeout this long after the timeout, see [Timeouts](../jobs/README.md#timeouts) |

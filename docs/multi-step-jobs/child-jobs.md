@@ -72,7 +72,9 @@ bikesched.registerJobHandler("fulfil-order", job -> {
   children (`IllegalStateException`): the next occurrence replaces them, so nobody waits for their
   children.
 - Starting a child is rejected inside a step handler, like any nested step.
-- The child's name needs a handler registered on the parent's node. There is no `handler(…)`:
+- The child's name needs a handler registered on the parent's node, or has to be one of its
+  [remote job names](../jobs/README.md#jobs-other-nodes-handle): the child then runs on a node
+  handling it, and the parent waits for it as usual. There is no `handler(…)`:
   children connect jobs registered on their own; code that runs inline belongs in a
   [step](steps.md).
 

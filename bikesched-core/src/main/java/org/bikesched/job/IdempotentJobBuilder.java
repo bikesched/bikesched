@@ -52,7 +52,8 @@ public interface IdempotentJobBuilder<P extends @Nullable Object>
    * Schedules the job to run as soon as possible, unless a job of its name has the idempotency key.
    *
    * @return the id of the scheduled job, or of the existing job with the idempotency key
-   * @throws IllegalArgumentException if no handler is set nor registered for the job name
+   * @throws IllegalArgumentException if no handler is set nor registered for the job name and it is
+   *     no {@linkplain org.bikesched.BikeschedBuilder#remoteJobNames(String...) remote job name}
    * @throws BikeschedException if the job cannot be stored, e.g. because the payload is not valid
    *     JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
@@ -65,7 +66,8 @@ public interface IdempotentJobBuilder<P extends @Nullable Object>
    *
    * @param at the earliest time the job may run
    * @return the id of the scheduled job, or of the existing job with the idempotency key
-   * @throws IllegalArgumentException if no handler is set nor registered for the job name
+   * @throws IllegalArgumentException if no handler is set nor registered for the job name and it is
+   *     no {@linkplain org.bikesched.BikeschedBuilder#remoteJobNames(String...) remote job name}
    * @throws BikeschedException if the job cannot be stored, e.g. because the payload is not valid
    *     JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed
@@ -79,7 +81,8 @@ public interface IdempotentJobBuilder<P extends @Nullable Object>
    * @param delay how long to wait before the job may run, not negative
    * @return the id of the scheduled job, or of the existing job with the idempotency key
    * @throws IllegalArgumentException if the delay is negative or no handler is set nor registered
-   *     for the job name
+   *     for the job name and it is no {@linkplain
+   *     org.bikesched.BikeschedBuilder#remoteJobNames(String...) remote job name}
    * @throws BikeschedException if the job cannot be stored, e.g. because the payload is not valid
    *     JSON
    * @throws IllegalStateException if the {@link org.bikesched.Bikesched} is closed

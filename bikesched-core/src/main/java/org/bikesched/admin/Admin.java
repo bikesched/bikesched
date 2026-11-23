@@ -102,8 +102,8 @@ public interface Admin {
   Optional<String> findStepResult(UUID stepId);
 
   /**
-   * Counts the jobs of every name in the table by state. Names this node has a handler for are
-   * listed even without any job yet, see {@link JobNameSummary#handled()}.
+   * Counts the jobs of every name in the table by state. Names this node can schedule (with a
+   * handler or remote) are listed even without any job yet, see {@link JobNameSummary#handled()}.
    *
    * @return one entry per job name, by name
    */

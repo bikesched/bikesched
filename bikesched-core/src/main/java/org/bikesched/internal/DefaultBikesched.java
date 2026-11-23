@@ -93,7 +93,7 @@ public final class DefaultBikesched implements Bikesched {
   private final Database database;
   private final Settings settings;
   private final String nodeName;
-  private final JobRegistry registry = new JobRegistry();
+  private final JobRegistry registry;
   private final JobPoller jobPoller;
   private final JobScheduler jobScheduler;
   private final DueJobsNotifier notifier;
@@ -119,6 +119,7 @@ public final class DefaultBikesched implements Bikesched {
     this.initializer = new DatabaseInitializer(database, settings.migrateSchema());
     this.settings = settings;
     this.nodeName = settings.nodeName();
+    this.registry = new JobRegistry(settings.remoteJobNames());
     this.node = new DefaultNode(nodeName);
     this.admin =
         new DefaultAdmin(
@@ -127,7 +128,7 @@ public final class DefaultBikesched implements Bikesched {
             settings.nodeTimeout(),
             this::ensureReady,
             new AdminActions(),
-            registry.names());
+            registry::schedulableNames);
     this.jobScheduler =
         new JobScheduler(
             database,

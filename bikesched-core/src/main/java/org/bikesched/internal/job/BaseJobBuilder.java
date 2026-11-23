@@ -57,8 +57,11 @@ public abstract class BaseJobBuilder<B extends JobSettings<B, P>, P extends @Nul
     /** Parses a recurrence expression with the node's recurrence parsers. */
     Recurrence parseRecurrence(String expression);
 
-    /** Registers the handler if given and new; throws if the name has no handler then. */
-    void requireHandler(String name, @Nullable JobHandler handler);
+    /**
+     * Registers the handler if given and new; throws if the name then has no handler and is no
+     * remote job name.
+     */
+    void requireSchedulable(String name, @Nullable JobHandler handler);
   }
 
   final String name;

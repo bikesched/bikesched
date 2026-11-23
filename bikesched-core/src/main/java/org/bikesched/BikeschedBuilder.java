@@ -6,6 +6,7 @@ import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import javax.sql.DataSource;
 import org.bikesched.event.EventTimeoutException;
 import org.bikesched.event.EventWait;
@@ -68,6 +69,7 @@ public final class BikeschedBuilder {
   private JobListener jobListener = new JobListener() {};
   private EventListener eventListener = new EventListener() {};
   private List<RecurrenceParser> recurrenceParsers = List.of(RecurrenceParser.isoDuration());
+  private Set<String> remoteJobNames = Set.of();
 
   BikeschedBuilder(DataSource dataSource) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
@@ -408,6 +410,40 @@ public final class BikeschedBuilder {
   }
 
   /**
+   * Declares job names that other nodes handle, so this node can schedule one-off jobs of them
+   * without a handler of its own (optional, default none). Scheduling a job name that has no
+   * handler on the scheduling node fails, which catches typos; a declared name is accepted instead,
+   * e.g. for a service that starts jobs another service runs:
+   *
+   * <pre>{@code
+   * Bikesched bikesched = Bikesched.builder(dataSource)
+   *     .remoteJobNames("send-invoice", "render-pdf")   // handled by the billing service
+   *     .build();
+   * bikesched.newJob("send-invoice").payload(invoice).schedule();
+   * }</pre>
+   *
+   * <p>A remote job name only skips the check: the node does not claim jobs of it (a node claims
+   * the names it has handlers for), so a node that registers a handler for it later runs its jobs
+   * as usual. Applies to one-off jobs ({@link JobBuilder#schedule()} and its overloads, also in the
+   * caller's transaction or with an idempotency key) and child jobs ({@link Job#newJob(String)}).
+   * Recurring jobs still need a handler: the node running an occurrence schedules the next one only
+   * if the recurring job is registered on it, so recurring jobs are registered where they run.
+   * Replaces the names set so far.
+   *
+   * @param remoteJobNames the job names, each 1 to 200 characters and not blank
+   * @return this builder
+   * @throws IllegalArgumentException if a name is blank or too long
+   */
+  public BikeschedBuilder remoteJobNames(String... remoteJobNames) {
+    Objects.requireNonNull(remoteJobNames, "remoteJobNames");
+    for (String name : remoteJobNames) {
+      ValidationUtil.requireName(name, "remote job name");
+    }
+    this.remoteJobNames = Set.copyOf(List.of(remoteJobNames));
+    return this;
+  }
+
+  /**
    * Interval between the heartbeats this node writes while it polls; at most half the {@link
    * #nodeTimeout(Duration)}. Lower values detect a crashed node sooner at the cost of one write per
    * interval; defaults to 5 seconds.
@@ -532,7 +568,8 @@ public final class BikeschedBuilder {
             hardTimeoutGrace,
             jobListener,
             eventListener,
-            recurrenceParsers);
+            recurrenceParsers,
+            remoteJobNames);
     return Internals.create(settings, dataSource, jsonMapper);
   }
 

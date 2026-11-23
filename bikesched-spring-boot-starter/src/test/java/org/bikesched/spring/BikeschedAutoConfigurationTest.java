@@ -112,6 +112,24 @@ class BikeschedAutoConfigurationTest extends AbstractSpringTest {
   }
 
   @Test
+  void schedulesRemoteJobNamesWithoutAHandler() {
+    String remote = unique("remote-job");
+    runner()
+        .withBean("dataSource", DataSource.class, () -> dataSource())
+        .withPropertyValues(
+            "bikesched.node-name=" + unique("remote-node"),
+            "bikesched.auto-start.enabled=false",
+            "bikesched.remote-job-names=" + remote + ",other-" + remote)
+        .run(
+            context -> {
+              Bikesched bikesched = context.getBean(Bikesched.class);
+              UUID id = bikesched.newJob(remote).schedule(Duration.ofHours(1));
+              assertThat(bikesched.findJob(id)).isPresent();
+              assertThat(bikesched.cancel(id, "test done")).isTrue();
+            });
+  }
+
+  @Test
   void rejectsARetryBackoffThatSetsBothFixedAndExponential() {
     runner()
         .withBean("dataSource", DataSource.class, () -> dataSource())

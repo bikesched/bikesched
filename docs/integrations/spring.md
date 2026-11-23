@@ -194,6 +194,7 @@ friends).
 | `bikesched.job-clean-up-interval` | 1 hour | |
 | `bikesched.statement-timeout` | data source | |
 | `bikesched.hard-timeout-grace` | off | |
+| `bikesched.remote-job-names` | none | job names other services handle, see [Jobs other nodes handle](../jobs/README.md#jobs-other-nodes-handle) |
 | `bikesched.migrate-schema` | `true` | migrate on first database use; `false` validates history only, see [Schema migration](#schema-migration) |
 | `bikesched.metrics.enabled` | `true` | only relevant with Micrometer (below) |
 
