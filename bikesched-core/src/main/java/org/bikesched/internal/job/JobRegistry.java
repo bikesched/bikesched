@@ -12,12 +12,20 @@ import org.bikesched.job.JobHandler;
 import org.bikesched.job.TypedJob;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * The job names a node knows: their handlers, its recurring jobs and the payload classes of typed
- * job names. Used when scheduling (with or without polling) and by the poller.
+ * The job names a node knows: their handlers, its recurring jobs, the payload classes of typed job
+ * names and the remote job names it schedules without a handler. Used when scheduling (with or
+ * without polling) and by the poller.
  */
 public final class JobRegistry {
+
+  private static final Logger LOG = LoggerFactory.getLogger(JobRegistry.class);
+
+  /** Job names other nodes handle, which this node may schedule without a handler. */
+  private final Set<String> remoteNames;
 
   private final Map<String, JobHandler> handlers = new ConcurrentHashMap<>();
   private final Map<String, JobFailureHandler> failureHandlers = new ConcurrentHashMap<>();
@@ -28,6 +36,16 @@ public final class JobRegistry {
 
   /** Runs after a handler of a new name was registered; set by the poller. */
   private volatile Runnable onNewHandler = () -> {};
+
+  /**
+   * Creates a registry without handlers.
+   *
+   * @param remoteNames the job names other nodes handle, see {@link #requireSchedulable(String)};
+   *     an immutable set
+   */
+  public JobRegistry(Set<String> remoteNames) {
+    this.remoteNames = remoteNames;
+  }
 
   /**
    * Sets what runs after a handler of a new name was registered (the poller then looks for its
@@ -50,6 +68,12 @@ public final class JobRegistry {
     Objects.requireNonNull(handler, "handler");
     if (handlers.putIfAbsent(name, handler) != null) {
       return false;
+    }
+    if (remoteNames.contains(name)) {
+      LOG.info(
+          "Job name {} is declared as a remote job name, but this node now has a handler for it"
+              + " and runs its jobs",
+          name);
     }
     onNewHandler.run();
     return true;
@@ -117,6 +141,13 @@ public final class JobRegistry {
    * @throws IllegalArgumentException if it has none
    */
   public void requireHandler(String name) {
+    if (!handlers.containsKey(name) && remoteNames.contains(name)) {
+      throw new IllegalArgumentException(
+          "Job name '"
+              + name
+              + "' has no handler registered: a remote job name can only be scheduled as a"
+              + " one-off or child job, a recurring job needs its handler on the registering node");
+    }
     if (!handlers.containsKey(name)) {
       throw new IllegalArgumentException(
           "Unknown job name '"
@@ -125,6 +156,37 @@ public final class JobRegistry {
               + new TreeSet<>(handlers.keySet())
               + ")");
     }
+  }
+
+  /**
+   * Checks that this node may schedule one-off jobs of a name: it has a handler for it, or the name
+   * is a remote job name another node handles.
+   *
+   * @param name the job name
+   * @throws IllegalArgumentException if it is neither
+   */
+  public void requireSchedulable(String name) {
+    if (!handlers.containsKey(name) && !remoteNames.contains(name)) {
+      throw new IllegalArgumentException(
+          "Unknown job name '"
+              + name
+              + "': no handler registered (known names: "
+              + new TreeSet<>(handlers.keySet())
+              + (remoteNames.isEmpty() ? "" : ", remote job names: " + new TreeSet<>(remoteNames))
+              + ")");
+    }
+  }
+
+  /**
+   * The job names this node may schedule one-off jobs of: those with a handler and the remote job
+   * names.
+   *
+   * @return a new, mutable set
+   */
+  public Set<String> schedulableNames() {
+    Set<String> names = new TreeSet<>(handlers.keySet());
+    names.addAll(remoteNames);
+    return names;
   }
 
   /**

@@ -3,6 +3,7 @@ package org.bikesched.internal;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import org.bikesched.Bikesched;
 import org.bikesched.BikeschedBuilder;
 import org.bikesched.RetryBackoff;
@@ -52,6 +53,7 @@ import org.jspecify.annotations.Nullable;
  * @param jobListener observes the jobs the node runs
  * @param eventListener observes the events published through the node
  * @param recurrenceParsers parse the recurrence expressions of {@code schedule(String)}
+ * @param remoteJobNames job names the node schedules without a handler of its own
  */
 public record Settings(
     String nodeName,
@@ -79,10 +81,12 @@ public record Settings(
     @Nullable Duration hardTimeoutGrace,
     JobListener jobListener,
     EventListener eventListener,
-    List<RecurrenceParser> recurrenceParsers) {
+    List<RecurrenceParser> recurrenceParsers,
+    Set<String> remoteJobNames) {
 
-  /** Copies the recurrence parsers. */
+  /** Copies the recurrence parsers and the remote job names. */
   public Settings {
     recurrenceParsers = List.copyOf(recurrenceParsers);
+    remoteJobNames = Set.copyOf(remoteJobNames);
   }
 }

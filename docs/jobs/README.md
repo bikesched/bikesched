@@ -7,7 +7,8 @@ weight: 2
 
 A job is a unit of work with a *name* that selects its handler. A node claims only due jobs of the
 names it has handlers for, so different nodes can work on different jobs; scheduling a job needs a
-handler for its name on the scheduling node too.
+handler for its name on the scheduling node too, unless the name is one of the node's [remote job
+names](#jobs-other-nodes-handle).
 
 Each job also has a *type*, `JobType.SINGLE`, `RECURRING` (an occurrence of a [recurring
 job](recurring-jobs.md)) or `CHILD` (started by a parent job, see [Child
@@ -162,6 +163,36 @@ bikesched.findJob(jobId).map(JobInfo::reference);   // Optional[order-4711]
   reference are indexed.
 - Use an opaque id, not a name or an email address: the admin UI shows references to every user,
   and they end up in logs.
+
+### Jobs other nodes handle
+
+A node that starts jobs another service runs declares their names as remote job names. It then
+schedules them without a handler of its own, while a name that is neither handled nor declared, e.g.
+a typo, still fails:
+
+```java
+Bikesched bikesched = Bikesched.builder(dataSource)
+        .remoteJobNames("send-invoice", "render-pdf")  // handled by the billing service
+        .build();
+
+bikesched.newJob("send-invoice").payload(invoice).schedule();
+```
+
+- The node still claims only the names it has handlers for, so it can poll for its own jobs and
+  leaves remote ones to the nodes handling them.
+- It works for one-off jobs (also [in the caller's transaction](#transactional-scheduling) and
+  with an [idempotency key](#idempotency-keys)) and [child
+  jobs](../multi-step-jobs/child-jobs.md#starting-children). A [recurring job](recurring-jobs.md)
+  still needs its handler on the registering node: the node running an occurrence schedules the
+  next one only if the recurring job is registered there.
+- A failure handler set on the builder of a remote job is rejected: it runs on the node failing
+  the job, so register it on the nodes handling the name (see [Failure
+  handlers](#failure-handlers)).
+- A handler registered for a remote job name makes the node handle it: it then claims and runs
+  those jobs (logged at info level).
+- The [admin UI](../operations/admin.md) offers remote job names in its schedule form.
+- Jobs of a remote name no node handles stay `SCHEDULED`, so keep the list in sync with the
+  services handling them.
 
 ## Writing handlers
 

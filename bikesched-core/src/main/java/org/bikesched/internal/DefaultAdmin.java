@@ -10,8 +10,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.bikesched.admin.Admin;
 import org.bikesched.admin.CancelJobBuilder;
 import org.bikesched.admin.EventNameSummary;
@@ -66,8 +66,8 @@ final class DefaultAdmin implements Admin {
 
   private final Actions actions;
 
-  // The job names with a handler on this node, a live view.
-  private final Set<String> handledNames;
+  // The job names this node can schedule (with a handler or remote), a new mutable set per call.
+  private final Supplier<Set<String>> schedulableNames;
 
   DefaultAdmin(
       AdminStore store,
@@ -75,13 +75,13 @@ final class DefaultAdmin implements Admin {
       Duration nodeTimeout,
       Runnable ensureReady,
       Actions actions,
-      Set<String> handledNames) {
+      Supplier<Set<String>> schedulableNames) {
     this.store = store;
     this.history = history;
     this.nodeTimeout = nodeTimeout;
     this.ensureReady = ensureReady;
     this.actions = actions;
-    this.handledNames = handledNames;
+    this.schedulableNames = schedulableNames;
   }
 
   @Override
@@ -153,7 +153,7 @@ final class DefaultAdmin implements Admin {
   @Override
   public List<JobNameSummary> findJobNames() {
     ensureReady.run();
-    Set<String> handled = new TreeSet<>(handledNames);
+    Set<String> handled = schedulableNames.get();
     List<JobNameSummary> names = new ArrayList<>();
     for (JobNameSummary name : store.findJobNames()) {
       boolean isHandled = handled.remove(name.name());

@@ -12,7 +12,9 @@ import org.jspecify.annotations.Nullable;
  * @param counts the number of jobs per state; states without jobs are missing
  * @param recurrence the recurrence of a recurring job (from its pending occurrence); {@code null}
  *     for other names
- * @param handled whether this node has a handler for the name, so it can schedule jobs of it
+ * @param handled whether this node can schedule jobs of the name: it has a handler for it, or the
+ *     name is one of its {@linkplain org.bikesched.BikeschedBuilder#remoteJobNames(String...)
+ *     remote job names}
  */
 public record JobNameSummary(
     String name, Map<JobState, Integer> counts, @Nullable String recurrence, boolean handled) {

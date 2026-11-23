@@ -116,7 +116,8 @@ read-only lookups).
 
 1. Types the serving node does not handle are not listed in the form at all (not even greyed
    out). Allowing them would need a core option to skip the handler check; it waits until
-   someone runs the admin in a process without handlers.
+   someone runs the admin in a process without handlers. (Later: remote job names, see [ADR
+   0064](../decisions/0064-remote-job-names.md), are listed as well.)
 2. A recurring type gets a one-off run as a plain job with the payload of its latest run; the
    recurrence is untouched.
 3. "When" is up front; priority, max attempts, timeout and idempotency key are under a collapsed

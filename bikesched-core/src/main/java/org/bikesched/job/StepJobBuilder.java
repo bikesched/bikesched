@@ -20,8 +20,9 @@ import org.jspecify.annotations.Nullable;
  * runs find the step and return the same child's id without scheduling again. Children are never
  * recurring and never stored in the caller's transaction: this builder has neither {@code
  * schedule(Recurrence)} nor {@code connection(…)}. It has no {@code handler(…)} either: a child
- * connects to a job name whose handler is registered on the parent's node; code that runs inline
- * belongs in a step ({@link Job#newStep(String, Class)}). Not thread-safe.
+ * connects to a job name whose handler is registered on the parent's node, or to a {@linkplain
+ * org.bikesched.BikeschedBuilder#remoteJobNames(String...) remote job name} another node handles;
+ * code that runs inline belongs in a step ({@link Job#newStep(String, Class)}). Not thread-safe.
  *
  * @param <P> the payload type: {@code Object} for a job name given as a string, the payload class
  *     of a {@link TypedJob}
@@ -54,8 +55,8 @@ public interface StepJobBuilder<P extends @Nullable Object>
    * Starts the child as soon as possible, unless an earlier run of the parent started it already.
    *
    * @return the child's id, the same on every run of the parent
-   * @throws IllegalArgumentException if no handler is registered for the job name, or the default
-   *     step name is longer than 200 characters
+   * @throws IllegalArgumentException if no handler is registered for the job name and it is no
+   *     remote job name, or the default step name is longer than 200 characters
    * @throws IllegalStateException if the step name belongs to another step of the parent, if the
    *     parent is an occurrence of a recurring job, or if called while a step handler or
    *     compensation of the parent runs
@@ -68,7 +69,8 @@ public interface StepJobBuilder<P extends @Nullable Object>
    *
    * @param at the earliest time the child may run
    * @return the child's id, the same on every run of the parent
-   * @throws IllegalArgumentException if no handler is registered for the job name
+   * @throws IllegalArgumentException if no handler is registered for the job name and it is no
+   *     remote job name
    * @throws IllegalStateException see {@link #schedule()}
    * @throws BikeschedException if the child or the step cannot be stored
    */
@@ -80,7 +82,7 @@ public interface StepJobBuilder<P extends @Nullable Object>
    * @param delay how long to wait before the child may run, not negative
    * @return the child's id, the same on every run of the parent
    * @throws IllegalArgumentException if the delay is negative or no handler is registered for the
-   *     job name
+   *     job name and it is no remote job name
    * @throws IllegalStateException see {@link #schedule()}
    * @throws BikeschedException if the child or the step cannot be stored
    */

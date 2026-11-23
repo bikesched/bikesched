@@ -863,6 +863,35 @@ class BikeschedAdminTest {
   }
 
   @Test
+  void schedulesRemoteJobNames() {
+    String remote = prefix + "remote";
+    try (Bikesched scheduler =
+            BikeschedTest.testNode(AdminServer.DATA_SOURCE, prefix + "remote-node")
+                .remoteJobNames(remote)
+                .build();
+        var server = AdminServer.serve(BikeschedAdmin.of(scheduler))) {
+      JsonObject names = AdminServer.json(server.get("/api/job-names"));
+      assertThat(names.getArray("names").stream().map(JsonObject.class::cast))
+          .filteredOn(name -> name.getString("name").equals(remote))
+          .singleElement()
+          .satisfies(name -> assertThat(name.getBoolean("handled")).isTrue());
+
+      JsonObject scheduled =
+          AdminServer.json(
+              server.postForm(
+                  "/api/jobs",
+                  "name=" + encode(remote) + "&delay=PT1H",
+                  AdminHandler.CSRF_HEADER,
+                  "1"));
+
+      assertThat(scheduled.getBoolean("created")).isTrue();
+      assertThat(scheduler.admin().findJob(UUID.fromString(scheduled.getString("id"))))
+          .map(job -> job.state())
+          .contains(JobState.SCHEDULED);
+    }
+  }
+
+  @Test
   void aReadOnlyAdminRejectsRetryAndCancel() {
     bikesched.registerJobHandler(prefix + "read-only", ignored -> {});
     UUID later = bikesched.newJob(prefix + "read-only").schedule(Duration.ofHours(1));

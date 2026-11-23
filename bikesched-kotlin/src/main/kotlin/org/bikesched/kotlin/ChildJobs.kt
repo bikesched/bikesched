@@ -17,7 +17,8 @@ import org.bikesched.job.Step
  * val receipt = awaitJob<Receipt>(charge).orElseThrow()
  * ```
  *
- * @param name the child's job name; it needs a handler on this node
+ * @param name the child's job name; it needs a handler on this node, or is one of its remote job
+ *   names (`BikeschedBuilder.remoteJobNames`)
  * @param payload the payload, mapped to JSON by the configured `JsonMapper`; may be `null`
  * @param stepName the step name, unique within the job; defaults to `start <name>`
  * @param at when the child is due; with neither [at] nor [delay] it is due right away
@@ -29,7 +30,8 @@ import org.bikesched.job.Step
  * @param compensation undoes starting the child if this job is cancelled or fails permanently, e.g.
  *   cancels it; receives the child's id, see `StepJobBuilder.compensateWith`
  * @return the child's id, the same on every run of this job
- * @throws IllegalArgumentException if both [at] and [delay] are set, or the name has no handler
+ * @throws IllegalArgumentException if both [at] and [delay] are set, or the name has no handler and
+ *   is no remote job name
  * @throws IllegalStateException if this job is an occurrence of a recurring job
  */
 public fun Job.startJob(

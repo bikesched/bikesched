@@ -28,7 +28,8 @@ Alternatives considered:
 
 - Letting the admin schedule types it does not handle: needs a core option to skip the handler
   check, and a typo would create a job no node ever runs. Left for a dedicated admin process
-  without handlers, if someone runs one.
+  without handlers, if someone runs one. (Later done for declared names, see [ADR
+  0064](0064-remote-job-names.md).)
 - Listing unhandled types greyed out: they cannot be scheduled, so they only add noise.
 - A public `Bikesched.jobTypes()`: the page needs the handled flag next to the counts it already
   reads from `Admin`.

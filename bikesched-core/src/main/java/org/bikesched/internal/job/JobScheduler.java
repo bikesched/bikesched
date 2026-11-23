@@ -66,7 +66,14 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
       @Nullable Connection connection) {
     beforeDatabaseAccess.run();
     String name = job.name();
-    requireHandler(name, handler);
+    requireSchedulable(name, handler);
+    if (failureHandler != null && registry.handler(name) == null) {
+      throw new IllegalArgumentException(
+          "Job name '"
+              + name
+              + "' is a remote job name without a handler on this node: its failure handler runs on"
+              + " the node failing the job, so register it on the nodes handling the name");
+    }
     registerFailureHandler(name, failureHandler);
     UUID jobId = UuidUtil.timeOrdered();
     UUID stored =
@@ -169,14 +176,33 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
   }
 
   /**
+   * Checks that one-off jobs of the name can be scheduled (it has a handler or is a remote job
+   * name), registering the given handler first if the name has none.
+   *
+   * @param name the job name
+   * @param handler the handler set on the builder, {@code null} if none
+   * @throws IllegalArgumentException if the name has no handler and is no remote job name
+   */
+  @Override
+  public void requireSchedulable(String name, @Nullable JobHandler handler) {
+    register(name, handler);
+    registry.requireSchedulable(name);
+  }
+
+  /**
    * Checks that the job name has a handler, registering the given one first if it has none.
    *
    * @param name the job name
    * @param handler the handler set on the builder, {@code null} if none
    * @throws IllegalArgumentException if the name has no handler
    */
-  @Override
-  public void requireHandler(String name, @Nullable JobHandler handler) {
+  private void requireHandler(String name, @Nullable JobHandler handler) {
+    register(name, handler);
+    registry.requireHandler(name);
+  }
+
+  /** Registers the handler set on a builder, if given, unless the name has one. */
+  private void register(String name, @Nullable JobHandler handler) {
     if (handler != null) {
       if (registry.register(name, handler)) {
         LOG.info("bikesched node {} registered handler for job name {}", nodeName, name);
@@ -184,7 +210,6 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
         LOG.debug("Handler for job name {} already registered, keeping it", name);
       }
     }
-    registry.requireHandler(name);
   }
 
   /** Registers a builder's failure handler, if given, unless the name has one. */

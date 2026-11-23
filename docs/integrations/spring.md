@@ -132,7 +132,9 @@ with the `DataSource`.
 
 - `bikesched.auto-start.enabled=false` builds a node that schedules only: it registers with no
   database, executes nothing and sends no heartbeats. Call `start()` yourself later if such
-  an instance should also work.
+  an instance should also work. Without the handler code, it declares the job names it schedules
+  in `bikesched.remote-job-names`, see [Jobs other nodes
+  handle](../jobs/README.md#jobs-other-nodes-handle).
 - Node names need not be unique: a second context with the same name starts as a node of its own.
   Distinct `bikesched.node-name`s keep several nodes in one JVM apart in logs and the admin UI.
 
@@ -194,6 +196,7 @@ friends).
 | `bikesched.job-clean-up-interval` | 1 hour | |
 | `bikesched.statement-timeout` | data source | |
 | `bikesched.hard-timeout-grace` | off | |
+| `bikesched.remote-job-names` | none | job names other services handle, see [Jobs other nodes handle](../jobs/README.md#jobs-other-nodes-handle) |
 | `bikesched.migrate-schema` | `true` | migrate on first database use; `false` validates history only, see [Schema migration](#schema-migration) |
 | `bikesched.metrics.enabled` | `true` | only relevant with Micrometer (below) |
 
