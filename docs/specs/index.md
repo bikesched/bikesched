@@ -27,3 +27,4 @@ oldest first. The creation date is the date of the commit that added the spec.
 | 2026-10-23 | [Fixed-delay recurrences](fixed-delay-recurrences.md) | implemented | [ADR 0058](../decisions/0058-fixed-delay-recurrences-and-planned-runs.md) |
 | 2026-10-25 | [References for jobs and events](references.md) | implemented | [ADR 0061](../decisions/0061-references-for-jobs-and-events.md) |
 | 2026-10-26 | [History of jobs, events, nodes and user actions](history.md) | implemented | [ADR 0062](../decisions/0062-one-history-with-actions-and-actors.md) |
+| 2026-11-27 | [Job batches](job-batches.md) | draft | — |
