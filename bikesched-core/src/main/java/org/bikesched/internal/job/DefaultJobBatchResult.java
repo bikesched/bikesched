@@ -154,6 +154,26 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
     return item;
   }
 
+  /** A succeeded item's result read as the given type, naming the item if that fails. */
+  private <T extends @Nullable Object> @Nullable T result(ItemOutcome item, Class<T> type) {
+    if (type == Void.class) {
+      return null;
+    }
+    try {
+      return reader.reader(type).apply(item.result());
+    } catch (RuntimeException e) {
+      throw new IllegalStateException(
+          "Reading the result of item '"
+              + item.item().key()
+              + "' of job batch '"
+              + stepName
+              + "' as "
+              + type.getName()
+              + " failed",
+          e);
+    }
+  }
+
   /** The outcome of an item with its result read as the given type ({@code Void}: none). */
   private <T extends @Nullable Object> JobResult<T> outcome(ItemOutcome item, Class<T> type) {
     UUID jobId = item.item().jobId();
@@ -165,9 +185,7 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
       };
     }
     return switch (childState) {
-      case SUCCEEDED ->
-          new JobResult.Succeeded<>(
-              jobId, type == Void.class ? null : reader.reader(type).apply(item.result()));
+      case SUCCEEDED -> new JobResult.Succeeded<>(jobId, result(item, type));
       case FAILED -> new JobResult.Failed<>(jobId, Objects.requireNonNullElse(item.error(), ""));
       case CANCELLED -> new JobResult.Cancelled<>(jobId, item.error());
       case COMPENSATION_FAILED ->

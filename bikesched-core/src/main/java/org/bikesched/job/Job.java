@@ -582,7 +582,8 @@ public interface Job extends EventPublisher {
    * @param resultJob the child's typed job, whose {@link ResultJob#resultType()} maps the result
    * @param <R> the type of the child's result
    * @return the child's outcome; never {@link JobResult.TimedOut}
-   * @throws IllegalArgumentException if the id is not one of this job's children
+   * @throws IllegalArgumentException if the id is not one of this job's children, or the child has
+   *     another job name than {@code resultJob}
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    * @throws BikeschedException if the step cannot be read or stored
    */
@@ -600,8 +601,8 @@ public interface Job extends EventPublisher {
    * @param timeout how long to wait at most, positive
    * @param <R> the type of the child's result
    * @return the child's outcome, or {@link JobResult.TimedOut}
-   * @throws IllegalArgumentException if the id is not one of this job's children or the timeout is
-   *     not positive
+   * @throws IllegalArgumentException if the id is not one of this job's children, the child has
+   *     another job name than {@code resultJob}, or the timeout is not positive
    * @throws IllegalStateException if called while a step handler or compensation of the job runs
    * @throws BikeschedException if the step cannot be read or stored
    */
@@ -646,6 +647,10 @@ public interface Job extends EventPublisher {
    * @param job the items' job
    * @param <P> the payload type
    * @return a builder for the batch
+   * @throws IllegalArgumentException if the step name is invalid or the job's handler expects
+   *     another payload type
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs,
+   *     or by an occurrence of a recurring job
    */
   <P extends @Nullable Object> JobBatchBuilder<P, Void> newJobBatch(
       String stepName, TypedJob<P> job);
@@ -658,6 +663,9 @@ public interface Job extends EventPublisher {
    * @param stepName the batch's step name, unique within the job and stable across deploys
    * @param jobName the items' job name
    * @return a builder for the batch
+   * @throws IllegalArgumentException if the step name is invalid
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs,
+   *     or by an occurrence of a recurring job
    */
   JobBatchBuilder<Object, Object> newJobBatch(String stepName, String jobName);
 
@@ -667,6 +675,9 @@ public interface Job extends EventPublisher {
    *
    * @param stepName the batch's step name, unique within the job and stable across deploys
    * @return a builder for the batch
+   * @throws IllegalArgumentException if the step name is invalid
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs,
+   *     or by an occurrence of a recurring job
    */
   MixedJobBatchBuilder newJobBatch(String stepName);
 

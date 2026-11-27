@@ -42,6 +42,7 @@ class DueJobsWritePathsTest {
           "BatchStore.INSERT_ITEMS_SQL",
           "BatchStore.ADMIT_SQL",
           "BatchStore.REQUEST_CANCEL_ITEMS_SQL",
+          "BatchStore.REQUEST_CANCEL_REMAINING_SQL",
           "BatchStore.RESUME_PARENT_SQL");
 
   /** Statements that make no job due now for other nodes, and why. */
@@ -73,7 +74,10 @@ class DueJobsWritePathsTest {
               "StepStore.POSTPONE_JOB_SQL",
               "the attempt's own node wakes up after the delay (dueAt)"),
           Map.entry("BatchStore.CANCEL_HELD_SQL", "held items end without running"),
-          Map.entry("BatchStore.CANCEL_HELD_ITEM_SQL", "the held item ends without running"));
+          Map.entry("BatchStore.CANCEL_HELD_ITEM_SQL", "the held item ends without running"),
+          Map.entry(
+              "BatchStore.CANCEL_OLD_HELD_SQL",
+              "held items of a compensated batch end without running"));
 
   @Test
   void everyStatementWritingJobsIsClassified() throws IllegalAccessException {
@@ -112,6 +116,6 @@ class DueJobsWritePathsTest {
           .as("%s is classified but no longer writes jobs (or was renamed)", name)
           .containsKey(name);
     }
-    assertThat(writes).hasSize(28);
+    assertThat(writes).hasSize(30);
   }
 }

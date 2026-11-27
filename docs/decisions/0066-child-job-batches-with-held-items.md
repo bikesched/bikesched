@@ -47,10 +47,11 @@ with its batch step, position and key (`batch_step_id`, `batch_index`, `batch_ke
   returns a `JobBatchResult` of every item's `JobResult`. Waiting for a single item is rejected.
 - **Fail-fast** (`failFast()`): the first item that does not succeed ends the batch `FAILED`,
   resumes the parent and cancels the siblings in the same transaction: held items directly,
-  scheduled and running ones by a cancel request, all with `skip locked`.
+  scheduled and running ones by a cancel request, all with `skip locked`. Siblings skipped as
+  locked get their cancel request right after the commit, in a transaction of their own.
 - **Lock order**: the ending item's row, the batch step, item steps by id, other items (`skip
   locked` only), the parent's row. Every write of a batch follows it.
-- **Cancellation and ends**: a timeout, the parent's cancellation and the parent's end without
+- **Cancellation and ends**: a timeout, the parent's cancellation, compensation and end without
   waiting cancel the held items; running items keep running. Compensation runs per admitted item
   in reverse order; a compensated batch restarts with the same keys.
 - **Size**: `maxJobBatchSize` (default 1,000) bounds a batch; items are inserted with `unnest` in

@@ -43,6 +43,10 @@ public final class BatchStore {
       """
             select id, type, state from bikesched_steps where job_id = ? and name = ? for update""";
 
+  private static final String FIND_STARTED_SQL =
+      """
+            select id, type, state from bikesched_steps where job_id = ? and name = ?""";
+
   private static final String BATCH_COLUMNS =
       """
             id, name, job_id, state, item_count, coalesce(parallelism, 0) as parallelism, active_count,
@@ -108,10 +112,15 @@ public final class BatchStore {
               from bikesched_steps where batch_step_id = ? order by id""";
 
   // The step of an item that ended, if the item is still its batch's child (a compensated batch
-  // restarted since has new children).
+  // restarted since has new children): by its name, along the steps' unique (job_id, name), not by
+  // scanning the batch's item steps.
   private static final String LOCK_ITEM_STEP_SQL =
       """
-            select id, name, state from bikesched_steps where batch_step_id = ? and child_job_id = ? for update""";
+            select s.id, s.name, s.state
+              from bikesched_jobs c
+              join bikesched_steps s on s.job_id = c.parent_job_id and s.name = ? || '/' || c.batch_key
+             where c.id = ? and s.batch_step_id = ? and s.child_job_id = c.id
+               for update of s""";
 
   private static final String COMPLETE_ITEM_STEP_SQL =
       """
@@ -185,8 +194,26 @@ public final class BatchStore {
              where j.id = h.id
             returning j.id, j.attempts""";
 
+  // The steps of held items cancelled with their batch's parent: their items never ran, and the
+  // batch's later outcome reads them as cancelled.
+  private static final String CANCEL_HELD_ITEM_STEPS_SQL =
+      """
+            update bikesched_steps set state = 'CANCELLED', last_error = ?, finished_at = now()
+             where batch_step_id = ? and type = 'CHILD_JOB' and state = 'WAITING'
+               and child_job_id = any(?::uuid[])""";
+
+  // A restarted batch's held items of before its compensation (its parent compensated or ended
+  // without cancelling them, e.g. written by an older version): nobody waits for them.
+  private static final String CANCEL_OLD_HELD_SQL =
+      """
+            update bikesched_jobs
+               set state = 'CANCELLED', last_error = ?, finished_at = now(), updated_at = now()
+             where batch_step_id = ? and state = 'HELD'
+            returning id, attempts""";
+
   // Fail-fast: the unfinished siblings are cancelled like Bikesched.cancel does; one locked right
-  // now (ending, being claimed) is skipped.
+  // now (ending, being claimed, writing a step) is skipped here and asked after the commit, see
+  // REQUEST_CANCEL_REMAINING_SQL.
   private static final String REQUEST_CANCEL_ITEMS_SQL =
       """
             update bikesched_jobs j
@@ -203,6 +230,24 @@ public final class BatchStore {
              where j.id = s.id
             returning j.id, j.state, j.attempts, j.name""";
 
+  // Fail-fast, after the commit: the siblings the first pass skipped, now waiting for their locks
+  // in item order (no batch step is held, so no cycle), and only those not asked yet.
+  private static final String REQUEST_CANCEL_REMAINING_SQL =
+      """
+            update bikesched_jobs j
+               set cancel_requested_at = now(), cancel_message = ?,
+                   scheduled_at = case when j.state in ('SCHEDULED', 'WAITING') then now() else j.scheduled_at end,
+                   updated_at = now()
+              from (select c.id from bikesched_jobs c
+                     where c.id in (select child_job_id from bikesched_steps where batch_step_id = ?)
+                       and c.batch_step_id = ?
+                       and c.state in ('SCHEDULED', 'WAITING', 'RUNNING') and c.compensation_end_state is null
+                       and c.failure_end_state is null and c.cancel_requested_at is null
+                     order by c.batch_index
+                       for update) s
+             where j.id = s.id and j.cancel_requested_at is null
+            returning j.id, j.state, j.attempts, j.name""";
+
   private static final String SET_DEADLINE_SQL =
       """
             update bikesched_steps set wake_at = now() + ? * interval '1 millisecond'
@@ -217,6 +262,13 @@ public final class BatchStore {
             returning attempts, name""";
 
   // A held item cancelled via Bikesched.cancel ends right away, it never ran.
+  // Along the steps' unique (job_id, name).
+  private static final String USED_STEP_NAME_SQL =
+      "select name from bikesched_steps where job_id = ? and name = any(?::text[]) limit 1";
+
+  private static final String FIND_HELD_ITEM_SQL =
+      "select batch_step_id from bikesched_jobs where id = ? and state = 'HELD'";
+
   private static final String CANCEL_HELD_ITEM_SQL =
       """
             update bikesched_jobs
@@ -425,7 +477,7 @@ public final class BatchStore {
   public StartedBatch startBatch(UUID parentJobId, JobLock lock, String stepName, NewBatch batch) {
     return access.inTransaction(
         db -> {
-          StepStore.requireJobLock(db, parentJobId, lock);
+          // The batch step before the parent's row (the lock order of a batch)
           Optional<FoundStep> found =
               db.one(
                   FIND_STEP_SQL,
@@ -436,6 +488,7 @@ public final class BatchStore {
                           row.enumValue("state", StepState.class)),
                   parentJobId,
                   stepName);
+          StepStore.requireJobLock(db, parentJobId, lock);
           if (found.isPresent()) {
             StepType.CHILD_JOB_BATCH.require(stepName, parentJobId, found.get().type());
             StepRef step = new StepRef(found.get().id(), stepName);
@@ -453,11 +506,47 @@ public final class BatchStore {
                 e));
   }
 
+  /**
+   * Reads a batch its parent started before, without locking it: a run of the parent after the
+   * first returns it without checking or mapping its items again.
+   *
+   * @param parentJobId the parent
+   * @param stepName the batch's step name
+   * @return the started batch, empty if it has not started or was compensated (and starts again)
+   * @throws IllegalStateException if the step is no batch
+   */
+  public Optional<StartedBatch> findStarted(UUID parentJobId, String stepName) {
+    return access.inReadOnlyTransaction(
+        db -> {
+          Optional<FoundStep> found =
+              db.one(
+                  FIND_STARTED_SQL,
+                  row ->
+                      new FoundStep(
+                          row.uuid("id"),
+                          row.enumValue("type", StepType.class),
+                          row.enumValue("state", StepState.class)),
+                  parentJobId,
+                  stepName);
+          if (found.isEmpty() || found.get().state() == StepState.COMPENSATED) {
+            return Optional.<StartedBatch>empty();
+          }
+          StepType.CHILD_JOB_BATCH.require(stepName, parentJobId, found.get().type());
+          StepRef step = new StepRef(found.get().id(), stepName);
+          return Optional.of(new StartedBatch(step, items(db, step), false));
+        },
+        e ->
+            new BikeschedException(
+                "Reading job batch '" + stepName + "' of bikesched job " + parentJobId + " failed",
+                e));
+  }
+
   /** A row of {@code FIND_STEP_SQL}. */
   private record FoundStep(UUID id, StepType type, StepState state) {}
 
   private StartedBatch insert(Sql db, UUID parentJobId, String stepName, NewBatch batch)
       throws SQLException {
+    requireFreeItemNames(db, parentJobId, stepName, batch);
     UUID stepId = UuidUtil.timeOrdered();
     int admitted = batch.admitted();
     db.update(
@@ -528,6 +617,28 @@ public final class BatchStore {
                   : "missing " + missing + ", new " + added));
     }
     BatchRow row = db.one(LOCK_BATCH_SQL, BatchRow::from, step.id()).orElseThrow();
+    String compensated = row.described() + " was compensated";
+    List<CancelledItem> old =
+        db.list(
+            CANCEL_OLD_HELD_SQL,
+            r -> new CancelledItem(r.uuid("id"), r.integer("attempts")),
+            compensated,
+            step.id());
+    if (history.isEnabled() && !old.isEmpty()) {
+      List<Change> changes = new ArrayList<>(old.size());
+      for (CancelledItem item : old) {
+        changes.add(
+            Change.job(
+                    item.id(),
+                    JobAction.CANCELLED,
+                    JobState.CANCELLED,
+                    item.attempts(),
+                    ActorType.NODE)
+                .causedBy(parentJobId)
+                .message(compensated));
+      }
+      history.record(db, changes);
+    }
     // The stored batch wins: its parallelism, mode and compensation.
     NewBatch restarted =
         new NewBatch(
@@ -657,7 +768,34 @@ public final class BatchStore {
               .dueAt(held ? null : batch.scheduledAt())
               .keys(null, batch.reference()));
     }
-    history.record(db, changes);
+    // in chunks like the items, so no statement binds arrays of a whole raised batch
+    for (int from = 0; from < changes.size(); from += CHUNK_SIZE) {
+      history.record(db, changes.subList(from, Math.min(changes.size(), from + CHUNK_SIZE)));
+    }
+  }
+
+  /** Rejects a batch whose item step names the job already uses for other steps. */
+  private static void requireFreeItemNames(
+      Sql db, UUID parentJobId, String stepName, NewBatch batch) throws SQLException {
+    for (int from = 0; from < batch.items().size(); from += CHUNK_SIZE) {
+      String[] names =
+          batch.items().subList(from, Math.min(batch.items().size(), from + CHUNK_SIZE)).stream()
+              .map(item -> itemStepName(stepName, item.key()))
+              .toArray(String[]::new);
+      Optional<String> taken =
+          db.one(
+              USED_STEP_NAME_SQL, row -> row.string("name"), parentJobId, Sql.array("text", names));
+      if (taken.isPresent()) {
+        throw new IllegalStateException(
+            "Job batch '"
+                + stepName
+                + "' of job "
+                + parentJobId
+                + " would name an item step '"
+                + taken.get()
+                + "', the name of another step: step names must be unique within a job");
+      }
+    }
   }
 
   /** The step name of an item: the batch's step name, a slash and the item's key. */
@@ -831,6 +969,11 @@ public final class BatchStore {
       return;
     }
     db.update(COUNT_CANCELLED_SQL, cancelled.size(), batch.id());
+    db.update(
+        CANCEL_HELD_ITEM_STEPS_SQL,
+        ValidationUtil.truncateMessage(message),
+        batch.id(),
+        Sql.array("uuid", cancelled.stream().map(CancelledItem::id).toArray()));
     if (history.isEnabled()) {
       for (CancelledItem item : cancelled) {
         changes.add(
@@ -869,8 +1012,9 @@ public final class BatchStore {
         db.one(
             LOCK_ITEM_STEP_SQL,
             row -> new StepRef(row.uuid("id"), row.string("name")),
-            batchStepId,
-            itemId);
+            batch.name(),
+            itemId,
+            batchStepId);
     if (itemStep.isEmpty()) {
       return; // a child of the batch before it was compensated and restarted
     }
@@ -1010,6 +1154,38 @@ public final class BatchStore {
             ValidationUtil.truncateMessage(message),
             batch.id(),
             batch.id());
+    requested(db, requested, itemId, message, changes);
+    // Siblings locked right now (writing a step, ending an attempt, being claimed) were skipped:
+    // asked once this transaction committed, without the batch step's lock.
+    UUID batchStepId = batch.id();
+    db.afterCommit(
+        next -> {
+          List<Change> later = new ArrayList<>();
+          requested(
+              next,
+              next.list(
+                  REQUEST_CANCEL_REMAINING_SQL,
+                  row ->
+                      new CancelRequested(
+                          row.uuid("id"),
+                          row.enumValue("state", JobState.class),
+                          row.integer("attempts"),
+                          row.string("name")),
+                  ValidationUtil.truncateMessage(message),
+                  batchStepId,
+                  batchStepId),
+              itemId,
+              message,
+              later);
+          history.record(next, later);
+          return null;
+        });
+    resumeParent(db, batch.jobId(), itemId, changes);
+  }
+
+  /** Reports and records the siblings a fail-fast end asked to cancel. */
+  private static void requested(
+      Sql db, List<CancelRequested> requested, UUID itemId, String message, List<Change> changes) {
     for (CancelRequested sibling : requested) {
       if (sibling.state() != JobState.RUNNING) {
         db.dueNow(sibling.name());
@@ -1024,7 +1200,6 @@ public final class BatchStore {
               .causedBy(itemId)
               .message(message));
     }
-    resumeParent(db, batch.jobId(), itemId, changes);
   }
 
   /** A row of {@code REQUEST_CANCEL_ITEMS_SQL}. */
@@ -1065,6 +1240,14 @@ public final class BatchStore {
   boolean cancelHeldItem(UUID jobId, @Nullable String message, @Nullable Actor actor) {
     return access.inTransaction(
         db -> {
+          // Its batch step first: held rows are only locked under it, so an admission or the
+          // batch's end never skips one (and strands it) while this transaction runs.
+          Optional<UUID> batchStepId =
+              db.one(FIND_HELD_ITEM_SQL, row -> row.uuid("batch_step_id"), jobId);
+          if (batchStepId.isEmpty()) {
+            return false;
+          }
+          db.one(LOCK_BATCH_SQL, BatchRow::from, batchStepId.get()); // gone with a deleted parent
           String truncated = ValidationUtil.truncateMessage(message);
           Optional<HeldItem> held =
               db.one(

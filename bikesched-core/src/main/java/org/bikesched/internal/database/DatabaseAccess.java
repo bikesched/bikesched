@@ -4,8 +4,10 @@ package org.bikesched.internal.database;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.List;
 import java.util.Set;
 import javax.sql.DataSource;
+import org.bikesched.BikeschedException;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -116,8 +118,17 @@ public final class DatabaseAccess {
    */
   public <T extends @Nullable Object> T withConnection(
       Sql.Work<T> work, SqlExceptionHandler onFailure) {
+    Sql[] used = new Sql[1];
+    T result = withConnection(work, onFailure, used);
+    runAfterCommit(used[0]);
+    return result;
+  }
+
+  private <T extends @Nullable Object> T withConnection(
+      Sql.Work<T> work, SqlExceptionHandler onFailure, @Nullable Sql[] used) {
     try (Connection connection = connection()) {
       Sql sql = sql(connection);
+      used[0] = sql;
       if (connection.getAutoCommit()) {
         T result = work.run(sql);
         report(sql);
@@ -185,6 +196,7 @@ public final class DatabaseAccess {
         sql.execute(JobStore.NOTIFY_DUE_SQL, Sql.array("text", sql.dueNowNames().toArray()));
       }
       sql.dueNowNames().clear(); // not committed yet: due-later times only arm this node's timer
+      sql.afterCommitWork().clear(); // the caller commits, bikesched does not learn when
       report(sql);
       return result;
     } catch (SQLException e) {
@@ -210,6 +222,30 @@ public final class DatabaseAccess {
 
   private <T extends @Nullable Object> T inTransaction(
       boolean readOnly, Sql.Work<T> work, SqlExceptionHandler onFailure) {
+    Sql[] used = new Sql[1];
+    T result = inTransaction(readOnly, work, onFailure, used);
+    runAfterCommit(used[0]);
+    return result;
+  }
+
+  /** Runs the work registered with {@link Sql#afterCommit}, each in a transaction of its own. */
+  private void runAfterCommit(@Nullable Sql sql) {
+    if (sql == null || sql.afterCommitWork().isEmpty()) {
+      return;
+    }
+    List<Sql.Work<?>> work = List.copyOf(sql.afterCommitWork());
+    sql.afterCommitWork().clear();
+    for (Sql.Work<?> next : work) {
+      try {
+        inTransaction(next, e -> new BikeschedException("Work after a commit failed", e));
+      } catch (RuntimeException e) {
+        LOG.warn("Work after a commit failed", e);
+      }
+    }
+  }
+
+  private <T extends @Nullable Object> T inTransaction(
+      boolean readOnly, Sql.Work<T> work, SqlExceptionHandler onFailure, @Nullable Sql[] used) {
     try (Connection connection = connection()) {
       boolean autoCommit = connection.getAutoCommit();
       boolean wasReadOnly = connection.isReadOnly();
@@ -224,6 +260,7 @@ public final class DatabaseAccess {
         T result = work.run(sql);
         connection.commit();
         report(sql);
+        used[0] = sql;
         return result;
       } catch (SQLException | RuntimeException e) {
         rollback(connection, e);

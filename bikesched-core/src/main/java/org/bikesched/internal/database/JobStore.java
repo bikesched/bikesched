@@ -72,10 +72,12 @@ public final class JobStore {
             insert into bikesched_jobs (id, name, type, payload, scheduled_at, priority, max_attempts, timeout_millis, parent_job_id, reference)
             values (?, ?, 'CHILD', ?::jsonb, ?, ?, ?, ?, ?, ?)""";
 
-  // The step of a job starting a child job.
+  // The step of a job starting a child job; an item step of a batch reads as the batch's type, so
+  // a step named like it is rejected as a step of another type.
   private static final String FIND_CHILD_JOB_STEP_SQL =
       """
-            select id, type, state, child_job_id, child_job_name
+            select id, case when batch_step_id is null then type else 'CHILD_JOB_BATCH' end as type,
+                   state, child_job_id, child_job_name
               from bikesched_steps
              where job_id = ? and name = ?
                for update""";
@@ -797,18 +799,21 @@ public final class JobStore {
 
   /**
    * After a job's state changed in the caller's transaction: once it ended, runs the claim's {@link
-   * FollowUp}.
+   * FollowUp}; once it ended or started compensating, cancels the held items of its waiting
+   * batches.
    *
    * @param state the job's new state; nothing happens unless it is terminal
    * @return whether the next occurrence of a recurring job was inserted
    */
   private boolean followUp(Sql db, ClaimEnd end, JobState state, List<StepRef> waitingBatches)
       throws SQLException {
+    // A compensating job compensates its batches next, so nobody admits their held items: they
+    // are cancelled now, as when it ends.
+    if (!waitingBatches.isEmpty() && (state.isEnded() || state == JobState.COMPENSATING)) {
+      batches.cancelHeldItems(db, end.jobId(), waitingBatches);
+    }
     if (!state.isEnded()) {
       return false;
-    }
-    if (!waitingBatches.isEmpty()) {
-      batches.cancelHeldItems(db, end.jobId(), waitingBatches);
     }
     return switch (end.followUp()) {
       case FollowUp.NotifyParent(UUID ignored, UUID batchStepId) -> {

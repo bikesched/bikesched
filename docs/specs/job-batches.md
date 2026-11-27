@@ -756,12 +756,13 @@ None: all are decided (§11).
 
 ## 12. Decided while implementing
 
-1. Fail-fast cancels the siblings in the failing item's end transaction, not in a follow-up after
-   the commit (§4.12): held items `CANCELLED`, scheduled, waiting and running ones a cancel
-   request, all `for update skip locked` in `batch_index` order, after the batch step. The lock
-   order of §4.14 holds (other item rows only with `skip locked`), so there is no deadlock, and no
-   second transaction can be lost in a crash. A sibling locked at that moment (ending or being
-   claimed) is skipped and ends on its own; its step is already `CANCELLED`.
+1. Fail-fast cancels the siblings in the failing item's end transaction (§4.12): held items
+   `CANCELLED`, scheduled, waiting and running ones a cancel request, all `for update skip
+   locked` in `batch_index` order, after the batch step. The lock order of §4.14 holds (other
+   item rows only with `skip locked`), so there is no deadlock. A sibling locked at that moment
+   (writing a step, ending an attempt, being claimed) is asked after the commit, in a transaction
+   of its own that waits for the locks without holding the batch step; one lost in a crash only
+   keeps running until it ends, its step is already `CANCELLED`.
 2. History entries of items (`SCHEDULED`, `HELD`, `ADMITTED`, cancellations) are caused by the
    ending item or, at the start, by the parent job (`causedBy` names a subject, and a batch step
    is none).
@@ -787,4 +788,14 @@ None: all are decided (§11).
    `handleResultJobs` stores the lambda's value with `job.complete`, `Unit` as no value.
 10. The `fan-out` example uses a batch with `parallelism(2)`; the stress test
     `JobBatchStressTest` runs 5,000 items on three nodes with a database restart.
+11. Held items are cancelled once the parent ends or starts compensating, with their item steps
+    `CANCELLED`; a restarted (`COMPENSATED`) batch first cancels any held row left from before.
+12. A run after the first returns the stored batch before checking anything: payloads are mapped
+    only when the batch starts (an error names the item's key), and keys, size and job names are
+    checked only then. Reading a result that cannot be mapped names the item and the type.
+13. Item steps are found by name (`stepName/key`, the unique `(job_id, name)` index), and starting
+    a batch fails if an item step's name is taken by another step of the job.
+14. `Job.waitForJob(UUID, ResultJob)` checks that the child is a job of that name, and
+    `ResultJobHandler.handle` returns `@Nullable R`. Kotlin rejects `P = Unit` for a batch's
+    payloads (payloads are mapped by their class, so generic types by their raw class).
 

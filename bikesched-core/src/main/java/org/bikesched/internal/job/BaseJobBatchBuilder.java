@@ -26,11 +26,11 @@ abstract class BaseJobBatchBuilder<B extends JobBatchSettings<B>> implements Job
    *
    * @param jobName its job name
    * @param key its key, {@code null} for its position
-   * @param payload its payload as JSON text, {@code null} if none
+   * @param payload its payload, mapped to JSON only when the batch starts; {@code null} if none
    * @param resultType the type its result is read as
    */
   record Item(
-      String jobName, @Nullable String key, @Nullable String payload, Class<?> resultType) {}
+      String jobName, @Nullable String key, @Nullable Object payload, Class<?> resultType) {}
 
   final DefaultJob parent;
   final String stepName;
@@ -54,14 +54,13 @@ abstract class BaseJobBatchBuilder<B extends JobBatchSettings<B>> implements Job
   /** This builder as its interface type. */
   abstract B self();
 
-  /** Adds an item, mapping its payload right away. */
+  /** Adds an item; its payload is mapped once the batch starts, never on later runs. */
   final void addItem(
       String jobName, @Nullable String key, @Nullable Object payload, Class<?> resultType) {
     if (key != null) {
       ValidationUtil.requireName(key, "batch key");
     }
-    items.add(
-        new Item(jobName, key, payload == null ? null : jsonMapper.toJson(payload), resultType));
+    items.add(new Item(jobName, key, payload, resultType));
   }
 
   /** Checks the key given for an item: not {@code null}, a valid name. */

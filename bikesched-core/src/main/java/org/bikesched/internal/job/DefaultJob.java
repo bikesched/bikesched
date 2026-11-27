@@ -523,7 +523,8 @@ public final class DefaultJob implements Job {
 
   /**
    * Starts a batch built by a {@link BaseJobBatchBuilder} as a step, see {@link
-   * BatchStore#startBatch}: validates it completely first, so a mistake writes nothing.
+   * BatchStore#startBatch}: validates it completely first, so a mistake writes nothing. A batch
+   * started on an earlier run is returned as stored, without checking or mapping the items again.
    *
    * @param batch the builder with the items and settings
    * @param at when the items are due
@@ -533,58 +534,28 @@ public final class DefaultJob implements Job {
       BaseJobBatchBuilder<?> batch, Instant at) {
     String stepName = batch.stepName;
     stepGuard.requireNoneRunning("start a job batch as step '" + stepName + "'");
-    int maxSize = scheduler.maxJobBatchSize();
-    if (batch.items.size() > maxSize) {
-      throw new IllegalArgumentException(
-          "Job batch '"
-              + stepName
-              + "' has "
-              + batch.items.size()
-              + " items, more than maxJobBatchSize ("
-              + maxSize
-              + "); split it or raise the node's maxJobBatchSize");
-    }
-    List<BatchStore.NewItem> items = new ArrayList<>(batch.items.size());
     Map<String, Class<?>> resultTypes = new HashMap<>();
-    Set<String> keys = new HashSet<>();
-    Set<String> duplicates = new LinkedHashSet<>();
-    Set<String> jobNames = new LinkedHashSet<>();
     for (int i = 0; i < batch.items.size(); i++) {
       BaseJobBatchBuilder.Item item = batch.items.get(i);
-      String key = item.key() == null ? Integer.toString(i) : item.key();
-      if (!keys.add(key)) {
-        duplicates.add(key);
-      }
-      ValidationUtil.requireName(
-          BatchStore.itemStepName(stepName, key), "step name of batch item '" + key + "'");
-      items.add(new BatchStore.NewItem(item.jobName(), key, item.payload()));
-      resultTypes.put(key, item.resultType());
-      jobNames.add(item.jobName());
+      resultTypes.put(itemKey(item, i), item.resultType());
     }
-    if (!duplicates.isEmpty()) {
-      throw new IllegalArgumentException(
-          "Job batch '" + stepName + "' has duplicate keys " + duplicates + "; keys are unique");
-    }
-    jobNames.forEach(jobName -> scheduler.requireSchedulable(jobName, null));
-    if (!batchSteps.add(stepName)) {
-      throw new IllegalStateException(
-          "Job "
-              + id
-              + " starts more than one job batch with step name '"
-              + stepName
-              + "'; use a unique step name for each batch");
-    }
-    startedBatches = true;
     try (var stepLogContext = stepContext(stepName)) {
       CompensationHandler<? super JobBatchItem> compensation = batch.compensation;
       if (replay != null) {
         // Replay only: return the started batch, registering the compensations, never start one.
+        requireNewBatchStep(stepName);
         var started = replay.startedBatch(stepName, compensation);
         return new DefaultJobBatch<>(this, started.step(), started.items(), resultTypes);
       }
+      var stored = database.batches().findStarted(id, stepName);
+      if (stored.isPresent()) {
+        requireNewBatchStep(stepName);
+        LOG.debug("Step {} of job {} already started its job batch", stepName, id);
+        return new DefaultJobBatch<>(this, stored.get().step(), stored.get().items(), resultTypes);
+      }
       var newBatch =
           new BatchStore.NewBatch(
-              items,
+              newItems(batch),
               at,
               batch.priority,
               batch.maxAttempts,
@@ -593,6 +564,7 @@ public final class DefaultJob implements Job {
               batch.parallelism,
               batch.failFast,
               compensation != null);
+      requireNewBatchStep(stepName);
       var started = fenced(() -> database.batches().startBatch(id, lock, stepName, newBatch));
       if (started.started()) {
         LOG.debug(
@@ -605,6 +577,76 @@ public final class DefaultJob implements Job {
       }
       return new DefaultJobBatch<>(this, started.step(), started.items(), resultTypes);
     }
+  }
+
+  /** An item's key: its own, or its position. */
+  private static String itemKey(BaseJobBatchBuilder.Item item, int index) {
+    String key = item.key();
+    return key == null ? Integer.toString(index) : key;
+  }
+
+  /** Rejects a second batch with the same step name in this run. */
+  private void requireNewBatchStep(String stepName) {
+    if (!batchSteps.add(stepName)) {
+      throw new IllegalStateException(
+          "Job "
+              + id
+              + " starts more than one job batch with step name '"
+              + stepName
+              + "'; use a unique step name for each batch");
+    }
+    startedBatches = true;
+  }
+
+  /**
+   * Checks a batch about to start and maps its payloads: its size, unique keys, valid item step
+   * names and job names this node can schedule.
+   */
+  private List<BatchStore.NewItem> newItems(BaseJobBatchBuilder<?> batch) {
+    String stepName = batch.stepName;
+    int maxSize = scheduler.maxJobBatchSize();
+    if (batch.items.size() > maxSize) {
+      throw new IllegalArgumentException(
+          "Job batch '"
+              + stepName
+              + "' has "
+              + batch.items.size()
+              + " items, more than maxJobBatchSize ("
+              + maxSize
+              + "); split it or raise the node's maxJobBatchSize");
+    }
+    Set<String> keys = new HashSet<>();
+    Set<String> duplicates = new LinkedHashSet<>();
+    Set<String> jobNames = new LinkedHashSet<>();
+    for (int i = 0; i < batch.items.size(); i++) {
+      String key = itemKey(batch.items.get(i), i);
+      if (!keys.add(key)) {
+        duplicates.add(key);
+      }
+      ValidationUtil.requireName(
+          BatchStore.itemStepName(stepName, key), "step name of batch item '" + key + "'");
+      jobNames.add(batch.items.get(i).jobName());
+    }
+    if (!duplicates.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Job batch '" + stepName + "' has duplicate keys " + duplicates + "; keys are unique");
+    }
+    jobNames.forEach(jobName -> scheduler.requireSchedulable(jobName, null));
+    List<BatchStore.NewItem> items = new ArrayList<>(batch.items.size());
+    for (int i = 0; i < batch.items.size(); i++) {
+      BaseJobBatchBuilder.Item item = batch.items.get(i);
+      String key = itemKey(item, i);
+      Object payload = item.payload();
+      String json;
+      try {
+        json = payload == null ? null : batch.jsonMapper.toJson(payload);
+      } catch (RuntimeException e) {
+        throw new IllegalArgumentException(
+            "Mapping the payload of item '" + key + "' of job batch '" + stepName + "' failed", e);
+      }
+      items.add(new BatchStore.NewItem(item.jobName(), key, json));
+    }
+    return items;
   }
 
   /**
@@ -709,14 +751,29 @@ public final class DefaultJob implements Job {
   @Override
   public <T extends @Nullable Object> JobResult<T> waitForJob(
       UUID childJobId, Class<T> resultType) {
-    return waitForChildJob(childJobId, resultType, null);
+    return waitForChildJob(childJobId, resultType, null, null);
   }
 
   @Override
   public <T extends @Nullable Object> JobResult<T> waitForJob(
       UUID childJobId, Class<T> resultType, Duration timeout) {
     ValidationUtil.requirePositive(timeout, "timeout");
-    return waitForChildJob(childJobId, resultType, timeout);
+    return waitForChildJob(childJobId, resultType, null, timeout);
+  }
+
+  @Override
+  public <R extends @Nullable Object> JobResult<R> waitForJob(
+      UUID childJobId, ResultJob<?, R> resultJob) {
+    Objects.requireNonNull(resultJob, "resultJob");
+    return waitForChildJob(childJobId, resultJob.resultType(), resultJob.name(), null);
+  }
+
+  @Override
+  public <R extends @Nullable Object> JobResult<R> waitForJob(
+      UUID childJobId, ResultJob<?, R> resultJob, Duration timeout) {
+    Objects.requireNonNull(resultJob, "resultJob");
+    ValidationUtil.requirePositive(timeout, "timeout");
+    return waitForChildJob(childJobId, resultJob.resultType(), resultJob.name(), timeout);
   }
 
   /**
@@ -724,7 +781,10 @@ public final class DefaultJob implements Job {
    * wait, or suspends the job by throwing {@link JobSuspended}.
    */
   private <T extends @Nullable Object> JobResult<T> waitForChildJob(
-      UUID childJobId, Class<T> resultType, @Nullable Duration timeout) {
+      UUID childJobId,
+      Class<T> resultType,
+      @Nullable String childJobName,
+      @Nullable Duration timeout) {
     Objects.requireNonNull(childJobId, "childJobId");
     Objects.requireNonNull(resultType, "resultType");
     stepGuard.requireNoneRunning("wait for job " + childJobId);
@@ -732,7 +792,8 @@ public final class DefaultJob implements Job {
       // Replay only: return what the wait stored, never start or time out a wait.
       return replay.childResult(childJobId, reader(resultType));
     }
-    var wait = fenced(() -> database.steps().awaitChildJob(id, lock, childJobId, timeout));
+    var wait =
+        fenced(() -> database.steps().awaitChildJob(id, lock, childJobId, childJobName, timeout));
     try (var stepLogContext = stepContext(wait.step().name())) {
       return switch (wait) {
         case ChildWait.ChildEnded ended -> {

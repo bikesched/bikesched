@@ -169,4 +169,28 @@ class BatchesTest {
       assertThat(unsucceeded).containsExactly(setOf("0"))
     }
   }
+
+  @Test
+  fun `unit payloads are rejected`() {
+    val parent = unique("unit-payloads")
+    val item = unique("unit-item")
+    val failures = CopyOnWriteArrayList<Throwable>()
+
+    testNode("batches").use { bikesched ->
+      bikesched.handleJobs(item) {}
+      bikesched.handleJobs(parent) {
+        try {
+          startJobBatch<Unit, Unit>("items", item, payloads = listOf(Unit))
+        } catch (e: IllegalArgumentException) {
+          failures += e
+        }
+      }
+      val jobId = bikesched.createJob(name = parent)
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
+      }
+      assertThat(failures.single()).hasMessageContaining("Unit payloads")
+    }
+  }
 }

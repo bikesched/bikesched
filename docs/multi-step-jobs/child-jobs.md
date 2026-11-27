@@ -179,16 +179,17 @@ bikesched.registerJobHandler("process-image", job -> {
 | `add(payload)`, `add(key, payload)` | one item, keyed by its position (`"0"`, `"1"`, …) or by the key |
 | `addAll(payloads)`, `addAll(items, payload)`, `addAll(items, key, payload)` | many items, keyed by position or by a key function |
 | `parallelism(k)` | at most `k` items active at once, across all nodes; default no limit |
-| `failFast()` | end the batch at the first item that does not succeed and cancel the others |
+| `failFast()` | end the batch at the first item that does not succeed and cancel the others (an item busy at that moment, e.g. writing a step, is asked right after) |
 | `priority`, `maxAttempts`, `timeout`, `reference` | one value for every item, as for single children |
 | `compensateWith((step, item) -> …)` | undo each started item (a `JobBatchItem` with its `key` and `jobId`) if the parent is cancelled or fails permanently |
 | `schedule()`, `schedule(Instant)`, `schedule(Duration)` | store the batch and return its `JobBatch` |
 
 - The batch step, every item and their steps are stored in one transaction, fenced by the
-  parent's lock, exactly once. Later runs return the stored batch whatever the items are now: they
-  are read only on the first run.
+  parent's lock, exactly once, with the payloads mapped to JSON then (a payload that cannot be
+  mapped is an `IllegalArgumentException` naming its key). Later runs return the stored batch
+  whatever the items are now: they are neither checked nor mapped again.
 - Keys are 1 to 200 characters and unique within the batch; item steps are named
-  `stepName/key`. Duplicate keys, more items than the node's
+  `stepName/key`, which no other step of the job may be named. Duplicate keys, more items than the node's
   [`maxJobBatchSize`](../getting-started/configuration.md) (default 1,000), a `parallelism` below
   1 or a job name without a handler (or
   [remote job name](../jobs/README.md#jobs-other-nodes-handle)) are rejected before anything is
@@ -233,7 +234,7 @@ a single item with `waitForJob` is rejected: wait for the batch.
 | Situation | Behaviour |
 |---|---|
 | parent cancelled while the batch runs | the batch step and its waiting item steps `CANCELLED`, held items cancelled, running items not touched unless the compensation cancels them |
-| `compensateWith` | each admitted item is compensated, in reverse item order; held items never ran and have nothing to compensate |
+| `compensateWith` | each admitted item is compensated, in reverse item order; held items are cancelled once the parent starts compensating, they never ran and have nothing to compensate |
 | parent ends without waiting | its held items are cancelled; admitted items run to their end |
 | parent retried after its compensation | the `COMPENSATED` batch starts new items for the same keys, in the same order (other keys are an `IllegalStateException`) |
 | an item cancelled from elsewhere | its outcome is `Cancelled`; the batch goes on |

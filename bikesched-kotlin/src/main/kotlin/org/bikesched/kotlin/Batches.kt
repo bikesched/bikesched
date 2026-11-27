@@ -78,8 +78,10 @@ public class MixedBatchItems internal constructor(private val builder: MixedJobB
  * ```
  *
  * The items come from [items], [pairs], [payloads] and the lambda, in that order; a batch with none
- * is empty and ends right away. The lambda only lists items: it runs before the batch is stored and
- * only on the first run. `R = Unit` is a batch without results (every result `null`).
+ * is empty and ends right away. The lambda only lists items: it runs on every run of this job, but
+ * the items are checked and their payloads mapped only on the first. `R = Unit` is a batch without
+ * results (every result `null`); `P` is a class, so a generic payload type such as `List<Image>` is
+ * mapped by its raw class, and `P = Unit` is rejected (use `Any?` with `null` payloads).
  *
  * @param stepName the batch's step name, unique within the job; item steps are named `stepName/key`
  * @param jobName the items' job name; it needs a handler on this node, or is one of its remote job
@@ -99,8 +101,9 @@ public class MixedBatchItems internal constructor(private val builder: MixedJobB
  *   it; runs once per started item, in reverse order
  * @param block adds items with [BatchItems.item]
  * @return the batch, the same on every run of this job
- * @throws IllegalArgumentException if both [at] and [delay] are set, keys repeat, the batch has
- *   more items than `maxJobBatchSize`, or the name has no handler and is no remote job name
+ * @throws IllegalArgumentException if both [at] and [delay] are set, `P` is `Unit`, keys repeat,
+ *   the batch has more items than `maxJobBatchSize`, or the name has no handler and is no remote
+ *   job name
  * @throws IllegalStateException if this job is an occurrence of a recurring job
  */
 public inline fun <reified P, reified R> Job.startJobBatch(
@@ -261,6 +264,9 @@ internal fun <P, R> startJobBatchOf(
   options: BatchOptions,
   block: BatchItems<P>.() -> Unit,
 ): JobBatch<R> {
+  require(payloadType != Unit::class.java) {
+    "Job batch '$stepName' has Unit payloads; use Any? with null payloads"
+  }
   // R = Unit: a batch without results, whose results are all null
   @Suppress("UNCHECKED_CAST")
   val typed =

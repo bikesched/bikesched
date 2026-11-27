@@ -46,6 +46,8 @@ public interface JobBatch<R extends @Nullable Object> {
    *
    * @param timeout a positive duration
    * @return the outcome of every item
+   * @throws IllegalArgumentException if the timeout is not positive
+   * @throws IllegalStateException if called inside a step's handler
    */
   JobBatchResult<R> await(Duration timeout);
 }

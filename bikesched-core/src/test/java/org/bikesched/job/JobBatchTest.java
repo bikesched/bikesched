@@ -417,7 +417,8 @@ class JobBatchTest extends AbstractBikeschedTest {
                     int run = runs.incrementAndGet();
                     var builder = job.newJobBatch("items", item).add("a", json("a"));
                     if (run > 1) {
-                      builder.add("b", json("b")); // ignored: the batch was started
+                      // neither checked nor written: the batch was started
+                      builder.add("b", json("b")).add("a", json("duplicate"));
                     }
                     outcome.set(builder.schedule().await());
                   })
@@ -456,6 +457,12 @@ class JobBatchTest extends AbstractBikeschedTest {
                                     List.of(json("1"), json("2"), json("3"), json("4"), json("5")))
                                 .schedule());
                     record(failures, () -> job.newJobBatch("zero", item).parallelism(0));
+                    record(
+                        failures,
+                        () ->
+                            job.newJobBatch("unmapped", item.name())
+                                .add("k", 42) // the default mapper takes JSON text only
+                                .schedule());
                     var empty = job.newJobBatch("empty", item).schedule().await();
                     assertThat(empty.all()).isEmpty();
                     assertThat(empty.isAllSucceeded()).isTrue();
@@ -463,7 +470,7 @@ class JobBatchTest extends AbstractBikeschedTest {
               .schedule();
       awaitState(parent, "SUCCEEDED");
 
-      assertThat(failures).hasSize(3);
+      assertThat(failures).hasSize(4);
       assertThat(failures.get(0))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("duplicate keys [a, 2]");
@@ -471,6 +478,9 @@ class JobBatchTest extends AbstractBikeschedTest {
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("more than maxJobBatchSize (4)");
       assertThat(failures.get(2)).isInstanceOf(IllegalArgumentException.class);
+      assertThat(failures.get(3))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("payload of item 'k' of job batch 'unmapped'");
       assertThat(countRows("bikesched_steps", "job_id = '" + parent + "' and name <> 'empty'"))
           .as("only the empty batch was written")
           .isZero();
@@ -582,7 +592,9 @@ class JobBatchTest extends AbstractBikeschedTest {
   @Test
   void resultJobsTypeSingleChildrenAndReturnTheirResult() throws Exception {
     var charge = TypedJob.of("batch-charge", String.class, String.class);
+    var refund = TypedJob.of("batch-refund", String.class, String.class);
     var receipt = new AtomicReference<String>();
+    var wrongJob = new AtomicReference<Throwable>();
     try (Bikesched bikesched = testNode("node-batch-result-job").build()) {
       bikesched.registerResultJobHandler(charge, (job, payload) -> json("receipt"));
       UUID parent =
@@ -591,12 +603,18 @@ class JobBatchTest extends AbstractBikeschedTest {
               .handler(
                   job -> {
                     UUID child = job.newJob(charge).payload(json("42")).schedule();
+                    try {
+                      job.waitForJob(child, refund);
+                    } catch (IllegalArgumentException e) {
+                      wrongJob.set(e);
+                    }
                     receipt.set(job.waitForJob(child, charge).orElseThrow());
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
 
       assertThat(receipt.get()).isEqualTo(json("receipt"));
+      assertThat(wrongJob.get()).hasMessageContaining("named batch-charge, not batch-refund");
     }
   }
 
@@ -892,6 +910,150 @@ class JobBatchTest extends AbstractBikeschedTest {
           .hasSize(2);
       release.countDown();
       awaitState(parent, "SUCCEEDED");
+    }
+  }
+
+  @Test
+  void aFailedParentCancelsItsHeldItemsAndItsRetryStartsTheBatchAgain() throws Exception {
+    var item = TypedJob.of("batch-held-retry-item", String.class);
+    var release = new CountDownLatch(1);
+    var retried = new java.util.concurrent.atomic.AtomicBoolean();
+    var firstIds = new AtomicReference<Map<String, UUID>>();
+    var outcome = new AtomicReference<JobBatchResult<Void>>();
+    try (Bikesched bikesched =
+        testNode("node-batch-held-retry").history(Duration.ofHours(1)).build()) {
+      bikesched.registerJobHandler(item, (job, payload) -> release.await(10, TimeUnit.SECONDS));
+      UUID parent =
+          bikesched
+              .newJob("batch-held-retry")
+              .maxAttempts(1)
+              .handler(
+                  job -> {
+                    JobBatch<Void> batch =
+                        job.newJobBatch("items", item)
+                            .add("running", json("r"))
+                            .add("held", json("h"))
+                            .parallelism(1)
+                            .compensateWith((step, batchItem) -> {})
+                            .schedule();
+                    if (!retried.get()) {
+                      firstIds.set(batch.jobIds());
+                      throw new IllegalStateException("fails while its batch waits");
+                    }
+                    outcome.set(batch.await());
+                  })
+              .schedule();
+      awaitState(parent, "FAILED");
+      UUID held = firstIds.get().get("held");
+      awaitState(held, "CANCELLED");
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '"
+                      + parent
+                      + "' and name = 'items/held' and child_job_id = '"
+                      + held
+                      + "' and state in ('CANCELLED', 'COMPENSATED')"))
+          .as("the held item's step does not wait")
+          .isEqualTo(1);
+      assertThat(HistoryTesting.actions(bikesched.findJobHistory(held))).contains("CANCELLED");
+
+      release.countDown();
+      retried.set(true);
+      assertThat(bikesched.admin().retryJob(parent).retry()).isTrue();
+      awaitState(parent, "SUCCEEDED");
+
+      assertThat(outcome.get().succeeded()).containsOnlyKeys("running", "held");
+      assertThat(outcome.get().get("held").jobId()).isNotEqualTo(held);
+      assertThat(count("id = '" + held + "' and state = 'CANCELLED'"))
+          .as("the old held item stays cancelled")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void failFastAsksASiblingLockedAtTheEndToCancelOnceItIsFree() throws Exception {
+    var item = TypedJob.of("batch-locked-item", String.class);
+    var fail = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var ids = new AtomicReference<Map<String, UUID>>();
+    try (Bikesched bikesched = testNode("node-batch-locked").maxConcurrentJobs(4).build()) {
+      bikesched.registerJobHandler(
+          item,
+          (job, payload) -> {
+            if (json("fail").equals(payload)) {
+              fail.await(10, TimeUnit.SECONDS);
+              throw new IllegalStateException("failing fast");
+            }
+            release.await(10, TimeUnit.SECONDS);
+          });
+      UUID parent =
+          bikesched
+              .newJob("batch-locked")
+              .handler(
+                  job -> {
+                    JobBatch<Void> batch =
+                        job.newJobBatch("items", item)
+                            .add("busy", json("busy"))
+                            .add("fail", json("fail"))
+                            .maxAttempts(1)
+                            .failFast()
+                            .schedule();
+                    ids.set(batch.jobIds());
+                    batch.await();
+                  })
+              .schedule();
+      awaitState(parent, "WAITING");
+      UUID busy = ids.get().get("busy");
+      awaitState(busy, "RUNNING");
+
+      try (var connection = dataSource.getConnection()) {
+        connection.setAutoCommit(false);
+        try (var lock =
+            connection.prepareStatement("select id from bikesched_jobs where id = ? for update")) {
+          lock.setObject(1, busy);
+          lock.executeQuery().close();
+        }
+        // the sibling is locked (as while it writes a step) when the other item fails
+        fail.countDown();
+        awaitState(parent, "SUCCEEDED");
+        assertThat(count("id = '" + busy + "' and cancel_requested_at is null")).isEqualTo(1);
+        connection.commit();
+      }
+
+      await()
+          .untilAsserted(
+              () ->
+                  assertThat(count("id = '" + busy + "' and cancel_requested_at is not null"))
+                      .isEqualTo(1));
+      release.countDown();
+    }
+  }
+
+  @Test
+  void anItemStepMayNotTakeTheNameOfAnotherStep() throws Exception {
+    var item = TypedJob.of("batch-names-item", String.class);
+    var failure = new AtomicReference<Throwable>();
+    try (Bikesched bikesched = testNode("node-batch-names").build()) {
+      bikesched.registerJobHandler(item, (job, payload) -> {});
+      UUID parent =
+          bikesched
+              .newJob("batch-names")
+              .handler(
+                  job -> {
+                    job.newStep("items/a", String.class).run(step -> json("taken"));
+                    try {
+                      job.newJobBatch("items", item).add("a", json("a")).schedule();
+                    } catch (IllegalStateException e) {
+                      failure.set(e);
+                    }
+                  })
+              .schedule();
+      awaitState(parent, "SUCCEEDED");
+
+      assertThat(failure.get()).hasMessageContaining("would name an item step 'items/a'");
+      assertThat(countRows("bikesched_steps", "job_id = '" + parent + "' and name = 'items'"))
+          .isZero();
     }
   }
 

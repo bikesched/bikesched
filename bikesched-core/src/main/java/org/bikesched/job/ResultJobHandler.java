@@ -23,5 +23,5 @@ public interface ResultJobHandler<T extends @Nullable Object, R extends @Nullabl
    * @return the job's result, mapped to JSON by the {@code JsonMapper}; {@code null} for none
    * @throws Exception to fail the attempt
    */
-  R handle(Job job, @Nullable T payload) throws Exception;
+  @Nullable R handle(Job job, @Nullable T payload) throws Exception;
 }
