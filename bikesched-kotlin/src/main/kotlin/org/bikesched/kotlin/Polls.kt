@@ -43,8 +43,8 @@ public inline fun <reified T> Job.poll(
   name: String,
   interval: Duration,
   timeout: Duration? = null,
-  noinline onFailure: ((failing: FailingStep<T>) -> Unit)? = null,
-  noinline handler: (Step) -> Poll<T>,
+  noinline onFailure: (suspend (failing: FailingStep<T>) -> Unit)? = null,
+  noinline handler: suspend (Step) -> Poll<T>,
 ): T =
   pollOf(T::class.java, timeout, onFailure, handler) { type ->
     newPoll(name, type, interval.toJavaDuration())
@@ -71,8 +71,8 @@ public inline fun <reified T> Job.poll(
   name: String,
   interval: RetryBackoff,
   timeout: Duration? = null,
-  noinline onFailure: ((failing: FailingStep<T>) -> Unit)? = null,
-  noinline handler: (Step) -> Poll<T>,
+  noinline onFailure: (suspend (failing: FailingStep<T>) -> Unit)? = null,
+  noinline handler: suspend (Step) -> Poll<T>,
 ): T =
   pollOf(T::class.java, timeout, onFailure, handler) { type -> newPoll(name, type, interval) } as T
 
@@ -80,8 +80,8 @@ public inline fun <reified T> Job.poll(
 internal fun <T> pollOf(
   type: Class<*>,
   timeout: Duration?,
-  onFailure: ((FailingStep<T>) -> Unit)?,
-  handler: (Step) -> Poll<T>,
+  onFailure: (suspend (FailingStep<T>) -> Unit)?,
+  handler: suspend (Step) -> Poll<T>,
   newPoll: (Class<*>) -> PollBuilder<*>,
 ): Any? {
   if (type == Unit::class.java) {
@@ -90,10 +90,12 @@ internal fun <T> pollOf(
     timeout?.let { poll.timeout(it.toJavaDuration()) }
     if (onFailure != null) {
       @Suppress("UNCHECKED_CAST")
-      poll.onFailure { failing -> onFailure(UnitFailingStep(failing) as FailingStep<T>) }
+      poll.onFailure { failing ->
+        blocking { onFailure(UnitFailingStep(failing) as FailingStep<T>) }
+      }
     }
     poll.run { step ->
-      val outcome = handler(step)
+      val outcome = blocking { handler(step) }
       if (outcome is Poll.NotReady<*>) Poll.NotReady(outcome.retryAfter()) else Poll.ready(null)
     }
     return Unit
@@ -101,7 +103,7 @@ internal fun <T> pollOf(
   @Suppress("UNCHECKED_CAST") val poll = newPoll(type) as PollBuilder<T>
   timeout?.let { poll.timeout(it.toJavaDuration()) }
   if (onFailure != null) {
-    poll.onFailure { failing -> onFailure(failing) }
+    poll.onFailure { failing -> blocking { onFailure(failing) } }
   }
-  return poll.run { handler(it) }
+  return poll.run { step -> blocking { handler(step) } }
 }

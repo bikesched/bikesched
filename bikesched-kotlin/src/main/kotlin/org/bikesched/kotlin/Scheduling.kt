@@ -34,12 +34,16 @@ import org.bikesched.job.TypedJobHandler
  *
  * A job without payload fails with an [IllegalStateException] unless [T] is nullable.
  *
+ * The handler may call suspending functions: like every handler lambda of this module it runs with
+ * `runBlocking` on the job's own virtual thread, and the job's timeout cancels it. Call the [Job]'s
+ * methods from the handler's coroutine, not from another dispatcher.
+ *
  * @return this instance
  * @throws IllegalArgumentException if the name is blank or already has a handler
  */
 public inline fun <reified T> Bikesched.handleJobs(
   name: String,
-  noinline handler: Job.(payload: T) -> Unit,
+  noinline handler: suspend Job.(payload: T) -> Unit,
 ): Bikesched = registerJobHandler(name, typedJobHandler(name, T::class.java, null is T, handler))
 
 /**
@@ -52,8 +56,8 @@ public inline fun <reified T> Bikesched.handleJobs(
  * @return this instance
  * @throws IllegalArgumentException if the name is blank or already has a handler
  */
-public fun Bikesched.handleJobs(name: String, handler: Job.() -> Unit): Bikesched =
-  registerJobHandler(name, JobHandler { job -> job.handler() })
+public fun Bikesched.handleJobs(name: String, handler: suspend Job.() -> Unit): Bikesched =
+  registerJobHandler(name, JobHandler { job -> blocking { job.handler() } })
 
 /**
  * Registers the failure handler of [name], see `Bikesched.registerJobFailureHandler`: it runs
@@ -70,7 +74,7 @@ public fun Bikesched.handleJobs(name: String, handler: Job.() -> Unit): Bikesche
  */
 public inline fun <reified T> Bikesched.handleJobFailures(
   name: String,
-  noinline handler: FailedJob.(payload: T) -> Unit,
+  noinline handler: suspend FailedJob.(payload: T) -> Unit,
 ): Bikesched =
   registerJobFailureHandler(name, typedJobFailureHandler(name, T::class.java, null is T, handler))
 
@@ -84,8 +88,11 @@ public inline fun <reified T> Bikesched.handleJobFailures(
  * @return this instance
  * @throws IllegalArgumentException if the name is blank or already has a failure handler
  */
-public fun Bikesched.handleJobFailures(name: String, handler: FailedJob.() -> Unit): Bikesched =
-  registerJobFailureHandler(name, JobFailureHandler { failed -> failed.handler() })
+public fun Bikesched.handleJobFailures(
+  name: String,
+  handler: suspend FailedJob.() -> Unit,
+): Bikesched =
+  registerJobFailureHandler(name, JobFailureHandler { failed -> blocking { failed.handler() } })
 
 /**
  * Schedules a job without payload, see `Bikesched.newJob(String)`:
@@ -126,8 +133,8 @@ public fun Bikesched.createJob(
   idempotencyKey: String? = null,
   reference: String? = null,
   actor: Actor? = null,
-  onFailure: (FailedJob.() -> Unit)? = null,
-  handler: (Job.() -> Unit)? = null,
+  onFailure: (suspend FailedJob.() -> Unit)? = null,
+  handler: (suspend Job.() -> Unit)? = null,
 ): UUID =
   scheduleJob(
     this,
@@ -137,8 +144,8 @@ public fun Bikesched.createJob(
       priority,
       maxAttempts,
       timeout,
-      handler?.let { JobHandler { job -> job.it() } },
-      onFailure?.let { JobFailureHandler { failed -> failed.it() } },
+      handler?.let { JobHandler { job -> blocking { job.it() } } },
+      onFailure?.let { JobFailureHandler { failed -> blocking { failed.it() } } },
       reference,
       actor,
     ),
@@ -176,8 +183,8 @@ public inline fun <reified T : Any> Bikesched.createJob(
   idempotencyKey: String? = null,
   reference: String? = null,
   actor: Actor? = null,
-  noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
-  noinline handler: (Job.(payload: T) -> Unit)? = null,
+  noinline onFailure: (suspend FailedJob.(payload: T) -> Unit)? = null,
+  noinline handler: (suspend Job.(payload: T) -> Unit)? = null,
 ): UUID =
   scheduleJob(
     this,
@@ -225,8 +232,8 @@ public fun <T : Any> Bikesched.createJob(
   idempotencyKey: String? = null,
   reference: String? = null,
   actor: Actor? = null,
-  onFailure: (FailedJob.(payload: T) -> Unit)? = null,
-  handler: (Job.(payload: T) -> Unit)? = null,
+  onFailure: (suspend FailedJob.(payload: T) -> Unit)? = null,
+  handler: (suspend Job.(payload: T) -> Unit)? = null,
 ): UUID {
   require(at == null || delay == null) { "at and delay are mutually exclusive" }
   var builder = newJob(typedJob).payload(payload)
@@ -237,13 +244,19 @@ public fun <T : Any> Bikesched.createJob(
   actor?.let { builder = builder.actor(it) }
   handler?.let { h ->
     builder =
-      builder.handler(TypedJobHandler<T> { job, p -> job.h(requirePayload(job.id(), typedJob, p)) })
+      builder.handler(
+        TypedJobHandler<T> { job, p ->
+          val payload = requirePayload(job.id(), typedJob, p)
+          blocking { job.h(payload) }
+        }
+      )
   }
   onFailure?.let { h ->
     builder =
       builder.failureHandler(
         TypedJobFailureHandler<T> { failed, p ->
-          failed.h(requirePayload(failed.id(), typedJob, p))
+          val payload = requirePayload(failed.id(), typedJob, p)
+          blocking { failed.h(payload) }
         }
       )
   }
@@ -284,8 +297,8 @@ public fun Bikesched.createRecurringJob(
   timeout: Duration? = null,
   reference: String? = null,
   actor: Actor? = null,
-  onFailure: (FailedJob.() -> Unit)? = null,
-  handler: (Job.() -> Unit)? = null,
+  onFailure: (suspend FailedJob.() -> Unit)? = null,
+  handler: (suspend Job.() -> Unit)? = null,
 ): UUID =
   registerRecurringJob(
     this,
@@ -296,8 +309,8 @@ public fun Bikesched.createRecurringJob(
       priority,
       maxAttempts,
       timeout,
-      handler?.let { JobHandler { job -> job.it() } },
-      onFailure?.let { JobFailureHandler { failed -> failed.it() } },
+      handler?.let { JobHandler { job -> blocking { job.it() } } },
+      onFailure?.let { JobFailureHandler { failed -> blocking { failed.it() } } },
       reference,
       actor,
     ),
@@ -332,8 +345,8 @@ public inline fun <reified T : Any> Bikesched.createRecurringJob(
   timeout: Duration? = null,
   reference: String? = null,
   actor: Actor? = null,
-  noinline onFailure: (FailedJob.(payload: T) -> Unit)? = null,
-  noinline handler: (Job.(payload: T) -> Unit)? = null,
+  noinline onFailure: (suspend FailedJob.(payload: T) -> Unit)? = null,
+  noinline handler: (suspend Job.(payload: T) -> Unit)? = null,
 ): UUID =
   registerRecurringJob(
     this,
@@ -528,13 +541,14 @@ internal fun <T> typedJobFailureHandler(
   name: String,
   payloadType: Class<*>,
   nullable: Boolean,
-  handler: FailedJob.(T) -> Unit,
+  handler: suspend FailedJob.(T) -> Unit,
 ): JobFailureHandler = JobFailureHandler { failed ->
   val payload = failed.payload(payloadType)
   if (payload == null && !nullable) {
     throw IllegalStateException("Job ${failed.id()} ($name) has no payload")
   }
-  @Suppress("UNCHECKED_CAST") failed.handler(payload as T)
+  @Suppress("UNCHECKED_CAST") val typed = payload as T
+  blocking { failed.handler(typed) }
 }
 
 /** Returns the [payload] of a job of the non-null payload type of [typedJob]. */
@@ -547,11 +561,12 @@ internal fun <T> typedJobHandler(
   name: String,
   payloadType: Class<*>,
   nullable: Boolean,
-  handler: Job.(T) -> Unit,
+  handler: suspend Job.(T) -> Unit,
 ): JobHandler = JobHandler { job ->
   val payload = job.payload(payloadType)
   if (payload == null && !nullable) {
     throw IllegalStateException("Job ${job.id()} ($name) has no payload")
   }
-  @Suppress("UNCHECKED_CAST") job.handler(payload as T)
+  @Suppress("UNCHECKED_CAST") val typed = payload as T
+  blocking { job.handler(typed) }
 }

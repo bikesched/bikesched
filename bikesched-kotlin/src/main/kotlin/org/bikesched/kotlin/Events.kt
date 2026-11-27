@@ -38,7 +38,7 @@ public inline fun <reified T> Job.waitForEvent(
   name: String,
   key: String,
   timeout: Duration? = null,
-  noinline onFailure: ((failing: FailingStep<T>) -> Unit)? = null,
+  noinline onFailure: (suspend (failing: FailingStep<T>) -> Unit)? = null,
 ): T = waitForEventOf(this, step, name, key, T::class.java, timeout, onFailure) as T
 
 @PublishedApi
@@ -49,14 +49,14 @@ internal fun <T> waitForEventOf(
   key: String,
   type: Class<*>,
   timeout: Duration?,
-  onFailure: ((FailingStep<T>) -> Unit)?,
+  onFailure: (suspend (FailingStep<T>) -> Unit)?,
 ): Any? {
   @Suppress("UNCHECKED_CAST") val wait = job.waitForEvent(step, name, key, type) as EventWait<T>
   if (timeout != null) {
     wait.timeout(timeout.toJavaDuration())
   }
   if (onFailure != null) {
-    wait.onFailure { failing -> onFailure(failing) }
+    wait.onFailure { failing -> blocking { onFailure(failing) } }
   }
   return wait.receive()
 }

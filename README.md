@@ -58,7 +58,7 @@ modelling and no orchestration across services. If that's what you're after, hav
 |---|---|
 | [`bikesched-core`](bikesched-core) | the scheduler; depends on the PostgreSQL driver and the SLF4J API only; [optional schema migration spec](docs/specs/optional-schema-migration.md) |
 | [`bikesched-jackson`](bikesched-jackson) | `JacksonJsonMapper`: payloads, step results and events as records, via Jackson 3 |
-| [`bikesched-kotlin`](bikesched-kotlin) | Kotlin extensions: configuration DSL, typed handlers, `kotlin.time` durations |
+| [`bikesched-kotlin`](bikesched-kotlin) | Kotlin extensions: configuration DSL, typed and suspending handlers, `kotlin.time` durations |
 | [`bikesched-annotations`](bikesched-annotations) | job handlers declared as `@JobHandler` methods, see [Annotations](docs/integrations/annotations.md) |
 | [`bikesched-cron`](bikesched-cron) | cron expressions as `CronRecurrence` or as strings (`schedule("0 3 * * *")`, `@JobHandler`), via cron-utils, see [Cron expressions](docs/jobs/recurring-jobs.md#cron-expressions) |
 | [`bikesched-micrometer`](bikesched-micrometer) | Micrometer meters for claims, attempts and published events, see [Metrics](docs/operations/metrics.md) |
