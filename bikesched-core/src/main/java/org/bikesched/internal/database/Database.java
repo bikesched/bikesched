@@ -31,6 +31,8 @@ public final class Database {
 
   private final StepStore steps;
 
+  private final BatchStore batches;
+
   private final EventStore events;
 
   private final HistoryStore history;
@@ -80,7 +82,8 @@ public final class Database {
     this.access = new DatabaseAccess(dataSource, statementTimeout);
     this.history = new HistoryStore(access, history);
     this.nodes = new NodeStore(access, this.history);
-    this.jobs = new JobStore(access, this.history, jsonMapper);
+    this.batches = new BatchStore(access, this.history);
+    this.jobs = new JobStore(access, this.history, jsonMapper, batches);
     this.steps = new StepStore(access, this.history);
     this.events = new EventStore(access, this.history);
     this.admin = new AdminStore(access);
@@ -99,6 +102,11 @@ public final class Database {
   /** The {@code bikesched_steps} table. */
   public StepStore steps() {
     return steps;
+  }
+
+  /** Batches of child jobs: their steps, items and waits. */
+  public BatchStore batches() {
+    return batches;
   }
 
   /** The {@code bikesched_events} table and steps waiting for events. */

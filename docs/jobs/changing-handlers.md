@@ -24,6 +24,7 @@ stored, looked up by their name. What is stored per job:
 | sleep: wake-up time | the first sleep | wins over a changed duration |
 | poll: deadline, number of checks | the first check | the deadline wins over a changed timeout; the interval comes from the code |
 | child job step: the child's id and name | starting the child | returns the same child; a different name is rejected |
+| batch step: its items (keys, job names, payloads), parallelism, fail-fast, compensation, deadline | starting the batch, the first wait | returns the same batch whatever the items are now; a compensated batch restarts only with the same keys in the same order |
 | pending occurrence of a recurring job: recurrence description | the previous occurrence's end | moved to a recurrence with another description when registered |
 
 The code decides everything else: which steps run in which order, step handlers that have not
@@ -68,7 +69,8 @@ directions until the last old node is gone, or be split into two deploys (see
 | remove a wait a job is waiting at | the job stays `WAITING` until the event arrives, then continues without the wait; without a deadline, publish the event or cancel the job to move it on |
 | change a condition outside steps | the job may take another path: the steps of the new path run, completed steps of the old path are neither repeated nor compensated |
 | change the payload class incompatibly | mapping the stored payload fails on every attempt |
-| change the result class of a child job | the waiting parent fails to read the stored result in `waitForJob` |
+| change the result class of a child job | the waiting parent fails to read the stored result in `waitForJob` or a batch's `await()` |
+| change the items of a started batch | ignored: the stored batch wins, so new items never start; use a new step name for a new batch |
 | rename or remove a job name | no node claims its jobs any more: they stay `SCHEDULED` or `WAITING`, and `bikesched.cancel` takes effect only once a node handles the name again |
 | stop registering a recurring job | its pending occurrence stays; `bikesched.removeRecurringJob(name)` deletes it, see [Occurrences](recurring-jobs.md#occurrences) |
 

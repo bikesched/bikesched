@@ -10,6 +10,7 @@ import org.bikesched.admin.EventStep;
 import org.bikesched.admin.EventSummary;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
+import org.bikesched.admin.StepBatch;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.history.ActorType;
@@ -50,7 +51,8 @@ class AdminJsonTest {
             "dedup",
             "order-4711",
             ID,
-            "worker");
+            "worker",
+            "webp");
     assertContract(
         AdminJson.job(job),
         """
@@ -59,7 +61,8 @@ class AdminJsonTest {
          "createdAt":"2026-10-11T12:00:00.123456Z","updatedAt":"2026-10-11T12:00:00.123456Z",
          "finishedAt":null,"lastError":"failed","parentJobId":"7f0c2a1e-0000-4000-8000-000000000001",
          "parentJobName":"parent","recurrence":"every PT1H","idempotencyKey":"dedup",
-         "reference":"order-4711","nodeId":"7f0c2a1e-0000-4000-8000-000000000001","nodeName":"worker"}
+         "reference":"order-4711","nodeId":"7f0c2a1e-0000-4000-8000-000000000001","nodeName":"worker",
+         "batchKey":"webp"}
         """);
   }
 
@@ -87,7 +90,8 @@ class AdminJsonTest {
             ID,
             "mail",
             JobState.RUNNING,
-            true);
+            true,
+            null);
     assertContract(
         AdminJson.step(step),
         """
@@ -96,7 +100,46 @@ class AdminJsonTest {
          "compensable":true,"lastError":null,"startedAt":"2026-10-11T12:00:00.123456Z",
          "finishedAt":null,"waitUntil":null,"deadline":null,"nodeId":null,"eventName":null,
          "eventKey":null,"eventId":null,"childJobId":"7f0c2a1e-0000-4000-8000-000000000001",
-         "childJobName":"mail","childJobState":"RUNNING","childJobExists":true}
+         "childJobName":"mail","childJobState":"RUNNING","childJobExists":true,"batch":null}
+        """);
+  }
+
+  @Test
+  void batchStepHasItsProgress() throws Exception {
+    var step =
+        new StepInfo(
+            ID,
+            ID,
+            "render",
+            "CHILD_JOB_BATCH",
+            "WAITING",
+            1,
+            0,
+            false,
+            null,
+            AT,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            false,
+            new StepBatch(10, 4, 2, null, true));
+    assertContract(
+        AdminJson.step(step),
+        """
+        {"id":"7f0c2a1e-0000-4000-8000-000000000001","jobId":"7f0c2a1e-0000-4000-8000-000000000001",
+         "name":"render","type":"CHILD_JOB_BATCH","state":"WAITING","attempts":1,
+         "failureAttempts":0,"compensable":false,"lastError":null,
+         "startedAt":"2026-10-11T12:00:00.123456Z","finishedAt":null,"waitUntil":null,
+         "deadline":null,"nodeId":null,"eventName":null,"eventKey":null,"eventId":null,
+         "childJobId":null,"childJobName":null,"childJobState":null,"childJobExists":false,
+         "batch":{"items":10,"ended":4,"active":2,"parallelism":null,"failFast":true}}
         """);
   }
 

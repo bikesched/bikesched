@@ -61,5 +61,16 @@ public enum StepAction implements HistoryAction {
   COMPENSATED,
 
   /** Its compensation failed and runs again; its state is unchanged. Data: {@code error}. */
-  COMPENSATION_FAILED
+  COMPENSATION_FAILED,
+  /**
+   * Started a batch of child jobs and waits for them. Data: {@code batch} ({@code items}, {@code
+   * parallelism}, {@code failFast}).
+   */
+  BATCH_STARTED,
+  /**
+   * Every item of its batch ended ({@code SUCCEEDED}), or the first item that did not succeed ended
+   * a fail-fast batch ({@code FAILED}). Data: {@code batch} ({@code failedFast}: the key of that
+   * item).
+   */
+  BATCH_ENDED
 }

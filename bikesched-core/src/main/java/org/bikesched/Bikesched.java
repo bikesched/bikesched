@@ -19,6 +19,8 @@ import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobInfo;
 import org.bikesched.job.Recurrence;
+import org.bikesched.job.ResultJob;
+import org.bikesched.job.ResultJobHandler;
 import org.bikesched.job.StandaloneJobFailureHandler;
 import org.bikesched.job.StandaloneJobHandler;
 import org.bikesched.job.TypedJob;
@@ -126,6 +128,31 @@ public interface Bikesched extends AutoCloseable, EventPublisher {
    */
   <T extends @Nullable Object> Bikesched registerJobHandler(
       TypedJob<T> typedJob, TypedJobHandler<? super T> handler);
+
+  /**
+   * Registers the handler executing jobs of a {@link ResultJob}, returning their result: bikesched
+   * stores it like {@link org.bikesched.job.Job#complete(Object) job.complete(result)}. Like {@link
+   * #registerJobHandler(TypedJob, TypedJobHandler)} otherwise.
+   *
+   * <pre>{@code
+   * static final ResultJob<Render, Image> RENDER = TypedJob.of("render", Render.class, Image.class);
+   *
+   * bikesched.registerResultJobHandler(RENDER, (job, render) -> images.render(render));
+   * }</pre>
+   *
+   * <p>A name of its own rather than an overload of {@code registerJobHandler}: a {@code ResultJob}
+   * is a {@code TypedJob}, so an implicitly typed lambda would match both.
+   *
+   * @param resultJob the job's name, payload class and result class
+   * @param handler executes the jobs; receives the job and its payload, returns its result
+   * @param <T> the payload type
+   * @param <R> the result type
+   * @return this instance
+   * @throws IllegalArgumentException if the name already has a handler, or this node already uses
+   *     the name with another payload class
+   */
+  <T extends @Nullable Object, R extends @Nullable Object> Bikesched registerResultJobHandler(
+      ResultJob<T, R> resultJob, ResultJobHandler<? super T, ? extends R> handler);
 
   /**
    * Registers a handler that carries its {@link TypedJob}, see {@link StandaloneJobHandler}; like

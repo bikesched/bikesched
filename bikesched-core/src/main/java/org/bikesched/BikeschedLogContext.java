@@ -39,6 +39,12 @@ public final class BikeschedLogContext {
    */
   public static final String JOB_REFERENCE = "bikesched.jobReference";
 
+  /**
+   * The job's {@linkplain org.bikesched.job.Job#batchKey() key in its batch}; only set for items of
+   * a job batch.
+   */
+  public static final String BATCH_KEY = "bikesched.batchKey";
+
   /** Name of the {@link Job#step(String, Class, StepHandler) step} being executed. */
   public static final String STEP_NAME = "bikesched.stepName";
 

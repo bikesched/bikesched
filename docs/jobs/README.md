@@ -212,7 +212,9 @@ A handler receives the `Job` being executed:
 | `sleep(step, Duration)`, `sleepUntil(step, Instant)` | pause the job without holding a thread, see [Sleeping](../multi-step-jobs/steps.md#sleeping) |
 | `newPoll(step, Class, interval)…run(handler)` | check an external service until a result is ready, see [Polling](../multi-step-jobs/steps.md#polling) |
 | `newJob(name)`, `newJob(typedJob)` | start a child job once as a durable step, see [Child jobs](../multi-step-jobs/child-jobs.md) |
-| `waitForJob(childId, Class)`, `waitForJob(childId, Class, timeout)` | wait for a child job without holding a thread and return its `JobResult`, see [Waiting for children](../multi-step-jobs/child-jobs.md#waiting-for-children) |
+| `waitForJob(childId, Class)`, `waitForJob(childId, resultJob)`, with a timeout | wait for a child job without holding a thread and return its `JobResult`, see [Waiting for children](../multi-step-jobs/child-jobs.md#waiting-for-children) |
+| `newJobBatch(step, resultJob)`, `newJobBatch(step, typedJob)`, `newJobBatch(step, jobName)`, `newJobBatch(step)` | start many child jobs once as one durable step and wait for all of them, see [Batches](../multi-step-jobs/child-jobs.md#batches) |
+| `batchKey()` | the job's key in the batch that started it, `null` outside a batch |
 | `complete(result)` | set the job's result, stored when it succeeds, see [Job results](../multi-step-jobs/child-jobs.md#job-results) |
 | `cancel()`, `cancel(message)` | cancel the job, see [Cancellation](#cancellation) |
 | `fail()`, `fail(message)` | fail the attempt without throwing, see [Failures and retries](#failures-and-retries) |
@@ -441,6 +443,9 @@ A job that waited for an event and was retried once could show (step names and s
   its attempt back.
 - A [poll](../multi-step-jobs/steps.md#polling) records its first wait and its outcome (`checks`),
   not every check: its further claims and suspensions are left out.
+- A [batch](../multi-step-jobs/child-jobs.md#batches) records `BATCH_STARTED` and `BATCH_ENDED`
+  on its step (`batch` with `items`, `parallelism`, `failFast` and `failedFast`) and `HELD` and
+  `ADMITTED` on its items; an item's `job` object carries its `batchKey`.
 - Also recorded: cancellations, compensation (`COMPENSATING`, failed compensations,
   `COMPENSATED` steps), failure handlers (`FAILING`, their runs and failures, steps `RESOLVED` by
   their failure handler), jobs `RELEASED` by a stopping node or from a dead node (`reason`),

@@ -612,6 +612,8 @@ public final class JobProcessor {
                   database.steps().suspendJob(job.id(), job.lock(), sleep.step());
               case JobSuspended.JobSuspension wait ->
                   database.steps().suspendAtChildJob(job.id(), job.lock(), wait.step());
+              case JobSuspended.BatchSuspension wait ->
+                  database.steps().suspendAtChildJob(job.id(), job.lock(), wait.step());
               case JobSuspended.PollSuspension poll ->
                   database
                       .steps()
@@ -641,6 +643,8 @@ public final class JobProcessor {
           "the wake-up time passed while suspending the job";
       case JobSuspended.JobSuspension wait ->
           "job " + wait.childJobId() + " ended while suspending the job";
+      case JobSuspended.BatchSuspension wait ->
+          "job batch '" + wait.stepName() + "' ended while suspending the job";
       case JobSuspended.PollSuspension ignored ->
           "the next check became due while suspending the job";
     };
@@ -656,6 +660,7 @@ public final class JobProcessor {
           "SLEEPING in step " + sleep.stepName() + " until " + waitUntil;
       case JobSuspended.JobSuspension wait ->
           "WAITING for job " + wait.childJobId() + " in step " + wait.stepName() + until;
+      case JobSuspended.BatchSuspension wait -> "WAITING for job batch " + wait.stepName() + until;
       case JobSuspended.PollSuspension poll ->
           "POLLING in step "
               + poll.stepName()
@@ -803,7 +808,7 @@ public final class JobProcessor {
                         + " step(s), "
                         + ended.state()
                         + nextOccurrenceOutcome(end, ended.nextOccurrenceScheduled()));
-            case SCHEDULED, RUNNING, WAITING, SUCCEEDED, COMPENSATING, COMPENSATION_FAILED ->
+            case SCHEDULED, RUNNING, WAITING, SUCCEEDED, COMPENSATING, COMPENSATION_FAILED, HELD ->
                 throw unexpected(job, ended.state());
           };
         },
@@ -876,7 +881,7 @@ public final class JobProcessor {
                         + ") "
                         + when);
               }
-              case SCHEDULED, RUNNING, WAITING, SUCCEEDED, CANCELLED ->
+              case SCHEDULED, RUNNING, WAITING, SUCCEEDED, CANCELLED, HELD ->
                   throw unexpected(job, failed.state());
             },
         () ->
@@ -1027,7 +1032,14 @@ public final class JobProcessor {
               switch (ended.state()) {
                 case COMPENSATION_FAILED -> JobAttemptOutcome.COMPENSATION_FAILED;
                 case FAILED -> JobAttemptOutcome.FAILED;
-                case SCHEDULED, RUNNING, WAITING, SUCCEEDED, CANCELLED, COMPENSATING, FAILING ->
+                case SCHEDULED,
+                    RUNNING,
+                    WAITING,
+                    SUCCEEDED,
+                    CANCELLED,
+                    COMPENSATING,
+                    FAILING,
+                    HELD ->
                     throw unexpected(job, ended.state());
               };
           return new Reported(
@@ -1045,14 +1057,16 @@ public final class JobProcessor {
 
   /** The ending claim of the job: who holds it and what follows from its end. */
   private ClaimEnd end(DefaultJob job) {
-    return new ClaimEnd(job.id(), job.lock(), hasFailureHandler(job), followUp(job));
+    return new ClaimEnd(
+        job.id(), job.lock(), hasFailureHandler(job), followUp(job), job.hasBatches());
   }
 
   /** What follows once the job ended: by its origin. */
   private FollowUp followUp(DefaultJob job) {
     return switch (job.origin()) {
       case JobOrigin.OneOff ignored -> new FollowUp.None();
-      case JobOrigin.Child(UUID parentJobId) -> new FollowUp.NotifyParent(parentJobId);
+      case JobOrigin.Child(UUID parentJobId, UUID batchStepId, String ignored) ->
+          new FollowUp.NotifyParent(parentJobId, batchStepId);
       case JobOrigin.Occurrence ignored ->
           nextOccurrence(job)
               .<FollowUp>map(FollowUp.ScheduleNext::new)
@@ -1222,7 +1236,7 @@ public final class JobProcessor {
                 + " "
                 + when);
       }
-      case RUNNING, WAITING, SUCCEEDED, CANCELLED, COMPENSATION_FAILED ->
+      case RUNNING, WAITING, SUCCEEDED, CANCELLED, COMPENSATION_FAILED, HELD ->
           throw unexpected(job, failed.state());
     };
   }

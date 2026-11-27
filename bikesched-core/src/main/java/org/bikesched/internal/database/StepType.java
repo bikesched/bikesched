@@ -16,7 +16,9 @@ public enum StepType {
   /** A child job started as a step. */
   CHILD_JOB("a child job"),
   /** A poll. */
-  POLL("a poll");
+  POLL("a poll"),
+  /** A batch of child jobs started as a step. */
+  CHILD_JOB_BATCH("a job batch");
 
   private final String description;
 

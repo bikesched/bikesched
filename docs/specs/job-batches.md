@@ -1,6 +1,9 @@
 # Specification: job batches (`job.newJobBatch`, `JobBatch.await`)
 
-Status: **draft**.
+Status: **implemented**, [ADR 0066](../decisions/0066-child-job-batches-with-held-items.md) and
+[ADR 0067](../decisions/0067-result-types-on-typed-jobs.md), user docs:
+[Batches](../multi-step-jobs/child-jobs.md#batches) and
+[Result types](../multi-step-jobs/child-jobs.md#result-types).
 
 ## 1. Goal
 
@@ -312,10 +315,10 @@ the step guard, payload mapping by the `JsonMapper`), then writes in **one trans
    `JobLockLostException` and nothing is written.
 2. Look up the batch step by name (`for update`). If it exists, commit nothing new and return
    the stored handle (a replay). A `COMPENSATED` batch step starts a new batch with new children.
-3. Insert the batch step (`CHILD_JOB_BATCH`, `WAITING`, `item_count`, `parallelism`).
+3. Insert the batch step (`CHILD_JOB_BATCH`, `WAITING`, `batch_item_count`, `batch_parallelism`).
 4. Insert all items with one `unnest` insert per chunk of 1,000 items: the first `parallelism`
-   items (all without a limit) `SCHEDULED`, the rest `HELD`; each with `batch_step_id`, its
-   `batch_index` (0, 1, …) and `batch_key`.
+   items (all without a limit) `SCHEDULED`, the rest `HELD`; each with `batch_step_id` and
+   `batch_key`, their time-ordered ids created in item order.
 5. Insert the item steps (`CHILD_JOB`, `WAITING`, `batch_step_id`) the same way, in item order;
    steps of held items with `compensable = false` (set on admission, §4.5). Step ids are
    time-ordered and monotonic within one JVM (ADR 0057), so the id order is the item order.
@@ -362,10 +365,10 @@ admitted and not ended) to `k`. A held item is a job in the new state `HELD`: st
 (`findJob`, the admin UI) but never claimed, because the claim query only takes `SCHEDULED`,
 `WAITING`, `COMPENSATING` and `FAILING` jobs.
 
-The batch step keeps two counters, updated under its lock: `active_count` (admitted, not ended)
-and `ended_count`. When an item ends (§4.6), its transaction admits `k - active_count` held items,
-the first ones in item order (`batch_index`), with `for update skip locked` (a held item being
-cancelled at that moment is skipped, not waited for). They become `SCHEDULED` and due now
+The batch step keeps two counters, updated under its lock: `batch_active_count` (admitted, not
+ended) and `batch_ended_count`. When an item ends (§4.6), its transaction admits
+`k - batch_active_count` held items, the first ones in item order (by `id`), with
+`for update skip locked` (a held item being cancelled at that moment is skipped, not waited for). They become `SCHEDULED` and due now
 (`db.dueNow(name)`), their steps compensable, recording `ADMITTED` (`RELEASED` already names jobs
 released from a dead node). Computing the number from the counter, instead of releasing one per
 end, keeps the limit exact: a held item cancelled from elsewhere ends without admitting anything,
@@ -385,10 +388,10 @@ order (§4.14):
    unfinished, and nobody would resume the parent.
 2. Complete the item step, as today (only if it is still `WAITING`: a timed-out, cancelled or
    failed-fast batch leaves its item steps as they are).
-3. Increment `ended_count`, decrement `active_count`.
+3. Increment `batch_ended_count`, decrement `batch_active_count`.
 4. If the batch step is still `WAITING`: admit held items (§4.5); in a fail-fast batch, an item
    that did not succeed ends the batch (§4.12).
-5. If the batch step is still `WAITING` and `ended_count = item_count`, complete it
+5. If the batch step is still `WAITING` and `batch_ended_count = batch_item_count`, complete it
    (`update … set state = 'SUCCEEDED' … where state = 'WAITING'`) and resume the parent with
    `RESUME_PARENT_SQL`.
 
@@ -455,10 +458,9 @@ Into `V001` in place (before 0.1.0):
   `batch_step_id`; a held job has no lock, no attempts used and a `scheduled_at` of its insert
   (admission sets it to `now()`). `HELD` is not an end state, so the retention clean-up never sees
   it. The existing partial indexes (claim, recurring) and `NEXT_DUE_SQL` exclude it already.
-- New columns on `bikesched_jobs`: `batch_step_id uuid` and `batch_index integer` (both or
-  neither, only with a `parent_job_id`) and `batch_key text collate "C"` (§4.13, the name CHECK,
-  only with a `batch_step_id`). Index `bikesched_jobs_held_idx on (batch_step_id, batch_index) where
-  state = 'HELD'` for admissions and for cancelling held items. (`bikesched_jobs` has no index on
+- New columns on `bikesched_jobs`: `batch_step_id uuid` (only with a `parent_job_id`) and
+  `batch_key text collate "C"` (§4.13, the name CHECK, both or neither). Index
+  `bikesched_jobs_held_idx on (batch_step_id, id) where state = 'HELD'` for admissions and for cancelling held items. (`bikesched_jobs` has no index on
   `parent_job_id`; this one avoids needing it.)
 - `bikesched_steps.type`: add `CHILD_JOB_BATCH`; it waits and times out: add it to the `TIMED_OUT`
   list of `bikesched_steps_event_check` and to `bikesched_steps_wait_check`; no `child_job_id`, no
@@ -466,13 +468,13 @@ Into `V001` in place (before 0.1.0):
 - New columns on `bikesched_steps`:
   - `batch_step_id uuid`: the batch of an item step; only on `CHILD_JOB` steps (CHECK), no FK
     (rows of one job are deleted together by the cascade).
-  - `item_count integer` and `parallelism integer`: only on `CHILD_JOB_BATCH` steps, `parallelism`
-    null for unbounded, both positive (CHECK).
-  - `active_count integer` and `ended_count integer`: the counters of §4.5 and §4.6, only on
-    `CHILD_JOB_BATCH` steps, `0 <= ended_count <= item_count` (CHECK); their updates are HOT
-    (no indexed column changes). The admin UI's "k of N ended" reads them.
-  - `fail_fast boolean not null default false`: true only on `CHILD_JOB_BATCH` steps (CHECK); a
-    batch step is `FAILED` only if `fail_fast` (`state <> 'FAILED' or fail_fast`).
+  - `batch_item_count integer` and `batch_parallelism integer`: only on `CHILD_JOB_BATCH` steps,
+    `batch_parallelism` null for unbounded, both positive (CHECK).
+  - `batch_active_count integer` and `batch_ended_count integer`: the counters of §4.5 and §4.6,
+    only on `CHILD_JOB_BATCH` steps, `0 <= batch_ended_count <= batch_item_count` (CHECK); their
+    updates are HOT (no indexed column changes). The admin UI's "k of N ended" reads them.
+  - `batch_fail_fast boolean not null default false`: true only on `CHILD_JOB_BATCH` steps (CHECK);
+    a batch step is `FAILED` only if `batch_fail_fast` (`state <> 'FAILED' or batch_fail_fast`).
 - History CHECKs (`bikesched_history`): `HELD` in the job state list of
   `bikesched_history_action_check`; the job action `ADMITTED`; the step actions `BATCH_STARTED` and
   `BATCH_ENDED`; all three in the CHECK test of `HistoryStoreTest`.
@@ -512,7 +514,7 @@ List<Image> images = renders.await().orElseThrow();   // throws for the first fa
 By default a batch ends when every item has ended, so a parent learns about a failed item only
 after the slowest one. `failFast()` ends the batch at the first item that does not succeed
 (`Failed`, `Cancelled`, `CompensationFailed`). The mode is stored on the batch step
-(`fail_fast`) when the batch is created, because the item's end hook has to know it.
+(`batch_fail_fast`) when the batch is created, because the item's end hook has to know it.
 
 In that item's end transaction, after locking the batch step (§4.6):
 
@@ -563,7 +565,7 @@ other in a cycle:
 1. the ending item's own job row (its terminal update or claim end), if any;
 2. the batch step;
 3. item steps, in id order;
-4. other item job rows (admissions, cancelling held items), in `batch_index` order and only with
+4. other item job rows (admissions, cancelling held items), in id order and only with
    `for update skip locked`, never waiting;
 5. the parent's job row (`RESUME_PARENT_SQL`, or the fence `requireJobLock`, `for share`).
 
@@ -750,3 +752,61 @@ None: all are decided (§11).
    are inserted with `unnest` in chunks of 1,000 in the batch's transaction, for raised limits.
 10. The item's key is stored (`batch_key`) and available as `Job.batchKey()`, in `JobInfo`, the
     MDC and the admin UI (§4.13).
+
+## 12. Decided while implementing
+
+1. Fail-fast cancels the siblings in the failing item's end transaction (§4.12): held items
+   `CANCELLED`, scheduled, waiting and running ones a cancel request, all `for update skip
+   locked` in id order, after the batch step. The lock order of §4.14 holds (other
+   item rows only with `skip locked`), so there is no deadlock. A sibling locked at that moment
+   (writing a step, ending an attempt, being claimed) is asked after the commit, in a transaction
+   of its own that waits for the locks without holding the batch step; one lost in a crash only
+   keeps running until it ends, its step is already `CANCELLED`.
+2. History entries of items (`SCHEDULED`, `HELD`, `ADMITTED`, cancellations) are caused by the
+   ending item or, at the start, by the parent job (`causedBy` names a subject, and a batch step
+   is none).
+3. An admitted item keeps a later due time: admission sets `scheduled_at =
+   greatest(scheduled_at, now())`, so `schedule(Instant)` and `schedule(Duration)` delay held items
+   too.
+4. The parent's claim reads whether it has a `WAITING` batch (`exists` over the new partial index
+   `bikesched_steps_waiting_batch_idx`); its terminal transactions lock those batch steps first
+   and cancel their held items once the job ended. Jobs without batches take the unchanged path.
+   `Bikesched.cancel` looks the batches up itself.
+5. An empty batch is stored `SUCCEEDED` at once, with no items; `await()` returns an empty result.
+6. A `COMPENSATED` batch restarts only with the same keys in the same order; the message names the
+   missing and the new keys, or says the order changed.
+7. The batch step's `compensable` means "its items have a compensation": the compensation replay
+   registers a no-op for the batch step first (so it runs last) and the items' compensations in
+   item order (so they run in reverse). Steps of held items stay not compensable until admitted.
+8. The admin lists a batch as its batch step only (`findSteps` leaves out item steps), with a
+   `StepBatch` (`items`, `ended`, `active`, `parallelism`, `failFast`) on `StepInfo.batch()`;
+   `JobQuery.withBatch(stepId)` lists its current items (the children of its item steps, along
+   `bikesched_steps_batch_step_id_idx`); `JobSummary.batchKey()` names an item.
+9. Kotlin: the lambda's receivers are `BatchItems<P>` and `MixedBatchItems`; a mixed batch is a
+   `JobBatch<Any>` (the Java `JobBatch<Object>`); `result<T>(key)` maps `Unit` to `Void`.
+   `handleResultJobs` stores the lambda's value with `job.complete`, `Unit` as no value.
+10. The `fan-out` example uses a batch with `parallelism(2)`; the stress test
+    `JobBatchStressTest` runs 5,000 items on three nodes with a database restart.
+11. Held items are cancelled once the parent ends or starts compensating, with their item steps
+    `CANCELLED`; a restarted (`COMPENSATED`) batch first cancels any held row left from before.
+12. A run after the first returns the stored batch before checking anything: payloads are mapped
+    only when the batch starts (an error names the item's key), and keys, size and job names are
+    checked only then. Reading a result that cannot be mapped names the item and the type.
+13. Item steps are found by name (`stepName/key`, the unique `(job_id, name)` index), and starting
+    a batch fails if an item step's name is taken by another step of the job.
+14. `Job.waitForJob(UUID, ResultJob)` checks that the child is a job of that name, and
+    `ResultJobHandler.handle` returns `@Nullable R`. Kotlin rejects `P = Unit` for a batch's
+    payloads (payloads are mapped by their class, so generic types by their raw class).
+15. Items have no stored position: their ids are UUIDv7 created in item order by one node, which
+    `UuidUtil.timeOrdered()` keeps strictly increasing, so admissions, cancellations and the item
+    steps order by `id` (the held index is `(batch_step_id, id)`). `parallelism(1)` runs the items
+    one after the other in that order.
+16. Review fixes: a later run reads the results of stored items it did not add with the batch's
+    result type; fail-fast cancels its siblings by the child ids its item-step update returns (no
+    scan of `bikesched_jobs`), and the after-commit pass only asks the skipped ones, with a
+    10-second `lock_timeout`; a restart and the end of the item steps match item steps by id;
+    admissions lock held rows without `skip locked` (only the batch step's holder locks them),
+    and sibling locks are `for no key update`; CHECKs bound the counters
+    (`batch_active_count + batch_ended_count <= batch_item_count`, active at most the
+    parallelism) and keep held items unattempted. A failed parent's retry without
+    `compensateWith` keeps the stored batch, whose held items stay cancelled (documented).

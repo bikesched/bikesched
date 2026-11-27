@@ -41,6 +41,7 @@ public final class BikeschedBuilder {
   static final Duration DEFAULT_JOB_CLEAN_UP_INTERVAL = Duration.ofHours(1);
   static final int DEFAULT_MAX_CONCURRENT_JOBS = 10;
   static final int DEFAULT_FAILURE_HANDLER_ATTEMPTS = 3;
+  static final int DEFAULT_MAX_JOB_BATCH_SIZE = 1_000;
 
   private final DataSource dataSource;
   private @Nullable String nodeName;
@@ -58,6 +59,7 @@ public final class BikeschedBuilder {
   private @Nullable Duration defaultEventTimeout;
   private RetryBackoff retryBackoff = RetryBackoff.none();
   private int failureHandlerAttempts = DEFAULT_FAILURE_HANDLER_ATTEMPTS;
+  private int maxJobBatchSize = DEFAULT_MAX_JOB_BATCH_SIZE;
   private Duration eventRetention = DEFAULT_EVENT_RETENTION;
   private Duration nodeCleanUpInterval = DEFAULT_NODE_CLEAN_UP_INTERVAL;
   private Duration eventCleanUpInterval = DEFAULT_EVENT_CLEAN_UP_INTERVAL;
@@ -218,6 +220,23 @@ public final class BikeschedBuilder {
           "failureHandlerAttempts must be >= 1: " + failureHandlerAttempts);
     }
     this.failureHandlerAttempts = failureHandlerAttempts;
+    return this;
+  }
+
+  /**
+   * Sets the maximum number of items of a job batch started on this node (optional, default 1,000),
+   * see {@link org.bikesched.job.Job#newJobBatch(String, org.bikesched.job.ResultJob)}. A batch is
+   * created in one transaction holding its parent's row; a larger limit makes that transaction
+   * longer, so the parent's attempt timeout must allow for it.
+   *
+   * @param maxJobBatchSize the maximum number of items, at least 1
+   * @return this builder
+   */
+  public BikeschedBuilder maxJobBatchSize(int maxJobBatchSize) {
+    if (maxJobBatchSize < 1) {
+      throw new IllegalArgumentException("maxJobBatchSize must be >= 1: " + maxJobBatchSize);
+    }
+    this.maxJobBatchSize = maxJobBatchSize;
     return this;
   }
 
@@ -559,6 +578,7 @@ public final class BikeschedBuilder {
             defaultJobTimeout,
             retryBackoff,
             failureHandlerAttempts,
+            maxJobBatchSize,
             eventRetention,
             defaultEventTimeout,
             nodeCleanUpInterval,

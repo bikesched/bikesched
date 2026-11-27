@@ -32,7 +32,8 @@ and without any coordinator besides PostgreSQL.
 - **Event**: a message with a name and a key. A job can wait for an event as a step; it is
   suspended without holding a thread until the event is published, then resumes.
 - **Child job**: a job started exactly once as a step of its parent. The parent can wait for it
-  without holding a thread and receives its outcome and result.
+  without holding a thread and receives its outcome and result. A **job batch** starts many
+  children as one step; the parent waits once for all of them.
 
 ## Guarantees
 
@@ -60,7 +61,8 @@ and without any coordinator besides PostgreSQL.
   one job
   - [Steps and compensation](multi-step-jobs/steps.md): durable steps, sleeping, polling and sagas
   - [Events](multi-step-jobs/events.md): waiting for and publishing events
-  - [Child jobs](multi-step-jobs/child-jobs.md): starting and waiting for child jobs, job results
+  - [Child jobs](multi-step-jobs/child-jobs.md): starting and waiting for child jobs, job results,
+    batches
 - [Patterns](patterns.md): outbox, deduplication, rate limits, webhooks, approvals, fan-out,
   periodic work, sagas
 - [Integrations](integrations/README.md): optional modules on top of the core

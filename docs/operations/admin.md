@@ -148,7 +148,10 @@ always shown.
 - **Job detail**: all fields (the type says single, recurring or child job), the idempotency key,
   the reference (with links to the jobs and the events that have it),
   the last error, retry and cancel, the steps with their duration (a child job step links to the
-  child, a child job shows the path to its parents), the [history](../jobs/README.md#history) when
+  child, a child job shows the path to its parents; a
+  [batch](../multi-step-jobs/child-jobs.md#batches) is one step showing how many of its items
+  ended, how many are active and its parallelism, with "Show items" listing them; an item shows
+  its batch key), the [history](../jobs/README.md#history) when
   recorded (each entry's action, resulting state, who acted and its details), and a Data tab
   with the payload above the result. A running or waiting step's duration counts up; a retried step
   shows its last attempt's. A run of a [recurring job](../jobs/recurring-jobs.md) has a Recurrence
@@ -245,7 +248,7 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `api/jobs?name=&state=&node=&reference=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `reference` a reference (exact match), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
+| GET | `api/jobs?name=&state=&node=&reference=&batch=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `reference` a reference (exact match), `batch` a batch step's id (its items), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
 | GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id ends with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
 | GET | `api/jobs?search=&limit=` | `{"jobs": [...], "next": null}`: the page's search, jobs whose id ends with `search` (if it is 8 to 32 hex digits) or whose reference is `search`, newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
@@ -295,7 +298,7 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findJob(id)` | one job's summary: name, type, state, attempts, times, last error, parent, recurrence, idempotency key, reference, node |
 | `findJob(name, idempotencyKey)` | the job with a name and an idempotency key, the one scheduling with that key returns |
 | `findJobData(id)` | the payload and result as JSON text |
-| `findSteps(id)` | the job's steps in the order they started, with event and child job details |
+| `findSteps(id)` | the job's steps in the order they started, with event and child job details; a batch is one step with its progress (`StepBatch`), its items are listed by `findJobs(JobQuery.newest(n).withBatch(stepId))` |
 | `findStep(stepId)`, `findStepResult(stepId)` | one step by its id, its result as JSON text |
 | `findJobNames()` | every job name with its number of jobs per state and whether this node can schedule it, with a handler or as a remote job name (such names without jobs too) |
 | `findRecurringJobRuns(name, limit)` | a recurring job's pending run and its latest ended runs, newest first |

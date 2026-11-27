@@ -51,6 +51,9 @@ public final class Sql {
   /** The earliest due time per name of the jobs the work made due later, see {@link #dueAt}. */
   private final Map<String, Instant> dueAt = new LinkedHashMap<>();
 
+  /** Work to run once the work committed, see {@link #afterCommit}. */
+  private final List<Work<?>> afterCommit = new ArrayList<>();
+
   public Sql(Connection connection) {
     this(connection, 0);
   }
@@ -101,6 +104,23 @@ public final class Sql {
     } else {
       dueNow(name);
     }
+  }
+
+  /**
+   * Runs the work in a transaction of its own once this work committed, on another connection,
+   * after this one was released; not at all if it rolls back. A failure of the work is logged, not
+   * thrown. For locks this transaction must not wait for (they could form a cycle with its own).
+   * Work on a caller's connection is dropped: the caller commits it, not bikesched.
+   *
+   * @param work the statements
+   */
+  public void afterCommit(Work<?> work) {
+    afterCommit.add(work);
+  }
+
+  /** The work registered with {@link #afterCommit}. */
+  List<Work<?>> afterCommitWork() {
+    return afterCommit;
   }
 
   /** The names reported by {@link #dueNow}. */

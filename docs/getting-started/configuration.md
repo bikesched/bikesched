@@ -33,6 +33,7 @@ afterwards (see `autoStartPolling` below).
 | `nodeTimeout(Duration)` | 30 seconds | time without heartbeat after which other nodes consider the node dead and release its jobs; the builder rejects a value shorter than twice the `heartbeatInterval` |
 | `defaultJobTimeout(Duration)` | none | timeout for jobs scheduled without one |
 | `retryBackoff(RetryBackoff)` | `RetryBackoff.none()` | delay before retrying a failed attempt, e.g. `RetryBackoff.fixed(Duration.ofSeconds(30))` or `RetryBackoff.exponential(Duration.ofSeconds(5), Duration.ofMinutes(10))` (doubling, each delay randomly shortened by up to half); a handler's `job.fail().retryAfter(…)` takes precedence |
+| `maxJobBatchSize(int)` | 1,000 | the most items a [job batch](../multi-step-jobs/child-jobs.md#batches) may have; a batch is stored in one transaction, so a raised limit needs a parent timeout that allows for the insert |
 | `failureHandlerAttempts(int)` | 3 | how often a [job's](../jobs/README.md#failure-handlers) or [step's](../multi-step-jobs/steps.md#failure-handler-per-step) failure handler runs before it is given up; a run counts once it started, so a run that crashes the node counts too |
 | `jsonMapper(JsonMapper)` | JSON strings only | maps payloads, step results and event payloads to and from JSON, see [JSON mapping](#json-mapping) |
 | `eventRetention(Duration)` | 7 days | how long events published through this node are kept for steps that start waiting later, unless an event sets its own `retention(...)`, see [Retention](../multi-step-jobs/events.md#retention) |
@@ -220,7 +221,9 @@ during a rolling deploy, old and new code can read each other's payloads.
 bikesched logs through the SLF4J API under the logger names `org.bikesched.*`; bring your own
 binding. On its own threads it fills the logging context with the keys from `BikeschedLogContext`:
 `bikesched.nodeId`, `bikesched.jobId`, `bikesched.jobName`, `bikesched.jobReference` (the job's
-[reference](../jobs/README.md#references)) and `bikesched.stepName`, each only where it applies. With Logback:
+[reference](../jobs/README.md#references)), `bikesched.batchKey` (an item's key in its
+[batch](../multi-step-jobs/child-jobs.md#batches)) and `bikesched.stepName`, each only where it
+applies. With Logback:
 
 ```xml
 <pattern>%d %-5level [%thread] node=%X{bikesched.nodeId} job=%X{bikesched.jobId} %logger - %msg%n</pattern>

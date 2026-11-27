@@ -55,6 +55,14 @@ tasks.register<JavaExec>("runSimple") {
     javaLauncher = javaToolchains.launcherFor(java.toolchain)
 }
 
+tasks.register<JavaExec>("runMails") {
+    group = "application"
+    description = "Sends a newsletter to 100 readers in ten job batches of ten mails."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "org.bikesched.examples.kotlin.mail.MailBatchExample"
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+}
+
 tasks.register<JavaExec>("runShop") {
     group = "application"
     description = "Runs the Kotlin shop and a client placing an order against the docker compose Postgres."

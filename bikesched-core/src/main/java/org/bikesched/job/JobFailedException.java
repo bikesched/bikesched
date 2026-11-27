@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Thrown by {@link JobResult#orElseThrow()} when a child job did not succeed, or the wait for it
- * timed out.
+ * timed out, and by {@link JobBatchResult#orElseThrow()} for the items of a batch.
  */
 public final class JobFailedException extends BikeschedException {
 
@@ -26,7 +26,18 @@ public final class JobFailedException extends BikeschedException {
    * @param result the outcome of the child job, not {@link JobResult.Succeeded}
    */
   public JobFailedException(JobResult<?> result) {
-    super(describe(result));
+    this(describe(result), result);
+  }
+
+  /**
+   * Creates the exception with a message of its own, e.g. naming the items of a batch that did not
+   * succeed.
+   *
+   * @param message the message
+   * @param result the outcome of the (first) child job that did not succeed
+   */
+  public JobFailedException(String message, JobResult<?> result) {
+    super(message);
     this.jobId = result.jobId();
     this.result = result;
   }

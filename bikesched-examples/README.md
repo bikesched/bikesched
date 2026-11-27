@@ -5,7 +5,7 @@ Runnable examples of [bikesched](../README.md), one package per scenario, in thr
 | Module | Examples | Dependencies |
 |---|---|---|
 | [`java`](java) (`:bikesched-examples:java`) | [simple](#simple), [event](#event), [publish](#publish), [outcome](#outcome), [poll](#poll), [rate limit](#rate-limit), [chat](#chat), [approval](#approval), [fan-out](#fan-out), [recurring](#recurring), [annotation](#annotation), [taxi](#taxi-booking), [cinema](#cinema-tickets), [admin](#admin) | `bikesched-jackson`, `bikesched-annotations`, `bikesched-admin`, Bucket4j |
-| [`kotlin`](kotlin) (`:bikesched-examples:kotlin`) | [Simple](#kotlin-simple), [Shop](#kotlin-shop) | `bikesched-kotlin`, `bikesched-test`, `bikesched-jackson`, Ktor, Exposed, kotlinx-serialization |
+| [`kotlin`](kotlin) (`:bikesched-examples:kotlin`) | [Simple](#kotlin-simple), [Mails](#kotlin-mails), [Shop](#kotlin-shop) | `bikesched-kotlin`, `bikesched-test`, `bikesched-jackson`, Ktor, Exposed, kotlinx-serialization |
 | [`spring`](spring) (`:bikesched-examples:spring`) | [Spring Boot](#spring-boot) | `bikesched-spring-boot-starter`, `bikesched-jackson`, Spring Data JPA |
 
 Each example has a `main` that runs against the PostgreSQL from the repository's `compose.yaml`,
@@ -34,6 +34,7 @@ docker compose up -d                      # from the repository root
 ./gradlew :bikesched-examples:java:runAdmin       # the admin UI next to demo jobs: http://localhost:8081/bikesched/
 ./gradlew :bikesched-examples:spring:bootRun      # Spring Boot application wired by the starter
 ./gradlew :bikesched-examples:kotlin:runSimple    # two steps, then an event published after 15 seconds
+./gradlew :bikesched-examples:kotlin:runMails     # a newsletter to 100 readers in ten batches of ten mails
 ./gradlew :bikesched-examples:kotlin:runShop      # Kotlin shop with Ktor, Exposed, and kotlinx-serialization
 ./gradlew :bikesched-examples:java:test :bikesched-examples:spring:test  # the example tests, against Testcontainers
 ```
@@ -292,27 +293,24 @@ approvers, each after the inbox received the message they react to:
 ## Fan-out
 
 Package [`org.bikesched.examples.fanout`](java/src/main/java/org/bikesched/examples/fanout):
-fan-out/fan-in with [child jobs](../docs/multi-step-jobs/child-jobs.md). The job `import-album`
-starts one child job `resize-photo` per uploaded file, then waits for each child and publishes the
-album:
+fan-out/fan-in with a [job batch](../docs/multi-step-jobs/child-jobs.md#batches). The job
+`import-album` starts one child job `resize-photo` per uploaded file as one batch, at most two at a
+time, then waits once for all of them and publishes the album:
 
 ```java
-List<UUID> children = album.files().stream()
-        .map(file -> job.newJob(RESIZE_PHOTO).payload(new Photo(albumId, file)).stepName("resize " + file).schedule())
-        .toList();
-for (int i = 0; i < children.size(); i++) {
-    switch (job.waitForJob(children.get(i), Thumbnail.class)) {
-        case JobResult.Succeeded<Thumbnail>(UUID childId, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
-        case JobResult.Failed<Thumbnail> failed -> skipped.add(album.files().get(i));
-        case JobResult<Thumbnail> other -> throw new IllegalStateException("Unexpected outcome: " + other);
-    }
-}
+JobBatchResult<Thumbnail> resized = job.newJobBatch("resize", RESIZE_PHOTO)
+        .addAll(album.files(), file -> file, file -> new Photo(album.albumId(), file))
+        .parallelism(2)
+        .schedule()
+        .await();
+List<Thumbnail> thumbnails = new ArrayList<>(resized.succeeded().values());
 ```
 
-A child sets the thumbnail as its result (`job.complete`); a file that is not an image fails it
-without retries. The parent receives the failure as an outcome and skips the file. Resizing takes
-a second per photo, and the children run in parallel, so the album of four files is done after
-about a second. The parent's result (`ImportedAlbum`) lists the thumbnails and the skipped files.
+`RESIZE_PHOTO` is a `ResultJob<Photo, Thumbnail>`: its handler returns the thumbnail; a file that
+is not an image fails it without retries. The parent reads the failure from `unsucceeded()` and
+skips the file. Resizing takes a second per photo, and two run at a time, so the album of four
+files is done after about two seconds. The parent's result (`ImportedAlbum`) lists the thumbnails
+and the skipped files.
 
 `FanOutExampleTest` checks the parent's result, that each file was resized once by its own child
 (`parent_job_id`), and that the children ran in parallel.
@@ -466,6 +464,21 @@ handler resumes with the first two steps already completed, so their output appe
 `main` uses `BikeschedTest.awaitJob(...).timeout(...).untilSucceeded()` to wait for success before
 closing the executor and node. The wait allows 30 seconds, longer than the utility's default
 10-second timeout. Like the other examples, it honors `POSTGRES_PORT`.
+
+## Kotlin Mails
+
+[`MailBatchExample`](kotlin/src/main/kotlin/org/bikesched/examples/kotlin/mail/MailBatchExample.kt)
+sends a newsletter to 100 readers with
+[job batches](../docs/multi-step-jobs/child-jobs.md#batches). The newsletter job splits the readers
+into ten chunks and starts each chunk as a batch with `startJobBatch<Mail, Unit>("mails-$index",
+…)`: one child job per mail, keyed by the reader's address. It waits for each batch with
+`await().orElseThrow()` before it starts the next one, suspended without holding a thread.
+
+Each mail child job calls the suspending
+[`MailService`](kotlin/src/main/kotlin/org/bikesched/examples/kotlin/mail/MailService.kt), mocked
+with a short `delay`. A run of the newsletter job after a suspension gets the batches it already
+started back from the database, so every mail is sent once. Payloads are mapped with the shop's
+kotlinx-serialization `JsonMapper`.
 
 ## Kotlin Shop
 

@@ -38,7 +38,13 @@ public enum JobState {
    * Failed permanently (or its compensation did), its {@link JobFailureHandler failure handler}
    * runs before it ends {@code FAILED} or {@code COMPENSATION_FAILED}.
    */
-  FAILING;
+  FAILING,
+
+  /**
+   * An item of a job batch waiting for its turn: stored but not claimed until the batch's
+   * parallelism admits it, see {@link JobBatchSettings#parallelism(int)}.
+   */
+  HELD;
 
   /**
    * Returns whether a job in this state has ended, i.e. no longer runs.

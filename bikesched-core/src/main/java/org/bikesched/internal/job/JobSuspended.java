@@ -51,9 +51,12 @@ final class JobSuspended extends Error {
     @Nullable StepRef step();
   }
 
-  /** A step a job is suspended at: waiting for an event or a child job, sleeping, or polling. */
+  /**
+   * A step a job is suspended at: waiting for an event, a child job or a batch, sleeping, or
+   * polling.
+   */
   sealed interface Wait extends Suspension
-      permits EventSuspension, SleepSuspension, JobSuspension, PollSuspension {
+      permits EventSuspension, SleepSuspension, JobSuspension, BatchSuspension, PollSuspension {
 
     @Override
     StepRef step();
@@ -119,6 +122,23 @@ final class JobSuspended extends Error {
     @Override
     public String toString() {
       return "to wait for job " + childJobId + (waitUntil == null ? "" : " until " + waitUntil);
+    }
+  }
+
+  /**
+   * A batch step waiting for its items.
+   *
+   * @param step the batch step
+   * @param waitUntil the deadline of the wait, {@code null} if none
+   */
+  record BatchSuspension(StepRef step, @Nullable Instant waitUntil) implements Wait {
+
+    @Override
+    public String toString() {
+      return "to wait for job batch '"
+          + step.name()
+          + "'"
+          + (waitUntil == null ? "" : " until " + waitUntil);
     }
   }
 

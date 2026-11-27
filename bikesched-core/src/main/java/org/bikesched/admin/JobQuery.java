@@ -23,6 +23,8 @@ import org.jspecify.annotations.Nullable;
  *     reference}; {@code null} for every job
  * @param states only jobs in one of these states; empty for every state
  * @param nodeId only jobs this node is running now; {@code null} for every job
+ * @param batchStepId only the items of this job batch, given by its {@code CHILD_JOB_BATCH} step
+ *     (see {@link StepInfo#batch()}); {@code null} for every job
  * @param beforeId only jobs after this one in the order, i.e. with a smaller id (job ids are
  *     time-ordered): the last job of the previous page; {@code null} for the first page
  * @param limit the maximum number of jobs, between 1 and {@link #MAX_LIMIT}
@@ -32,6 +34,7 @@ public record JobQuery(
     @Nullable String reference,
     Set<JobState> states,
     @Nullable UUID nodeId,
+    @Nullable UUID batchStepId,
     @Nullable UUID beforeId,
     int limit) {
 
@@ -58,7 +61,7 @@ public record JobQuery(
    * @return the query
    */
   public static JobQuery newest(int limit) {
-    return new JobQuery(null, null, Set.of(), null, null, limit);
+    return new JobQuery(null, null, Set.of(), null, null, null, limit);
   }
 
   /**
@@ -68,7 +71,7 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withName(@Nullable String name) {
-    return new JobQuery(name, reference, states, nodeId, beforeId, limit);
+    return new JobQuery(name, reference, states, nodeId, batchStepId, beforeId, limit);
   }
 
   /**
@@ -79,7 +82,7 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withReference(@Nullable String reference) {
-    return new JobQuery(name, reference, states, nodeId, beforeId, limit);
+    return new JobQuery(name, reference, states, nodeId, batchStepId, beforeId, limit);
   }
 
   /**
@@ -99,7 +102,7 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withStates(Set<JobState> states) {
-    return new JobQuery(name, reference, states, nodeId, beforeId, limit);
+    return new JobQuery(name, reference, states, nodeId, batchStepId, beforeId, limit);
   }
 
   /**
@@ -109,7 +112,18 @@ public record JobQuery(
    * @return a new query
    */
   public JobQuery withNode(@Nullable UUID nodeId) {
-    return new JobQuery(name, reference, states, nodeId, beforeId, limit);
+    return new JobQuery(name, reference, states, nodeId, batchStepId, beforeId, limit);
+  }
+
+  /**
+   * Returns this query restricted to the items of a job batch: the children its {@code
+   * CHILD_JOB_BATCH} step started (after a restart of a compensated batch, the new ones).
+   *
+   * @param batchStepId the batch step's id; {@code null} for every job
+   * @return a new query
+   */
+  public JobQuery withBatch(@Nullable UUID batchStepId) {
+    return new JobQuery(name, reference, states, nodeId, batchStepId, beforeId, limit);
   }
 
   /**
@@ -120,7 +134,7 @@ public record JobQuery(
    */
   public JobQuery after(JobSummary last) {
     Objects.requireNonNull(last, "last");
-    return new JobQuery(name, reference, states, nodeId, last.id(), limit);
+    return new JobQuery(name, reference, states, nodeId, batchStepId, last.id(), limit);
   }
 
   static void requireLimit(int limit) {

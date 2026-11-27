@@ -52,6 +52,8 @@ import org.bikesched.job.JobBuilder;
 import org.bikesched.job.JobFailureHandler;
 import org.bikesched.job.JobHandler;
 import org.bikesched.job.JobInfo;
+import org.bikesched.job.ResultJob;
+import org.bikesched.job.ResultJobHandler;
 import org.bikesched.job.TypedJob;
 import org.bikesched.job.TypedJobFailureHandler;
 import org.bikesched.job.TypedJobHandler;
@@ -135,6 +137,7 @@ public final class DefaultBikesched implements Bikesched {
             registry,
             nodeName,
             new RecurrenceParsers(settings.recurrenceParsers()),
+            settings.maxJobBatchSize(),
             this::ensureReady);
     this.jobPoller =
         new JobPoller(
@@ -295,6 +298,18 @@ public final class DefaultBikesched implements Bikesched {
     Class<T> payloadType = typedJob.payloadType();
     return registerJobHandler(
         typedJob.name(), job -> handler.handle(job, job.payload(payloadType)));
+  }
+
+  @Override
+  public <T extends @Nullable Object, R extends @Nullable Object>
+      Bikesched registerResultJobHandler(
+          ResultJob<T, R> resultJob, ResultJobHandler<? super T, ? extends R> handler) {
+    Objects.requireNonNull(resultJob, "resultJob");
+    Objects.requireNonNull(handler, "handler");
+    registry.requirePayloadType(resultJob);
+    Class<T> payloadType = resultJob.payloadType();
+    return registerJobHandler(
+        resultJob.name(), job -> job.complete(handler.handle(job, job.payload(payloadType))));
   }
 
   @Override

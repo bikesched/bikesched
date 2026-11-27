@@ -38,7 +38,12 @@ class DueJobsWritePathsTest {
           "JobStore.RELEASE_JOBS_SQL",
           "JobStore.RELEASE_INACTIVE_JOBS_SQL",
           "JobStore.RELEASE_JOBS_OF_DEAD_NODES_SQL",
-          "EventStore.RESUME_WAITING_STEPS_SQL");
+          "EventStore.RESUME_WAITING_STEPS_SQL",
+          "BatchStore.INSERT_ITEMS_SQL",
+          "BatchStore.ADMIT_SQL",
+          "BatchStore.REQUEST_CANCEL_ITEMS_SQL",
+          "BatchStore.REQUEST_CANCEL_REMAINING_SQL",
+          "BatchStore.RESUME_PARENT_SQL");
 
   /** Statements that make no job due now for other nodes, and why. */
   private static final Map<String, String> SILENT =
@@ -67,14 +72,24 @@ class DueJobsWritePathsTest {
           Map.entry("JobStore.RESCHEDULE_OCCURRENCE_SQL", "moves a pending occurrence (dueAt)"),
           Map.entry(
               "StepStore.POSTPONE_JOB_SQL",
-              "the attempt's own node wakes up after the delay (dueAt)"));
+              "the attempt's own node wakes up after the delay (dueAt)"),
+          Map.entry("BatchStore.CANCEL_HELD_SQL", "held items end without running"),
+          Map.entry("BatchStore.CANCEL_HELD_ITEM_SQL", "the held item ends without running"),
+          Map.entry(
+              "BatchStore.CANCEL_OLD_HELD_SQL",
+              "held items of a compensated batch end without running"));
 
   @Test
   void everyStatementWritingJobsIsClassified() throws IllegalAccessException {
     Map<String, String> writes = new TreeMap<>();
     for (Class<?> store :
         new Class<?>[] {
-          JobStore.class, StepStore.class, EventStore.class, NodeStore.class, HistoryStore.class
+          JobStore.class,
+          StepStore.class,
+          EventStore.class,
+          NodeStore.class,
+          HistoryStore.class,
+          BatchStore.class
         }) {
       for (Field field : store.getDeclaredFields()) {
         if (Modifier.isStatic(field.getModifiers())
@@ -101,6 +116,6 @@ class DueJobsWritePathsTest {
           .as("%s is classified but no longer writes jobs (or was renamed)", name)
           .containsKey(name);
     }
-    assertThat(writes).hasSize(22);
+    assertThat(writes).hasSize(30);
   }
 }

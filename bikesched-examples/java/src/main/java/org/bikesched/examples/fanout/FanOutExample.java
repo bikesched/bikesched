@@ -9,19 +9,22 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.BikeschedUtil;
+import org.bikesched.job.JobBatchResult;
 import org.bikesched.job.JobResult;
 import org.bikesched.job.JobState;
+import org.bikesched.job.ResultJob;
 import org.bikesched.job.TypedJob;
 
 /**
- * Fan-out/fan-in with child jobs: importing a photo album starts one child job per photo, which
- * resizes it, and waits for all of them before publishing the album. The children run in parallel,
- * on any node; the parent waits without holding a thread and decides what a failed child means
- * (here: the photo is skipped). Runs against the Postgres from {@code compose.yaml} ({@code docker
- * compose up -d}).
+ * Fan-out/fan-in with a job batch: importing a photo album starts one child job per photo as one
+ * batch, which resizes it, and waits once for all of them before publishing the album. The children
+ * run in parallel, on any node, at most two at a time; the parent waits without holding a thread
+ * and decides what a failed child means (here: the photo is skipped). Runs against the Postgres
+ * from {@code compose.yaml} ({@code docker compose up -d}).
  *
  * <p>Run with {@code ./gradlew :bikesched-examples:java:runFanOut}; honors {@code POSTGRES_PORT}
  * like the compose file (default 5432).
@@ -31,8 +34,9 @@ public final class FanOutExample {
   /** Imports an album: the parent job. */
   public static final TypedJob<Album> IMPORT_ALBUM = TypedJob.of("import-album", Album.class);
 
-  /** Resizes one photo: the child job. */
-  public static final TypedJob<Photo> RESIZE_PHOTO = TypedJob.of("resize-photo", Photo.class);
+  /** Resizes one photo: the child job, returning its thumbnail. */
+  public static final ResultJob<Photo, Thumbnail> RESIZE_PHOTO =
+      TypedJob.of("resize-photo", Photo.class, Thumbnail.class);
 
   /**
    * The parent's payload.
@@ -85,45 +89,43 @@ public final class FanOutExample {
     this.bikesched = bikesched;
     this.images = new SimulatedImageService(out);
 
-    // The child: resizes one photo and sets the thumbnail as the job's result. A file that is not
-    // an image fails the job without retries; the parent receives the failure as an outcome.
-    bikesched.registerJobHandler(
+    // The child: resizes one photo and returns the thumbnail as the job's result. A file that is
+    // not an image fails the job without retries; the parent receives the failure as an outcome.
+    bikesched.registerResultJobHandler(
         RESIZE_PHOTO,
-        (job, photo) ->
-            images
-                .resize(photo.albumId(), photo.file())
-                .ifPresentOrElse(
-                    job::complete,
-                    () -> job.fail(photo.file() + " is not an image").remainingAttempts(0)));
+        (job, photo) -> {
+          Optional<Thumbnail> thumbnail = images.resize(photo.albumId(), photo.file());
+          if (thumbnail.isEmpty()) {
+            job.fail(photo.file() + " is not an image").remainingAttempts(0);
+          }
+          return thumbnail.orElse(null);
+        });
 
     bikesched.registerJobHandler(
         IMPORT_ALBUM,
         (job, album) -> {
-          // Fan out: one child per file. Each start is a durable step, so a replay of the parent
-          // returns the same child instead of starting another one.
-          List<UUID> children =
-              album.files().stream()
-                  .map(
-                      file ->
-                          job.newJob(RESIZE_PHOTO)
-                              .payload(new Photo(album.albumId(), file))
-                              .stepName("resize " + file)
-                              .schedule())
-                  .toList();
+          // Fan out: one child per file, keyed by the file, as one durable step: a replay of the
+          // parent returns the same batch instead of starting another one. At most two photos
+          // are resized at a time; the others wait as HELD jobs.
+          JobBatchResult<Thumbnail> resized =
+              job.newJobBatch("resize", RESIZE_PHOTO)
+                  .addAll(album.files(), file -> file, file -> new Photo(album.albumId(), file))
+                  .parallelism(2)
+                  .schedule()
+                  // Fan in: the parent waits once, and resumes when every photo is done.
+                  .await();
 
-          // Fan in: wait for each child in turn. A child that already ended returns right away,
-          // so the parent is done once the slowest child is.
-          List<Thumbnail> thumbnails = new ArrayList<>();
+          List<Thumbnail> thumbnails = new ArrayList<>(resized.succeeded().values());
           List<String> skipped = new ArrayList<>();
-          for (int i = 0; i < children.size(); i++) {
-            switch (job.waitForJob(children.get(i), Thumbnail.class)) {
-              case JobResult.Succeeded<Thumbnail>(UUID ignored, Thumbnail thumbnail) ->
-                  thumbnails.add(thumbnail);
-              case JobResult.Failed<Thumbnail> ignored -> skipped.add(album.files().get(i));
-              case JobResult<Thumbnail> other ->
-                  throw new IllegalStateException("Unexpected outcome: " + other);
-            }
-          }
+          resized
+              .unsucceeded()
+              .forEach(
+                  (file, outcome) -> {
+                    if (!(outcome instanceof JobResult.Failed)) {
+                      throw new IllegalStateException("Unexpected outcome: " + outcome);
+                    }
+                    skipped.add(file);
+                  });
 
           job.step(
               "publish-album",

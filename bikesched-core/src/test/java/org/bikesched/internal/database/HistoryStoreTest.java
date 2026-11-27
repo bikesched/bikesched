@@ -149,6 +149,24 @@ class HistoryStoreTest extends AbstractStoreTest {
   }
 
   @Test
+  void theSchemaAcceptsTheActionsAndStatesOfBatches() throws SQLException {
+    UUID jobId = UUID.randomUUID();
+    insert(jobId, "'JOB', 'HELD', 'HELD', 0, 'JOB', null");
+    insert(jobId, "'JOB', 'ADMITTED', 'SCHEDULED', 0, 'NODE', null");
+    execute(
+        "insert into bikesched_history (subject_id, id, step_id, subject_type, action, state,"
+            + " attempt, actor_type) values ('"
+            + jobId
+            + "', gen_random_uuid(), gen_random_uuid(), 'JOB', 'BATCH_STARTED', 'WAITING', 1,"
+            + " 'JOB'), ('"
+            + jobId
+            + "', gen_random_uuid(), gen_random_uuid(), 'JOB', 'BATCH_ENDED', 'FAILED', 1, 'NODE')");
+
+    assertThat(HistoryTesting.actions(database.history().findJobHistory(jobId)))
+        .containsExactly("HELD", "ADMITTED", "null BATCH_STARTED", "null BATCH_ENDED");
+  }
+
+  @Test
   void entriesOlderThanTheRetentionAreDeleted() throws SQLException {
     UUID jobId = UUID.randomUUID();
     execute(

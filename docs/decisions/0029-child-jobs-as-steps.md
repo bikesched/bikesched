@@ -9,7 +9,8 @@ Date: 2026-10-07
 
 ## Status
 
-Accepted
+Accepted; the rejection of results returned from handlers is superseded by
+[ADR 0067](0067-result-types-on-typed-jobs.md)
 
 ## Context
 

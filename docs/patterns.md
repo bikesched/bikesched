@@ -167,27 +167,26 @@ Example: [Approval](../bikesched-examples/README.md#approval). Details:
 
 ## Fan-out/fan-in
 
-Start one child job per part, then wait for each. The children run in parallel, on any node:
+Start the parts as one job batch, then wait once for all of them. The items run in parallel, on
+any node, optionally at most a few at a time:
 
 ```java
-List<UUID> children = album.files().stream()
-        .map(file -> job.newJob(RESIZE_PHOTO).payload(new Photo(albumId, file)).stepName("resize " + file).schedule())
-        .toList();
-for (UUID child : children) {
-    switch (job.waitForJob(child, Thumbnail.class)) {
-        case JobResult.Succeeded<Thumbnail>(UUID childId, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
-        case JobResult.Failed<Thumbnail> failed -> skipped++;
-        case JobResult<Thumbnail> other -> throw new IllegalStateException("Unexpected outcome: " + other);
-    }
-}
+JobBatchResult<Thumbnail> resized = job.newJobBatch("resize", RESIZE_PHOTO)   // a ResultJob
+        .addAll(album.files(), file -> file, file -> new Photo(albumId, file))  // key, payload
+        .parallelism(2)
+        .schedule()
+        .await();
+List<Thumbnail> thumbnails = new ArrayList<>(resized.succeeded().values());
+int skipped = resized.unsucceeded().size();
 ```
 
-- Each child is started once: the start is a step of the parent.
-- The parent waits without a thread. A failed child doesn't fail the parent; it decides from the
-  outcome.
+- The batch is started once, in one transaction: it is a step of the parent.
+- The parent waits without a thread and resumes once, when every item has ended. A failed item
+  doesn't fail the parent; it decides from the outcomes (`orElseThrow()` for all or nothing,
+  `failFast()` to stop at the first failure).
 
-Example: [Fan-out](../bikesched-examples/README.md#fan-out). Details: [Child
-jobs](multi-step-jobs/child-jobs.md).
+Example: [Fan-out](../bikesched-examples/README.md#fan-out). Details:
+[Batches](multi-step-jobs/child-jobs.md#batches).
 
 ## Periodic work
 

@@ -5,6 +5,7 @@ import org.bikesched.admin.EventStep;
 import org.bikesched.admin.EventSummary;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
+import org.bikesched.admin.StepBatch;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.history.EventEntry;
@@ -38,7 +39,8 @@ final class AdminJson {
         .put("idempotencyKey", job.idempotencyKey())
         .put("reference", job.reference())
         .put("nodeId", job.nodeId())
-        .put("nodeName", job.nodeName());
+        .put("nodeName", job.nodeName())
+        .put("batchKey", job.batchKey());
   }
 
   static Json.Obj step(StepInfo step) {
@@ -63,7 +65,17 @@ final class AdminJson {
         .put("childJobId", step.childJobId())
         .put("childJobName", step.childJobName())
         .put("childJobState", step.childJobState())
-        .put("childJobExists", step.childJobExists());
+        .put("childJobExists", step.childJobExists())
+        .put("batch", step.batch() == null ? null : batch(step.batch()));
+  }
+
+  private static Json.Obj batch(StepBatch batch) {
+    return Json.object()
+        .put("items", batch.items())
+        .put("ended", batch.ended())
+        .put("active", batch.active())
+        .put("parallelism", batch.parallelism())
+        .put("failFast", batch.failFast());
   }
 
   /** A history entry; its data is passed on as the JSON object it is. */

@@ -57,6 +57,8 @@ create table bikesched_jobs (
     type                   text collate "C" not null default 'SINGLE',
     state                  text collate "C" not null default 'SCHEDULED',
     parent_job_id          uuid,                                -- the job that started this one as a child
+    batch_step_id          uuid,                                -- the batch step of the parent that started it
+    batch_key              text collate "C",                    -- its key in its batch
     locked_by_node_id      uuid,
     lock_token             uuid,                                -- new for every claim: fences the claim's writes
     scheduled_at           timestamptz      not null default now(),
@@ -89,7 +91,15 @@ create table bikesched_jobs (
         check (type in ('SINGLE', 'RECURRING', 'CHILD')),
     constraint bikesched_jobs_state_check
         check (state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'CANCELLED',
-                         'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING')),
+                         'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING', 'HELD')),
+    -- Items of a batch know their batch step and key; only they can be HELD (not claimed until
+    -- admitted by their batch's parallelism). Their ids are in item order.
+    constraint bikesched_jobs_batch_check
+        check ((batch_step_id is null) = (batch_key is null)
+               and (batch_step_id is null or parent_job_id is not null)
+               and (state <> 'HELD' or batch_step_id is not null and attempts = 0)),
+    constraint bikesched_jobs_batch_key_check
+        check (char_length(batch_key) between 1 and 200 and octet_length(batch_key) <= 600),
     constraint bikesched_jobs_attempts_check
         check (attempts >= 0 and max_attempts >= 1 and compensation_attempts >= 0
                and failure_attempts >= 0),
@@ -171,6 +181,11 @@ create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
 create index bikesched_jobs_reference_idx on bikesched_jobs (reference, id)
     where reference is not null;
 
+-- The held items of a batch in their order (ids are time-ordered and created in item order):
+-- admitting them as the batch's parallelism allows, and cancelling them with their batch.
+create index bikesched_jobs_held_idx on bikesched_jobs (batch_step_id, id)
+    where state = 'HELD';
+
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
 -- job can skip steps that already succeeded. The type tells what a step does:
 -- - STEP: a regular step running user code; result = what it returned.
@@ -201,27 +216,33 @@ create index bikesched_jobs_reference_idx on bikesched_jobs (reference, id)
 -- across its attempts), which every write to a single step uses, and by its name within its job,
 -- which the handler's replay looks it up by.
 create table bikesched_steps (
-    id                uuid             not null,
-    job_id            uuid             not null,
-    name              text collate "C" not null,
-    type              text collate "C" not null default 'STEP',
-    state             text collate "C" not null default 'RUNNING',
-    locked_by_node_id uuid,                                -- the node running the step (no FK: may outlive a dead node)
-    event_id          uuid,                                -- the event received or published (no FK: see above)
-    child_job_id      uuid,                                -- the child job started (no FK: see above)
-    started_at        timestamptz      not null default now(),
-    finished_at       timestamptz,
-    wake_at           timestamptz,
-    deadline_at       timestamptz,                         -- the deadline of a poll, none if null
-    attempts          integer          not null default 0,
-    failure_attempts  integer          not null default 0, -- runs of its failure handler while FAILING
-    compensable       boolean          not null default false,
-    child_end_state   text collate "C",                    -- the child's terminal state, once it ended
-    child_job_name    text collate "C",                    -- its name, checked on replays even after it was deleted
-    event_name        text collate "C",
-    event_key         text collate "C",
-    result            jsonb,
-    last_error        text,
+    id                 uuid             not null,
+    job_id             uuid             not null,
+    name               text collate "C" not null,
+    type               text collate "C" not null default 'STEP',
+    state              text collate "C" not null default 'RUNNING',
+    locked_by_node_id  uuid,                                -- the node running the step (no FK: may outlive a dead node)
+    event_id           uuid,                                -- the event received or published (no FK: see above)
+    child_job_id       uuid,                                -- the child job started (no FK: see above)
+    started_at         timestamptz      not null default now(),
+    finished_at        timestamptz,
+    wake_at            timestamptz,
+    deadline_at        timestamptz,                         -- the deadline of a poll, none if null
+    attempts           integer          not null default 0,
+    failure_attempts   integer          not null default 0, -- runs of its failure handler while FAILING
+    compensable        boolean          not null default false,
+    child_end_state    text collate "C",                    -- the child's terminal state, once it ended
+    child_job_name     text collate "C",                    -- its name, checked on replays even after it was deleted
+    event_name         text collate "C",
+    event_key          text collate "C",
+    result             jsonb,
+    last_error         text,
+    batch_step_id      uuid,                                -- the batch step of an item step (same job)
+    batch_parallelism  integer,                             -- batch steps: items active at once, null: all
+    batch_fail_fast    boolean          not null default false, -- batch steps: end at the first failed item
+    batch_item_count   integer,                             -- batch steps: the number of items
+    batch_active_count integer,                             -- batch steps: items admitted and not ended
+    batch_ended_count  integer,                             -- batch steps: items ended
     constraint bikesched_steps_pkey primary key (id),
     constraint bikesched_steps_job_id_name_key unique (job_id, name),
     constraint bikesched_steps_job_id_fkey
@@ -237,7 +258,8 @@ create table bikesched_steps (
                    else finished_at is not null
                end),
     constraint bikesched_steps_type_check
-        check (type in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB', 'POLL')),
+        check (type in ('STEP', 'SLEEP', 'EVENT_WAIT', 'EVENT_PUBLISH', 'CHILD_JOB', 'POLL',
+                        'CHILD_JOB_BATCH')),
     constraint bikesched_steps_state_check
         check (state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING', 'FAILED', 'TIMED_OUT',
                          'COMPENSATED', 'CANCELLED', 'POSTPONED')),
@@ -252,7 +274,7 @@ create table bikesched_steps (
                        when 'EVENT_PUBLISH' then event_id is not null
                        else event_id is null
                    end
-               and (type in ('EVENT_WAIT', 'CHILD_JOB', 'POLL') or state <> 'TIMED_OUT')),
+               and (type in ('EVENT_WAIT', 'CHILD_JOB', 'POLL', 'CHILD_JOB_BATCH') or state <> 'TIMED_OUT')),
     -- Child job steps reference their child; the child's state is set once it ended (kept when the
     -- step is compensated afterwards).
     constraint bikesched_steps_child_check
@@ -265,11 +287,25 @@ create table bikesched_steps (
     -- wake-up time. (An event wait or a wait for a child job without a timeout waits without a
     -- deadline.) Only polls have a deadline of their own.
     constraint bikesched_steps_wait_check
-        check ((state <> 'WAITING' or type in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL'))
-               and (wake_at is null or type in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL'))
+        check ((state <> 'WAITING' or type in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL', 'CHILD_JOB_BATCH'))
+               and (wake_at is null or type in ('SLEEP', 'EVENT_WAIT', 'CHILD_JOB', 'POLL', 'CHILD_JOB_BATCH'))
                and (type <> 'SLEEP' or wake_at is not null)
                and (type <> 'POLL' or state <> 'WAITING' or wake_at is not null)
                and (deadline_at is null or type = 'POLL')),
+    -- Batch steps count their items and know their mode; only they fail fast, and they FAIL only
+    -- then. Item steps are child job steps pointing to their batch step.
+    constraint bikesched_steps_batch_check
+        check ((type = 'CHILD_JOB_BATCH') = (batch_item_count is not null)
+               and (batch_item_count is null) = (batch_active_count is null)
+               and (batch_item_count is null) = (batch_ended_count is null)
+               and (batch_parallelism is null or type = 'CHILD_JOB_BATCH')
+               and (not batch_fail_fast or type = 'CHILD_JOB_BATCH')
+               and (type <> 'CHILD_JOB_BATCH' or state <> 'FAILED' or batch_fail_fast)
+               and (batch_step_id is null or type = 'CHILD_JOB')
+               and batch_item_count >= 0 and batch_parallelism >= 1 and batch_active_count >= 0
+               and batch_ended_count between 0 and batch_item_count
+               and batch_active_count + batch_ended_count <= batch_item_count
+               and batch_active_count <= coalesce(batch_parallelism, batch_item_count)),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by_node_id is not null)),
     -- Only regular steps run handlers that can postpone the job.
@@ -288,6 +324,14 @@ create table bikesched_steps (
 -- Matching published events to the steps waiting for them.
 create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_key)
     where type = 'EVENT_WAIT' and state = 'WAITING';
+
+-- The item steps of a batch step in their order: reading a batch's outcome, cancelling it.
+create index bikesched_steps_batch_step_id_idx on bikesched_steps (batch_step_id, id)
+    where batch_step_id is not null;
+
+-- The waiting batches of a job: looked up when it is claimed, locked when it ends.
+create index bikesched_steps_waiting_batch_idx on bikesched_steps (job_id)
+    where type = 'CHILD_JOB_BATCH' and state = 'WAITING';
 
 -- Finding the step of a child job that ended.
 create index bikesched_steps_child_job_idx on bikesched_steps (child_job_id)
@@ -389,14 +433,15 @@ create table bikesched_history (
                                   'SUSPENDED', 'RESUMED', 'POSTPONED', 'RETRIED', 'CANCEL_REQUESTED',
                                   'CANCELLED', 'RELEASED', 'MOVED', 'DELETED', 'FAILING',
                                   'FAILURE_HANDLER_FAILED', 'COMPENSATING', 'COMPENSATED',
-                                  'COMPENSATION_FAILED')
+                                  'COMPENSATION_FAILED', 'HELD', 'ADMITTED')
                        and state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED',
-                                     'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING')
+                                     'CANCELLED', 'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING',
+                                     'HELD')
                    when subject_type = 'JOB' then
                        action in ('STARTED', 'SUCCEEDED', 'FAILED', 'WAITING', 'RECEIVED',
                                   'CHILD_STARTED', 'CHILD_ENDED', 'WOKE_UP', 'TIMED_OUT', 'POSTPONED',
                                   'FAILING', 'RESOLVED', 'PUBLISHED', 'CANCELLED', 'COMPENSATED',
-                                  'COMPENSATION_FAILED')
+                                  'COMPENSATION_FAILED', 'BATCH_STARTED', 'BATCH_ENDED')
                        and state in ('RUNNING', 'WAITING', 'SUCCEEDED', 'FAILING', 'FAILED',
                                      'TIMED_OUT', 'COMPENSATED', 'CANCELLED', 'POSTPONED')
                    when subject_type = 'EVENT' then action in ('PUBLISHED')

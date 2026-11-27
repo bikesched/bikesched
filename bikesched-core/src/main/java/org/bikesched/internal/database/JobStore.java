@@ -42,11 +42,13 @@ public final class JobStore {
   private final DatabaseAccess access;
   private final HistoryStore history;
   private final JsonMapper jsonMapper;
+  private final BatchStore batches;
 
-  JobStore(DatabaseAccess access, HistoryStore history, JsonMapper jsonMapper) {
+  JobStore(DatabaseAccess access, HistoryStore history, JsonMapper jsonMapper, BatchStore batches) {
     this.access = access;
     this.history = history;
     this.jsonMapper = jsonMapper;
+    this.batches = batches;
   }
 
   private static final String INSERT_JOB_SQL =
@@ -70,10 +72,12 @@ public final class JobStore {
             insert into bikesched_jobs (id, name, type, payload, scheduled_at, priority, max_attempts, timeout_millis, parent_job_id, reference)
             values (?, ?, 'CHILD', ?::jsonb, ?, ?, ?, ?, ?, ?)""";
 
-  // The step of a job starting a child job.
+  // The step of a job starting a child job; an item step of a batch reads as the batch's type, so
+  // a step named like it is rejected as a step of another type.
   private static final String FIND_CHILD_JOB_STEP_SQL =
       """
-            select id, type, state, child_job_id, child_job_name
+            select id, case when batch_step_id is null then type else 'CHILD_JOB_BATCH' end as type,
+                   state, child_job_id, child_job_name
               from bikesched_steps
              where job_id = ? and name = ?
                for update""";
@@ -190,11 +194,14 @@ public final class JobStore {
                       compensation_attempts, cancel_requested_at is not null as cancel_requested,
                       cancel_message,
                       locked_by_node_id, lock_token, parent_job_id, failure_end_state,
-                      failure_attempts, last_error, reference""";
+                      failure_attempts, last_error, reference, batch_step_id, batch_key,
+                      exists (select 1 from bikesched_steps s
+                               where s.job_id = bikesched_jobs.id and s.type = 'CHILD_JOB_BATCH'
+                                 and s.state = 'WAITING') as waiting_batches""";
 
   private static final String FIND_JOB_SQL =
       """
-            select name, type, state, result::text as result, parent_job_id, reference from bikesched_jobs where id = ?""";
+            select name, type, state, result::text as result, parent_job_id, reference, batch_key from bikesched_jobs where id = ?""";
 
   private static final String COMPLETE_JOB_SQL =
       """
@@ -536,6 +543,7 @@ public final class JobStore {
                         row.string("result"),
                         row.uuid("parent_job_id"),
                         row.string("reference"),
+                        row.string("batch_key"),
                         jsonMapper),
                 jobId),
         e -> new BikeschedException("Reading bikesched job " + jobId + " failed", e));
@@ -647,7 +655,7 @@ public final class JobStore {
    * @return the job's new state; empty if the job is not running on this node (anymore)
    */
   public Optional<EndedJob> completeJob(ClaimEnd end, @Nullable String result) {
-    if (end.followUp() instanceof FollowUp.None) {
+    if (end.followUp() instanceof FollowUp.None && !end.batches()) {
       // One statement: no transaction unless the history is enabled.
       return history.change(
           db ->
@@ -658,11 +666,13 @@ public final class JobStore {
     }
     return access.inTransaction(
         db -> {
+          List<StepRef> waitingBatches = lockBatches(db, end);
           if (!completeJob(db, end, result)) {
             return Optional.<EndedJob>empty();
           }
           return Optional.of(
-              new EndedJob(JobState.SUCCEEDED, followUp(db, end, JobState.SUCCEEDED)));
+              new EndedJob(
+                  JobState.SUCCEEDED, followUp(db, end, JobState.SUCCEEDED, waitingBatches)));
         },
         e -> new BikeschedException("Completing bikesched job " + end.jobId() + " failed", e));
   }
@@ -789,23 +799,42 @@ public final class JobStore {
 
   /**
    * After a job's state changed in the caller's transaction: once it ended, runs the claim's {@link
-   * FollowUp}.
+   * FollowUp}; once it ended or started compensating, cancels the held items of its waiting
+   * batches.
    *
    * @param state the job's new state; nothing happens unless it is terminal
    * @return whether the next occurrence of a recurring job was inserted
    */
-  private boolean followUp(Sql db, ClaimEnd end, JobState state) throws SQLException {
+  private boolean followUp(Sql db, ClaimEnd end, JobState state, List<StepRef> waitingBatches)
+      throws SQLException {
+    // A compensating job compensates its batches next, so nobody admits their held items: they
+    // are cancelled now, as when it ends.
+    if (!waitingBatches.isEmpty() && (state.isEnded() || state == JobState.COMPENSATING)) {
+      batches.cancelHeldItems(db, end.jobId(), waitingBatches);
+    }
     if (!state.isEnded()) {
       return false;
     }
     return switch (end.followUp()) {
-      case FollowUp.NotifyParent ignored -> {
-        childEnded(db, end.jobId());
+      case FollowUp.NotifyParent(UUID ignored, UUID batchStepId) -> {
+        if (batchStepId == null) {
+          childEnded(db, end.jobId());
+        } else {
+          batches.itemEnded(db, end.jobId(), batchStepId, true);
+        }
         yield false;
       }
       case FollowUp.ScheduleNext(var next) -> insertOccurrence(db, next, ActorType.NODE);
       case FollowUp.None ignored -> false;
     };
+  }
+
+  /**
+   * The {@code WAITING} batches of an ending job, locked first in its transaction (see {@link
+   * BatchStore}); none unless the job has batches.
+   */
+  private static List<StepRef> lockBatches(Sql db, ClaimEnd end) throws SQLException {
+    return end.batches() ? BatchStore.lockWaitingBatches(db, end.jobId()) : List.of();
   }
 
   /**
@@ -884,6 +913,9 @@ public final class JobStore {
     JobLock lock = end.lock();
     return access.inTransaction(
         db -> {
+          // Its batches first (before their item steps, then the job): their held items are
+          // cancelled with it. Always looked up: a job cancelled on request never ran its handler.
+          List<StepRef> waitingBatches = BatchStore.lockWaitingBatches(db, jobId);
           List<UUID> cancelledSteps =
               db.list(CANCEL_STEPS_SQL, row -> row.uuid("id"), jobId, jobId, lock.token());
           history.record(
@@ -910,6 +942,7 @@ public final class JobStore {
           if (cancelled.isEmpty()) {
             return Optional.<EndedJob>empty();
           }
+          batches.cancelHeldItems(db, jobId, waitingBatches);
           JobState state = cancelled.get().state();
           if (state == JobState.COMPENSATING) {
             db.dueAt(cancelled.get().name(), cancelled.get().scheduledAt());
@@ -923,7 +956,7 @@ public final class JobStore {
                       cancelled.get().attempts(),
                       ActorType.NODE)
                   .message(message));
-          return Optional.of(new EndedJob(state, followUp(db, end, state)));
+          return Optional.of(new EndedJob(state, followUp(db, end, state, List.of())));
         },
         e -> new BikeschedException("Cancelling bikesched job " + jobId + " failed", e));
   }
@@ -947,6 +980,17 @@ public final class JobStore {
    * @return {@code false} if the job does not exist, has ended or is compensating
    */
   public boolean requestCancel(UUID jobId, @Nullable String message, @Nullable Actor actor) {
+    if (requestCancelClaimable(jobId, message, actor)) {
+      return true;
+    }
+    // A held item of a batch never ran: it ends right away. Admission only turns held items into
+    // scheduled ones, so if it was admitted meanwhile, requesting its cancellation again suffices.
+    return batches.cancelHeldItem(jobId, message, actor)
+        || requestCancelClaimable(jobId, message, actor);
+  }
+
+  private boolean requestCancelClaimable(
+      UUID jobId, @Nullable String message, @Nullable Actor actor) {
     return history.change(
         db -> {
           Optional<ChangedJob> job =
@@ -1054,6 +1098,7 @@ public final class JobStore {
     UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
+          List<StepRef> waitingBatches = lockBatches(db, end);
           Optional<ChangedJob> ended =
               db.one(
                   COMPLETE_COMPENSATION_SQL,
@@ -1072,7 +1117,7 @@ public final class JobStore {
               db,
               Change.job(
                   jobId, JobAction.COMPENSATED, state, ended.get().attempts(), ActorType.NODE));
-          return Optional.of(new EndedJob(state, followUp(db, end, state)));
+          return Optional.of(new EndedJob(state, followUp(db, end, state, waitingBatches)));
         },
         e ->
             new BikeschedException(
@@ -1095,6 +1140,7 @@ public final class JobStore {
     UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
+          List<StepRef> waitingBatches = lockBatches(db, end);
           Optional<FailedJob> failed =
               db.one(
                   FAIL_COMPENSATION_SQL,
@@ -1119,7 +1165,8 @@ public final class JobStore {
                       ActorType.NODE)
                   .error(error)
                   .dueAt(job.state().isEnded() ? null : job.scheduledAt()));
-          return Optional.of(job.withNextOccurrence(followUp(db, end, job.state())));
+          return Optional.of(
+              job.withNextOccurrence(followUp(db, end, job.state(), waitingBatches)));
         },
         e ->
             new BikeschedException(
@@ -1296,6 +1343,7 @@ public final class JobStore {
     UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
+          List<StepRef> waitingBatches = lockBatches(db, end);
           Optional<FailedJob> failed =
               db.one(
                   FAIL_JOB_SQL,
@@ -1317,7 +1365,7 @@ public final class JobStore {
                 case SCHEDULED -> JobAction.ATTEMPT_FAILED;
                 case COMPENSATING -> JobAction.COMPENSATING;
                 case FAILING -> JobAction.FAILING;
-                case FAILED, RUNNING, WAITING, SUCCEEDED, CANCELLED, COMPENSATION_FAILED ->
+                case FAILED, RUNNING, WAITING, SUCCEEDED, CANCELLED, COMPENSATION_FAILED, HELD ->
                     JobAction.FAILED;
               };
           history.record(
@@ -1325,7 +1373,8 @@ public final class JobStore {
               Change.job(jobId, action, job.state(), job.attempts(), ActorType.NODE)
                   .error(error)
                   .dueAt(job.state() == JobState.SCHEDULED ? job.scheduledAt() : null));
-          return Optional.of(job.withNextOccurrence(followUp(db, end, job.state())));
+          return Optional.of(
+              job.withNextOccurrence(followUp(db, end, job.state(), waitingBatches)));
         },
         e -> new BikeschedException("Recording failure of bikesched job " + jobId + " failed", e));
   }
@@ -1345,6 +1394,7 @@ public final class JobStore {
     UUID jobId = end.jobId();
     return access.inTransaction(
         db -> {
+          List<StepRef> waitingBatches = lockBatches(db, end);
           Optional<ChangedJob> ended =
               db.one(END_FAILING_SQL, ChangedJob::from, jobId, end.lock().token());
           if (ended.isEmpty()) {
@@ -1361,7 +1411,7 @@ public final class JobStore {
                       ActorType.NODE)
                   .reason(reason)
                   .error(error));
-          return Optional.of(new EndedJob(state, followUp(db, end, state)));
+          return Optional.of(new EndedJob(state, followUp(db, end, state, waitingBatches)));
         },
         e ->
             new BikeschedException(
@@ -1718,7 +1768,8 @@ public final class JobStore {
       @Nullable String cancelMessage,
       JobLock lock,
       @Nullable String lastError,
-      @Nullable String reference) {
+      @Nullable String reference,
+      boolean waitingBatches) {
 
     /** Maps a row of {@code CLAIM_JOBS_SQL}. */
     static ClaimedJob from(Sql.Row row) throws SQLException {
@@ -1744,12 +1795,17 @@ public final class JobStore {
           row.millis("timeout_millis"),
           phase,
           JobOrigin.of(
-              row.uuid("parent_job_id"), row.string("recurrence"), row.instant("planned_run_at")),
+              row.uuid("parent_job_id"),
+              row.uuid("batch_step_id"),
+              row.string("batch_key"),
+              row.string("recurrence"),
+              row.instant("planned_run_at")),
           row.bool("cancel_requested"),
           row.string("cancel_message"),
           new JobLock(row.uuid("locked_by_node_id"), row.uuid("lock_token")),
           row.string("last_error"),
-          row.string("reference"));
+          row.string("reference"),
+          row.bool("waiting_batches"));
     }
   }
 }
