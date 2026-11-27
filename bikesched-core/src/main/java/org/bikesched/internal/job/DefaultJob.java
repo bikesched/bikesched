@@ -545,13 +545,19 @@ public final class DefaultJob implements Job {
         // Replay only: return the started batch, registering the compensations, never start one.
         requireNewBatchStep(stepName);
         var started = replay.startedBatch(stepName, compensation);
-        return new DefaultJobBatch<>(this, started.step(), started.items(), resultTypes);
+        return new DefaultJobBatch<>(
+            this, started.step(), started.items(), resultTypes, batch.defaultResultType());
       }
       var stored = database.batches().findStarted(id, stepName);
       if (stored.isPresent()) {
         requireNewBatchStep(stepName);
         LOG.debug("Step {} of job {} already started its job batch", stepName, id);
-        return new DefaultJobBatch<>(this, stored.get().step(), stored.get().items(), resultTypes);
+        return new DefaultJobBatch<>(
+            this,
+            stored.get().step(),
+            stored.get().items(),
+            resultTypes,
+            batch.defaultResultType());
       }
       var newBatch =
           new BatchStore.NewBatch(
@@ -575,7 +581,8 @@ public final class DefaultJob implements Job {
       } else {
         LOG.debug("Step {} of job {} already started its job batch", stepName, id);
       }
-      return new DefaultJobBatch<>(this, started.step(), started.items(), resultTypes);
+      return new DefaultJobBatch<>(
+          this, started.step(), started.items(), resultTypes, batch.defaultResultType());
     }
   }
 

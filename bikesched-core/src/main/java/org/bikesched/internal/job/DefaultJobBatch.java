@@ -22,15 +22,21 @@ final class DefaultJobBatch<R extends @Nullable Object> implements JobBatch<R> {
   private final StepRef step;
   private final Map<String, UUID> jobIds;
   private final Map<String, Class<?>> resultTypes;
+  private final Class<?> defaultResultType;
 
   /**
    * @param parent the job that started the batch
    * @param step the batch step
    * @param items its items, in order
-   * @param resultTypes the type of each item's result, by key; {@code Object} for others
+   * @param resultTypes the type of each item's result, by key
+   * @param defaultResultType the type of the results of stored items this run did not add
    */
   DefaultJobBatch(
-      DefaultJob parent, StepRef step, List<ItemRef> items, Map<String, Class<?>> resultTypes) {
+      DefaultJob parent,
+      StepRef step,
+      List<ItemRef> items,
+      Map<String, Class<?>> resultTypes,
+      Class<?> defaultResultType) {
     this.parent = parent;
     this.step = step;
     var ids = new LinkedHashMap<String, UUID>();
@@ -39,6 +45,7 @@ final class DefaultJobBatch<R extends @Nullable Object> implements JobBatch<R> {
     }
     this.jobIds = Collections.unmodifiableMap(ids);
     this.resultTypes = Map.copyOf(resultTypes);
+    this.defaultResultType = defaultResultType;
   }
 
   @Override
@@ -70,7 +77,7 @@ final class DefaultJobBatch<R extends @Nullable Object> implements JobBatch<R> {
   /** The result of the ended batch with the given items. */
   JobBatchResult<R> result(List<ItemOutcome> items) {
     return new DefaultJobBatchResult<>(
-        step.name(), items, key -> resultTypes.getOrDefault(key, Object.class), parent);
+        step.name(), items, key -> resultTypes.getOrDefault(key, defaultResultType), parent);
   }
 
   @Override

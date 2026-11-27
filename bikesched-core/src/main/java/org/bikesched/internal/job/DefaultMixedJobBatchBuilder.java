@@ -30,6 +30,11 @@ final class DefaultMixedJobBatchBuilder extends BaseJobBatchBuilder<MixedJobBatc
     return this;
   }
 
+  @Override
+  Class<?> defaultResultType() {
+    return Object.class;
+  }
+
   /** The job name of a typed job, remembering its payload type. */
   private String name(TypedJob<?> job) {
     Objects.requireNonNull(job, "job");

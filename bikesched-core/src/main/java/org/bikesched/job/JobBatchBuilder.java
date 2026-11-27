@@ -72,9 +72,9 @@ public interface JobBatchBuilder<P extends @Nullable Object, R extends @Nullable
 
   /**
    * Starts the batch as a step of the parent, exactly once: the batch step, every item and its step
-   * are written in one transaction, with the payloads mapped to JSON then. On later runs of the
-   * parent it returns the stored batch, whatever the items are now: they are neither checked nor
-   * mapped again.
+   * are written in one transaction, with the payloads mapped to JSON then (so a payload must not
+   * change after it was added). On later runs of the parent it returns the stored batch, whatever
+   * the items are now: they are neither checked nor mapped again.
    *
    * @return the batch, to wait for with {@link JobBatch#await()}
    * @throws IllegalArgumentException if keys are duplicated or invalid, the batch exceeds the

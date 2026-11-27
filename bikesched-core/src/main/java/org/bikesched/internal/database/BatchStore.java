@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.bikesched.BikeschedException;
 import org.bikesched.history.Actor;
 import org.bikesched.history.ActorType;
@@ -32,7 +33,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Every transaction touching a batch takes its locks in one order, so no two wait for each other
  * in a cycle: the ending item's own job row, the batch step, the item steps in id order, other item
- * rows (only {@code for update skip locked}, never waiting), the parent's row.
+ * rows (only with {@code skip locked}, or held rows nobody else locks), the parent's row.
  */
 public final class BatchStore {
 
@@ -104,13 +105,13 @@ public final class BatchStore {
                set state = 'WAITING', child_job_id = t.child, child_job_name = t.child_name, child_end_state = null,
                    result = null, last_error = null, wake_at = null, compensable = ? and t.idx < ?,
                    attempts = s.attempts + 1, started_at = now(), finished_at = null
-              from unnest(?::text[], ?::uuid[], ?::text[], ?::integer[]) as t (name, child, child_name, idx)
-             where s.batch_step_id = ? and s.name = t.name""";
+              from unnest(?::uuid[], ?::uuid[], ?::text[], ?::integer[]) as t (id, child, child_name, idx)
+             where s.id = t.id and s.batch_step_id = ?""";
 
   private static final String FIND_ITEMS_SQL =
       """
             select id, name, state, child_job_id, child_job_name, child_end_state, result::text as result,
-                   last_error, compensable
+                   last_error, compensable, attempts
               from bikesched_steps where batch_step_id = ? order by id""";
 
   // The step of an item that ended, if the item is still its batch's child (a compensated batch
@@ -145,8 +146,9 @@ public final class BatchStore {
   private static final String COUNT_CANCELLED_SQL =
       "update bikesched_steps set batch_ended_count = batch_ended_count + ? where id = ?";
 
-  // Admits the first held items in item order; a held item being cancelled right now is skipped
-  // (the next end admits another one). Keeps a due time in the future the batch was scheduled for.
+  // Admits the first held items in item order, keeping a due time in the future the batch was
+  // scheduled for. Held rows are locked only under the batch step's lock, so this never waits; it
+  // does not skip locked rows either, which could leave the batch with nothing admitted.
   private static final String ADMIT_SQL =
       """
             update bikesched_jobs j
@@ -155,7 +157,7 @@ public final class BatchStore {
                      where batch_step_id = ? and state = 'HELD'
                      order by id
                      limit ?
-                       for update skip locked) h
+                       for no key update) h
              where j.id = h.id
             returning j.id, j.name, j.attempts, j.scheduled_at""";
 
@@ -176,13 +178,12 @@ public final class BatchStore {
   // its parent), in id order: later ends of their items no longer change them.
   private static final String END_ITEM_STEPS_SQL =
       """
-            update bikesched_steps s set state = ?, last_error = ?, finished_at = now()
-              from (select id from bikesched_steps
-                     where batch_step_id = ? and state = 'WAITING'
-                     order by id
-                       for update) w
-             where s.id = w.id
-            returning s.id""";
+            update bikesched_steps set state = ?, last_error = ?, finished_at = now()
+             where id = any(array(select id from bikesched_steps
+                                   where batch_step_id = ? and state = 'WAITING'
+                                   order by id
+                                     for no key update))
+            returning id, child_job_id""";
 
   // Held items never ran: they end CANCELLED right away, skipping one being admitted or cancelled
   // concurrently (it ends on its own).
@@ -193,7 +194,7 @@ public final class BatchStore {
               from (select id from bikesched_jobs
                      where batch_step_id = ? and state = 'HELD'
                      order by id
-                       for update skip locked) h
+                       for no key update skip locked) h
              where j.id = h.id
             returning j.id, j.attempts""";
 
@@ -224,12 +225,11 @@ public final class BatchStore {
                    scheduled_at = case when j.state in ('SCHEDULED', 'WAITING') then now() else j.scheduled_at end,
                    updated_at = now()
               from (select c.id from bikesched_jobs c
-                     where c.id in (select child_job_id from bikesched_steps where batch_step_id = ?)
-                       and c.batch_step_id = ?
+                     where c.id = any(?::uuid[])
                        and c.state in ('SCHEDULED', 'WAITING', 'RUNNING') and c.compensation_end_state is null
                        and c.failure_end_state is null
                      order by c.id
-                       for update skip locked) s
+                       for no key update skip locked) s
              where j.id = s.id
             returning j.id, j.state, j.attempts, j.name""";
 
@@ -242,14 +242,16 @@ public final class BatchStore {
                    scheduled_at = case when j.state in ('SCHEDULED', 'WAITING') then now() else j.scheduled_at end,
                    updated_at = now()
               from (select c.id from bikesched_jobs c
-                     where c.id in (select child_job_id from bikesched_steps where batch_step_id = ?)
-                       and c.batch_step_id = ?
+                     where c.id = any(?::uuid[])
                        and c.state in ('SCHEDULED', 'WAITING', 'RUNNING') and c.compensation_end_state is null
                        and c.failure_end_state is null and c.cancel_requested_at is null
                      order by c.id
-                       for update) s
+                       for no key update) s
              where j.id = s.id and j.cancel_requested_at is null
             returning j.id, j.state, j.attempts, j.name""";
+
+  // The after-commit pass waits for each skipped sibling's lock, at most this long.
+  private static final String AFTER_COMMIT_LOCK_TIMEOUT_SQL = "set local lock_timeout = '10s'";
 
   private static final String SET_DEADLINE_SQL =
       """
@@ -375,6 +377,7 @@ public final class BatchStore {
    * @param result the item's result as JSON text, may be {@code null}
    * @param error the item's error or cancel message, or why its batch ended before it
    * @param compensable whether the item's step has a compensation to run
+   * @param attempts the item step's attempts, one more for each restart of its batch
    */
   public record ItemOutcome(
       StepRef step,
@@ -383,7 +386,8 @@ public final class BatchStore {
       @Nullable JobState childState,
       @Nullable String result,
       @Nullable String error,
-      boolean compensable) {}
+      boolean compensable,
+      int attempts) {}
 
   /** A parent's wait for its batch, by the state of the batch step. */
   public sealed interface BatchWait {
@@ -495,9 +499,9 @@ public final class BatchStore {
           if (found.isPresent()) {
             StepType.CHILD_JOB_BATCH.require(stepName, parentJobId, found.get().type());
             StepRef step = new StepRef(found.get().id(), stepName);
-            List<ItemRef> stored = items(db, step);
+            List<ItemOutcome> stored = outcomes(db, step);
             if (found.get().state() != StepState.COMPENSATED) {
-              return new StartedBatch(step, stored, false);
+              return new StartedBatch(step, stored.stream().map(ItemOutcome::item).toList(), false);
             }
             return restart(db, parentJobId, step, stored, batch);
           }
@@ -600,9 +604,9 @@ public final class BatchStore {
   }
 
   private StartedBatch restart(
-      Sql db, UUID parentJobId, StepRef step, List<ItemRef> stored, NewBatch batch)
+      Sql db, UUID parentJobId, StepRef step, List<ItemOutcome> stored, NewBatch batch)
       throws SQLException {
-    List<String> storedKeys = stored.stream().map(ItemRef::key).toList();
+    List<String> storedKeys = stored.stream().map(item -> item.item().key()).toList();
     List<String> keys = batch.items().stream().map(NewItem::key).toList();
     if (!storedKeys.equals(keys)) {
       Set<String> missing = new LinkedHashSet<>(storedKeys);
@@ -661,13 +665,14 @@ public final class BatchStore {
     for (int from = 0; from < items.size(); from += CHUNK_SIZE) {
       int to = Math.min(items.size(), from + CHUNK_SIZE);
       int size = to - from;
-      var names = new String[size];
+      var stepIds = new UUID[size];
       var children = new UUID[size];
       var childNames = new String[size];
       var indexes = new Integer[size];
       for (int i = 0; i < size; i++) {
         ItemRef item = items.get(from + i);
-        names[i] = itemStepName(step.name(), item.key());
+        // the same keys in the same order: the stored step of each item
+        stepIds[i] = stored.get(from + i).step().id();
         children[i] = item.jobId();
         childNames[i] = item.jobName();
         indexes[i] = from + i;
@@ -676,7 +681,7 @@ public final class BatchStore {
           RESTART_ITEM_STEPS_SQL,
           restarted.compensable(),
           admitted,
-          Sql.array("text", names),
+          Sql.array("uuid", stepIds),
           Sql.array("uuid", children),
           Sql.array("text", childNames),
           Sql.array("integer", indexes),
@@ -826,7 +831,8 @@ public final class BatchStore {
                 row.enumValue("child_end_state", JobState.class),
                 row.string("result"),
                 row.string("last_error"),
-                row.bool("compensable")),
+                row.bool("compensable"),
+                row.integer("attempts")),
         batch.id());
   }
 
@@ -914,16 +920,36 @@ public final class BatchStore {
   }
 
   /**
-   * Reads the items of a batch with their outcomes, without changing them.
+   * Reads a batch and its items with their outcomes in one transaction, without changing them (to
+   * replay its parent's compensation).
+   *
+   * @param jobId the parent
+   * @param stepName the batch's step name
+   * @return the batch step, its state and its items, empty if it has not started
+   */
+  public Optional<StoredBatch> findStoredBatch(UUID jobId, String stepName) {
+    return access.inReadOnlyTransaction(
+        db -> {
+          Optional<BatchRow> batch = db.one(FIND_BATCH_SQL, BatchRow::from, jobId, stepName);
+          if (batch.isEmpty()) {
+            return Optional.<StoredBatch>empty();
+          }
+          StepRef step = batch.get().step();
+          return Optional.of(new StoredBatch(step, batch.get().state(), outcomes(db, step)));
+        },
+        e ->
+            new BikeschedException(
+                "Reading job batch '" + stepName + "' of bikesched job " + jobId + " failed", e));
+  }
+
+  /**
+   * A stored batch.
    *
    * @param step the batch step
-   * @return the items, in order
+   * @param state its state
+   * @param items its items with their outcomes, in order
    */
-  public List<ItemOutcome> findItems(StepRef step) {
-    return access.inReadOnlyTransaction(
-        db -> outcomes(db, step),
-        e -> new BikeschedException("Reading job batch '" + step.name() + "' failed", e));
-  }
+  public record StoredBatch(StepRef step, StepState state, List<ItemOutcome> items) {}
 
   /** Times a batch out: its unfinished item steps too, and its held items are cancelled. */
   private void timeOut(Sql db, BatchRow batch) throws SQLException {
@@ -933,11 +959,16 @@ public final class BatchStore {
         Change.step(
             batch.jobId(), batch.id(), StepAction.TIMED_OUT, StepState.TIMED_OUT, ActorType.NODE));
     endItemSteps(db, batch, StepState.TIMED_OUT, StepAction.TIMED_OUT, null, changes);
-    cancelHeld(db, batch, batch.described() + " timed out", batch.jobId(), changes);
+    cancelHeld(db, batch, batch.described() + " timed out", batch.jobId(), false, changes);
     history.record(db, changes);
   }
 
-  private void endItemSteps(
+  /**
+   * Ends the waiting item steps of a batch.
+   *
+   * @return the children of the ended steps, the batch's unfinished items
+   */
+  private List<UUID> endItemSteps(
       Sql db,
       BatchRow batch,
       StepState state,
@@ -945,23 +976,33 @@ public final class BatchStore {
       @Nullable String message,
       List<Change> changes)
       throws SQLException {
-    List<UUID> ended =
+    List<EndedStep> ended =
         db.list(
             END_ITEM_STEPS_SQL,
-            row -> row.uuid("id"),
+            row -> new EndedStep(row.uuid("id"), row.uuid("child_job_id")),
             state.name(),
             ValidationUtil.truncateMessage(message),
             batch.id());
     if (history.isEnabled()) {
-      for (UUID step : ended) {
-        changes.add(Change.step(batch.jobId(), step, action, state, ActorType.NODE));
+      for (EndedStep step : ended) {
+        changes.add(Change.step(batch.jobId(), step.id(), action, state, ActorType.NODE));
       }
     }
+    return ended.stream().map(EndedStep::childJobId).toList();
   }
 
-  /** Cancels the held items of a batch, counting them as ended. */
-  private void cancelHeld(
-      Sql db, BatchRow batch, String message, UUID causedBy, List<Change> changes)
+  /** A row of {@code END_ITEM_STEPS_SQL}. */
+  private record EndedStep(UUID id, UUID childJobId) {}
+
+  /**
+   * Cancels the held items of a batch, counting them as ended.
+   *
+   * @param endSteps whether to cancel their item steps too ({@code false} if the caller ended every
+   *     waiting item step already)
+   * @return the cancelled items
+   */
+  private Set<UUID> cancelHeld(
+      Sql db, BatchRow batch, String message, UUID causedBy, boolean endSteps, List<Change> changes)
       throws SQLException {
     List<CancelledItem> cancelled =
         db.list(
@@ -970,14 +1011,16 @@ public final class BatchStore {
             ValidationUtil.truncateMessage(message),
             batch.id());
     if (cancelled.isEmpty()) {
-      return;
+      return Set.of();
     }
     db.update(COUNT_CANCELLED_SQL, cancelled.size(), batch.id());
-    db.update(
-        CANCEL_HELD_ITEM_STEPS_SQL,
-        ValidationUtil.truncateMessage(message),
-        batch.id(),
-        Sql.array("uuid", cancelled.stream().map(CancelledItem::id).toArray()));
+    if (endSteps) {
+      db.update(
+          CANCEL_HELD_ITEM_STEPS_SQL,
+          ValidationUtil.truncateMessage(message),
+          batch.id(),
+          Sql.array("uuid", cancelled.stream().map(CancelledItem::id).toArray()));
+    }
     if (history.isEnabled()) {
       for (CancelledItem item : cancelled) {
         changes.add(
@@ -991,6 +1034,7 @@ public final class BatchStore {
                 .message(message));
       }
     }
+    return cancelled.stream().map(CancelledItem::id).collect(Collectors.toSet());
   }
 
   /** A row of {@code CANCEL_HELD_SQL}. */
@@ -1145,8 +1189,9 @@ public final class BatchStore {
             .causedBy(itemId)
             .failedFast(key));
     String message = batch.described() + " failed fast at item '" + key + "'";
-    endItemSteps(db, batch, StepState.CANCELLED, StepAction.CANCELLED, message, changes);
-    cancelHeld(db, batch, message, itemId, changes);
+    List<UUID> unfinished =
+        endItemSteps(db, batch, StepState.CANCELLED, StepAction.CANCELLED, message, changes);
+    Set<UUID> held = cancelHeld(db, batch, message, itemId, false, changes);
     List<CancelRequested> requested =
         db.list(
             REQUEST_CANCEL_ITEMS_SQL,
@@ -1157,14 +1202,25 @@ public final class BatchStore {
                     row.integer("attempts"),
                     row.string("name")),
             ValidationUtil.truncateMessage(message),
-            batch.id(),
-            batch.id());
+            Sql.array("uuid", unfinished.toArray()));
     requested(db, requested, itemId, message, changes);
     // Siblings locked right now (writing a step, ending an attempt, being claimed) were skipped:
     // asked once this transaction committed, without the batch step's lock.
-    UUID batchStepId = batch.id();
+    List<UUID> skipped = new ArrayList<>(unfinished);
+    skipped.removeAll(held);
+    skipped.removeAll(requested.stream().map(CancelRequested::id).toList());
+    if (!skipped.isEmpty()) {
+      afterCommitCancel(db, skipped, itemId, message);
+    }
+    resumeParent(db, batch.jobId(), itemId, changes);
+  }
+
+  /** Asks the siblings a fail-fast end skipped to cancel, once its transaction committed. */
+  private void afterCommitCancel(Sql db, List<UUID> skipped, UUID itemId, String message) {
     db.afterCommit(
         next -> {
+          // waits for the siblings' locks, but not for an application holding one for long
+          next.execute(AFTER_COMMIT_LOCK_TIMEOUT_SQL);
           List<Change> later = new ArrayList<>();
           requested(
               next,
@@ -1177,15 +1233,13 @@ public final class BatchStore {
                           row.integer("attempts"),
                           row.string("name")),
                   ValidationUtil.truncateMessage(message),
-                  batchStepId,
-                  batchStepId),
+                  Sql.array("uuid", skipped.toArray())),
               itemId,
               message,
               later);
           history.record(next, later);
           return null;
         });
-    resumeParent(db, batch.jobId(), itemId, changes);
   }
 
   /** Reports and records the siblings a fail-fast end asked to cancel. */
@@ -1307,7 +1361,12 @@ public final class BatchStore {
       Optional<BatchRow> batch = db.one(LOCK_BATCH_SQL, BatchRow::from, step.id());
       if (batch.isPresent()) {
         cancelHeld(
-            db, batch.get(), batch.get().described() + " ended with job " + jobId, jobId, changes);
+            db,
+            batch.get(),
+            batch.get().described() + " ended with job " + jobId,
+            jobId,
+            true,
+            changes);
       }
     }
     history.record(db, changes);

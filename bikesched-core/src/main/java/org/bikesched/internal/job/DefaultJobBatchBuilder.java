@@ -34,6 +34,11 @@ final class DefaultJobBatchBuilder<P extends @Nullable Object, R extends @Nullab
   }
 
   @Override
+  Class<?> defaultResultType() {
+    return resultType;
+  }
+
+  @Override
   public JobBatchBuilder<P, R> add(@Nullable P payload) {
     addItem(jobName, null, payload, resultType);
     return this;

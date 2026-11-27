@@ -186,7 +186,8 @@ bikesched.registerJobHandler("process-image", job -> {
 
 - The batch step, every item and their steps are stored in one transaction, fenced by the
   parent's lock, exactly once, with the payloads mapped to JSON then (a payload that cannot be
-  mapped is an `IllegalArgumentException` naming its key). Later runs return the stored batch
+  mapped is an `IllegalArgumentException` naming its key). Don't change a payload object after
+  adding it: the batch maps what it holds at `schedule()`. Later runs return the stored batch
   whatever the items are now: they are neither checked nor mapped again.
 - Keys are 1 to 200 characters and unique within the batch; item steps are named
   `stepName/key`, which no other step of the job may be named. Duplicate keys, more items than
@@ -237,6 +238,7 @@ a single item with `waitForJob` is rejected: wait for the batch.
 | `compensateWith` | each admitted item is compensated, in reverse item order; held items are cancelled once the parent starts compensating, they never ran and have nothing to compensate |
 | parent ends without waiting | its held items are cancelled; admitted items run to their end |
 | parent retried after its compensation | the `COMPENSATED` batch starts new items for the same keys, in the same order (other keys are an `IllegalStateException`) |
+| parent retried after a failure, without `compensateWith` | the batch is not compensated, so the retry gets the stored batch back: its held items were cancelled when the parent failed and stay `Cancelled`; use `compensateWith` for batches whose retry should run every item |
 | an item cancelled from elsewhere | its outcome is `Cancelled`; the batch goes on |
 
 The [history](../jobs/README.md#history) records `BATCH_STARTED` and `BATCH_ENDED` on the batch

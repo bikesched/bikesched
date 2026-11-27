@@ -150,7 +150,9 @@ locks per event name and key; no table is involved. Step writes share-lock the j
 checking that the job is still running with the writing attempt's `lock_token`, so a concurrent
 release waits for them. A job suspending at a wait for a child job locks the child's step row
 first; the child's end updates the same row, so the two serialize and the parent is never left
-waiting for a child that already ended. A batch's writes (an item ending, admitting held items, its timeout, the
-parent's suspension, cancellation and end) lock its batch step before item steps, other items
-(only with `skip locked`) and the parent's row, in that order, so they never wait for each other
-in a cycle.
+waiting for a child that already ended. A batch's writes (an item ending, admitting held items,
+its timeout, the parent's suspension, cancellation and end) lock its batch step before item steps,
+other items (only with `skip locked`, or held items, which only the batch step's holder locks) and
+the parent's row, in that order, so they never wait for each other in a cycle. The items of one
+batch end one after the other on its batch step's lock, so a batch ends at most about one item
+per commit; items of different batches don't wait for each other.

@@ -97,7 +97,7 @@ create table bikesched_jobs (
     constraint bikesched_jobs_batch_check
         check ((batch_step_id is null) = (batch_key is null)
                and (batch_step_id is null or parent_job_id is not null)
-               and (state <> 'HELD' or batch_step_id is not null)),
+               and (state <> 'HELD' or batch_step_id is not null and attempts = 0)),
     constraint bikesched_jobs_batch_key_check
         check (char_length(batch_key) between 1 and 200 and octet_length(batch_key) <= 600),
     constraint bikesched_jobs_attempts_check
@@ -303,7 +303,9 @@ create table bikesched_steps (
                and (type <> 'CHILD_JOB_BATCH' or state <> 'FAILED' or batch_fail_fast)
                and (batch_step_id is null or type = 'CHILD_JOB')
                and batch_item_count >= 0 and batch_parallelism >= 1 and batch_active_count >= 0
-               and batch_ended_count between 0 and batch_item_count),
+               and batch_ended_count between 0 and batch_item_count
+               and batch_active_count + batch_ended_count <= batch_item_count
+               and batch_active_count <= coalesce(batch_parallelism, batch_item_count)),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by_node_id is not null)),
     -- Only regular steps run handlers that can postpone the job.

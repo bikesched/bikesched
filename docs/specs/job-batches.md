@@ -801,3 +801,12 @@ None: all are decided (§11).
     `UuidUtil.timeOrdered()` keeps strictly increasing, so admissions, cancellations and the item
     steps order by `id` (the held index is `(batch_step_id, id)`). `parallelism(1)` runs the items
     one after the other in that order.
+16. Review fixes: a later run reads the results of stored items it did not add with the batch's
+    result type; fail-fast cancels its siblings by the child ids its item-step update returns (no
+    scan of `bikesched_jobs`), and the after-commit pass only asks the skipped ones, with a
+    10-second `lock_timeout`; a restart and the end of the item steps match item steps by id;
+    admissions lock held rows without `skip locked` (only the batch step's holder locks them),
+    and sibling locks are `for no key update`; CHECKs bound the counters
+    (`batch_active_count + batch_ended_count <= batch_item_count`, active at most the
+    parallelism) and keep held items unattempted. A failed parent's retry without
+    `compensateWith` keeps the stored batch, whose held items stay cancelled (documented).

@@ -119,20 +119,18 @@ final class CompensationReplay {
    */
   BatchStore.StartedBatch startedBatch(
       String stepName, @Nullable CompensationHandler<? super JobBatchItem> compensation) {
-    var found = database.batches().findBatch(jobId, stepName);
+    var found = database.batches().findStoredBatch(jobId, stepName);
     if (found.isEmpty()) {
       throw new CompensationReplayEnded(stepName);
     }
     StepRef step = found.get().step();
-    List<ItemOutcome> items = database.batches().findItems(step);
-    boolean compensated =
-        found.get() instanceof BatchWait.NotWaiting notWaiting
-            && notWaiting.state() == StepState.COMPENSATED;
+    List<ItemOutcome> items = found.get().items();
+    boolean compensated = found.get().state() == StepState.COMPENSATED;
     if (compensation != null && !compensated) {
       register(step, () -> {});
       for (ItemOutcome item : items) {
         if (item.compensable() && item.state() != StepState.COMPENSATED) {
-          var itemStep = new Step(jobId, item.step().name(), 1);
+          var itemStep = new Step(jobId, item.step().name(), item.attempts());
           var batchItem = new JobBatchItem(item.item().key(), item.item().jobId());
           register(item.step(), () -> compensation.handle(itemStep, batchItem));
         }

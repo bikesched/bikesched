@@ -193,4 +193,32 @@ class BatchesTest {
       assertThat(failures.single()).hasMessageContaining("Unit payloads")
     }
   }
+
+  @Test
+  fun `a later run reads results with the batch's type whatever it adds now`() {
+    val parent = unique("later-run")
+    val render = unique("later-render")
+    val runs = java.util.concurrent.atomic.AtomicInteger()
+    val images = CopyOnWriteArrayList<Image>()
+
+    testNode("batches").use { bikesched ->
+      bikesched.handleResultJobs<Render, Image>(render) { r -> Image(r.format, r.format.length) }
+      bikesched.handleJobs(parent) {
+        val first = runs.incrementAndGet() == 1
+        val batch =
+          startJobBatch<Render, Image>("render", render) {
+            // a later run adds nothing: the stored items count
+            if (first) item(Render("img", "webp"), key = "webp")
+          }
+        images += batch.await().result<Image>("webp").orElseThrow()
+        images += checkNotNull(batch.await().get("webp").orElseThrow())
+      }
+      val jobId = bikesched.createJob(name = parent)
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
+      }
+      assertThat(images).containsExactly(Image("webp", 4), Image("webp", 4))
+    }
+  }
 }

@@ -54,6 +54,9 @@ abstract class BaseJobBatchBuilder<B extends JobBatchSettings<B>> implements Job
   /** This builder as its interface type. */
   abstract B self();
 
+  /** The type a result is read as for a stored item this run did not add ({@code Object}: any). */
+  abstract Class<?> defaultResultType();
+
   /** Adds an item; its payload is mapped once the batch starts, never on later runs. */
   final void addItem(
       String jobName, @Nullable String key, @Nullable Object payload, Class<?> resultType) {
