@@ -19,6 +19,7 @@ import org.jspecify.annotations.Nullable;
  * @param resultJson the job's result as JSON text, {@code null} if none
  * @param parentJobId the parent job's id, {@code null} if the job is not a child
  * @param reference the job's reference, {@code null} if none
+ * @param batchKey the job's key in its batch, {@code null} if it is no batch item
  * @param jsonMapper reads the result
  */
 public record DefaultJobInfo(
@@ -29,6 +30,7 @@ public record DefaultJobInfo(
     @Nullable String resultJson,
     @Nullable UUID parentJobId,
     @Nullable String reference,
+    @Nullable String batchKey,
     JsonMapper jsonMapper)
     implements JobInfo {
 
@@ -53,6 +55,7 @@ public record DefaultJobInfo(
         + state
         + (parentJobId == null ? "" : ", parentJobId=" + parentJobId)
         + (reference == null ? "" : ", reference=" + reference)
+        + (batchKey == null ? "" : ", batchKey=" + batchKey)
         + "]";
   }
 }

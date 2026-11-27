@@ -93,5 +93,12 @@ public enum JobAction implements HistoryAction {
    * {@code error}, {@code dueAt} if it compensates again; {@code reason} after a failure handler,
    * as for {@link #FAILED}.
    */
-  COMPENSATION_FAILED
+  COMPENSATION_FAILED,
+  /**
+   * Scheduled as an item of a job batch, but held until the batch's parallelism admits it ({@code
+   * HELD}). Data: {@code reference}.
+   */
+  HELD,
+  /** A held item of a job batch admitted to run ({@code SCHEDULED}, due now). */
+  ADMITTED
 }

@@ -30,6 +30,7 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
   private final JobRegistry registry;
   private final String nodeName;
   private final RecurrenceParsers recurrenceParsers;
+  private final int maxJobBatchSize;
   private final Runnable beforeDatabaseAccess;
 
   /**
@@ -37,6 +38,7 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
    * @param registry the node's job names
    * @param nodeName the node's name, for logging
    * @param recurrenceParsers the node's recurrence parsers
+   * @param maxJobBatchSize the maximum number of items of a job batch
    * @param beforeDatabaseAccess runs first in every operation; throws if the node is closed
    */
   public JobScheduler(
@@ -44,11 +46,13 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
       JobRegistry registry,
       String nodeName,
       RecurrenceParsers recurrenceParsers,
+      int maxJobBatchSize,
       Runnable beforeDatabaseAccess) {
     this.database = database;
     this.registry = registry;
     this.nodeName = nodeName;
     this.recurrenceParsers = recurrenceParsers;
+    this.maxJobBatchSize = maxJobBatchSize;
     this.beforeDatabaseAccess = beforeDatabaseAccess;
   }
 
@@ -108,6 +112,11 @@ public final class JobScheduler implements BaseJobBuilder.Scheduler {
    */
   public void requirePayloadType(TypedJob<?> typedJob) {
     registry.requirePayloadType(typedJob);
+  }
+
+  /** The maximum number of items of a job batch started on this node. */
+  int maxJobBatchSize() {
+    return maxJobBatchSize;
   }
 
   @Override

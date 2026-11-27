@@ -35,6 +35,7 @@ import org.jspecify.annotations.Nullable;
  *     own; {@code null} for none
  * @param retryBackoff delay of the retry after a failed attempt
  * @param failureHandlerAttempts how often a failure handler runs before it is given up
+ * @param maxJobBatchSize the maximum number of items of a job batch
  * @param eventRetention how long events published through this node are kept for steps that start
  *     waiting later, unless the event sets its own retention
  * @param defaultEventTimeout maximum wait for an event for waits without a timeout of their own;
@@ -69,6 +70,7 @@ public record Settings(
     @Nullable Duration defaultJobTimeout,
     RetryBackoff retryBackoff,
     int failureHandlerAttempts,
+    int maxJobBatchSize,
     Duration eventRetention,
     @Nullable Duration defaultEventTimeout,
     Duration nodeCleanUpInterval,

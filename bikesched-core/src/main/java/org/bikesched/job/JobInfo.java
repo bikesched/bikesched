@@ -63,4 +63,12 @@ public interface JobInfo {
    * @return the parent's id; {@code null} if this job is not a child
    */
   @Nullable UUID parentJobId();
+
+  /**
+   * Returns the job's key in the batch that started it (see {@link Job#newJobBatch(String,
+   * TypedJob)}); items added without a key have their position ({@code "0"}, {@code "1"}, …).
+   *
+   * @return the key; {@code null} if this job is no batch item
+   */
+  @Nullable String batchKey();
 }

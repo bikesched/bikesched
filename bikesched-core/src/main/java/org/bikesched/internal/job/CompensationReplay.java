@@ -7,11 +7,15 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
+import org.bikesched.internal.database.BatchStore;
+import org.bikesched.internal.database.BatchStore.BatchWait;
+import org.bikesched.internal.database.BatchStore.ItemOutcome;
 import org.bikesched.internal.database.Database;
 import org.bikesched.internal.database.StepRef;
 import org.bikesched.internal.database.StepStore;
 import org.bikesched.internal.database.StepType;
 import org.bikesched.job.CompensationHandler;
+import org.bikesched.job.JobBatchItem;
 import org.bikesched.job.JobResult;
 import org.bikesched.job.Step;
 import org.bikesched.job.StepState;
@@ -106,6 +110,44 @@ final class CompensationReplay {
       case StepStore.ChildWait.NotWaiting ignored ->
           throw new CompensationReplayEnded(wait.step().name());
     };
+  }
+
+  /**
+   * A batch started as a step: its items, registering the compensation of each admitted item (in
+   * item order, so they run in reverse) and, to run after them, the batch step's own (marking it
+   * compensated, so a retry of the job starts it again).
+   */
+  BatchStore.StartedBatch startedBatch(
+      String stepName, @Nullable CompensationHandler<? super JobBatchItem> compensation) {
+    var found = database.batches().findBatch(jobId, stepName);
+    if (found.isEmpty()) {
+      throw new CompensationReplayEnded(stepName);
+    }
+    StepRef step = found.get().step();
+    List<ItemOutcome> items = database.batches().findItems(step);
+    boolean compensated =
+        found.get() instanceof BatchWait.NotWaiting notWaiting
+            && notWaiting.state() == StepState.COMPENSATED;
+    if (compensation != null && !compensated) {
+      register(step, () -> {});
+      for (ItemOutcome item : items) {
+        if (item.compensable() && item.state() != StepState.COMPENSATED) {
+          var itemStep = new Step(jobId, item.step().name(), 1);
+          var batchItem = new JobBatchItem(item.item().key(), item.item().jobId());
+          register(item.step(), () -> compensation.handle(itemStep, batchItem));
+        }
+      }
+    }
+    return new BatchStore.StartedBatch(step, items.stream().map(ItemOutcome::item).toList(), false);
+  }
+
+  /** A wait for a batch: the outcomes of its items once it ended. */
+  BatchWait.Ended batchResult(String stepName) {
+    var found = database.batches().findBatch(jobId, stepName);
+    if (found.isPresent() && found.get() instanceof BatchWait.Ended ended) {
+      return ended;
+    }
+    throw new CompensationReplayEnded(stepName);
   }
 
   /** A sleep: returns only after a completed sleep. */

@@ -83,6 +83,15 @@ public interface Job extends EventPublisher {
   @Nullable String reference();
 
   /**
+   * Returns the job's key in the batch that started it, see {@link #newJobBatch(String, TypedJob)};
+   * items added without a key have their position ({@code "0"}, {@code "1"}, …). Also in the MDC as
+   * {@code bikesched.batchKey}.
+   *
+   * @return the key; {@code null} if this job is no batch item
+   */
+  @Nullable String batchKey();
+
+  /**
    * Returns the number of attempts including the current one.
    *
    * @return the attempt number, starting at 1
@@ -564,6 +573,102 @@ public interface Job extends EventPublisher {
    */
   <T extends @Nullable Object> JobResult<T> waitForJob(
       UUID childJobId, Class<T> resultType, Duration timeout);
+
+  /**
+   * Waits for a child job of a {@link ResultJob}, like {@link #waitForJob(UUID, Class)} with its
+   * result class: {@code job.waitForJob(chargeId, CHARGE).orElseThrow()}.
+   *
+   * @param childJobId the id {@link StepJobBuilder#schedule()} returned
+   * @param resultJob the child's typed job, whose {@link ResultJob#resultType()} maps the result
+   * @param <R> the type of the child's result
+   * @return the child's outcome; never {@link JobResult.TimedOut}
+   * @throws IllegalArgumentException if the id is not one of this job's children
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
+   * @throws BikeschedException if the step cannot be read or stored
+   */
+  default <R extends @Nullable Object> JobResult<R> waitForJob(
+      UUID childJobId, ResultJob<?, R> resultJob) {
+    return waitForJob(childJobId, resultJob.resultType());
+  }
+
+  /**
+   * Waits for a child job of a {@link ResultJob} at most for {@code timeout}, like {@link
+   * #waitForJob(UUID, Class, Duration)} with its result class.
+   *
+   * @param childJobId the id {@link StepJobBuilder#schedule()} returned
+   * @param resultJob the child's typed job, whose {@link ResultJob#resultType()} maps the result
+   * @param timeout how long to wait at most, positive
+   * @param <R> the type of the child's result
+   * @return the child's outcome, or {@link JobResult.TimedOut}
+   * @throws IllegalArgumentException if the id is not one of this job's children or the timeout is
+   *     not positive
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs
+   * @throws BikeschedException if the step cannot be read or stored
+   */
+  default <R extends @Nullable Object> JobResult<R> waitForJob(
+      UUID childJobId, ResultJob<?, R> resultJob, Duration timeout) {
+    return waitForJob(childJobId, resultJob.resultType(), timeout);
+  }
+
+  /**
+   * Starts a batch of child jobs as a durable step, typed by their job's payload and result: each
+   * item is a child job of {@code job} with its own key and payload, claimed by any node handling
+   * it. The batch, its items and their steps are created in one transaction, exactly once; later
+   * runs return the stored batch. Wait for all items with {@link JobBatch#await()}:
+   *
+   * <pre>{@code
+   * List<Image> images = job.newJobBatch("render", RENDER_FORMAT)
+   *     .addAll(Format.ALL, f -> new Render(imageId, f))
+   *     .parallelism(4)
+   *     .schedule()
+   *     .await()
+   *     .orElseThrow();
+   * }</pre>
+   *
+   * @param stepName the batch's step name, unique within the job and stable across deploys
+   * @param job the items' job, with the result type of {@link JobBatch#await()}
+   * @param <P> the payload type
+   * @param <R> the result type
+   * @return a builder for the batch
+   * @throws IllegalArgumentException if the step name is invalid or the job's handler expects
+   *     another payload type
+   * @throws IllegalStateException if called while a step handler or compensation of the job runs,
+   *     or by an occurrence of a recurring job
+   */
+  <P extends @Nullable Object, R extends @Nullable Object> JobBatchBuilder<P, R> newJobBatch(
+      String stepName, ResultJob<P, R> job);
+
+  /**
+   * Starts a batch of child jobs of a job without a result type as a durable step, see {@link
+   * #newJobBatch(String, ResultJob)}; every result is {@code null}.
+   *
+   * @param stepName the batch's step name, unique within the job and stable across deploys
+   * @param job the items' job
+   * @param <P> the payload type
+   * @return a builder for the batch
+   */
+  <P extends @Nullable Object> JobBatchBuilder<P, Void> newJobBatch(
+      String stepName, TypedJob<P> job);
+
+  /**
+   * Starts a batch of child jobs of a job given by its name as a durable step, see {@link
+   * #newJobBatch(String, ResultJob)}: payloads are mapped as for {@link #newJob(String)} (JSON text
+   * with the default mapper), results read with {@link JobBatchResult#get(String, Class)}.
+   *
+   * @param stepName the batch's step name, unique within the job and stable across deploys
+   * @param jobName the items' job name
+   * @return a builder for the batch
+   */
+  JobBatchBuilder<Object, Object> newJobBatch(String stepName, String jobName);
+
+  /**
+   * Starts a batch of child jobs of different jobs as a durable step, each item naming its job, see
+   * {@link #newJobBatch(String, ResultJob)}.
+   *
+   * @param stepName the batch's step name, unique within the job and stable across deploys
+   * @return a builder for the batch
+   */
+  MixedJobBatchBuilder newJobBatch(String stepName);
 
   /**
    * Sets the job's result, mapped to JSON by the configured {@link JsonMapper} right away. Once the

@@ -25,10 +25,10 @@ data class ProcessPaymentPayload(
 )
 
 /** Typed job of new orders. */
-val PROCESS_ORDER = TypedJob("process-order", ProcessOrderPayload::class.java)
+val PROCESS_ORDER = TypedJob.of("process-order", ProcessOrderPayload::class.java)
 
 /** Typed job of payments. */
-val PROCESS_PAYMENT = TypedJob("process-payment", ProcessPaymentPayload::class.java)
+val PROCESS_PAYMENT = TypedJob.of("process-payment", ProcessPaymentPayload::class.java)
 
 /** Handles new orders: offers payment options. */
 private val processOrderHandler = TypedJobHandler<ProcessOrderPayload> { job, payload ->

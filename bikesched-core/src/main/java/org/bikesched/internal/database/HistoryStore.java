@@ -78,7 +78,8 @@ public final class HistoryStore {
                    nullif(jsonb_strip_nulls(jsonb_build_object(
                        'job', nullif(jsonb_strip_nulls(jsonb_build_object(
                            'name', case when t.subject_type = 'JOB'
-                                        then coalesce(t.subject_name, j.name) end)), '{}'),
+                                        then coalesce(t.subject_name, j.name) end,
+                           'batchKey', case when t.subject_type = 'JOB' then j.batch_key end)), '{}'),
                        'step', nullif(jsonb_strip_nulls(jsonb_build_object(
                            'name', coalesce(s.name, t.step_name))), '{}'),
                        'event', nullif(jsonb_strip_nulls(jsonb_build_object(
@@ -93,6 +94,9 @@ public final class HistoryStore {
                                         then coalesce(t.subject_name, n.name) end)), '{}'),
                        'childJob', nullif(jsonb_strip_nulls(jsonb_build_object(
                            'id', t.child_job_id, 'state', t.child_state)), '{}'),
+                       'batch', nullif(jsonb_strip_nulls(jsonb_build_object(
+                           'items', t.batch_items, 'parallelism', t.batch_parallelism,
+                           'failFast', t.batch_fail_fast, 'failedFast', t.batch_failed_fast)), '{}'),
                        'error', left(t.error, 4000),
                        'message', left(t.message, 4000),
                        'reason', t.reason,
@@ -110,12 +114,14 @@ public final class HistoryStore {
                           ?::integer[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[],
                           ?::integer[], ?::integer[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[],
                           ?::text[], ?::uuid[], ?::text[], ?::uuid[], ?::text[], ?::text[], ?::uuid[],
-                          ?::text[], ?::integer[], ?::text[])
+                          ?::text[], ?::integer[], ?::text[], ?::integer[], ?::integer[], ?::boolean[],
+                          ?::text[])
                    with ordinality as t (subject_id, id, step_id, subject_type, action, state, caused_by_id,
                                          attempt, actor_type, subject_name, step_name, error, message, reason,
                                          run, checks, due_at, wait_until, recurrence, previous_recurrence,
                                          idempotency_key, reference, child_job_id, child_state, event_id,
                                          event_name, event_key, node_id, retention, received, actor_name,
+                                         batch_items, batch_parallelism, batch_fail_fast, batch_failed_fast,
                                          position)
               left join bikesched_jobs j on t.subject_type = 'JOB' and j.id = t.subject_id
               left join bikesched_events e on t.subject_type = 'EVENT' and e.id = t.subject_id
@@ -201,6 +207,10 @@ public final class HistoryStore {
     private @Nullable UUID writer;
     private @Nullable Duration retention;
     private @Nullable Integer received;
+    private @Nullable Integer batchItems;
+    private @Nullable Integer batchParallelism;
+    private @Nullable Boolean batchFailFast;
+    private @Nullable String batchFailedFast;
 
     private Change(
         SubjectType subjectType,
@@ -383,6 +393,23 @@ public final class HistoryStore {
       return this;
     }
 
+    /**
+     * A batch a step started: its number of items, its parallelism ({@code null} for unbounded) and
+     * whether it fails fast ({@code null} unless it does).
+     */
+    public Change batch(int items, @Nullable Integer parallelism, boolean failFast) {
+      this.batchItems = items;
+      this.batchParallelism = parallelism;
+      this.batchFailFast = failFast ? Boolean.TRUE : null;
+      return this;
+    }
+
+    /** The key of the item that ended a fail-fast batch. */
+    public Change failedFast(@Nullable String key) {
+      this.batchFailedFast = key;
+      return this;
+    }
+
     /** The event a step published. */
     public Change eventId(@Nullable UUID eventId) {
       this.eventId = eventId;
@@ -463,6 +490,10 @@ public final class HistoryStore {
     var retentions = new @Nullable String[size];
     var received = new @Nullable Integer[size];
     var actorNames = new @Nullable String[size];
+    var batchItems = new @Nullable Integer[size];
+    var batchParallelisms = new @Nullable Integer[size];
+    var batchFailFasts = new @Nullable Boolean[size];
+    var batchFailedFasts = new @Nullable String[size];
     for (int i = 0; i < size; i++) {
       Change change = changes.get(i);
       subjectIds[i] = change.subjectId;
@@ -497,6 +528,10 @@ public final class HistoryStore {
       retentions[i] = retention == null ? null : retention.toString();
       received[i] = change.received;
       actorNames[i] = change.actorName;
+      batchItems[i] = change.batchItems;
+      batchParallelisms[i] = change.batchParallelism;
+      batchFailFasts[i] = change.batchFailFast;
+      batchFailedFasts[i] = change.batchFailedFast;
     }
     db.update(
         RECORD_SQL,
@@ -531,7 +566,11 @@ public final class HistoryStore {
         Sql.array("uuid", writers),
         Sql.array("text", retentions),
         Sql.array("integer", received),
-        Sql.array("text", actorNames));
+        Sql.array("text", actorNames),
+        Sql.array("integer", batchItems),
+        Sql.array("integer", batchParallelisms),
+        Sql.array("boolean", batchFailFasts),
+        Sql.array("text", batchFailedFasts));
   }
 
   /** Records one change, see {@link #record(Sql, List)}. */

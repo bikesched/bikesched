@@ -80,10 +80,12 @@ public final class StepStore {
           .formatted(JOB_LOCKED);
 
   // A step with a compensation: a completed step, or a child job step once the child was started
-  // (see JobStore.COMPENSATE_SQL).
+  // (see JobStore.COMPENSATE_SQL). A batch step is compensated (to start again on a retry) after
+  // its items, in whatever state it is.
   private static final String COMPENSABLE_STEP =
       """
-            (state = 'SUCCEEDED' or type = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT'))""";
+            (state = 'SUCCEEDED' or type = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT')
+             or type = 'CHILD_JOB_BATCH' and state <> 'COMPENSATED')""";
 
   // A child job step keeps its child's outcome (child_end_state, last_error) when it is
   // compensated.
@@ -221,7 +223,7 @@ public final class StepStore {
   private static final String FIND_CHILD_WAIT_READ_ONLY_SQL =
       """
             select id, name, state, child_end_state, result::text as result, last_error, wake_at,
-                   wake_at <= now() as deadline_passed
+                   wake_at <= now() as deadline_passed, batch_step_id is not null as batch_item
               from bikesched_steps where job_id = ? and child_job_id = ? and type = 'CHILD_JOB'""";
 
   private static final String FIND_CHILD_WAIT_SQL = FIND_CHILD_WAIT_READ_ONLY_SQL + " for update";
@@ -428,7 +430,7 @@ public final class StepStore {
   }
 
   /** A row of {@code FIND_CHILD_WAIT_SQL}. */
-  private record ChildWaitStep(ChildWait childWait, boolean deadlinePassed) {
+  private record ChildWaitStep(ChildWait childWait, boolean deadlinePassed, boolean batchItem) {
 
     static ChildWaitStep from(Sql.Row row) throws SQLException {
       StepRef step = new StepRef(row.uuid("id"), row.string("name"));
@@ -446,7 +448,7 @@ public final class StepStore {
             case RUNNING, FAILING, FAILED, COMPENSATED, CANCELLED, POSTPONED ->
                 new ChildWait.NotWaiting(step, state);
           };
-      return new ChildWaitStep(wait, row.bool("deadline_passed"));
+      return new ChildWaitStep(wait, row.bool("deadline_passed"), row.bool("batch_item"));
     }
   }
 
@@ -472,6 +474,7 @@ public final class StepStore {
           ChildWaitStep step =
               db.one(FIND_CHILD_WAIT_SQL, ChildWaitStep::from, jobId, childJobId)
                   .orElseThrow(() -> notAChild(jobId, childJobId));
+          requireNoBatchItem(jobId, childJobId, step);
           if (!(step.childWait() instanceof ChildWait.ChildWaiting wait)) {
             return step.childWait();
           }
@@ -525,12 +528,26 @@ public final class StepStore {
     return access.withConnection(
         db ->
             db.one(FIND_CHILD_WAIT_READ_ONLY_SQL, ChildWaitStep::from, jobId, childJobId)
-                .map(ChildWaitStep::childWait)
+                .map(step -> requireNoBatchItem(jobId, childJobId, step).childWait())
                 .orElseThrow(() -> notAChild(jobId, childJobId)),
         e ->
             new BikeschedException(
                 "Reading the wait for job " + childJobId + " of bikesched job " + jobId + " failed",
                 e));
+  }
+
+  private static ChildWaitStep requireNoBatchItem(UUID jobId, UUID childJobId, ChildWaitStep step) {
+    if (step.batchItem()) {
+      throw new IllegalArgumentException(
+          "Job "
+              + childJobId
+              + " is an item of the job batch of step '"
+              + step.childWait().step().name()
+              + "' of job "
+              + jobId
+              + "; wait for the batch with JobBatch.await()");
+    }
+    return step;
   }
 
   private static IllegalArgumentException notAChild(UUID jobId, UUID childJobId) {
