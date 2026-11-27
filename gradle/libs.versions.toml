@@ -30,7 +30,7 @@ google-java-format = "1.36.1"
 ktfmt = "0.64"
 
 # Libraries
-postgresql = "42.7.14"
+postgresql = "42.7.15"
 slf4j = "2.0.20"
 jspecify = "1.0.1"
 logback = "1.6.8"
