@@ -28,20 +28,17 @@ class BatchStoreTest extends AbstractStoreTest {
   }
 
   @Test
-  void itemsKnowTheirBatchStepPositionAndKey() throws SQLException {
-    insertItem("HELD", "1", "'b'");
+  void itemsKnowTheirBatchStepAndKey() throws SQLException {
+    insertItem("HELD", "'b'");
 
     assertThat(count("batch_key = 'b' and state = 'HELD'")).isEqualTo(1);
-    assertThatThrownBy(() -> insertItem("SCHEDULED", "null", "'c'"))
-        .as("an item without position")
+    assertThatThrownBy(() -> insertItem("SCHEDULED", "null"))
+        .as("an item without key")
         .hasMessageContaining("bikesched_jobs_batch_check");
-    assertThatThrownBy(() -> insertItem("SCHEDULED", "-1", "'c'"))
-        .as("a negative position")
-        .hasMessageContaining("bikesched_jobs_batch_check");
-    assertThatThrownBy(() -> insertItem("SCHEDULED", "2", "''"))
+    assertThatThrownBy(() -> insertItem("SCHEDULED", "''"))
         .as("an empty key")
         .hasMessageContaining("bikesched_jobs_batch_key_check");
-    assertThatThrownBy(() -> insertItem("SCHEDULED", "2", "repeat('k', 201)"))
+    assertThatThrownBy(() -> insertItem("SCHEDULED", "repeat('k', 201)"))
         .as("a key longer than names")
         .hasMessageContaining("bikesched_jobs_batch_key_check");
     assertThatThrownBy(
@@ -114,18 +111,16 @@ class BatchStoreTest extends AbstractStoreTest {
         .hasMessageContaining("bikesched_steps_batch_check");
   }
 
-  private void insertItem(String state, String index, String key) throws SQLException {
+  private void insertItem(String state, String key) throws SQLException {
     execute(
         "insert into bikesched_jobs (id, name, type, state, parent_job_id, batch_step_id,"
-            + " batch_index, batch_key) values (gen_random_uuid(), 'item', 'CHILD', '"
+            + " batch_key) values (gen_random_uuid(), 'item', 'CHILD', '"
             + state
             + "', '"
             + parent
             + "', '"
             + batchStep
             + "', "
-            + index
-            + ", "
             + key
             + ")");
   }

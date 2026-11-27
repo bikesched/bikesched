@@ -1062,7 +1062,7 @@ class JobBatchTest extends AbstractBikeschedTest {
     try (var connection = dataSource.getConnection();
         var select =
             connection.prepareStatement(
-                "select id from bikesched_jobs where parent_job_id = ? order by batch_index")) {
+                "select id from bikesched_jobs where parent_job_id = ? order by id")) {
       select.setObject(1, parent);
       try (var rs = select.executeQuery()) {
         while (rs.next()) {

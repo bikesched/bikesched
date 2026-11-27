@@ -58,7 +58,6 @@ create table bikesched_jobs (
     state                  text collate "C" not null default 'SCHEDULED',
     parent_job_id          uuid,                                -- the job that started this one as a child
     batch_step_id          uuid,                                -- the batch step of the parent that started it
-    batch_index            integer,                             -- its position in its batch, from 0
     batch_key              text collate "C",                    -- its key in its batch
     locked_by_node_id      uuid,
     lock_token             uuid,                                -- new for every claim: fences the claim's writes
@@ -93,14 +92,12 @@ create table bikesched_jobs (
     constraint bikesched_jobs_state_check
         check (state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'CANCELLED',
                          'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING', 'HELD')),
-    -- Items of a batch know their batch step, position and key; only they can be HELD (not claimed
-    -- until admitted by their batch's parallelism).
+    -- Items of a batch know their batch step and key; only they can be HELD (not claimed until
+    -- admitted by their batch's parallelism). Their ids are in item order.
     constraint bikesched_jobs_batch_check
-        check ((batch_step_id is null) = (batch_index is null)
-               and (batch_step_id is null) = (batch_key is null)
+        check ((batch_step_id is null) = (batch_key is null)
                and (batch_step_id is null or parent_job_id is not null)
-               and (state <> 'HELD' or batch_step_id is not null)
-               and batch_index >= 0),
+               and (state <> 'HELD' or batch_step_id is not null)),
     constraint bikesched_jobs_batch_key_check
         check (char_length(batch_key) between 1 and 200 and octet_length(batch_key) <= 600),
     constraint bikesched_jobs_attempts_check
@@ -184,9 +181,9 @@ create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
 create index bikesched_jobs_reference_idx on bikesched_jobs (reference, id)
     where reference is not null;
 
--- The held items of a batch in their order: admitting them as the batch's parallelism allows, and
--- cancelling them with their batch.
-create index bikesched_jobs_held_idx on bikesched_jobs (batch_step_id, batch_index)
+-- The held items of a batch in their order (ids are time-ordered and created in item order):
+-- admitting them as the batch's parallelism allows, and cancelling them with their batch.
+create index bikesched_jobs_held_idx on bikesched_jobs (batch_step_id, id)
     where state = 'HELD';
 
 -- Steps of a job: each named step runs once per job, its result is persisted so a retried
@@ -227,12 +224,6 @@ create table bikesched_steps (
     locked_by_node_id  uuid,                                -- the node running the step (no FK: may outlive a dead node)
     event_id           uuid,                                -- the event received or published (no FK: see above)
     child_job_id       uuid,                                -- the child job started (no FK: see above)
-    batch_step_id      uuid,                                -- the batch step of an item step (same job)
-    batch_item_count   integer,                             -- batch steps: the number of items
-    batch_parallelism  integer,                             -- batch steps: items active at once, null: all
-    batch_active_count integer,                             -- batch steps: items admitted and not ended
-    batch_ended_count  integer,                             -- batch steps: items ended
-    batch_fail_fast    boolean          not null default false, -- batch steps: end at the first failed item
     started_at         timestamptz      not null default now(),
     finished_at        timestamptz,
     wake_at            timestamptz,
@@ -246,6 +237,12 @@ create table bikesched_steps (
     event_key          text collate "C",
     result             jsonb,
     last_error         text,
+    batch_step_id      uuid,                                -- the batch step of an item step (same job)
+    batch_item_count   integer,                             -- batch steps: the number of items
+    batch_parallelism  integer,                             -- batch steps: items active at once, null: all
+    batch_active_count integer,                             -- batch steps: items admitted and not ended
+    batch_ended_count  integer,                             -- batch steps: items ended
+    batch_fail_fast    boolean          not null default false, -- batch steps: end at the first failed item
     constraint bikesched_steps_pkey primary key (id),
     constraint bikesched_steps_job_id_name_key unique (job_id, name),
     constraint bikesched_steps_job_id_fkey

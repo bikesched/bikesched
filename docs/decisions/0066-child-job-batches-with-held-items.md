@@ -35,7 +35,7 @@ Alternatives considered:
 bikesched starts a batch of child jobs as one durable step of its parent
 (`job.newJobBatch(stepName, job)…schedule()`), in one transaction fenced by the parent's lock:
 a `CHILD_JOB_BATCH` step with the item count, parallelism and mode, every item as a `CHILD` job
-with its batch step, position and key (`batch_step_id`, `batch_index`, `batch_key`), and a
+with its batch step and key (`batch_step_id`, `batch_key`; ids are created in item order), and a
 `CHILD_JOB` step per item named `stepName/key`. Later runs return the stored batch.
 
 - **Parallelism**: with `parallelism(k)`, items beyond the first `k` are stored in the new job

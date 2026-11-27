@@ -82,10 +82,9 @@ public final class BatchStore {
   private static final String INSERT_ITEMS_SQL =
       """
             insert into bikesched_jobs (id, name, type, state, payload, scheduled_at, priority, max_attempts,
-                                        timeout_millis, parent_job_id, reference, batch_step_id, batch_index,
-                                        batch_key)
+                                        timeout_millis, parent_job_id, reference, batch_step_id, batch_key)
             select t.id, t.name, 'CHILD', case when t.idx < ? then 'SCHEDULED' else 'HELD' end,
-                   t.payload::jsonb, ?, ?, ?, ?, ?, ?, ?, t.idx, t.key
+                   t.payload::jsonb, ?, ?, ?, ?, ?, ?, ?, t.key
               from unnest(?::uuid[], ?::text[], ?::text[], ?::integer[], ?::text[])
                        as t (id, name, payload, idx, key)""";
 
@@ -154,7 +153,7 @@ public final class BatchStore {
                set state = 'SCHEDULED', scheduled_at = greatest(j.scheduled_at, now()), updated_at = now()
               from (select id from bikesched_jobs
                      where batch_step_id = ? and state = 'HELD'
-                     order by batch_index
+                     order by id
                      limit ?
                        for update skip locked) h
              where j.id = h.id
@@ -193,7 +192,7 @@ public final class BatchStore {
                set state = 'CANCELLED', last_error = ?, finished_at = now(), updated_at = now()
               from (select id from bikesched_jobs
                      where batch_step_id = ? and state = 'HELD'
-                     order by batch_index
+                     order by id
                        for update skip locked) h
              where j.id = h.id
             returning j.id, j.attempts""";
@@ -229,7 +228,7 @@ public final class BatchStore {
                        and c.batch_step_id = ?
                        and c.state in ('SCHEDULED', 'WAITING', 'RUNNING') and c.compensation_end_state is null
                        and c.failure_end_state is null
-                     order by c.batch_index
+                     order by c.id
                        for update skip locked) s
              where j.id = s.id
             returning j.id, j.state, j.attempts, j.name""";
@@ -247,7 +246,7 @@ public final class BatchStore {
                        and c.batch_step_id = ?
                        and c.state in ('SCHEDULED', 'WAITING', 'RUNNING') and c.compensation_end_state is null
                        and c.failure_end_state is null and c.cancel_requested_at is null
-                     order by c.batch_index
+                     order by c.id
                        for update) s
              where j.id = s.id and j.cancel_requested_at is null
             returning j.id, j.state, j.attempts, j.name""";
@@ -699,6 +698,7 @@ public final class BatchStore {
             parentJobId, stepId, StepAction.BATCH_ENDED, StepState.SUCCEEDED, ActorType.JOB));
   }
 
+  /** The items with new ids, monotonic: the id order is the item order. */
   private static List<ItemRef> newItems(NewBatch batch) {
     List<ItemRef> items = new ArrayList<>(batch.items().size());
     for (NewItem item : batch.items()) {
