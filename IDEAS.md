@@ -154,6 +154,20 @@ All packages of `bikesched-core` are `@NullMarked` and checked with NullAway in 
   findings; drop null checks the types then exclude.
 - Outcome: nullness checked across the code base, not only in core.
 
+### Job batches started outside a job
+
+[Job batches](docs/specs/job-batches.md) are steps of a parent job, which waits for them. An
+application that wants to start a batch from a request (500 mails for a campaign) needs a small
+parent job whose handler only starts and awaits the batch.
+
+- `bikesched.newJobBatch(…)…schedule()` with `connection(…)`, in the caller's transaction, like
+  `newJob`.
+- Without a parent nobody waits: a follow-up job scheduled once the batch has ended (a
+  "continuation", as Sidekiq, Hangfire and JobRunr batches have), receiving the items' outcomes.
+- Open: where the batch lives without a parent's step (a table of its own), and whether the
+  continuation is worth a second code path next to a parent job.
+- Outcome: batches started directly from application code, without a wrapper job.
+
 ### Handler versions
 
 Jobs live across deploys and replay with the handler code deployed by then.
