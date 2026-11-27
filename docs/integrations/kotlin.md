@@ -83,15 +83,24 @@ poll or compensation runs in a nested `runBlocking` on the same thread.
 
 - **Timeouts cancel the coroutine.** The job's timeout (and a stopping node) interrupts the job's
   thread, which cancels the handler's coroutine: `delay` and other suspending calls throw a
-  `CancellationException`, and the attempt ends as timed out. Code that ignores cancellation is
-  abandoned by the hard timeout, as a blocking handler is.
-- **Call `Job` methods from the handler's coroutine.** `step`, `waitForEvent`, `sleep` and the
-  other `Job` methods must run on the job's thread: not inside `withContext(Dispatchers.IO)` or a
-  coroutine launched into another scope. Switch dispatchers inside a step instead.
-- **Concurrency inside a handler is limited to steps.** Coroutines the handler launches in its own
-  scope pause while a step runs (the nested `runBlocking` blocks the thread); run concurrent work
-  inside one step, as in the `prices` step above. Event waits, sleeps and polls end the attempt and
-  hold no thread, so they need no suspending variant.
+  `CancellationException`, and the attempt ends as timed out. An interrupt during a step cancels
+  the step and the handler, also if the handler catches the step's exception. Code that ignores
+  cancellation is abandoned by the hard timeout, as a blocking handler is.
+- **Call blocking code directly.** The job's thread is a virtual thread, so blocking calls (JDBC,
+  a blocking HTTP client) need no `Dispatchers.IO`; on the job's thread the timeout interrupts
+  them. Cancelling `withContext(Dispatchers.IO) { … }` does not interrupt the blocking call on the
+  IO thread, so the attempt then waits for it; use `runInterruptible(Dispatchers.IO) { … }` if you
+  switch anyway. The MDC of the job does not follow a dispatcher switch either (add
+  `MDCContext()` from `kotlinx-coroutines-slf4j` for that).
+- **Steps run one at a time.** Coroutines the handler launches keep running while a step runs
+  (the step's nested `runBlocking` runs them too), but only one step, event wait, sleep or poll of
+  a job runs at a time: a second one started meanwhile fails the attempt with an
+  `IllegalStateException`. Run concurrent work inside one step, as in the `prices` step above.
+- **Don't swallow a wait.** An event wait, sleep or poll that is not ready ends the attempt with an
+  internal `Error`. Let it propagate: `runCatching { waitForEvent(…) }` or a wait in a
+  `supervisorScope { launch { … } }` swallows it, and the code after the wait runs although the job
+  is suspended. Event waits, sleeps and polls hold no thread while they wait, so they need no
+  suspending variant.
 
 ## Helpers for the Java API
 

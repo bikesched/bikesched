@@ -40,6 +40,7 @@ private val processOrderHandler = TypedJobHandler<ProcessOrderPayload> { job, pa
   val totalAmount = Queries.findOrderTotal(orderId)
     ?: throw IllegalStateException("Order ${payload.orderId} not found")
 
+  // Step handlers are suspend lambdas: they call the gateway's suspending functions directly.
   val paymentOptions = job.step<PaymentOptions>("offer-payment-options") {
     MockPaymentService.getPaymentOptions(totalAmount)
   }

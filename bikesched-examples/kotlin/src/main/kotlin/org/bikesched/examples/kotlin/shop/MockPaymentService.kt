@@ -4,6 +4,8 @@ package org.bikesched.examples.kotlin.shop
 import java.util.UUID
 import javax.money.MonetaryAmount
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 
 /**
@@ -11,6 +13,8 @@ import org.slf4j.LoggerFactory
  * fails three times (with the default of three attempts the job then fails for good).
  *
  * It remembers the failed attempts per order id and forgets the order after the successful payment.
+ * Its functions suspend like the calls of a real gateway's coroutine client (e.g. Ktor's), with a
+ * short `delay` as the network round trip; the job steps call them directly.
  */
 object MockPaymentService {
 
@@ -22,6 +26,9 @@ object MockPaymentService {
   private val failuresLeft = ConcurrentHashMap<String, Int>()
   private var ordersSeen = 0
 
+  /** The simulated network round trip of a gateway call. */
+  private val latency = 200.milliseconds
+
   /**
    * Process a payment for the given order.
    *
@@ -29,8 +36,9 @@ object MockPaymentService {
    * @param paymentOptionId the payment option (e.g., "credit_card" or "buy_now_pay_later")
    * @return the payment result
    */
-  fun processPayment(orderId: String, paymentOptionId: String): PaymentResult {
+  suspend fun processPayment(orderId: String, paymentOptionId: String): PaymentResult {
     log.info("Processing payment for order {} with option {}", orderId, paymentOptionId)
+    delay(latency)
 
     val left =
       synchronized(this) {
@@ -57,7 +65,8 @@ object MockPaymentService {
    *
    * If the amount is below 100 EUR, "buy_now_pay_later" is offered in addition to "credit_card".
    */
-  fun getPaymentOptions(totalAmount: MonetaryAmount): PaymentOptions {
+  suspend fun getPaymentOptions(totalAmount: MonetaryAmount): PaymentOptions {
+    delay(latency)
     val options = mutableListOf<PaymentOption>()
 
     // Credit card is always available

@@ -10,6 +10,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
@@ -132,6 +133,88 @@ class SuspendingHandlersTest {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.FAILED)
       }
       assertThat(handled).containsExactlyInAnyOrder("released r-o-2", "failed o-2")
+    }
+  }
+
+  @Test
+  fun `a timeout during a step also cancels the handler catching the step's exception`() {
+    val name = unique("suspend-step-timeout")
+    val outcomes = CopyOnWriteArrayList<String>()
+
+    testNode("suspend-step-timeout").use { bikesched ->
+      val jobId =
+        bikesched.createJob(name = name, timeout = 200.milliseconds, maxAttempts = 1) {
+          runCatching { step<Unit>("call") { delay(1.minutes) } }
+            .onFailure { outcomes += "step failed" }
+          try {
+            delay(1.minutes)
+            outcomes += "handler continued"
+          } catch (e: CancellationException) {
+            outcomes += "handler cancelled"
+            throw e
+          }
+        }
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.FAILED)
+      }
+      assertThat(outcomes).containsExactly("step failed", "handler cancelled")
+    }
+  }
+
+  @Test
+  fun `an event wait suspends the job from another dispatcher and from an async child`() {
+    val name = unique("suspend-wait-context")
+    val event = unique("suspend-wait-event")
+    val received = CopyOnWriteArrayList<Int>()
+
+    testNode("suspend-wait-context").use { bikesched ->
+      bikesched.handleJobs(name) {
+        received += withContext(Dispatchers.IO) { waitForEvent<Int>("io", event, "io") }
+        received += coroutineScope { async { waitForEvent<Int>("async", event, "async") }.await() }
+      }
+      val jobId = bikesched.createJob(name = name)
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.WAITING)
+      }
+      bikesched.publishEvent(name = event, key = "io", payload = 1)
+      await().untilAsserted { assertThat(received).containsExactly(1) }
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.WAITING)
+      }
+      bikesched.publishEvent(name = event, key = "async", payload = 2)
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
+      }
+      // The first wait's payload is received again when the job replays for the second event.
+      assertThat(received).containsExactly(1, 1, 2)
+    }
+  }
+
+  @Test
+  fun `steps launched in parallel fail the attempt`() {
+    val name = unique("suspend-parallel")
+    val errors = CopyOnWriteArrayList<String?>()
+
+    testNode("suspend-parallel").use { bikesched ->
+      val jobId =
+        bikesched.createJob(name = name, maxAttempts = 1, onFailure = { errors += error() }) {
+          coroutineScope {
+            launch { step<Unit>("a") { delay(100.milliseconds) } }
+            launch { step<Unit>("b") { delay(100.milliseconds) } }
+          }
+        }
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.FAILED)
+      }
+      assertThat(errors)
+        .singleElement()
+        .asString()
+        .contains("IllegalStateException")
+        .contains("step 'a'")
     }
   }
 }

@@ -35,8 +35,8 @@ import org.bikesched.job.TypedJobHandler
  * A job without payload fails with an [IllegalStateException] unless [T] is nullable.
  *
  * The handler may call suspending functions: like every handler lambda of this module it runs with
- * `runBlocking` on the job's own virtual thread, and the job's timeout cancels it. Call the [Job]'s
- * methods from the handler's coroutine, not from another dispatcher.
+ * `runBlocking` on the job's own virtual thread, and the job's timeout cancels it. Blocking code
+ * can be called directly: the timeout interrupts it on the job's thread, not on another dispatcher.
  *
  * @return this instance
  * @throws IllegalArgumentException if the name is blank or already has a handler

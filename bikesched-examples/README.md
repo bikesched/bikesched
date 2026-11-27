@@ -485,8 +485,10 @@ The order routes store the order and schedule `process-order` in one Exposed tra
 [transactional outbox](../docs/patterns.md#transactional-outbox): the job exists only if the order
 does.
 
-`MockPaymentService` fails the first order's payment twice then succeeds, and every further
-order's payment always fails, so `ShopExample` shows both outcomes: the first order recovers via
+`MockPaymentService` stands in for a payment gateway with a coroutine client: its functions
+suspend, and the steps call them directly, since every handler of the Kotlin extension is a
+[suspend lambda](../docs/integrations/kotlin.md#suspending-functions). It fails the first order's
+payment twice then succeeds, and every further order's payment always fails, so `ShopExample` shows both outcomes: the first order recovers via
 retry, the second ends up `FAILED` through the `onFailure` handler.
 
 ## Spring Boot

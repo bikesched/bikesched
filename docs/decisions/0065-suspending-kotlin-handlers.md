@@ -37,12 +37,17 @@ Alternatives considered:
 
 Every lambda of the Kotlin DSL is a suspend lambda. bikesched runs each with `runBlocking` on the
 calling thread, the job's virtual thread; a step, poll or compensation runs in a nested
-`runBlocking` on the same thread. `bikesched-kotlin` depends on `kotlinx-coroutines-core`
-(`api`).
+`runBlocking` on the same thread. `bikesched-kotlin` depends on `kotlinx-coroutines-core` as
+`api`, although no public signature mentions its types (suspend function types are the stdlib's):
+nearly every suspending handler calls it (`delay`, `withContext`, `async`).
 
 The interrupt of the job's timeout or of a stopping node cancels the coroutine: `runBlocking`
-throws `InterruptedException`, which the job handles like an interrupted blocking handler. Code
-ignoring cancellation is still abandoned by the hard timeout.
+throws `InterruptedException`, which the job handles like an interrupted blocking handler. A
+nested `runBlocking` of a step takes the interrupt and clears the thread's flag, so it also cancels
+the coroutine job of the outermost handler (kept in a `ThreadLocal`): a handler catching the step's
+exception is cancelled at its next suspension. The step's coroutine is no child of the handler's,
+so a step failure the handler catches does not cancel the handler. Code ignoring cancellation is
+still abandoned by the hard timeout.
 
 ## Consequences
 
@@ -50,6 +55,8 @@ ignoring cancellation is still abandoned by the hard timeout.
   compile unchanged. Function references of non-suspend functions and compiled callers need a
   rebuild (a binary break, fine at 0.x).
 - `bikesched-kotlin` no longer depends on the Kotlin standard library only.
-- `Job` methods must be called from the handler's own coroutine, not from another dispatcher
-  (`withContext(Dispatchers.IO)`) or a coroutine launched into another scope; coroutines launched
-  in the handler's scope pause while a step runs, since the nested `runBlocking` blocks the thread.
+- Code moved to another dispatcher (`withContext(Dispatchers.IO)`) loses the job's MDC and is not
+  interrupted by the timeout; blocking code is best called directly on the job's virtual thread.
+- The nested `runBlocking` of a step shares the thread's event loop, so coroutines the handler
+  launched keep running during a step. Steps of one job still run one at a time: a second step
+  started meanwhile fails the attempt (`StepGuard`).
