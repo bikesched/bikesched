@@ -58,10 +58,10 @@ public inline fun <reified T> Job.payload(): T = payload(T::class.java) as T
  */
 public inline fun <reified T> Job.step(
   name: String,
-  noinline compensation: ((step: Step, result: T) -> Unit)? = null,
+  noinline compensation: (suspend (step: Step, result: T) -> Unit)? = null,
   retryBackoff: RetryBackoff? = null,
-  noinline onFailure: ((failing: FailingStep<T>) -> Unit)? = null,
-  noinline handler: (Step) -> T,
+  noinline onFailure: (suspend (failing: FailingStep<T>) -> Unit)? = null,
+  noinline handler: suspend (Step) -> T,
 ): T = runStep(this, name, T::class.java, compensation, retryBackoff, onFailure, handler) as T
 
 /**
@@ -76,10 +76,10 @@ internal fun <T> runStep(
   job: Job,
   name: String,
   type: Class<T>,
-  compensation: ((Step, T) -> Unit)?,
+  compensation: (suspend (Step, T) -> Unit)?,
   retryBackoff: RetryBackoff?,
-  onFailure: ((FailingStep<T>) -> Unit)?,
-  handler: (Step) -> T,
+  onFailure: (suspend (FailingStep<T>) -> Unit)?,
+  handler: suspend (Step) -> T,
 ): Any? {
   if (type == Unit::class.java) {
     // A Unit step runs as a step without result (Void), so no Unit reaches the JsonMapper.
@@ -89,14 +89,16 @@ internal fun <T> runStep(
     }
     if (onFailure != null) {
       @Suppress("UNCHECKED_CAST")
-      builder.onFailure { failing -> onFailure(UnitFailingStep(failing) as FailingStep<T>) }
+      builder.onFailure { failing ->
+        blocking { onFailure(UnitFailingStep(failing) as FailingStep<T>) }
+      }
     }
     if (compensation != null) {
       @Suppress("UNCHECKED_CAST")
-      builder.compensateWith { step, _ -> compensation(step, Unit as T) }
+      builder.compensateWith { step, _ -> blocking { compensation(step, Unit as T) } }
     }
     builder.run { step ->
-      handler(step)
+      blocking { handler(step) }
       null
     }
     return Unit
@@ -106,13 +108,13 @@ internal fun <T> runStep(
     builder.retryBackoff(retryBackoff)
   }
   if (onFailure != null) {
-    builder.onFailure { failing -> onFailure(failing) }
+    builder.onFailure { failing -> blocking { onFailure(failing) } }
   }
   if (compensation != null) {
     @Suppress("UNCHECKED_CAST")
-    builder.compensateWith { step, result -> compensation(step, result as T) }
+    builder.compensateWith { step, result -> blocking { compensation(step, result as T) } }
   }
-  return builder.run { handler(it) }
+  return builder.run { step -> blocking { handler(step) } }
 }
 
 /** A failing [Unit] step, run as a `Void` step: resolving it with [Unit] stores no result. */

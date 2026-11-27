@@ -53,7 +53,7 @@ what the library does; this file covers how to change it.
 |---|---|
 | `bikesched-core` | the library; runtime dependencies: PostgreSQL JDBC driver and `slf4j-api` only, plus the annotations-only `jspecify` (`api`) |
 | `bikesched-jackson` | `JacksonJsonMapper` (Java only, package `org.bikesched.jackson`); depends on core and `jackson-databind` (both `api`) |
-| `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core and the Kotlin stdlib only (tests use bikesched-jackson) |
+| `bikesched-kotlin` | Kotlin extensions on top of the core API; depends on core, the Kotlin stdlib and kotlinx-coroutines-core only (handlers are suspend lambdas run with `runBlocking` on the job's thread, ADR 0065; tests use bikesched-jackson) |
 | `bikesched-annotations` | `@JobHandler` and `JobHandlers` (Java only, package `org.bikesched.annotation`): job handlers declared as annotated methods, invoked via `MethodHandle`; depends on core only (`api`; tests use bikesched-jackson) |
 | `bikesched-cron` | `CronRecurrence` and `CronRecurrenceParser` (Java only, package `org.bikesched.cron`): cron expressions parsed with cron-utils; depends on core and `cron-utils` only (both `api`, cron-utils is an automatic module; tests use bikesched-annotations) |
 | `bikesched-micrometer` | `MicrometerJobListener` and `MicrometerEventListener` (Java only, package `org.bikesched.micrometer`): meters from the `JobListener` and `EventListener` SPIs; depends on core and `micrometer-core` (both `api`; Micrometer is an automatic module, hence the suppressed `requires-automatic` lints in `module-info.java`) |

@@ -6,7 +6,9 @@ weight: 2
 # Kotlin
 
 The `bikesched-kotlin` module adds Kotlin extensions on top of the Java API, in the package
-`org.bikesched.kotlin`; it depends on `bikesched-core` and the Kotlin standard library only.
+`org.bikesched.kotlin`; it depends on `bikesched-core`, the Kotlin standard library and
+`kotlinx-coroutines-core`. Every handler lambda is a suspend lambda, so handlers call suspending
+functions directly, see [Suspending functions](#suspending-functions).
 
 ```kotlin
 // bikesched-jackson with Jackson's Kotlin module (tools.jackson.module:jackson-module-kotlin)
@@ -58,6 +60,47 @@ The optional trailing handler of `createJob` and `createRecurringJob` is registe
 unless it already has one; with a `payload` it gets the payload as its type, otherwise only the
 `Job`. `onFailure = { payload -> … }` (with the `FailedJob` as receiver) registers the name's
 failure handler the same way.
+
+## Suspending functions
+
+Job handlers, failure handlers, steps, polls, compensations and the `onFailure` handlers are
+suspend lambdas: they call suspending functions directly, e.g. a Ktor client or a coroutine-based
+repository:
+
+```kotlin
+bikesched.handleJobs<Order>("order") { order ->
+    delay(1.seconds)                                 // any suspending call
+    val quote = step<Quote>("quote") { shippingClient.quote(order) }   // a suspending HTTP call
+    val prices = step<List<Int>>("prices") {
+        coroutineScope { order.items.map { async { catalog.price(it) } }.awaitAll() }
+    }
+}
+```
+
+Each handler runs with `runBlocking` on the job's own virtual thread, so blocking it costs no
+platform thread, and the job's MDC and its durable waits behave as in a blocking handler. A step,
+poll or compensation runs in a nested `runBlocking` on the same thread.
+
+- **Timeouts cancel the coroutine.** The job's timeout (and a stopping node) interrupts the job's
+  thread, which cancels the handler's coroutine: `delay` and other suspending calls throw a
+  `CancellationException`, and the attempt ends as timed out. An interrupt during a step cancels
+  the step and the handler, also if the handler catches the step's exception. Code that ignores
+  cancellation is abandoned by the hard timeout, as a blocking handler is.
+- **Call blocking code directly.** The job's thread is a virtual thread, so blocking calls (JDBC,
+  a blocking HTTP client) need no `Dispatchers.IO`; on the job's thread the timeout interrupts
+  them. Cancelling `withContext(Dispatchers.IO) { … }` does not interrupt the blocking call on the
+  IO thread, so the attempt then waits for it; use `runInterruptible(Dispatchers.IO) { … }` if you
+  switch anyway. The MDC of the job does not follow a dispatcher switch either (add
+  `MDCContext()` from `kotlinx-coroutines-slf4j` for that).
+- **Steps run one at a time.** Coroutines the handler launches keep running while a step runs
+  (the step's nested `runBlocking` runs them too), but only one step, event wait, sleep or poll of
+  a job runs at a time: a second one started meanwhile fails the attempt with an
+  `IllegalStateException`. Run concurrent work inside one step, as in the `prices` step above.
+- **Don't swallow a wait.** An event wait, sleep or poll that is not ready ends the attempt with an
+  internal `Error`. Let it propagate: `runCatching { waitForEvent(…) }` or a wait in a
+  `supervisorScope { launch { … } }` swallows it, and the code after the wait runs although the job
+  is suspended. Event waits, sleeps and polls hold no thread while they wait, so they need no
+  suspending variant.
 
 ## Helpers for the Java API
 

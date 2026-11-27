@@ -44,7 +44,7 @@ public fun Job.startJob(
   maxAttempts: Int? = null,
   timeout: Duration? = null,
   reference: String? = null,
-  compensation: ((step: Step, childJobId: UUID) -> Unit)? = null,
+  compensation: (suspend (step: Step, childJobId: UUID) -> Unit)? = null,
 ): UUID {
   require(at == null || delay == null) { "at and delay are mutually exclusive" }
   val builder =
@@ -52,7 +52,7 @@ public fun Job.startJob(
       .applySettingsTo(newJob(name))
   stepName?.let(builder::stepName)
   compensation?.let { handler ->
-    builder.compensateWith { step, id -> handler(step, checkNotNull(id)) }
+    builder.compensateWith { step, id -> blocking { handler(step, checkNotNull(id)) } }
   }
   return when {
     at != null -> builder.schedule(at)

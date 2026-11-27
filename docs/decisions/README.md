@@ -75,3 +75,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0062](0062-one-history-with-actions-and-actors.md) | One history with actions and actors | Accepted |
 | [0063](0063-c-collation-for-identifiers.md) | C collation for identifiers | Accepted |
 | [0064](0064-remote-job-names.md) | Remote job names | Accepted |
+| [0065](0065-suspending-kotlin-handlers.md) | Suspending Kotlin handlers | Accepted |
