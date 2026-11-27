@@ -712,8 +712,8 @@ Core (`AbstractBikeschedTest`, per-test job names):
 
 Store level (`AbstractStoreTest`): the batch insert in chunks of 1,000 (2,500 items), the CHECKs
 of the new columns and state, the end hook with and without `batch_step_id`, the history actions.
-Kotlin: start and await, reified results. Stress tests: a batch of 5,000 items (the limit raised) with
-`parallelism(50)` across three nodes, with a database restart during the run.
+Kotlin: start and await, reified results. Stress tests: a batch of 5,000 items (the limit
+raised) with `parallelism(50)` across three nodes, with a database restart during the run.
 
 ## 9. Open questions
 
