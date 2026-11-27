@@ -441,11 +441,13 @@ final class AdminHandler {
           .put("next", null);
     }
     String node = blankToNull(params.get("node"));
+    String batch = blankToNull(params.get("batch"));
     JobQuery query =
         JobQuery.newest(limit)
             .withName(blankToNull(params.get("name")))
             .withReference(blankToNull(params.get("reference")))
-            .withNode(node == null ? null : id(node));
+            .withNode(node == null ? null : id(node))
+            .withBatch(batch == null ? null : id(batch));
     String states = params.get("state");
     if (states != null && !states.isBlank()) {
       Set<JobState> set = EnumSet.noneOf(JobState.class);
@@ -462,7 +464,13 @@ final class AdminHandler {
     if (before != null) {
       query =
           new JobQuery(
-              query.name(), query.reference(), query.states(), query.nodeId(), id(before), limit);
+              query.name(),
+              query.reference(),
+              query.states(),
+              query.nodeId(),
+              query.batchStepId(),
+              id(before),
+              limit);
     }
     List<JobSummary> jobs = admin.findJobs(query);
     String next = jobs.size() == limit ? jobs.getLast().id().toString() : null;

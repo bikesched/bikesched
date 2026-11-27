@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  * @param jobId the job the step belongs to
  * @param name the step name, unique within its job
  * @param type what the step does: {@code STEP}, {@code SLEEP}, {@code EVENT_WAIT}, {@code
- *     EVENT_PUBLISH}, {@code CHILD_JOB} or {@code POLL}
+ *     EVENT_PUBLISH}, {@code CHILD_JOB}, {@code CHILD_JOB_BATCH} or {@code POLL}
  * @param state the step's state, e.g. {@code RUNNING}, {@code WAITING} or {@code SUCCEEDED}
  * @param attempts the attempts of the step (the checks of a poll)
  * @param failureAttempts the runs of its failure handler while it was {@code FAILING}
@@ -35,6 +35,7 @@ import org.jspecify.annotations.Nullable;
  * @param childJobState the child's current state, or its final state once it ended; {@code null}
  *     for other types
  * @param childJobExists whether the child job still exists (it is deleted after the job retention)
+ * @param batch the progress of a {@code CHILD_JOB_BATCH} step; {@code null} for other types
  */
 public record StepInfo(
     UUID id,
@@ -57,4 +58,5 @@ public record StepInfo(
     @Nullable UUID childJobId,
     @Nullable String childJobName,
     @Nullable JobState childJobState,
-    boolean childJobExists) {}
+    boolean childJobExists,
+    @Nullable StepBatch batch) {}

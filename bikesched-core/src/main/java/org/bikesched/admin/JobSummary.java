@@ -31,6 +31,7 @@ import org.jspecify.annotations.Nullable;
  * @param reference the external entity the job is about; may be {@code null}
  * @param nodeId the node running the job; {@code null} unless it is running
  * @param nodeName that node's name; {@code null} unless it is running
+ * @param batchKey the job's key in the batch that started it; {@code null} for other jobs
  */
 public record JobSummary(
     UUID id,
@@ -51,4 +52,5 @@ public record JobSummary(
     @Nullable String idempotencyKey,
     @Nullable String reference,
     @Nullable UUID nodeId,
-    @Nullable String nodeName) {}
+    @Nullable String nodeName,
+    @Nullable String batchKey) {}

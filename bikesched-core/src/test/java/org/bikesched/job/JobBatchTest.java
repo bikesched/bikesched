@@ -156,16 +156,15 @@ class JobBatchTest extends AbstractBikeschedTest {
       awaitState(parent, "SUCCEEDED");
 
       assertThat(maxRunning.get()).isLessThanOrEqualTo(2);
-      assertThat(order.subList(2, 6))
-          .as("admitted in item order")
-          .containsExactly("2", "3", "4", "5");
-      List<UUID> items = itemIds(parent);
-      long admitted =
-          items.stream()
-              .filter(
-                  id -> HistoryTesting.actions(bikesched.findJobHistory(id)).contains("ADMITTED"))
-              .count();
-      assertThat(admitted).isEqualTo(4);
+      assertThat(order.subList(0, 2)).containsExactlyInAnyOrder("0", "1");
+      // items admitted together may start in any order; their admission follows the item order
+      List<java.time.Instant> admittedAt =
+          itemIds(parent).stream()
+              .flatMap(id -> bikesched.findJobHistory(id).stream())
+              .filter(entry -> HistoryTesting.action(entry).equals("ADMITTED"))
+              .map(org.bikesched.history.HistoryEntry::createdAt)
+              .toList();
+      assertThat(admittedAt).as("admitted in item order").hasSize(4).isSorted();
     }
   }
 
@@ -598,6 +597,301 @@ class JobBatchTest extends AbstractBikeschedTest {
       awaitState(parent, "SUCCEEDED");
 
       assertThat(receipt.get()).isEqualTo(json("receipt"));
+    }
+  }
+
+  @Test
+  void itemsRunOnEveryNode() throws Exception {
+    var item = TypedJob.of("batch-nodes-item", String.class);
+    var nodes = new CopyOnWriteArrayList<String>();
+    try (Bikesched first = testNode("node-batch-nodes-1").maxConcurrentJobs(2).build();
+        Bikesched second = testNode("node-batch-nodes-2").maxConcurrentJobs(2).build()) {
+      for (Bikesched node : List.of(first, second)) {
+        String nodeName = node == first ? "first" : "second";
+        node.registerJobHandler(
+            item,
+            (job, payload) -> {
+              nodes.add(nodeName);
+              Thread.sleep(100);
+            });
+      }
+      UUID parent =
+          first
+              .newJob("batch-nodes")
+              .handler(
+                  job ->
+                      job.newJobBatch("items", item)
+                          .addAll(IntStream.range(0, 12).mapToObj(i -> json("p" + i)).toList())
+                          .schedule()
+                          .await()
+                          .orElseThrow())
+              .schedule();
+      awaitState(parent, "SUCCEEDED");
+
+      assertThat(nodes).hasSize(12).contains("first", "second");
+    }
+  }
+
+  @Test
+  void itemsEndingAtTheSameTimeResumeTheParentOnce() throws Exception {
+    var item = TypedJob.of("batch-race-item", String.class);
+    var parentRuns = new AtomicInteger();
+    var barrier = new java.util.concurrent.CyclicBarrier(4);
+    try (Bikesched bikesched = testNode("node-batch-race").maxConcurrentJobs(8).build()) {
+      bikesched.registerJobHandler(item, (job, payload) -> barrier.await(10, TimeUnit.SECONDS));
+      UUID parent =
+          bikesched
+              .newJob("batch-race")
+              .handler(
+                  job -> {
+                    parentRuns.incrementAndGet();
+                    job.newJobBatch("items", item)
+                        .addAll(IntStream.range(0, 4).mapToObj(i -> json("p" + i)).toList())
+                        .schedule()
+                        .await()
+                        .orElseThrow();
+                  })
+              .schedule();
+      awaitState(parent, "SUCCEEDED");
+      Thread.sleep(300);
+
+      assertThat(parentRuns).as("started once, resumed once").hasValue(2);
+    }
+  }
+
+  @Test
+  void itemsFailingAtTheSameTimeEndAFailFastBatchOnce() throws Exception {
+    var item = TypedJob.of("batch-fail-race-item", String.class);
+    var parentRuns = new AtomicInteger();
+    var barrier = new java.util.concurrent.CyclicBarrier(3);
+    var outcome = new AtomicReference<JobBatchResult<Void>>();
+    try (Bikesched bikesched =
+        testNode("node-batch-fail-race")
+            .maxConcurrentJobs(8)
+            .history(Duration.ofHours(1))
+            .build()) {
+      bikesched.registerJobHandler(
+          item,
+          (job, payload) -> {
+            barrier.await(10, TimeUnit.SECONDS);
+            throw new IllegalStateException("failing together");
+          });
+      UUID parent =
+          bikesched
+              .newJob("batch-fail-race")
+              .handler(
+                  job -> {
+                    parentRuns.incrementAndGet();
+                    outcome.set(
+                        job.newJobBatch("items", item)
+                            .addAll(IntStream.range(0, 3).mapToObj(i -> json("p" + i)).toList())
+                            .maxAttempts(1)
+                            .failFast()
+                            .schedule()
+                            .await());
+                  })
+              .schedule();
+      awaitState(parent, "SUCCEEDED");
+      Thread.sleep(300);
+
+      assertThat(parentRuns).hasValue(2);
+      assertThat(outcome.get().isAllSucceeded()).isFalse();
+      assertThat(
+              HistoryTesting.actions(bikesched.findJobHistory(parent)).stream()
+                  .filter(action -> action.equals("items BATCH_ENDED"))
+                  .count())
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void aSleepingParentIsNotWokenByEveryItem() throws Exception {
+    var item = TypedJob.of("batch-sleep-item", String.class);
+    var parentRuns = new AtomicInteger();
+    try (Bikesched bikesched = testNode("node-batch-sleep").maxConcurrentJobs(8).build()) {
+      bikesched.registerJobHandler(item, (job, payload) -> {});
+      UUID parent =
+          bikesched
+              .newJob("batch-sleep")
+              .handler(
+                  job -> {
+                    parentRuns.incrementAndGet();
+                    JobBatch<Void> batch =
+                        job.newJobBatch("items", item)
+                            .addAll(IntStream.range(0, 6).mapToObj(i -> json("p" + i)).toList())
+                            .schedule();
+                    job.sleep("pause", Duration.ofSeconds(1));
+                    batch.await().orElseThrow();
+                  })
+              .schedule();
+      awaitState(parent, "SUCCEEDED");
+
+      // the start, at most one replay at the batch's last item, and the end of the sleep
+      assertThat(parentRuns.get()).isBetween(2, 3);
+    }
+  }
+
+  @Test
+  void aCompensatedBatchStartsNewItemsWhenTheParentIsRetried() throws Exception {
+    var item = TypedJob.of("batch-retry-item", String.class);
+    var retried = new java.util.concurrent.atomic.AtomicBoolean();
+    var otherKeys = new java.util.concurrent.atomic.AtomicBoolean();
+    var compensated = new CopyOnWriteArrayList<UUID>();
+    var failure = new AtomicReference<Throwable>();
+    try (Bikesched bikesched = testNode("node-batch-retry").build()) {
+      bikesched.registerJobHandler(item, (job, payload) -> {});
+      UUID parent =
+          bikesched
+              .newJob("batch-retry")
+              .maxAttempts(1)
+              .handler(
+                  job -> {
+                    var builder = job.newJobBatch("items", item).add("a", json("a"));
+                    if (otherKeys.get()) {
+                      builder.add("b", json("b"));
+                    }
+                    try {
+                      builder
+                          .compensateWith((step, batchItem) -> compensated.add(batchItem.jobId()))
+                          .schedule()
+                          .await()
+                          .orElseThrow();
+                    } catch (IllegalStateException e) {
+                      failure.set(e);
+                      throw e;
+                    }
+                    if (!retried.get()) {
+                      throw new IllegalStateException("fails after the batch");
+                    }
+                  })
+              .schedule();
+      awaitState(parent, "FAILED");
+      assertThat(compensated).hasSize(1);
+      UUID firstItem = compensated.getFirst();
+
+      retried.set(true);
+      assertThat(bikesched.admin().retryJob(parent).retry()).isTrue();
+      awaitState(parent, "SUCCEEDED");
+
+      assertThat(count("parent_job_id = '" + parent + "'")).as("a new item").isEqualTo(2);
+      assertThat(count("parent_job_id = '" + parent + "' and state = 'SUCCEEDED'")).isEqualTo(2);
+      assertThat(count("id = '" + firstItem + "'")).as("the old item stays").isEqualTo(1);
+      assertThat(failure.get()).isNull();
+    }
+  }
+
+  @Test
+  void aCompensatedBatchRejectsOtherKeysOnTheRetry() throws Exception {
+    var item = TypedJob.of("batch-rekey-item", String.class);
+    var retried = new java.util.concurrent.atomic.AtomicBoolean();
+    var failure = new AtomicReference<Throwable>();
+    try (Bikesched bikesched = testNode("node-batch-rekey").build()) {
+      bikesched.registerJobHandler(item, (job, payload) -> {});
+      UUID parent =
+          bikesched
+              .newJob("batch-rekey")
+              .maxAttempts(1)
+              .handler(
+                  job -> {
+                    var builder = job.newJobBatch("items", item).add("a", json("a"));
+                    if (retried.get()) {
+                      builder.add("b", json("b"));
+                    }
+                    try {
+                      builder.compensateWith((step, batchItem) -> {}).schedule().await();
+                    } catch (IllegalStateException e) {
+                      failure.set(e);
+                      throw e;
+                    }
+                    if (!retried.get()) {
+                      throw new IllegalStateException("fails after the batch");
+                    }
+                  })
+              .schedule();
+      awaitState(parent, "FAILED");
+
+      retried.set(true);
+      assertThat(bikesched.admin().retryJob(parent).retry()).isTrue();
+      await().untilAsserted(() -> assertThat(failure.get()).isNotNull());
+
+      assertThat(failure.get()).hasMessageContaining("missing [], new [b]");
+      assertThat(count("parent_job_id = '" + parent + "'")).as("no new item").isEqualTo(1);
+    }
+  }
+
+  @Test
+  void aRaisedLimitStoresLargeBatchesInChunks() throws Exception {
+    try (Bikesched bikesched =
+        testNode("node-batch-big")
+            .maxJobBatchSize(2_500)
+            .remoteJobNames("batch-big-item")
+            .build()) {
+      UUID parent =
+          bikesched
+              .newJob("batch-big")
+              .handler(
+                  job ->
+                      job.newJobBatch("items", "batch-big-item")
+                          .addAll(IntStream.range(0, 2_500).mapToObj(i -> json("p" + i)).toList())
+                          .parallelism(1_200)
+                          .schedule())
+              .schedule();
+      awaitState(parent, "SUCCEEDED");
+
+      assertThat(count("parent_job_id = '" + parent + "'")).isEqualTo(2_500);
+      assertThat(count("parent_job_id = '" + parent + "' and state = 'CANCELLED'"))
+          .as("the parent ended without waiting: its held items are cancelled")
+          .isEqualTo(1_300);
+      assertThat(
+              countRows(
+                  "bikesched_steps",
+                  "job_id = '" + parent + "' and name = 'items/2499' and type = 'CHILD_JOB'"))
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void theAdminShowsABatchAsOneStepAndListsItsItems() throws Exception {
+    var item = TypedJob.of("batch-admin-item", String.class);
+    var release = new CountDownLatch(1);
+    try (Bikesched bikesched = testNode("node-batch-admin").build()) {
+      bikesched.registerJobHandler(item, (job, payload) -> release.await(10, TimeUnit.SECONDS));
+      UUID parent =
+          bikesched
+              .newJob("batch-admin")
+              .handler(
+                  job ->
+                      job.newJobBatch("items", item)
+                          .add("a", json("a"))
+                          .add("b", json("b"))
+                          .add("c", json("c"))
+                          .parallelism(1)
+                          .failFast()
+                          .schedule()
+                          .await())
+              .schedule();
+      awaitState(parent, "WAITING");
+      List<org.bikesched.admin.StepInfo> steps = bikesched.admin().findSteps(parent);
+
+      assertThat(steps).as("without the item steps").hasSize(1);
+      var step = steps.getFirst();
+      assertThat(step.type()).isEqualTo("CHILD_JOB_BATCH");
+      assertThat(step.batch()).isEqualTo(new org.bikesched.admin.StepBatch(3, 0, 1, 1, true));
+      var items =
+          bikesched.admin().findJobs(org.bikesched.admin.JobQuery.newest(10).withBatch(step.id()));
+      assertThat(items)
+          .extracting(org.bikesched.admin.JobSummary::batchKey)
+          .containsExactlyInAnyOrder("a", "b", "c");
+      assertThat(
+              bikesched
+                  .admin()
+                  .findJobs(
+                      org.bikesched.admin.JobQuery.newest(10)
+                          .withBatch(step.id())
+                          .withStates(JobState.HELD)))
+          .hasSize(2);
+      release.countDown();
+      awaitState(parent, "SUCCEEDED");
     }
   }
 

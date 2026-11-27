@@ -3,6 +3,7 @@ import { html, useEffect, useState } from './html.js';
 
 export const STATES = [
   'SCHEDULED',
+  'HELD',
   'RUNNING',
   'WAITING',
   'SUCCEEDED',

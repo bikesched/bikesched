@@ -29,6 +29,11 @@ a type only it handles).
 | `HangingConnectionTest` | a network partition: every connection of one node hangs, new ones too, past twice the node timeout | another node runs the job without repeating its completed step; the cut-off node registers again and runs jobs after the partition |
 | | a failover without a TCP reset: the open connections of one node hang for good, new ones work | with the driver's `socketTimeout`, the node's statements fail on the hanging connections and it carries on with new ones |
 
+`JobBatchStressTest` runs a [job batch](../docs/multi-step-jobs/child-jobs.md#batches) of 5,000
+items (`-Dstress.batchItems` scales it) with `parallelism(50)` on three nodes and restarts the
+database once a third of the items ended: the parent succeeds, every item runs, and sampling the
+items admitted and not ended never finds more than 50.
+
 The network failures go through a small TCP proxy between each node and the database
 (`TcpProxy`), so a test can break one node's network and leave the others alone.
 

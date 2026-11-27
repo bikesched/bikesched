@@ -85,7 +85,8 @@ modelling and no orchestration across services. If that's what you're after, hav
 - **Polling**: jobs check an external service until a result is ready, as one durable step
   suspended between checks
 - **Child jobs**: jobs start other jobs exactly once and wait for their outcome and result without
-  holding a thread
+  holding a thread; batches of many children, optionally at most a few at a time, resume the parent
+  once
 - Optional typed `TypedJob`/`TypedEvent` constants, next to plain string names
 - A null-marked API ([JSpecify](https://jspecify.dev/)): IDEs, NullAway and Kotlin see which
   values may be `null`
@@ -174,7 +175,7 @@ The [documentation](docs/index.md) covers the concepts in detail:
 Runnable examples with tests — a taxi booking saga with event waits and compensation, a cinema
 ticket order with a `StandaloneJobHandler`, a webhook with a polling fallback, a provider's rate
 limit with Bucket4j, chat messages deduplicated by idempotency keys, an approval with a reminder and
-an escalation, a fan-out with child jobs, a recurring job on two nodes, and a Spring Boot
+an escalation, a fan-out with a job batch, a recurring job on two nodes, and a Spring Boot
 application whose node and handlers are wired by the starter — live in the
 [`bikesched-examples`](bikesched-examples/README.md) modules.
 

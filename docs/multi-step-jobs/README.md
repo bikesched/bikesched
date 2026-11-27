@@ -14,4 +14,4 @@ there is no process model to deploy next to your code.
 - [Steps and compensation](steps.md): durable steps, sleeping, polling an external service, and
   compensations that undo completed steps when the job is cancelled or fails (sagas)
 - [Events](events.md): waiting for and publishing events, timeouts and retention
-- [Child jobs](child-jobs.md): starting and waiting for child jobs, job results
+- [Child jobs](child-jobs.md): starting and waiting for child jobs, job results, batches

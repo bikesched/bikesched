@@ -47,6 +47,8 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
   const search = route.params.search || '';
   const jobName = search ? '' : route.params.name || '';
   const state = search ? '' : route.params.state || '';
+  // The items of a job batch (route.params.batch, its batch step's id), linked from the step.
+  const batch = search ? '' : route.params.batch || '';
   const selected = state ? state.split(',') : [];
   const [jobs, setJobs] = useState([]);
   const [next, setNext] = useState(null);
@@ -56,7 +58,7 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
   const load = async (before) => {
     setLoading(true);
     try {
-      const params = search ? { search, limit: PAGE_SIZE } : { name: jobName, state, before, limit: PAGE_SIZE };
+      const params = search ? { search, limit: PAGE_SIZE } : { name: jobName, state, batch, before, limit: PAGE_SIZE };
       const body = await getBody(`api/jobs${query(params)}`);
       setJobs((previous) => (before ? [...previous, ...body.jobs] : body.jobs));
       setNext(body.next);
@@ -75,7 +77,7 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
     setJobs([]);
     setNext(null);
     load();
-  }, [search, jobName, state, reloadKey]);
+  }, [search, jobName, state, batch, reloadKey]);
 
   const counts = {};
   for (const summary of jobNames) {
@@ -135,10 +137,14 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
         </div>
         <${Picker} label="Job name" allLabel="All job names" placeholder="Search job names"
           items=${nameItems} selected=${jobName || null}
-          onSelect=${(next) => navigate({ section: 'jobs', params: { name: next, state } })} />
+          onSelect=${(next) => navigate({ section: 'jobs', params: { name: next, state, batch } })} />
       </div>
       <${SearchField} kind="job" value=${search} onSearch=${searchFor} />
     </div>
+    ${batch && !search &&
+    html`<${SearchChip} kind="batch" value=${`batch ${shortId(batch)}`}
+      onClear=${() => navigate({ section: 'jobs', params: { ...listParams(route.params), batch: '' } })}
+      note="Only the items of this job batch." />`}
     ${search
       ? html`<${SearchChip} kind="job" value=${search} onClear=${() => searchFor('')}
           note="Name and state filters are off while searching by id or reference." />`
@@ -177,6 +183,7 @@ export function JobsView({ route, navigate, jobNames, me, nodes, reloadKey, onCh
                       ${job.recurrence && html`<div class="sub">${job.recurrence}</div>`}
                       ${job.parentJobId &&
                       html`<div class="sub">child of ${job.parentJobName || shortId(job.parentJobId)}</div>`}
+                      ${job.batchKey && html`<div class="sub" title=${job.batchKey}>batch item ${job.batchKey}</div>`}
                       ${job.reference && html`<div class="sub" title=${job.reference}>ref ${job.reference}</div>`}
                     </td>
                     <td><${Badge} state=${job.state} /></td>
@@ -546,6 +553,7 @@ function StepDetail({ stepId, nodes, jobHref: backHref, onClose }) {
         ${step.eventId && html`<a class="button small" href=${toHash({ section: 'events', id: step.eventId })}>Open event</a>`}
       </div>`}
       ${step.type === 'CHILD_JOB' && step.childJobId && html`<div class="detail-note"><${ChildJob} step=${step} /></div>`}
+      ${step.batch && html`<div class="detail-note"><${BatchProgress} step=${step} /></div>`}
       ${step.lastError && html`<pre class="error-box">${step.lastError}</pre>`}
       <div class="detail-body">
         <section aria-label="Result">
@@ -656,6 +664,7 @@ function Steps({ steps, ended, operator, stepHref: hrefOf }) {
               html`<a class="button small" href=${publishHref(step)}>Publish event…</a>`}
             </div>`}
             ${step.type === 'CHILD_JOB' && step.childJobId && html`<${ChildJob} step=${step} />`}
+            ${step.batch && html`<${BatchProgress} step=${step} />`}
             ${step.lastError && html`<pre class="error-box small">${step.lastError}</pre>`}
           </li>`;
       })}
@@ -728,6 +737,20 @@ function Recurrence({ job }) {
           : html`<ol class="runs">${previous.map((other) => run(other, elapsed(other.scheduledAt, other.finishedAt)))}</ol>`}
       </section>
       <a href=${toHash({ section: 'jobs', params: { name: job.name } })}>All ${job.name} jobs in the list</a>
+    </div>`;
+}
+
+// A job batch's progress, with a link to its items in the job list.
+function BatchProgress({ step }) {
+  const { items, ended, active, parallelism, failFast } = step.batch;
+  const mode = [parallelism && `at most ${parallelism} at a time`, failFast && 'fail-fast'].filter(Boolean).join(', ');
+  return html`
+    <div class="child">
+      <span class="muted small">Batch</span>
+      <span class="mono">${ended} of ${items} ended</span>
+      ${parallelism && html`<span class="muted small mono">${active} active</span>`}
+      ${mode && html`<span class="muted small">${mode}</span>`}
+      ${items > 0 && html`<a class="button small" href=${toHash({ section: 'jobs', params: { batch: step.id } })}>Show items</a>`}
     </div>`;
 }
 

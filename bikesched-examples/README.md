@@ -292,27 +292,24 @@ approvers, each after the inbox received the message they react to:
 ## Fan-out
 
 Package [`org.bikesched.examples.fanout`](java/src/main/java/org/bikesched/examples/fanout):
-fan-out/fan-in with [child jobs](../docs/multi-step-jobs/child-jobs.md). The job `import-album`
-starts one child job `resize-photo` per uploaded file, then waits for each child and publishes the
-album:
+fan-out/fan-in with a [job batch](../docs/multi-step-jobs/child-jobs.md#batches). The job
+`import-album` starts one child job `resize-photo` per uploaded file as one batch, at most two at a
+time, then waits once for all of them and publishes the album:
 
 ```java
-List<UUID> children = album.files().stream()
-        .map(file -> job.newJob(RESIZE_PHOTO).payload(new Photo(albumId, file)).stepName("resize " + file).schedule())
-        .toList();
-for (int i = 0; i < children.size(); i++) {
-    switch (job.waitForJob(children.get(i), Thumbnail.class)) {
-        case JobResult.Succeeded<Thumbnail>(UUID childId, Thumbnail thumbnail) -> thumbnails.add(thumbnail);
-        case JobResult.Failed<Thumbnail> failed -> skipped.add(album.files().get(i));
-        case JobResult<Thumbnail> other -> throw new IllegalStateException("Unexpected outcome: " + other);
-    }
-}
+JobBatchResult<Thumbnail> resized = job.newJobBatch("resize", RESIZE_PHOTO)
+        .addAll(album.files(), file -> file, file -> new Photo(album.albumId(), file))
+        .parallelism(2)
+        .schedule()
+        .await();
+List<Thumbnail> thumbnails = new ArrayList<>(resized.succeeded().values());
 ```
 
-A child sets the thumbnail as its result (`job.complete`); a file that is not an image fails it
-without retries. The parent receives the failure as an outcome and skips the file. Resizing takes
-a second per photo, and the children run in parallel, so the album of four files is done after
-about a second. The parent's result (`ImportedAlbum`) lists the thumbnails and the skipped files.
+`RESIZE_PHOTO` is a `ResultJob<Photo, Thumbnail>`: its handler returns the thumbnail; a file that
+is not an image fails it without retries. The parent reads the failure from `unsucceeded()` and
+skips the file. Resizing takes a second per photo, and two run at a time, so the album of four
+files is done after about two seconds. The parent's result (`ImportedAlbum`) lists the thumbnails
+and the skipped files.
 
 `FanOutExampleTest` checks the parent's result, that each file was resized once by its own child
 (`parent_job_id`), and that the children ran in parallel.

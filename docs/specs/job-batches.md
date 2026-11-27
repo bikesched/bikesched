@@ -1,6 +1,9 @@
 # Specification: job batches (`job.newJobBatch`, `JobBatch.await`)
 
-Status: **draft**.
+Status: **implemented**, [ADR 0066](../decisions/0066-child-job-batches-with-held-items.md) and
+[ADR 0067](../decisions/0067-result-types-on-typed-jobs.md), user docs:
+[Batches](../multi-step-jobs/child-jobs.md#batches) and
+[Result types](../multi-step-jobs/child-jobs.md#result-types).
 
 ## 1. Goal
 
@@ -750,3 +753,38 @@ None: all are decided (§11).
    are inserted with `unnest` in chunks of 1,000 in the batch's transaction, for raised limits.
 10. The item's key is stored (`batch_key`) and available as `Job.batchKey()`, in `JobInfo`, the
     MDC and the admin UI (§4.13).
+
+## 12. Decided while implementing
+
+1. Fail-fast cancels the siblings in the failing item's end transaction, not in a follow-up after
+   the commit (§4.12): held items `CANCELLED`, scheduled, waiting and running ones a cancel
+   request, all `for update skip locked` in `batch_index` order, after the batch step. The lock
+   order of §4.14 holds (other item rows only with `skip locked`), so there is no deadlock, and no
+   second transaction can be lost in a crash. A sibling locked at that moment (ending or being
+   claimed) is skipped and ends on its own; its step is already `CANCELLED`.
+2. History entries of items (`SCHEDULED`, `HELD`, `ADMITTED`, cancellations) are caused by the
+   ending item or, at the start, by the parent job (`causedBy` names a subject, and a batch step
+   is none).
+3. An admitted item keeps a later due time: admission sets `scheduled_at =
+   greatest(scheduled_at, now())`, so `schedule(Instant)` and `schedule(Duration)` delay held items
+   too.
+4. The parent's claim reads whether it has a `WAITING` batch (`exists` over the new partial index
+   `bikesched_steps_waiting_batch_idx`); its terminal transactions lock those batch steps first
+   and cancel their held items once the job ended. Jobs without batches take the unchanged path.
+   `Bikesched.cancel` looks the batches up itself.
+5. An empty batch is stored `SUCCEEDED` at once, with no items; `await()` returns an empty result.
+6. A `COMPENSATED` batch restarts only with the same keys in the same order; the message names the
+   missing and the new keys, or says the order changed.
+7. The batch step's `compensable` means "its items have a compensation": the compensation replay
+   registers a no-op for the batch step first (so it runs last) and the items' compensations in
+   item order (so they run in reverse). Steps of held items stay not compensable until admitted.
+8. The admin lists a batch as its batch step only (`findSteps` leaves out item steps), with a
+   `StepBatch` (`items`, `ended`, `active`, `parallelism`, `failFast`) on `StepInfo.batch()`;
+   `JobQuery.withBatch(stepId)` lists its current items (the children of its item steps, along
+   `bikesched_steps_batch_step_id_idx`); `JobSummary.batchKey()` names an item.
+9. Kotlin: the lambda's receivers are `BatchItems<P>` and `MixedBatchItems`; a mixed batch is a
+   `JobBatch<Any>` (the Java `JobBatch<Object>`); `result<T>(key)` maps `Unit` to `Void`.
+   `handleResultJobs` stores the lambda's value with `job.complete`, `Unit` as no value.
+10. The `fan-out` example uses a batch with `parallelism(2)`; the stress test
+    `JobBatchStressTest` runs 5,000 items on three nodes with a database restart.
+

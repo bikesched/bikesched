@@ -39,7 +39,7 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0026](0026-durable-sleep-as-step.md) | Durable sleep as a step without an event | Accepted |
 | [0027](0027-job-events.md) | Publish events from jobs as durable steps | Accepted |
 | [0028](0028-step-kinds-and-event-references.md) | Step kinds and plain event references | Accepted |
-| [0029](0029-child-jobs-as-steps.md) | Child jobs as one step holding the outcome | Accepted |
+| [0029](0029-child-jobs-as-steps.md) | Child jobs as one step holding the outcome | Accepted, partly superseded by 0067 |
 | [0030](0030-event-listener.md) | Event listener reports committed publications only | Accepted |
 | [0031](0031-poll-steps.md) | Poll steps: one step for all checks | Accepted, timeout handler superseded by [0034](0034-wait-timeouts-as-failures.md) |
 | [0032](0032-batched-notifications-after-commit.md) | Waking pollers with batched notifications after the commit | Accepted |
@@ -76,3 +76,5 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0063](0063-c-collation-for-identifiers.md) | C collation for identifiers | Accepted |
 | [0064](0064-remote-job-names.md) | Remote job names | Accepted |
 | [0065](0065-suspending-kotlin-handlers.md) | Suspending Kotlin handlers | Accepted |
+| [0066](0066-child-job-batches-with-held-items.md) | Child job batches with held items | Accepted |
+| [0067](0067-result-types-on-typed-jobs.md) | Result types on typed jobs | Accepted |

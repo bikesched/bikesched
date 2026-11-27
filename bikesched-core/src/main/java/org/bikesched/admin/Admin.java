@@ -76,7 +76,9 @@ public interface Admin {
   Optional<JobData> findJobData(UUID jobId);
 
   /**
-   * Reads a job's steps in the order they started.
+   * Reads a job's steps in the order they started. A job batch is one {@code CHILD_JOB_BATCH} step
+   * with its progress ({@link StepInfo#batch()}); its items are listed with {@link
+   * JobQuery#withBatch(UUID)}, not as steps.
    *
    * @param jobId the job id
    * @return the steps; empty if the job has none or does not exist

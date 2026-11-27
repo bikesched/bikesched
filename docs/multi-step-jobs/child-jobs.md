@@ -7,7 +7,8 @@ weight: 3
 
 A handler can start other jobs exactly once, as durable steps, and wait for them to end without
 holding a thread. Jobs can have a result, which the waiting parent receives with the child's
-outcome.
+outcome. Many children of one kind start as one [batch](#batches), optionally at most a few at a
+time, and the parent waits once for all of them.
 
 ```java
 static final TypedJob<Payment> CHARGE = TypedJob.of("charge", Payment.class);
@@ -49,6 +50,31 @@ bikesched.registerJobHandler("fulfil-order", job -> {
   with a result.
 - The [history](../jobs/README.md#history) records that the job `SUCCEEDED`, never the result
   itself (it may be large or sensitive).
+
+### Result types
+
+A job that returns something can declare its result type next to its payload type. Its handler
+returns the result instead of calling `complete`, and parents read it without passing a class:
+
+```java
+static final ResultJob<Payment, Receipt> CHARGE =
+    TypedJob.of("charge", Payment.class, Receipt.class);
+
+bikesched.registerResultJobHandler(CHARGE, (job, payment) -> payments.charge(payment));
+
+UUID charge = job.newJob(CHARGE).payload(order.payment()).schedule();
+Receipt receipt = job.waitForJob(charge, CHARGE).orElseThrow();   // typed by the job
+```
+
+- `TypedJob` is a sealed interface: `TypedJob.of(name, payloadType)` returns a `PayloadJob<P>`,
+  `TypedJob.of(name, payloadType, resultType)` a `ResultJob<P, R>`. Every API taking a `TypedJob`
+  accepts both.
+- `registerResultJobHandler` stores the returned value as `job.complete(result)` would, with the
+  same precedence: `cancel()` and `fail()` still win. `null` is a result without a value.
+- `waitForJob(id, CHARGE)` maps the result with the job's `resultType()`; a batch of a
+  `ResultJob` is typed by it.
+- `@JobHandler` methods, `StandaloneJobHandler` and the Spring starter keep calling
+  `job.complete(result)`.
 
 ## Starting children
 
@@ -118,6 +144,105 @@ A failed child never fails its parent by itself: the parent decides, with a `swi
 `orElseThrow()`, which returns the result or throws a `JobFailedException` carrying the outcome,
 or with `orElse(fallback)`, which returns the fallback for every outcome but `Succeeded`.
 `isSucceeded()` tells success apart.
+
+## Batches
+
+A batch starts many children as one durable step: items of one job, each with its own payload and
+an optional key, spread over every node handling the job, and the parent waits once for all of
+them:
+
+```java
+static final ResultJob<Render, Image> RENDER_FORMAT =
+    TypedJob.of("render-format", Render.class, Image.class);
+
+bikesched.registerResultJobHandler(RENDER_FORMAT, (job, render) -> images.render(render));
+
+bikesched.registerJobHandler("process-image", job -> {
+    UUID imageId = job.payload(UUID.class);
+    JobBatch<Image> renders = job.newJobBatch("render", RENDER_FORMAT)
+        .addAll(Format.ALL, Format::name, f -> new Render(imageId, f))   // key, payload
+        .parallelism(4)                                                  // at most 4 at a time
+        .schedule();
+    List<Image> images = renders.await().orElseThrow();                  // in item order
+    job.complete(new Renditions(images));
+});
+```
+
+### Starting a batch
+
+| Method | Purpose |
+|---|---|
+| `job.newJobBatch(stepName, resultJob)` | a batch of a `ResultJob`: payloads and results typed by it |
+| `job.newJobBatch(stepName, typedJob)` | a batch of a job without a result type: a `JobBatch<Void>`, every result `null` |
+| `job.newJobBatch(stepName, jobName)` | a batch of a job name: payloads mapped as for `newJob(String)`, results read with `get(key, Class)` |
+| `job.newJobBatch(stepName)` | a mixed batch: each item names its job (`add(job, key, payload)`, `add(jobName, key, payload)`) |
+| `add(payload)`, `add(key, payload)` | one item, keyed by its position (`"0"`, `"1"`, …) or by the key |
+| `addAll(payloads)`, `addAll(items, payload)`, `addAll(items, key, payload)` | many items, keyed by position or by a key function |
+| `parallelism(k)` | at most `k` items active at once, across all nodes; default no limit |
+| `failFast()` | end the batch at the first item that does not succeed and cancel the others |
+| `priority`, `maxAttempts`, `timeout`, `reference` | one value for every item, as for single children |
+| `compensateWith((step, item) -> …)` | undo each started item (a `JobBatchItem` with its `key` and `jobId`) if the parent is cancelled or fails permanently |
+| `schedule()`, `schedule(Instant)`, `schedule(Duration)` | store the batch and return its `JobBatch` |
+
+- The batch step, every item and their steps are stored in one transaction, fenced by the
+  parent's lock, exactly once. Later runs return the stored batch whatever the items are now: they
+  are read only on the first run.
+- Keys are 1 to 200 characters and unique within the batch; item steps are named
+  `stepName/key`. Duplicate keys, more items than the node's
+  [`maxJobBatchSize`](../getting-started/configuration.md) (default 1,000), a `parallelism` below
+  1 or a job name without a handler (or
+  [remote job name](../jobs/README.md#jobs-other-nodes-handle)) are rejected before anything is
+  written.
+- An item knows its key: `job.batchKey()` in its handler, `JobInfo.batchKey()`, and the MDC key
+  `bikesched.batchKey`. It is `null` for jobs outside a batch.
+- An empty batch is allowed and ends right away.
+
+### Parallelism and the `HELD` state
+
+With `parallelism(k)`, the first `k` items are due right away and the others are `HELD`: stored
+and visible, but never claimed. Whenever an item ends, its transaction admits the next held items
+in item order, as many as the limit allows (recorded as `ADMITTED`). Admitted items keep the due
+time of the batch, so `schedule(Instant)` delays them too. A held item can be cancelled with
+`bikesched.cancel(id, …)`; it counts as ended and admits nothing.
+
+### Waiting for a batch
+
+`JobBatch.await()` and `await(Duration timeout)` suspend the parent like `waitForJob`: no thread,
+no slot, and the parent resumes once, when the batch has ended. An item ending while the parent
+waits for something else does not wake it, except the batch's last item (one replay). Waiting for
+a single item with `waitForJob` is rejected: wait for the batch.
+
+`JobBatchResult` holds every item's `JobResult`, mapped lazily per item:
+
+| Method | Returns |
+|---|---|
+| `orElseThrow()` | the results in item order, or a `JobFailedException` naming the keys that did not succeed |
+| `isAllSucceeded()` | whether every item succeeded |
+| `succeeded()`, `unsucceeded()`, `all()` | maps from key to result or outcome, in item order |
+| `get(key)`, `get(key, resultJob)`, `get(key, Class)` | one item, typed by the batch, by its job, or by a class |
+
+- A failed item never fails the parent by itself.
+- With a timeout, the batch is `TIMED_OUT` once it has passed: held items are cancelled, running
+  items keep running, and every unfinished item reads `TimedOut` on every replay.
+- With `failFast()`, the first item that does not succeed ends the batch and resumes the parent:
+  the other unfinished items read `Cancelled`, held ones are cancelled and running ones get a
+  cancel request (they may still finish their work; the parent's view stays `Cancelled`).
+
+### Batches and cancellation
+
+| Situation | Behaviour |
+|---|---|
+| parent cancelled while the batch runs | the batch step and its waiting item steps `CANCELLED`, held items cancelled, running items not touched unless the compensation cancels them |
+| `compensateWith` | each admitted item is compensated, in reverse item order; held items never ran and have nothing to compensate |
+| parent ends without waiting | its held items are cancelled; admitted items run to their end |
+| parent retried after its compensation | the `COMPENSATED` batch starts new items for the same keys, in the same order (other keys are an `IllegalStateException`) |
+| an item cancelled from elsewhere | its outcome is `Cancelled`; the batch goes on |
+
+The [history](../jobs/README.md#history) records `BATCH_STARTED` and `BATCH_ENDED` on the batch
+step (with `batch.items`, `batch.parallelism`, `batch.failFast` and, after a fail-fast end,
+`batch.failedFast`), `HELD` and `ADMITTED` on the items, caused by the parent. The
+[admin UI](../operations/admin.md) shows the batch as one step with its progress and lists its
+items.
 
 ## Cancellation, compensation and retries
 

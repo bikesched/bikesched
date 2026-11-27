@@ -22,6 +22,7 @@ import org.bikesched.admin.JobQuery;
 import org.bikesched.admin.JobSummary;
 import org.bikesched.admin.NodeInfo;
 import org.bikesched.admin.RecurringJobRuns;
+import org.bikesched.admin.StepBatch;
 import org.bikesched.admin.StepInfo;
 import org.bikesched.admin.WaitingStep;
 import org.bikesched.job.JobState;
@@ -49,7 +50,7 @@ public final class AdminStore {
                    nullif(j.scheduled_at, 'infinity') as scheduled_at, j.created_at, j.updated_at,
                    j.finished_at, j.last_error, j.parent_job_id, p.name as parent_job_name,
                    j.recurrence, j.idempotency_key, j.reference, n.id as node_id,
-                   n.name as node_name
+                   n.name as node_name, j.batch_key
               from %s j
               left join bikesched_jobs p on p.id = j.parent_job_id
               left join bikesched_nodes n on n.id = j.locked_by_node_id""";
@@ -62,7 +63,7 @@ public final class AdminStore {
       """
             (select id, name, type, state, attempts, max_attempts, priority, scheduled_at, created_at,
                     updated_at, finished_at, last_error, parent_job_id, recurrence,
-                    idempotency_key, reference, locked_by_node_id
+                    idempotency_key, reference, locked_by_node_id, batch_key
                from bikesched_jobs%s
               order by id desc
               limit ?)""";
@@ -103,13 +104,16 @@ public final class AdminStore {
                    nullif(s.wake_at, 'infinity') as wake_at, s.deadline_at, s.locked_by_node_id,
                    s.event_name, s.event_key, s.event_id, s.child_job_id, s.child_job_name,
                    coalesce(c.state, s.child_end_state) as child_job_state,
-                   c.id is not null as child_job_exists
+                   c.id is not null as child_job_exists, s.item_count, s.ended_count,
+                   s.active_count, coalesce(s.parallelism, 0) as parallelism, s.fail_fast
               from bikesched_steps s
               left join bikesched_jobs c on c.id = s.child_job_id""";
 
-  // Along bikesched_steps_job_id_name_key.
+  // Along bikesched_steps_job_id_name_key. Without the item steps of batches: a batch is listed as
+  // its batch step, its items with JobQuery.withBatch.
   private static final String FIND_STEPS_SQL =
-      STEP_COLUMNS + "\n where s.job_id = ?\n order by s.started_at, s.name";
+      STEP_COLUMNS
+          + "\n where s.job_id = ? and s.batch_step_id is null\n order by s.started_at, s.name";
 
   private static final String FIND_STEP_SQL = STEP_COLUMNS + "\n where s.id = ?";
 
@@ -209,6 +213,11 @@ public final class AdminStore {
     if (query.nodeId() != null) {
       conditions.add("locked_by_node_id = ?");
       parameters.add(query.nodeId());
+    }
+    if (query.batchStepId() != null) {
+      // the batch's current children, along bikesched_steps_batch_step_id_idx
+      conditions.add("id in (select child_job_id from bikesched_steps where batch_step_id = ?)");
+      parameters.add(query.batchStepId());
     }
     if (query.beforeId() != null) {
       conditions.add("id < ?");
@@ -312,7 +321,15 @@ public final class AdminStore {
         row.uuid("child_job_id"),
         row.string("child_job_name"),
         row.enumValue("child_job_state", JobState.class),
-        row.bool("child_job_exists"));
+        row.bool("child_job_exists"),
+        row.string("type").equals("CHILD_JOB_BATCH")
+            ? new StepBatch(
+                row.integer("item_count"),
+                row.integer("ended_count"),
+                row.integer("active_count"),
+                row.integer("parallelism") == 0 ? null : row.integer("parallelism"),
+                row.bool("fail_fast"))
+            : null);
   }
 
   public List<JobNameSummary> findJobNames() {
@@ -515,7 +532,8 @@ public final class AdminStore {
         row.string("idempotency_key"),
         row.string("reference"),
         row.uuid("node_id"),
-        row.string("node_name"));
+        row.string("node_name"),
+        row.string("batch_key"));
   }
 
   private static EventSummary eventSummary(Sql.Row row) throws SQLException {

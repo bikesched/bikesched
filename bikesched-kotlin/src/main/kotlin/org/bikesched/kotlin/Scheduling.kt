@@ -47,6 +47,34 @@ public inline fun <reified T> Bikesched.handleJobs(
 ): Bikesched = registerJobHandler(name, typedJobHandler(name, T::class.java, null is T, handler))
 
 /**
+ * Registers the handler executing jobs of [name] that return a result, see
+ * `Bikesched.registerResultJobHandler`: the lambda's value is stored as the job's result, as with
+ * `Job.complete`, and parents read it typed with `awaitJob<R>` or a batch's `await()`:
+ * ```
+ * bikesched.handleResultJobs<Render, Image>("render-format") { render -> images.render(render) }
+ * ```
+ *
+ * A name of its own rather than an overload of [handleJobs]: both would erase to the same
+ * signature, and a result returned by a lambda written for [handleJobs] would be dropped silently.
+ * A job without payload fails with an [IllegalStateException] unless [P] is nullable; `cancel` and
+ * `fail` called by the handler still win over its result.
+ *
+ * @return this instance
+ * @throws IllegalArgumentException if the name is blank or already has a handler
+ */
+public inline fun <reified P, R> Bikesched.handleResultJobs(
+  name: String,
+  noinline handler: suspend Job.(payload: P) -> R,
+): Bikesched =
+  registerJobHandler(
+    name,
+    typedJobHandler<P>(name, P::class.java, null is P) { payload ->
+      val result = handler(payload)
+      complete(if (result is Unit) null else result)
+    },
+  )
+
+/**
  * Registers the handler executing jobs of [name] that need no payload. It runs with the [Job] as
  * receiver:
  * ```
