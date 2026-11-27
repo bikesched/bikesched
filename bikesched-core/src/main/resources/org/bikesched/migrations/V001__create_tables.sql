@@ -238,11 +238,11 @@ create table bikesched_steps (
     result             jsonb,
     last_error         text,
     batch_step_id      uuid,                                -- the batch step of an item step (same job)
-    batch_item_count   integer,                             -- batch steps: the number of items
     batch_parallelism  integer,                             -- batch steps: items active at once, null: all
+    batch_fail_fast    boolean          not null default false, -- batch steps: end at the first failed item
+    batch_item_count   integer,                             -- batch steps: the number of items
     batch_active_count integer,                             -- batch steps: items admitted and not ended
     batch_ended_count  integer,                             -- batch steps: items ended
-    batch_fail_fast    boolean          not null default false, -- batch steps: end at the first failed item
     constraint bikesched_steps_pkey primary key (id),
     constraint bikesched_steps_job_id_name_key unique (job_id, name),
     constraint bikesched_steps_job_id_fkey
