@@ -49,8 +49,9 @@ public final class BatchStore {
 
   private static final String BATCH_COLUMNS =
       """
-            id, name, job_id, state, item_count, coalesce(parallelism, 0) as parallelism, active_count,
-            ended_count, fail_fast, compensable, wake_at, wake_at <= now() as deadline_passed
+            id, name, job_id, state, batch_item_count,
+            coalesce(batch_parallelism, 0) as batch_parallelism, batch_active_count, batch_ended_count,
+            batch_fail_fast, compensable, wake_at, wake_at <= now() as deadline_passed
               from bikesched_steps""";
 
   private static final String LOCK_BATCH_SQL =
@@ -61,8 +62,9 @@ public final class BatchStore {
 
   private static final String INSERT_BATCH_STEP_SQL =
       """
-            insert into bikesched_steps (id, job_id, name, type, state, attempts, item_count, parallelism,
-                                         active_count, ended_count, fail_fast, compensable)
+            insert into bikesched_steps (id, job_id, name, type, state, attempts, batch_item_count,
+                                         batch_parallelism, batch_active_count, batch_ended_count,
+                                         batch_fail_fast, compensable)
             values (?, ?, ?, 'CHILD_JOB_BATCH', 'WAITING', 1, ?, ?, ?, 0, ?, ?)""";
 
   // A compensated batch starts again when its parent is retried, with new children; it keeps its
@@ -70,7 +72,8 @@ public final class BatchStore {
   private static final String RESTART_BATCH_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'WAITING', active_count = ?, ended_count = 0, wake_at = null, last_error = null,
+               set state = 'WAITING', batch_active_count = ?, batch_ended_count = 0, wake_at = null,
+                   last_error = null,
                    attempts = attempts + 1, started_at = now(), finished_at = null
              where id = ? and state = 'COMPENSATED'""";
 
@@ -135,12 +138,13 @@ public final class BatchStore {
 
   private static final String COUNT_ENDED_SQL =
       """
-            update bikesched_steps set ended_count = ended_count + ?, active_count = active_count - ?
+            update bikesched_steps
+               set batch_ended_count = batch_ended_count + ?, batch_active_count = batch_active_count - ?
              where id = ?
-            returning ended_count, active_count""";
+            returning batch_ended_count, batch_active_count""";
 
   private static final String COUNT_CANCELLED_SQL =
-      "update bikesched_steps set ended_count = ended_count + ? where id = ?";
+      "update bikesched_steps set batch_ended_count = batch_ended_count + ? where id = ?";
 
   // Admits the first held items in item order; a held item being cancelled right now is skipped
   // (the next end admits another one). Keeps a due time in the future the batch was scheduled for.
@@ -162,7 +166,7 @@ public final class BatchStore {
              where batch_step_id = ? and child_job_id = any(?::uuid[])""";
 
   private static final String COUNT_ADMITTED_SQL =
-      "update bikesched_steps set active_count = active_count + ? where id = ?";
+      "update bikesched_steps set batch_active_count = batch_active_count + ? where id = ?";
 
   private static final String END_BATCH_SQL =
       """
@@ -439,11 +443,11 @@ public final class BatchStore {
           row.string("name"),
           row.uuid("job_id"),
           row.enumValue("state", StepState.class),
-          row.integer("item_count"),
-          row.integer("parallelism"),
-          row.integer("active_count"),
-          row.integer("ended_count"),
-          row.bool("fail_fast"),
+          row.integer("batch_item_count"),
+          row.integer("batch_parallelism"),
+          row.integer("batch_active_count"),
+          row.integer("batch_ended_count"),
+          row.bool("batch_fail_fast"),
           row.bool("compensable"),
           row.instant("wake_at"),
           row.bool("deadline_passed"));
@@ -1040,7 +1044,8 @@ public final class BatchStore {
     Counts counts =
         db.one(
                 COUNT_ENDED_SQL,
-                row -> new Counts(row.integer("ended_count"), row.integer("active_count")),
+                row ->
+                    new Counts(row.integer("batch_ended_count"), row.integer("batch_active_count")),
                 1,
                 wasActive ? 1 : 0,
                 batchStepId)

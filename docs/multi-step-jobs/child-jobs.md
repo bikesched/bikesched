@@ -189,9 +189,9 @@ bikesched.registerJobHandler("process-image", job -> {
   mapped is an `IllegalArgumentException` naming its key). Later runs return the stored batch
   whatever the items are now: they are neither checked nor mapped again.
 - Keys are 1 to 200 characters and unique within the batch; item steps are named
-  `stepName/key`, which no other step of the job may be named. Duplicate keys, more items than the node's
-  [`maxJobBatchSize`](../getting-started/configuration.md) (default 1,000), a `parallelism` below
-  1 or a job name without a handler (or
+  `stepName/key`, which no other step of the job may be named. Duplicate keys, more items than
+  the node's [`maxJobBatchSize`](../getting-started/configuration.md) (default 1,000), a
+  `parallelism` below 1 or a job name without a handler (or
   [remote job name](../jobs/README.md#jobs-other-nodes-handle)) are rejected before anything is
   written.
 - An item knows its key: `job.batchKey()` in its handler, `JobInfo.batchKey()`, and the MDC key

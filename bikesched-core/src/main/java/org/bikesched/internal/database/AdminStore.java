@@ -104,8 +104,9 @@ public final class AdminStore {
                    nullif(s.wake_at, 'infinity') as wake_at, s.deadline_at, s.locked_by_node_id,
                    s.event_name, s.event_key, s.event_id, s.child_job_id, s.child_job_name,
                    coalesce(c.state, s.child_end_state) as child_job_state,
-                   c.id is not null as child_job_exists, s.item_count, s.ended_count,
-                   s.active_count, coalesce(s.parallelism, 0) as parallelism, s.fail_fast
+                   c.id is not null as child_job_exists, s.batch_item_count, s.batch_ended_count,
+                   s.batch_active_count, coalesce(s.batch_parallelism, 0) as batch_parallelism,
+                   s.batch_fail_fast
               from bikesched_steps s
               left join bikesched_jobs c on c.id = s.child_job_id""";
 
@@ -324,11 +325,11 @@ public final class AdminStore {
         row.bool("child_job_exists"),
         row.string("type").equals("CHILD_JOB_BATCH")
             ? new StepBatch(
-                row.integer("item_count"),
-                row.integer("ended_count"),
-                row.integer("active_count"),
-                row.integer("parallelism") == 0 ? null : row.integer("parallelism"),
-                row.bool("fail_fast"))
+                row.integer("batch_item_count"),
+                row.integer("batch_ended_count"),
+                row.integer("batch_active_count"),
+                row.integer("batch_parallelism") == 0 ? null : row.integer("batch_parallelism"),
+                row.bool("batch_fail_fast"))
             : null);
   }
 

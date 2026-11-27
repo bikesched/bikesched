@@ -315,7 +315,7 @@ the step guard, payload mapping by the `JsonMapper`), then writes in **one trans
    `JobLockLostException` and nothing is written.
 2. Look up the batch step by name (`for update`). If it exists, commit nothing new and return
    the stored handle (a replay). A `COMPENSATED` batch step starts a new batch with new children.
-3. Insert the batch step (`CHILD_JOB_BATCH`, `WAITING`, `item_count`, `parallelism`).
+3. Insert the batch step (`CHILD_JOB_BATCH`, `WAITING`, `batch_item_count`, `batch_parallelism`).
 4. Insert all items with one `unnest` insert per chunk of 1,000 items: the first `parallelism`
    items (all without a limit) `SCHEDULED`, the rest `HELD`; each with `batch_step_id`, its
    `batch_index` (0, 1, …) and `batch_key`.
@@ -365,10 +365,10 @@ admitted and not ended) to `k`. A held item is a job in the new state `HELD`: st
 (`findJob`, the admin UI) but never claimed, because the claim query only takes `SCHEDULED`,
 `WAITING`, `COMPENSATING` and `FAILING` jobs.
 
-The batch step keeps two counters, updated under its lock: `active_count` (admitted, not ended)
-and `ended_count`. When an item ends (§4.6), its transaction admits `k - active_count` held items,
-the first ones in item order (`batch_index`), with `for update skip locked` (a held item being
-cancelled at that moment is skipped, not waited for). They become `SCHEDULED` and due now
+The batch step keeps two counters, updated under its lock: `batch_active_count` (admitted, not
+ended) and `batch_ended_count`. When an item ends (§4.6), its transaction admits
+`k - batch_active_count` held items, the first ones in item order (`batch_index`), with
+`for update skip locked` (a held item being cancelled at that moment is skipped, not waited for). They become `SCHEDULED` and due now
 (`db.dueNow(name)`), their steps compensable, recording `ADMITTED` (`RELEASED` already names jobs
 released from a dead node). Computing the number from the counter, instead of releasing one per
 end, keeps the limit exact: a held item cancelled from elsewhere ends without admitting anything,
@@ -388,10 +388,10 @@ order (§4.14):
    unfinished, and nobody would resume the parent.
 2. Complete the item step, as today (only if it is still `WAITING`: a timed-out, cancelled or
    failed-fast batch leaves its item steps as they are).
-3. Increment `ended_count`, decrement `active_count`.
+3. Increment `batch_ended_count`, decrement `batch_active_count`.
 4. If the batch step is still `WAITING`: admit held items (§4.5); in a fail-fast batch, an item
    that did not succeed ends the batch (§4.12).
-5. If the batch step is still `WAITING` and `ended_count = item_count`, complete it
+5. If the batch step is still `WAITING` and `batch_ended_count = batch_item_count`, complete it
    (`update … set state = 'SUCCEEDED' … where state = 'WAITING'`) and resume the parent with
    `RESUME_PARENT_SQL`.
 
@@ -469,13 +469,13 @@ Into `V001` in place (before 0.1.0):
 - New columns on `bikesched_steps`:
   - `batch_step_id uuid`: the batch of an item step; only on `CHILD_JOB` steps (CHECK), no FK
     (rows of one job are deleted together by the cascade).
-  - `item_count integer` and `parallelism integer`: only on `CHILD_JOB_BATCH` steps, `parallelism`
-    null for unbounded, both positive (CHECK).
-  - `active_count integer` and `ended_count integer`: the counters of §4.5 and §4.6, only on
-    `CHILD_JOB_BATCH` steps, `0 <= ended_count <= item_count` (CHECK); their updates are HOT
-    (no indexed column changes). The admin UI's "k of N ended" reads them.
-  - `fail_fast boolean not null default false`: true only on `CHILD_JOB_BATCH` steps (CHECK); a
-    batch step is `FAILED` only if `fail_fast` (`state <> 'FAILED' or fail_fast`).
+  - `batch_item_count integer` and `batch_parallelism integer`: only on `CHILD_JOB_BATCH` steps,
+    `batch_parallelism` null for unbounded, both positive (CHECK).
+  - `batch_active_count integer` and `batch_ended_count integer`: the counters of §4.5 and §4.6,
+    only on `CHILD_JOB_BATCH` steps, `0 <= batch_ended_count <= batch_item_count` (CHECK); their
+    updates are HOT (no indexed column changes). The admin UI's "k of N ended" reads them.
+  - `batch_fail_fast boolean not null default false`: true only on `CHILD_JOB_BATCH` steps (CHECK);
+    a batch step is `FAILED` only if `batch_fail_fast` (`state <> 'FAILED' or batch_fail_fast`).
 - History CHECKs (`bikesched_history`): `HELD` in the job state list of
   `bikesched_history_action_check`; the job action `ADMITTED`; the step actions `BATCH_STARTED` and
   `BATCH_ENDED`; all three in the CHECK test of `HistoryStoreTest`.
@@ -515,7 +515,7 @@ List<Image> images = renders.await().orElseThrow();   // throws for the first fa
 By default a batch ends when every item has ended, so a parent learns about a failed item only
 after the slowest one. `failFast()` ends the batch at the first item that does not succeed
 (`Failed`, `Cancelled`, `CompensationFailed`). The mode is stored on the batch step
-(`fail_fast`) when the batch is created, because the item's end hook has to know it.
+(`batch_fail_fast`) when the batch is created, because the item's end hook has to know it.
 
 In that item's end transaction, after locking the batch step (§4.6):
 

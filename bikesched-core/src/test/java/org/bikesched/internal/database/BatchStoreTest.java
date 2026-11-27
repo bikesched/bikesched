@@ -19,8 +19,8 @@ class BatchStoreTest extends AbstractStoreTest {
   void insertParentAndBatchStep() throws SQLException {
     execute("insert into bikesched_jobs (id, name) values ('" + parent + "', 'parent')");
     execute(
-        "insert into bikesched_steps (id, job_id, name, type, state, item_count, active_count,"
-            + " ended_count, parallelism) values ('"
+        "insert into bikesched_steps (id, job_id, name, type, state, batch_item_count, batch_active_count,"
+            + " batch_ended_count, batch_parallelism) values ('"
             + batchStep
             + "', '"
             + parent
@@ -58,7 +58,7 @@ class BatchStoreTest extends AbstractStoreTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_steps (id, job_id, name, type, state, item_count)"
+                    "insert into bikesched_steps (id, job_id, name, type, state, batch_item_count)"
                         + " values (gen_random_uuid(), '"
                         + parent
                         + "', 'step', 'STEP', 'RUNNING', 2)"))
@@ -74,16 +74,20 @@ class BatchStoreTest extends AbstractStoreTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "update bikesched_steps set ended_count = 3 where id = '" + batchStep + "'"))
+                    "update bikesched_steps set batch_ended_count = 3 where id = '"
+                        + batchStep
+                        + "'"))
         .as("no more items ended than the batch has")
         .hasMessageContaining("bikesched_steps_batch_check");
     assertThatThrownBy(
             () ->
                 execute(
-                    "update bikesched_steps set parallelism = 0 where id = '" + batchStep + "'"))
+                    "update bikesched_steps set batch_parallelism = 0 where id = '"
+                        + batchStep
+                        + "'"))
         .hasMessageContaining("bikesched_steps_batch_check");
     execute(
-        "update bikesched_steps set state = 'FAILED', finished_at = now(), fail_fast = true"
+        "update bikesched_steps set state = 'FAILED', finished_at = now(), batch_fail_fast = true"
             + " where id = '"
             + batchStep
             + "'");

@@ -219,33 +219,33 @@ create index bikesched_jobs_held_idx on bikesched_jobs (batch_step_id, batch_ind
 -- across its attempts), which every write to a single step uses, and by its name within its job,
 -- which the handler's replay looks it up by.
 create table bikesched_steps (
-    id                uuid             not null,
-    job_id            uuid             not null,
-    name              text collate "C" not null,
-    type              text collate "C" not null default 'STEP',
-    state             text collate "C" not null default 'RUNNING',
-    locked_by_node_id uuid,                                -- the node running the step (no FK: may outlive a dead node)
-    event_id          uuid,                                -- the event received or published (no FK: see above)
-    child_job_id      uuid,                                -- the child job started (no FK: see above)
-    batch_step_id     uuid,                                -- the batch step of an item step (same job)
-    started_at        timestamptz      not null default now(),
-    finished_at       timestamptz,
-    wake_at           timestamptz,
-    deadline_at       timestamptz,                         -- the deadline of a poll, none if null
-    attempts          integer          not null default 0,
-    failure_attempts  integer          not null default 0, -- runs of its failure handler while FAILING
-    item_count        integer,                             -- batch steps: the number of items
-    parallelism       integer,                             -- batch steps: items active at once, null: all
-    active_count      integer,                             -- batch steps: items admitted and not ended
-    ended_count       integer,                             -- batch steps: items ended
-    fail_fast         boolean          not null default false, -- batch steps: end at the first failed item
-    compensable       boolean          not null default false,
-    child_end_state   text collate "C",                    -- the child's terminal state, once it ended
-    child_job_name    text collate "C",                    -- its name, checked on replays even after it was deleted
-    event_name        text collate "C",
-    event_key         text collate "C",
-    result            jsonb,
-    last_error        text,
+    id                 uuid             not null,
+    job_id             uuid             not null,
+    name               text collate "C" not null,
+    type               text collate "C" not null default 'STEP',
+    state              text collate "C" not null default 'RUNNING',
+    locked_by_node_id  uuid,                                -- the node running the step (no FK: may outlive a dead node)
+    event_id           uuid,                                -- the event received or published (no FK: see above)
+    child_job_id       uuid,                                -- the child job started (no FK: see above)
+    batch_step_id      uuid,                                -- the batch step of an item step (same job)
+    batch_item_count   integer,                             -- batch steps: the number of items
+    batch_parallelism  integer,                             -- batch steps: items active at once, null: all
+    batch_active_count integer,                             -- batch steps: items admitted and not ended
+    batch_ended_count  integer,                             -- batch steps: items ended
+    batch_fail_fast    boolean          not null default false, -- batch steps: end at the first failed item
+    started_at         timestamptz      not null default now(),
+    finished_at        timestamptz,
+    wake_at            timestamptz,
+    deadline_at        timestamptz,                         -- the deadline of a poll, none if null
+    attempts           integer          not null default 0,
+    failure_attempts   integer          not null default 0, -- runs of its failure handler while FAILING
+    compensable        boolean          not null default false,
+    child_end_state    text collate "C",                    -- the child's terminal state, once it ended
+    child_job_name     text collate "C",                    -- its name, checked on replays even after it was deleted
+    event_name         text collate "C",
+    event_key          text collate "C",
+    result             jsonb,
+    last_error         text,
     constraint bikesched_steps_pkey primary key (id),
     constraint bikesched_steps_job_id_name_key unique (job_id, name),
     constraint bikesched_steps_job_id_fkey
@@ -298,15 +298,15 @@ create table bikesched_steps (
     -- Batch steps count their items and know their mode; only they fail fast, and they FAIL only
     -- then. Item steps are child job steps pointing to their batch step.
     constraint bikesched_steps_batch_check
-        check ((type = 'CHILD_JOB_BATCH') = (item_count is not null)
-               and (item_count is null) = (active_count is null)
-               and (item_count is null) = (ended_count is null)
-               and (parallelism is null or type = 'CHILD_JOB_BATCH')
-               and (not fail_fast or type = 'CHILD_JOB_BATCH')
-               and (type <> 'CHILD_JOB_BATCH' or state <> 'FAILED' or fail_fast)
+        check ((type = 'CHILD_JOB_BATCH') = (batch_item_count is not null)
+               and (batch_item_count is null) = (batch_active_count is null)
+               and (batch_item_count is null) = (batch_ended_count is null)
+               and (batch_parallelism is null or type = 'CHILD_JOB_BATCH')
+               and (not batch_fail_fast or type = 'CHILD_JOB_BATCH')
+               and (type <> 'CHILD_JOB_BATCH' or state <> 'FAILED' or batch_fail_fast)
                and (batch_step_id is null or type = 'CHILD_JOB')
-               and item_count >= 0 and parallelism >= 1 and active_count >= 0
-               and ended_count between 0 and item_count),
+               and batch_item_count >= 0 and batch_parallelism >= 1 and batch_active_count >= 0
+               and batch_ended_count between 0 and batch_item_count),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by_node_id is not null)),
     -- Only regular steps run handlers that can postpone the job.

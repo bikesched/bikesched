@@ -40,8 +40,8 @@ with its batch step, position and key (`batch_step_id`, `batch_index`, `batch_ke
 
 - **Parallelism**: with `parallelism(k)`, items beyond the first `k` are stored in the new job
   state `HELD`, which the claim query never takes. The batch step counts its active and ended
-  items (`active_count`, `ended_count`); an item's end admits as many held items as the counters
-  allow, in item order, with `for update skip locked`.
+  items (`batch_active_count`, `batch_ended_count`); an item's end admits as many held items as
+  the counters allow, in item order, with `for update skip locked`.
 - **Resume once**: an item's end locks the batch step, completes its item step and the counters,
   and only the last item resumes the parent. `JobBatch.await()` suspends at the batch step and
   returns a `JobBatchResult` of every item's `JobResult`. Waiting for a single item is rejected.

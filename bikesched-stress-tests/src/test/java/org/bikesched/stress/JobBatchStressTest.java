@@ -116,7 +116,7 @@ class JobBatchStressTest {
       assertThat(maxActive.get()).as("items active at once").isLessThanOrEqualTo(PARALLELISM);
       assertThat(
               database.queryLong(
-                  "select active_count from bikesched_steps where job_id = '"
+                  "select batch_active_count from bikesched_steps where job_id = '"
                       + parent
                       + "' and type = 'CHILD_JOB_BATCH'"))
           .isZero();
