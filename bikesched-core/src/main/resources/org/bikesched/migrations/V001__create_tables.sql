@@ -58,6 +58,8 @@ create table bikesched_jobs (
     state                  text collate "C" not null default 'SCHEDULED',
     parent_job_id          uuid,                                -- the job that started this one as a child
     batch_step_id          uuid,                                -- the batch step of the parent that started it
+    batch_index            integer,                             -- its position in its batch, from 0
+    batch_key              text collate "C",                    -- its key in its batch
     locked_by_node_id      uuid,
     lock_token             uuid,                                -- new for every claim: fences the claim's writes
     scheduled_at           timestamptz      not null default now(),
@@ -70,7 +72,6 @@ create table bikesched_jobs (
                                                                 -- not moved by retries or event waits
     timeout_millis         bigint,                              -- max. duration of an attempt; null: node default / none
     priority               integer          not null default 0,
-    batch_index            integer,                             -- its position in its batch, from 0
     attempts               integer          not null default 0,
     max_attempts           integer          not null default 3,
     compensation_attempts  integer          not null default 0,
@@ -80,7 +81,6 @@ create table bikesched_jobs (
     recurrence             text collate "C",                    -- occurrence of a recurring job: its recurrence's description
     idempotency_key        text collate "C",                    -- dedups scheduling: unique per name while the job exists
     reference              text collate "C",                    -- the external entity the job is about; not unique
-    batch_key              text collate "C",                    -- its key in its batch
     payload                jsonb,
     result                 jsonb,                               -- Job.complete(result); only set when SUCCEEDED
     last_error             text,
