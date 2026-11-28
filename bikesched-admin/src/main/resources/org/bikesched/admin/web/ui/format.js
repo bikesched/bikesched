@@ -235,8 +235,8 @@ export const jobHref = (id) => toHash({ section: 'jobs', id });
 
 export const stepHref = (jobId, stepId) => toHash({ section: 'jobs', id: jobId, stepId });
 
-// Search by id or reference: a full id or at least its last 8 hex digits (the short id; whitespace, hyphens and
-// case are ignored, as on the server), or a reference (exact match, whitespace included, at most 200 characters).
+// Search by full id (whitespace, hyphens and case ignored, as on the server) or a reference
+// (exact match, whitespace included, at most 200 characters).
 const idDigits = (text) => text.trim().replace(/-/g, '').toLowerCase();
 
 export function searchHint(text) {
@@ -259,7 +259,7 @@ export function SearchField({ kind, value, onSearch }) {
       <label class="field-label" for=${id}>${kind === 'job' ? 'Job id or reference' : 'Event id or reference'}</label>
       <div class="row">
         <input id=${id} class="input mono id-input" type="search" value=${input}
-          placeholder="Id, its last 8 characters, or a reference" aria-describedby=${hint ? `${id}-hint` : undefined}
+          placeholder="Id or reference" aria-describedby=${hint ? `${id}-hint` : undefined}
           onInput=${(event) => setInput(event.target.value)}
           onKeyDown=${(event) => {
             if (event.key === 'Escape') {

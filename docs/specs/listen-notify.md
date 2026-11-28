@@ -38,7 +38,7 @@ claimable:
 | Child job ended | `JobStore.RESUME_PARENT_SQL` | now |
 | `retry(jobId)`, `cancel(jobId)` | `RETRY_JOB_SQL`, `REQUEST_CANCEL_SQL` | now |
 | Failed attempt, compensation | `FAIL_JOB_SQL`, `CANCEL_JOB_SQL`, `FAIL_COMPENSATION_SQL` | now, or later with a retry delay |
-| Suspension (event wait, sleep, poll check, child job) | `StepStore.SUSPEND_JOB_SQL`, `suspendAtPoll` | deadline or wake-up time; `infinity` without one; now if the step completed meanwhile |
+| Suspension (event wait, sleep, poll check, child job) | `StepStore.SUSPEND_JOB_SQL`, `suspendAtPoll` | deadline or wake-up time; `null` (no `scheduled_at`) without one; now if the step completed meanwhile |
 | Jobs of dead nodes, inactive claims, `close()` | the three `RELEASE_*_SQL` | now |
 
 ## 3. Non-goals

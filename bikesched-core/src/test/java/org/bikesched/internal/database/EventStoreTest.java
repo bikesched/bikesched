@@ -84,7 +84,7 @@ class EventStoreTest extends AbstractStoreTest {
             .orElseThrow();
 
     assertThat(suspended).isEqualTo(new StepStore.SuspendedJob(true, null));
-    assertThat(stateAndSchedule(job.id())).isEqualTo("WAITING infinity");
+    assertThat(stateAndSchedule(job.id())).isEqualTo("WAITING null");
     assertThat(claimJobs(node, 100)).extracting(JobStore.ClaimedJob::id).doesNotContain(job.id());
 
     assertThat(
@@ -184,7 +184,7 @@ class EventStoreTest extends AbstractStoreTest {
     }
 
     assertThat(countRows("bikesched_events", "key = 'rollback-1'")).isZero();
-    assertThat(stateAndSchedule(job.id())).isEqualTo("WAITING infinity");
+    assertThat(stateAndSchedule(job.id())).isEqualTo("WAITING null");
   }
 
   @Test
@@ -512,7 +512,8 @@ class EventStoreTest extends AbstractStoreTest {
     try (var connection = dataSource.getConnection();
         var statement =
             connection.prepareStatement(
-                "select state || ' ' || scheduled_at::text from bikesched_jobs where id = ?")) {
+                "select state || ' ' || coalesce(scheduled_at::text, 'null')"
+                    + " from bikesched_jobs where id = ?")) {
       statement.setObject(1, jobId);
       try (var rs = statement.executeQuery()) {
         rs.next();

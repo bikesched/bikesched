@@ -57,7 +57,7 @@ public final class EventStore {
       """
             select id, payload::text as payload from bikesched_events
              where name = ? and key = ? and expires_at > now()
-             order by published_at desc limit 1""";
+             order by published_at desc, id desc limit 1""";
 
   private static final String RECEIVE_EVENT_STEP_SQL =
       """

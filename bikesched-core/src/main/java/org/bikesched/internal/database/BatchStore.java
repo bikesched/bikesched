@@ -100,7 +100,7 @@ public final class BatchStore {
   private static final String RESTART_ITEM_STEPS_SQL =
       """
             update bikesched_steps s
-               set state = 'WAITING', child_job_id = t.child, child_job_name = t.child_name, child_end_state = null,
+               set state = 'WAITING', child_job_id = t.child, child_job_name = t.child_name, child_job_end_state = null,
                    result = null, last_error = null, wake_at = null, compensable = ? and t.idx < ?,
                    attempts = s.attempts + 1, started_at = now(), finished_at = null
               from unnest(?::uuid[], ?::uuid[], ?::text[], ?::integer[]) as t (id, child, child_name, idx)
@@ -108,7 +108,7 @@ public final class BatchStore {
 
   private static final String FIND_ITEMS_SQL =
       """
-            select id, name, state, child_job_id, child_job_name, child_end_state, result::text as result,
+            select id, name, state, child_job_id, child_job_name, child_job_end_state, result::text as result,
                    last_error, compensable, attempts
               from bikesched_steps where batch_step_id = ? order by id""";
 
@@ -126,7 +126,7 @@ public final class BatchStore {
   private static final String COMPLETE_ITEM_STEP_SQL =
       """
             update bikesched_steps s
-               set state = 'SUCCEEDED', child_end_state = c.state,
+               set state = 'SUCCEEDED', child_job_end_state = c.state,
                    result = case when c.state = 'SUCCEEDED' then c.result end,
                    last_error = case when c.state = 'SUCCEEDED' then null else c.last_error end,
                    finished_at = now()
@@ -815,7 +815,7 @@ public final class BatchStore {
                     row.uuid("child_job_id"),
                     row.string("child_job_name")),
                 row.enumValue("state", StepState.class),
-                row.enumValue("child_end_state", JobState.class),
+                row.enumValue("child_job_end_state", JobState.class),
                 row.string("result"),
                 row.string("last_error"),
                 row.bool("compensable"),

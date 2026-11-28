@@ -139,10 +139,10 @@ always shown.
   parent below its name; a run of a recurring job has the repeat icon and its recurrence there; a
   job with a [reference](../jobs/README.md#references) shows it there too.
 - **Search by id or reference**: the job list and the event list each have a search field. It
-  takes a full id or its last 8 characters (the short id the lists show: ids are time-ordered
-  UUIDv7, so their start is their creation time and their end is random), with or without hyphens,
+  takes a full id (ids are time-ordered UUIDv7, so their start is their creation time and their
+  end is random; the lists still show a shortened id for readability), with or without hyphens,
   or a reference (exact match, case- and whitespace-sensitive), and finds only jobs in the job
-  list and only events in the event list: those whose id ends with the text and those with it as
+  list and only events in the event list: the job or event with that id, or those with it as
   their reference. A single match opens its detail; the other filters are off while the search is
   active.
 - **Job detail**: all fields (the type says single, recurring or child job), the idempotency key,
@@ -249,14 +249,14 @@ is JSON with `Cache-Control: no-store` and an `ETag`.
 | Method | Path | Returns |
 |---|---|---|
 | GET | `api/jobs?name=&state=&node=&reference=&batch=&before=&limit=` | `{"jobs": [...], "next": cursor}`: newest first; `state` takes several states separated by commas, `node` a node id (the jobs it runs now), `reference` a reference (exact match), `batch` a batch step's id (its items), `before` the previous page's `next`, `limit` 1 to 500 (default 50) |
-| GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: jobs whose id ends with `id` (at least 8 hex digits, or a full id), newest first; not combined with the other filters |
-| GET | `api/jobs?search=&limit=` | `{"jobs": [...], "next": null}`: the page's search, jobs whose id ends with `search` (if it is 8 to 32 hex digits) or whose reference is `search`, newest first; not combined with the other filters |
+| GET | `api/jobs?id=&limit=` | `{"jobs": [...], "next": null}`: the job with the full id `id`, newest first; not combined with the other filters |
+| GET | `api/jobs?search=&limit=` | `{"jobs": [...], "next": null}`: the page's search, the job with the full id `search` (if it is a full id) or whose reference is `search`, newest first; not combined with the other filters |
 | GET | `api/jobs/{id}` | `{"job", "ancestors", "steps", "history", "payloadsShown"}`, plus `payload` and `result` with `showPayloads(true)` |
 | GET | `api/steps/{id}` | `{"step", "job", "history", "payloadsShown"}`: one step by its id with its job's summary and the step's history entries, plus `result` with `showPayloads(true)` |
 | GET | `api/job-names` | `{"names": [{"name", "total", "counts", "recurrence", "handled"}]}`: `handled` if the serving node can schedule the name: it has a handler for it or declares it as a remote job name (such names without jobs are listed too) |
 | GET | `api/events?name=&key=&reference=&before=&limit=` | `{"events": [...], "next": cursor}`: unexpired events, newest first; `key` is a prefix, `reference` an exact match |
-| GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `id`, as for jobs |
-| GET | `api/events?search=&limit=` | `{"events": [...], "next": null}`: unexpired events whose id ends with `search` or whose reference is `search`, as for jobs |
+| GET | `api/events?id=&limit=` | `{"events": [...], "next": null}`: the unexpired event with the full id `id`, as for jobs |
+| GET | `api/events?search=&limit=` | `{"events": [...], "next": null}`: the unexpired event with the full id `search` or whose reference is `search`, as for jobs |
 | GET | `api/events/{id}` | `{"event", "steps", "history", "payloadsShown"}`, plus `payload` with `showPayloads(true)`; `history` holds the event's entries and those it caused |
 | GET | `api/event-names` | `{"names": [{"name", "count", "waiting"}]}`: unexpired events and waiting steps per name |
 | GET | `api/recurring-runs?name=&limit=` | `{"name", "pending", "previous": [...]}`: the pending run of a recurring job (`null` if none) and its latest ended runs, newest first |
@@ -294,7 +294,6 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | Method | Returns |
 |---|---|
 | `findJobs(JobQuery)` | jobs by name, reference, states and the node running them, newest first, in pages (`after(lastJob)`) |
-| `findJobsByIdSuffix(suffix, limit)` | jobs whose id ends with at least 8 hex digits (or a full id), newest first |
 | `findJob(id)` | one job's summary: name, type, state, attempts, times, last error, parent, recurrence, idempotency key, reference, node |
 | `findJob(name, idempotencyKey)` | the job with a name and an idempotency key, the one scheduling with that key returns |
 | `findJobData(id)` | the payload and result as JSON text |
@@ -303,7 +302,6 @@ List<StepInfo> steps = admin.findSteps(failed.getFirst().id());
 | `findJobNames()` | every job name with its number of jobs per state and whether this node can schedule it, with a handler or as a remote job name (such names without jobs too) |
 | `findRecurringJobRuns(name, limit)` | a recurring job's pending run and its latest ended runs, newest first |
 | `findEvents(EventQuery)` | unexpired events by name, key prefix and reference, newest first, in pages |
-| `findEventsByIdSuffix(suffix, limit)` | unexpired events whose id ends with at least 8 hex digits |
 | `findEvent(id)`, `findEventPayload(id)` | one event, its payload as JSON text |
 | `findEventNames()` | every event name with its number of unexpired events |
 | `findEventSteps(id)` | the steps that published or received the event |

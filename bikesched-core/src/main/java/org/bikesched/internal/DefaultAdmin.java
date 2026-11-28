@@ -5,7 +5,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -53,9 +52,6 @@ final class DefaultAdmin implements Admin {
     boolean removeRecurringJob(String name, @Nullable Actor actor);
   }
 
-  // The digits of the short id the admin UI shows.
-  private static final int MIN_ID_SUFFIX = 8;
-
   private final AdminStore store;
 
   private final HistoryStore history;
@@ -89,14 +85,6 @@ final class DefaultAdmin implements Admin {
     Objects.requireNonNull(query, "query");
     ensureReady.run();
     return store.findJobs(query);
-  }
-
-  @Override
-  public List<JobSummary> findJobsByIdSuffix(String idSuffix, int limit) {
-    String suffix = idSuffix(idSuffix);
-    requireLimit(limit);
-    ensureReady.run();
-    return store.findJobsByIdSuffix(suffix, limit);
   }
 
   @Override
@@ -174,14 +162,6 @@ final class DefaultAdmin implements Admin {
   }
 
   @Override
-  public List<EventSummary> findEventsByIdSuffix(String idSuffix, int limit) {
-    String suffix = idSuffix(idSuffix);
-    requireLimit(limit);
-    ensureReady.run();
-    return store.findEventsByIdSuffix(suffix, limit);
-  }
-
-  @Override
   public Optional<EventSummary> findEvent(UUID eventId) {
     Objects.requireNonNull(eventId, "eventId");
     ensureReady.run();
@@ -247,17 +227,6 @@ final class DefaultAdmin implements Admin {
   @Override
   public boolean isRecordingHistory() {
     return history.isEnabled();
-  }
-
-  // The hex digits of an id suffix, lower case and without hyphens.
-  private static String idSuffix(String idSuffix) {
-    Objects.requireNonNull(idSuffix, "idSuffix");
-    String hex = idSuffix.strip().replace("-", "").toLowerCase(Locale.ROOT);
-    if (hex.length() < MIN_ID_SUFFIX || hex.length() > 32 || !hex.matches("[0-9a-f]+")) {
-      throw new IllegalArgumentException(
-          "an id suffix must have between " + MIN_ID_SUFFIX + " and 32 hex digits: " + idSuffix);
-    }
-    return hex;
   }
 
   private static void requireLimit(int limit) {

@@ -92,7 +92,7 @@ public final class JobStore {
   private static final String RESTART_CHILD_JOB_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'WAITING', child_job_id = ?, child_end_state = null, result = null, last_error = null,
+               set state = 'WAITING', child_job_id = ?, child_job_end_state = null, result = null, last_error = null,
                    wake_at = null, compensable = ?, attempts = attempts + 1, started_at = now(), finished_at = null
              where id = ? and type = 'CHILD_JOB' and state = 'COMPENSATED'""";
 
@@ -104,7 +104,7 @@ public final class JobStore {
   private static final String COMPLETE_CHILD_JOB_STEP_SQL =
       """
             update bikesched_steps s
-               set state = 'SUCCEEDED', child_end_state = c.state,
+               set state = 'SUCCEEDED', child_job_end_state = c.state,
                    result = case when c.state = 'SUCCEEDED' then c.result end,
                    last_error = case when c.state = 'SUCCEEDED' then null else c.last_error end,
                    finished_at = now()

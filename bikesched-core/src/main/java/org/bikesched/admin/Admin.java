@@ -37,19 +37,6 @@ public interface Admin {
   List<JobSummary> findJobs(JobQuery query);
 
   /**
-   * Finds the jobs whose id ends with the given hex digits, newest first, e.g. to look up the short
-   * id the admin UI shows: the last 8 hex digits, the random part of the time-ordered id.
-   *
-   * @param idSuffix at least 8 and at most 32 hex digits at the end of the id; case, hyphens and
-   *     surrounding whitespace are ignored, so a full id matches too
-   * @param limit the maximum number of jobs, between 1 and {@link JobQuery#MAX_LIMIT}
-   * @return the matching jobs
-   * @throws IllegalArgumentException if the suffix has fewer than 8 or more than 32 hex digits or
-   *     other characters
-   */
-  List<JobSummary> findJobsByIdSuffix(String idSuffix, int limit);
-
-  /**
    * Looks up one job.
    *
    * @param jobId the job id
@@ -129,19 +116,6 @@ public interface Admin {
    * @return at most {@link EventQuery#limit()} events
    */
   List<EventSummary> findEvents(EventQuery query);
-
-  /**
-   * Finds the unexpired events whose id ends with the given hex digits, newest first, e.g. the
-   * short id the admin UI shows (the last 8 hex digits).
-   *
-   * @param idSuffix at least 8 and at most 32 hex digits at the end of the id; case, hyphens and
-   *     surrounding whitespace are ignored, so a full id matches too
-   * @param limit the maximum number of events, between 1 and {@link JobQuery#MAX_LIMIT}
-   * @return the matching events
-   * @throws IllegalArgumentException if the suffix has fewer than 8 or more than 32 hex digits or
-   *     other characters
-   */
-  List<EventSummary> findEventsByIdSuffix(String idSuffix, int limit);
 
   /**
    * Looks up one event, also an expired one that was not deleted yet.

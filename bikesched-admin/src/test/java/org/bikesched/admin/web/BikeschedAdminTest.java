@@ -161,15 +161,14 @@ class BikeschedAdminTest {
   }
 
   @Test
-  void findsJobsAndEventsByTheLastDigitsOfTheirId() {
+  void findsJobsAndEventsByTheirFullId() {
     String type = prefix + "by-id";
     bikesched.registerJobHandler(type, ignored -> {});
     UUID jobId = bikesched.newJob(type).schedule(Duration.ofHours(1));
     UUID eventId = bikesched.newEvent(prefix + "by-id", "k").publish();
 
     try (var server = AdminServer.serve(BikeschedAdmin.of(bikesched))) {
-      JsonObject jobs =
-          AdminServer.json(server.get("/api/jobs?id=" + jobId.toString().substring(28)));
+      JsonObject jobs = AdminServer.json(server.get("/api/jobs?id=" + jobId));
       assertThat(ids(jobs.getArray("jobs"))).containsExactly(jobId.toString());
       assertThat(jobs.isNull("next")).isTrue();
       JsonObject events = AdminServer.json(server.get("/api/events?id=" + eventId));
@@ -218,9 +217,8 @@ class BikeschedAdminTest {
                       .getArray("jobs")))
           .containsExactly(older.toString());
 
-      // The search also finds ids; the reference filter combines with the name and paging.
-      String suffix = older.toString().substring(28);
-      assertThat(ids(AdminServer.json(server.get("/api/jobs?search=" + suffix)).getArray("jobs")))
+      // The search also finds full ids; the reference filter combines with the name and paging.
+      assertThat(ids(AdminServer.json(server.get("/api/jobs?search=" + older)).getArray("jobs")))
           .containsExactly(older.toString());
       JsonObject page =
           AdminServer.json(

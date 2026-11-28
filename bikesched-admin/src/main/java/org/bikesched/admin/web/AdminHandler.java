@@ -21,7 +21,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.bikesched.Bikesched;
@@ -88,7 +87,7 @@ final class AdminHandler {
   /** The length limit of references, as checked by bikesched (and the schema). */
   private static final int MAX_REFERENCE_LENGTH = 200;
 
-  private static final Pattern ID_SUFFIX = Pattern.compile("(?i)[0-9a-f]{8,32}");
+  private static final Pattern FULL_ID = Pattern.compile("(?i)[0-9a-f]{32}");
 
   private static final String CSP =
       "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -421,20 +420,23 @@ final class AdminHandler {
   private Json.Obj jobs(Admin admin, Map<String, String> params) {
     int limit = limit(params);
     String[] filters = {"name", "state", "node", "reference"};
-    String idSuffix = idSuffix(params, "name", "state", "node", "reference", "search");
-    if (idSuffix != null) {
-      List<JobSummary> jobs = byIdSuffix(() -> admin.findJobsByIdSuffix(idSuffix, limit));
+    UUID jobId = idFilter(params, "name", "state", "node", "reference", "search");
+    if (jobId != null) {
+      List<JobSummary> jobs = admin.findJob(jobId).map(List::of).orElse(List.of());
       return Json.object()
           .put("jobs", jobs.stream().map(AdminJson::job).toList())
           .put("next", null);
     }
     String search = search(params, filters);
     if (search != null) {
+      UUID searchId = parseUuid(search);
       List<JobSummary> jobs =
           newestFirst(
               JobSummary::id,
               limit,
-              isIdSuffix(search) ? admin.findJobsByIdSuffix(search.strip(), limit) : List.of(),
+              searchId != null
+                  ? admin.findJob(searchId).map(List::of).orElse(List.of())
+                  : List.of(),
               admin.findJobs(JobQuery.newest(limit).withReference(search)));
       return Json.object()
           .put("jobs", jobs.stream().map(AdminJson::job).toList())
@@ -591,20 +593,23 @@ final class AdminHandler {
   private Json.Obj events(Admin admin, Map<String, String> params) {
     int limit = limit(params);
     String[] filters = {"name", "key", "reference"};
-    String idSuffix = idSuffix(params, "name", "key", "reference", "search");
-    if (idSuffix != null) {
-      List<EventSummary> events = byIdSuffix(() -> admin.findEventsByIdSuffix(idSuffix, limit));
+    UUID eventId = idFilter(params, "name", "key", "reference", "search");
+    if (eventId != null) {
+      List<EventSummary> events = admin.findEvent(eventId).map(List::of).orElse(List.of());
       return Json.object()
           .put("events", events.stream().map(AdminJson::event).toList())
           .put("next", null);
     }
     String search = search(params, filters);
     if (search != null) {
+      UUID searchId = parseUuid(search);
       List<EventSummary> events =
           newestFirst(
               EventSummary::id,
               limit,
-              isIdSuffix(search) ? admin.findEventsByIdSuffix(search.strip(), limit) : List.of(),
+              searchId != null
+                  ? admin.findEvent(searchId).map(List::of).orElse(List.of())
+                  : List.of(),
               admin.findEvents(EventQuery.newest(limit).withReference(search)));
       return Json.object()
           .put("events", events.stream().map(AdminJson::event).toList())
@@ -869,11 +874,11 @@ final class AdminHandler {
     return params;
   }
 
-  // The id search of a list: the "id" parameter, which excludes the list's other filters and
+  // The id lookup of a list: the "id" parameter, which excludes the list's other filters and
   // paging.
-  private static String idSuffix(Map<String, String> params, String... filters) {
-    String idSuffix = blankToNull(params.get("id"));
-    if (idSuffix == null) {
+  private static UUID idFilter(Map<String, String> params, String... filters) {
+    String raw = blankToNull(params.get("id"));
+    if (raw == null) {
       return null;
     }
     for (String filter : filters) {
@@ -884,11 +889,15 @@ final class AdminHandler {
     if (blankToNull(params.get("before")) != null) {
       throw new BadRequest("Parameter id cannot be combined with before");
     }
-    return idSuffix;
+    UUID parsed = parseUuid(raw);
+    if (parsed == null) {
+      throw new BadRequest("Invalid id: " + raw);
+    }
+    return parsed;
   }
 
   // The search of a list by id or reference: the "search" parameter, which excludes the list's
-  // other filters and paging like the id search. It is kept as given, since a reference may have
+  // other filters and paging like the id lookup. It is kept as given, since a reference may have
   // surrounding whitespace; only the id lookup strips it.
   private static String search(Map<String, String> params, String... filters) {
     String search = blankToNull(params.get("search"));
@@ -910,10 +919,23 @@ final class AdminHandler {
     return search;
   }
 
-  // Whether a search text can be an id suffix: 8 to 32 hex digits, hyphens and case ignored (as by
-  // Admin.findJobsByIdSuffix); anything else is only searched as a reference.
-  private static boolean isIdSuffix(String text) {
-    return ID_SUFFIX.matcher(text.strip().replace("-", "")).matches();
+  // Parses a full UUID (with or without hyphens, case and surrounding whitespace ignored), or
+  // returns null if the text is not a UUID.
+  private static UUID parseUuid(String text) {
+    String hex = text.strip().replace("-", "");
+    if (!FULL_ID.matcher(hex).matches()) {
+      return null;
+    }
+    return UUID.fromString(
+        hex.substring(0, 8)
+            + "-"
+            + hex.substring(8, 12)
+            + "-"
+            + hex.substring(12, 16)
+            + "-"
+            + hex.substring(16, 20)
+            + "-"
+            + hex.substring(20));
   }
 
   // The rows of both lookups, each once, newest first by their time-ordered ids.
@@ -935,14 +957,6 @@ final class AdminHandler {
       throw new BadRequest("A reference has at most " + MAX_REFERENCE_LENGTH + " characters");
     }
     return reference;
-  }
-
-  private static <T> List<T> byIdSuffix(Supplier<List<T>> lookup) {
-    try {
-      return lookup.get();
-    } catch (IllegalArgumentException e) {
-      throw new BadRequest(e.getMessage());
-    }
   }
 
   private static int limit(Map<String, String> params) {

@@ -176,7 +176,7 @@ class ChildJobTest extends AbstractBikeschedTest {
               countSteps(
                   parentId,
                   "name = 'start child-basic-child' and type = 'CHILD_JOB' and state = 'SUCCEEDED'"
-                      + " and child_end_state = 'SUCCEEDED' and child_job_id = '"
+                      + " and child_job_end_state = 'SUCCEEDED' and child_job_id = '"
                       + childId
                       + "'"))
           .isEqualTo(1);
