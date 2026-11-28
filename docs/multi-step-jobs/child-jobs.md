@@ -163,7 +163,7 @@ bikesched.registerJobHandler("process-image", job -> {
         .addAll(Format.ALL, Format::name, f -> new Render(imageId, f))   // key, payload
         .parallelism(4)                                                  // at most 4 at a time
         .schedule();
-    List<Image> images = renders.await().orElseThrow();                  // in item order
+    List<Image> images = renders.await();                                // in item order
     job.complete(new Renditions(images));
 });
 ```
@@ -210,20 +210,29 @@ time of the batch, so `schedule(Instant)` delays them too. A held item can be ca
 ### Waiting for a batch
 
 `JobBatch.await()` and `await(Duration timeout)` suspend the parent like `waitForJob`: no thread,
-no slot, and the parent resumes once, when the batch has ended. An item ending while the parent
-waits for something else does not wake it, except the batch's last item (one replay). Waiting for
-a single item with `waitForJob` is rejected: wait for the batch.
+no slot, and the parent resumes once, when the batch has ended. They return the results in item
+order and throw a `JobFailedException` if any item did not succeed or the wait timed out.
+`awaitResult()` and `awaitResult(Duration timeout)` return the full `JobBatchResult` without
+throwing so the parent can inspect partial failures. An item ending while the parent waits for
+something else does not wake it, except the batch's last item (one replay). Waiting for a single
+item with `waitForJob` is rejected: wait for the batch.
 
-`JobBatchResult` holds every item's `JobResult`, mapped lazily per item:
+`JobBatchResult` is a sealed interface (`Succeeded`, `Failed`, with `Failed.Incomplete` extending
+`Failed` when some items succeeded and at least one did not) holding every item's `JobResult`,
+mapped lazily per item. Match `Failed.Incomplete` before `Failed` to handle partial failure
+separately from total failure, or match only `Succeeded` and `Failed` to treat both the same:
 
-| Method | Returns |
+| Type / Method | Meaning / Returns |
 |---|---|
+| `JobBatchResult.Succeeded` | every item succeeded (also an empty batch); `results()` returns all results in item order |
+| `JobBatchResult.Failed.Incomplete` | some items succeeded and at least one did not (extends `Failed`) |
+| `JobBatchResult.Failed` | at least one item did not succeed; a plain `Failed` when none succeeded |
 | `orElseThrow()` | the results in item order, or a `JobFailedException` naming the keys that did not succeed |
 | `isAllSucceeded()` | whether every item succeeded |
 | `succeeded()`, `unsucceeded()`, `all()` | maps from key to result or outcome, in item order |
 | `get(key)`, `get(key, resultJob)`, `get(key, Class)` | one item, typed by the batch, by its job, or by a class |
 
-- A failed item never fails the parent by itself.
+- With `awaitResult()`, a failed item never fails the parent by itself.
 - With a timeout, the batch is `TIMED_OUT` once it has passed: held items are cancelled, running
   items keep running, and every unfinished item reads `TimedOut` on every replay.
 - With `failFast()`, the first item that does not succeed ends the batch and resumes the parent:
@@ -238,7 +247,7 @@ a single item with `waitForJob` is rejected: wait for the batch.
 | `compensateWith` | each admitted item is compensated, in reverse item order; held items are cancelled once the parent starts compensating, they never ran and have nothing to compensate |
 | parent ends without waiting | its held items are cancelled; admitted items run to their end |
 | parent retried after its compensation | the `COMPENSATED` batch starts new items for the same keys, in the same order (other keys are an `IllegalStateException`) |
-| parent retried after a failure, without `compensateWith` | the batch is not compensated, so the retry gets the stored batch back: its held items were cancelled when the parent failed and stay `Cancelled`; use `compensateWith` for batches whose retry should run every item |
+| parent retried after a failure, without `compensateWith` | the batch is not compensated, so the retry gets the stored batch back: its held items were cancelled when the parent failed and stay `Cancelled`; use `compensateWith` for batches whose retry should run every item, or inspect `unsucceeded()` and start a new batch under a new step name to retry only failed items |
 | an item cancelled from elsewhere | its outcome is `Cancelled`; the batch goes on |
 
 The [history](../jobs/README.md#history) records `BATCH_STARTED` and `BATCH_ENDED` on the batch

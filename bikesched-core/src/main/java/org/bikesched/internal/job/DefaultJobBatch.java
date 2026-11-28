@@ -64,19 +64,19 @@ final class DefaultJobBatch<R extends @Nullable Object> implements JobBatch<R> {
   }
 
   @Override
-  public JobBatchResult<R> await() {
+  public JobBatchResult<R> awaitResult() {
     return parent.awaitBatch(this, null);
   }
 
   @Override
-  public JobBatchResult<R> await(Duration timeout) {
+  public JobBatchResult<R> awaitResult(Duration timeout) {
     ValidationUtil.requirePositive(timeout, "timeout");
     return parent.awaitBatch(this, timeout);
   }
 
   /** The result of the ended batch with the given items. */
   JobBatchResult<R> result(List<ItemOutcome> items) {
-    return new DefaultJobBatchResult<>(
+    return DefaultJobBatchResult.of(
         step.name(), items, key -> resultTypes.getOrDefault(key, defaultResultType), parent);
   }
 

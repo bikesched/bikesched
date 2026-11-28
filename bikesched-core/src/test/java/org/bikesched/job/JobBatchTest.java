@@ -58,7 +58,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                         job.newJobBatch("items", item)
                             .addAll(IntStream.range(0, 10).mapToObj(i -> json("p" + i)).toList())
                             .schedule();
-                    results.set(batch.await().orElseThrow());
+                    results.set(batch.await());
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
@@ -100,7 +100,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                             .addAll(List.of("a", "b"), s -> "k-" + s, s -> json(s))
                             .schedule();
                     ids.set(batch.jobIds());
-                    outcome.set(batch.await());
+                    outcome.set(batch.awaitResult());
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
@@ -150,8 +150,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                           .addAll(IntStream.range(0, 6).mapToObj(i -> json("p" + i)).toList())
                           .parallelism(2)
                           .schedule()
-                          .await()
-                          .orElseThrow())
+                          .await())
               .schedule();
       awaitState(parent, "SUCCEEDED");
 
@@ -192,7 +191,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                               .add("bad", json("bad"))
                               .maxAttempts(1)
                               .schedule()
-                              .await()))
+                              .awaitResult()))
               .schedule();
       awaitState(parent, "SUCCEEDED");
 
@@ -239,7 +238,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                               .parallelism(2)
                               .failFast()
                               .schedule()
-                              .await()))
+                              .awaitResult()))
               .schedule();
       awaitState(parent, "SUCCEEDED");
       release.countDown();
@@ -280,7 +279,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                             .add("held", json("h"))
                             .parallelism(1)
                             .schedule()
-                            .await(Duration.ofMillis(500)));
+                            .awaitResult(Duration.ofMillis(500)));
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
@@ -355,7 +354,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                             .parallelism(1)
                             .schedule();
                     ids.set(batch.jobIds());
-                    outcome.set(batch.await());
+                    outcome.set(batch.awaitResult());
                   })
               .schedule();
       awaitState(parent, "WAITING");
@@ -420,7 +419,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                       // neither checked nor written: the batch was started
                       builder.add("b", json("b")).add("a", json("duplicate"));
                     }
-                    outcome.set(builder.schedule().await());
+                    outcome.set(builder.schedule().awaitResult());
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
@@ -463,7 +462,11 @@ class JobBatchTest extends AbstractBikeschedTest {
                             job.newJobBatch("unmapped", item.name())
                                 .add("k", 42) // the default mapper takes JSON text only
                                 .schedule());
-                    var empty = job.newJobBatch("empty", item).schedule().await();
+                    JobBatch<Void> emptyBatch = job.newJobBatch("empty", item).schedule();
+                    assertThat(emptyBatch.await()).isEmpty();
+                    JobBatchResult<Void> empty = emptyBatch.awaitResult();
+                    assertThat(empty).isInstanceOf(JobBatchResult.Succeeded.class);
+                    assertThat(((JobBatchResult.Succeeded<Void>) empty).results()).isEmpty();
                     assertThat(empty.all()).isEmpty();
                     assertThat(empty.isAllSucceeded()).isTrue();
                   })
@@ -517,7 +520,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                             .add(untyped, "nsfw", json("f"))
                             .add("batch-mixed-named", "named", json("f"))
                             .schedule()
-                            .await());
+                            .awaitResult());
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
@@ -641,8 +644,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                       job.newJobBatch("items", item)
                           .addAll(IntStream.range(0, 12).mapToObj(i -> json("p" + i)).toList())
                           .schedule()
-                          .await()
-                          .orElseThrow())
+                          .await())
               .schedule();
       awaitState(parent, "SUCCEEDED");
 
@@ -666,8 +668,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                     job.newJobBatch("items", item)
                         .addAll(IntStream.range(0, 4).mapToObj(i -> json("p" + i)).toList())
                         .schedule()
-                        .await()
-                        .orElseThrow();
+                        .await();
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
@@ -706,7 +707,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                             .maxAttempts(1)
                             .failFast()
                             .schedule()
-                            .await());
+                            .awaitResult());
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
@@ -739,7 +740,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                             .addAll(IntStream.range(0, 6).mapToObj(i -> json("p" + i)).toList())
                             .schedule();
                     job.sleep("pause", Duration.ofSeconds(1));
-                    batch.await().orElseThrow();
+                    batch.await();
                   })
               .schedule();
       awaitState(parent, "SUCCEEDED");
@@ -772,8 +773,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                       builder
                           .compensateWith((step, batchItem) -> compensated.add(batchItem.jobId()))
                           .schedule()
-                          .await()
-                          .orElseThrow();
+                          .await();
                     } catch (IllegalStateException e) {
                       failure.set(e);
                       throw e;
@@ -940,7 +940,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                       firstIds.set(batch.jobIds());
                       throw new IllegalStateException("fails while its batch waits");
                     }
-                    outcome.set(batch.await());
+                    outcome.set(batch.awaitResult());
                   })
               .schedule();
       awaitState(parent, "FAILED");
@@ -1000,7 +1000,7 @@ class JobBatchTest extends AbstractBikeschedTest {
                             .failFast()
                             .schedule();
                     ids.set(batch.jobIds());
-                    batch.await();
+                    batch.awaitResult();
                   })
               .schedule();
       awaitState(parent, "WAITING");
@@ -1054,6 +1054,142 @@ class JobBatchTest extends AbstractBikeschedTest {
       assertThat(failure.get()).hasMessageContaining("would name an item step 'items/a'");
       assertThat(countRows("bikesched_steps", "job_id = '" + parent + "' and name = 'items'"))
           .isZero();
+    }
+  }
+
+  @Test
+  void awaitReturnsResultsAndThrowsOnFailureOrTimeout() throws Exception {
+    var item = TypedJob.of("batch-await-or-throw-item", String.class, String.class);
+    var slowItem = TypedJob.of("batch-await-or-throw-slow", String.class);
+    var release = new CountDownLatch(1);
+    var results = new AtomicReference<List<String>>();
+    var failedEx = new AtomicReference<JobFailedException>();
+    var timedOutEx = new AtomicReference<JobFailedException>();
+    try (Bikesched bikesched = testNode("node-batch-await-or-throw").build()) {
+      bikesched.registerResultJobHandler(
+          item,
+          (job, payload) -> {
+            if (payload.equals(json("bad"))) {
+              throw new IllegalStateException("boom");
+            }
+            return payload;
+          });
+      bikesched.registerJobHandler(slowItem, (job, payload) -> release.await(10, TimeUnit.SECONDS));
+
+      UUID okParent =
+          bikesched
+              .newJob("batch-await-or-throw-ok")
+              .handler(
+                  job ->
+                      results.set(
+                          job.newJobBatch("items", item)
+                              .add("a", json("a"))
+                              .add("b", json("b"))
+                              .schedule()
+                              .await()))
+              .schedule();
+      UUID failingParent =
+          bikesched
+              .newJob("batch-await-or-throw-fail")
+              .maxAttempts(1)
+              .handler(
+                  job -> {
+                    try {
+                      job.newJobBatch("items", item)
+                          .add("ok", json("ok"))
+                          .add("bad", json("bad"))
+                          .maxAttempts(1)
+                          .schedule()
+                          .await();
+                    } catch (JobFailedException e) {
+                      failedEx.set(e);
+                      throw e;
+                    }
+                  })
+              .schedule();
+      UUID timeoutParent =
+          bikesched
+              .newJob("batch-await-or-throw-timeout")
+              .maxAttempts(1)
+              .handler(
+                  job -> {
+                    try {
+                      job.newJobBatch("items", slowItem)
+                          .add("slow", json("s"))
+                          .schedule()
+                          .await(Duration.ofMillis(300));
+                    } catch (JobFailedException e) {
+                      timedOutEx.set(e);
+                      throw e;
+                    }
+                  })
+              .schedule();
+
+      awaitState(okParent, "SUCCEEDED");
+      awaitState(failingParent, "FAILED");
+      awaitState(timeoutParent, "FAILED");
+      release.countDown();
+
+      assertThat(results.get()).containsExactly(json("a"), json("b"));
+      assertThat(failedEx.get()).hasMessageContaining("'bad'");
+      assertThat(failedEx.get().result()).isInstanceOf(JobResult.Failed.class);
+      assertThat(timedOutEx.get()).hasMessageContaining("'slow'");
+      assertThat(timedOutEx.get().result()).isInstanceOf(JobResult.TimedOut.class);
+    }
+  }
+
+  @Test
+  void awaitResultDistinguishesSucceededIncompleteAndFailed() throws Exception {
+    var item = TypedJob.of("batch-sealed-item", String.class, String.class);
+    var threeWay = new CopyOnWriteArrayList<String>();
+    var twoWay = new CopyOnWriteArrayList<String>();
+    try (Bikesched bikesched = testNode("node-batch-sealed").build()) {
+      bikesched.registerResultJobHandler(
+          item,
+          (job, payload) -> {
+            if (payload.contains("bad")) {
+              throw new IllegalStateException("boom");
+            }
+            return payload;
+          });
+      bikesched.registerJobHandler(
+          "batch-sealed",
+          job -> {
+            String mode = job.payload();
+            var builder = job.newJobBatch("items", item).maxAttempts(1);
+            if ("\"ok\"".equals(mode)) {
+              builder.add("a", json("a")).add("b", json("b"));
+            } else if ("\"partial\"".equals(mode)) {
+              builder.add("a", json("a")).add("b", json("bad"));
+            } else {
+              builder.add("a", json("bad1")).add("b", json("bad2"));
+            }
+            JobBatchResult<String> result = builder.schedule().awaitResult();
+            threeWay.add(
+                switch (result) {
+                  case JobBatchResult.Succeeded<String> s -> "succeeded:" + s.results();
+                  case JobBatchResult.Failed.Incomplete<String> i ->
+                      "incomplete:" + i.succeeded().keySet() + ":" + i.unsucceeded().keySet();
+                  case JobBatchResult.Failed<String> f -> "failed:" + f.unsucceeded().keySet();
+                });
+            twoWay.add(
+                switch (result) {
+                  case JobBatchResult.Succeeded<String> ignored -> "ok";
+                  case JobBatchResult.Failed<String> ignored -> "not-ok";
+                });
+          });
+
+      UUID ok = bikesched.newJob("batch-sealed").payloadJson(json("ok")).schedule();
+      UUID partial = bikesched.newJob("batch-sealed").payloadJson(json("partial")).schedule();
+      UUID allFailed = bikesched.newJob("batch-sealed").payloadJson(json("all-bad")).schedule();
+      awaitState(ok, "SUCCEEDED");
+      awaitState(partial, "SUCCEEDED");
+      awaitState(allFailed, "SUCCEEDED");
+
+      assertThat(threeWay)
+          .containsExactlyInAnyOrder(
+              "succeeded:[\"a\", \"b\"]", "incomplete:[a]:[b]", "failed:[a, b]");
+      assertThat(twoWay).containsExactlyInAnyOrder("ok", "not-ok", "not-ok");
     }
   }
 

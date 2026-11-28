@@ -2,6 +2,7 @@
 package org.bikesched.job;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -30,18 +31,55 @@ public interface JobBatch<R extends @Nullable Object> {
   Map<String, UUID> jobIds();
 
   /**
-   * Waits until every item has ended (or, in a fail-fast batch, the first one did not succeed).
-   * Suspends the parent without holding a thread until then, like {@link Job#waitForJob(UUID,
-   * Class)}; the parent resumes once, when the batch has ended.
+   * Waits until every item has ended (or, in a fail-fast batch, the first one did not succeed) and
+   * returns the results of all items in item order, throwing if any item did not succeed. Suspends
+   * the parent without holding a thread until then, like {@link Job#waitForJob(UUID, Class)}; the
+   * parent resumes once, when the batch has ended.
+   *
+   * <p>Use {@link #awaitResult()} to inspect partial failures instead of throwing.
+   *
+   * @return the results, with {@code null} for items without a result
+   * @throws JobFailedException naming the keys of the items that did not succeed, with the outcome
+   *     of the first one
+   * @throws IllegalStateException if called inside a step's handler
+   */
+  default List<@Nullable R> await() {
+    return awaitResult().orElseThrow();
+  }
+
+  /**
+   * Waits like {@link #await()}, at most for {@code timeout}, counted from the first wait (the
+   * stored deadline wins on later runs), throwing if any item did not succeed or the wait timed
+   * out. At the deadline the held items are cancelled; running items keep running.
+   *
+   * <p>Use {@link #awaitResult(Duration)} to inspect partial failures or a timeout instead of
+   * throwing.
+   *
+   * @param timeout a positive duration
+   * @return the results, with {@code null} for items without a result
+   * @throws JobFailedException naming the keys of the items that did not succeed, with the outcome
+   *     of the first one
+   * @throws IllegalArgumentException if the timeout is not positive
+   * @throws IllegalStateException if called inside a step's handler
+   */
+  default List<@Nullable R> await(Duration timeout) {
+    return awaitResult(timeout).orElseThrow();
+  }
+
+  /**
+   * Waits until every item has ended (or, in a fail-fast batch, the first one did not succeed) and
+   * returns the full outcome of every item without throwing. Suspends the parent without holding a
+   * thread until then, like {@link Job#waitForJob(UUID, Class)}; the parent resumes once, when the
+   * batch has ended.
    *
    * @return the outcome of every item
    * @throws IllegalStateException if called inside a step's handler
    */
-  JobBatchResult<R> await();
+  JobBatchResult<R> awaitResult();
 
   /**
-   * Waits like {@link #await()}, at most for {@code timeout}, counted from the first wait (the
-   * stored deadline wins on later runs). At the deadline the unfinished items are {@link
+   * Waits like {@link #awaitResult()}, at most for {@code timeout}, counted from the first wait
+   * (the stored deadline wins on later runs). At the deadline the unfinished items are {@link
    * JobResult.TimedOut} and the held ones are cancelled; running items keep running.
    *
    * @param timeout a positive duration
@@ -49,5 +87,5 @@ public interface JobBatch<R extends @Nullable Object> {
    * @throws IllegalArgumentException if the timeout is not positive
    * @throws IllegalStateException if called inside a step's handler
    */
-  JobBatchResult<R> await(Duration timeout);
+  JobBatchResult<R> awaitResult(Duration timeout);
 }

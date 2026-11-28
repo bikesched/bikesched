@@ -622,8 +622,7 @@ public interface Job extends EventPublisher {
    *     .addAll(Format.ALL, f -> new Render(imageId, f))
    *     .parallelism(4)
    *     .schedule()
-   *     .await()
-   *     .orElseThrow();
+   *     .await();
    * }</pre>
    *
    * @param stepName the batch's step name, unique within the job and stable across deploys

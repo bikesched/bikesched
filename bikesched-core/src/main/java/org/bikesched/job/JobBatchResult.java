@@ -6,17 +6,59 @@ import java.util.Map;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The outcome of every item of a batch, see {@link JobBatch#await()}. Results are mapped from JSON
- * when they are read, per item. A failed item never fails the parent by itself; the parent decides:
+ * The outcome of every item of a batch, see {@link JobBatch#awaitResult()}. Results are mapped from
+ * JSON when they are read, per item. A failed item never fails the parent by itself when using
+ * {@link JobBatch#awaitResult()}; the parent decides:
  *
  * <pre>{@code
- * List<Image> images = renders.await().orElseThrow();        // all or nothing
- * Map<String, Image> rendered = renders.await().succeeded(); // use what worked
+ * List<Image> images = renders.await();                       // all or nothing (throws)
+ * switch (renders.awaitResult()) {
+ *     case JobBatchResult.Succeeded<Image> s -> publish(s.results());
+ *     case JobBatchResult.Failed.Incomplete<Image> p -> publishPartial(p.succeeded(), p.unsucceeded());
+ *     case JobBatchResult.Failed<Image> f -> job.fail("every item failed");
+ * }
  * }</pre>
+ *
+ * <p>{@link Failed.Incomplete} extends {@link Failed}: handle it before {@link Failed} to tell
+ * partial failure apart from total failure, or handle only {@link Succeeded} and {@link Failed} to
+ * treat both the same.
  *
  * @param <R> the result type of the items
  */
-public interface JobBatchResult<R extends @Nullable Object> {
+public sealed interface JobBatchResult<R extends @Nullable Object>
+    permits JobBatchResult.Succeeded, JobBatchResult.Failed {
+
+  /**
+   * Every item of the batch succeeded (also for an empty batch).
+   *
+   * @param <R> the result type of the items
+   */
+  non-sealed interface Succeeded<R extends @Nullable Object> extends JobBatchResult<R> {
+
+    /**
+     * Returns the results of all items in item order.
+     *
+     * @return the results, with {@code null} for items without a result
+     */
+    List<@Nullable R> results();
+  }
+
+  /**
+   * At least one item of the batch did not succeed (failed, cancelled or timed out). When some
+   * items still succeeded, the result is {@link Incomplete}; when none succeeded, it is a plain
+   * {@code Failed}.
+   *
+   * @param <R> the result type of the items
+   */
+  non-sealed interface Failed<R extends @Nullable Object> extends JobBatchResult<R> {
+
+    /**
+     * Some items succeeded and at least one did not.
+     *
+     * @param <R> the result type of the items
+     */
+    interface Incomplete<R extends @Nullable Object> extends Failed<R> {}
+  }
 
   /**
    * Returns whether every item succeeded.
