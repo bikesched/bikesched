@@ -743,12 +743,13 @@ function Recurrence({ job }) {
 // A job batch's progress, with a link to its items in the job list.
 function BatchProgress({ step }) {
   const { items, ended, active, parallelism, failFast } = step.batch;
+  const held = Math.max(0, items - ended - active);
   const mode = [parallelism && `at most ${parallelism} at a time`, failFast && 'fail-fast'].filter(Boolean).join(', ');
   return html`
     <div class="child">
       <span class="muted small">Batch</span>
       <span class="mono">${ended} of ${items} ended</span>
-      ${parallelism && html`<span class="muted small mono">${active} active</span>`}
+      ${parallelism && html`<span class="muted small mono">${active} active${held > 0 ? `, ${held} held` : ''}</span>`}
       ${mode && html`<span class="muted small">${mode}</span>`}
       ${items > 0 && html`<a class="button small" href=${toHash({ section: 'jobs', params: { batch: step.id } })}>Show items</a>`}
     </div>`;

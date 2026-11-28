@@ -895,6 +895,8 @@ class JobBatchTest extends AbstractBikeschedTest {
       var step = steps.getFirst();
       assertThat(step.type()).isEqualTo("CHILD_JOB_BATCH");
       assertThat(step.batch()).isEqualTo(new org.bikesched.admin.StepBatch(3, 0, 1, 1, true));
+      assertThat(bikesched.admin().findStep(step.id()).orElseThrow().batch())
+          .isEqualTo(new org.bikesched.admin.StepBatch(3, 0, 1, 1, true));
       var items =
           bikesched.admin().findJobs(org.bikesched.admin.JobQuery.newest(10).withBatch(step.id()));
       assertThat(items)
@@ -908,6 +910,93 @@ class JobBatchTest extends AbstractBikeschedTest {
                           .withBatch(step.id())
                           .withStates(JobState.HELD)))
           .hasSize(2);
+      release.countDown();
+      awaitState(parent, "SUCCEEDED");
+      assertThat(bikesched.admin().findSteps(parent).getFirst().batch())
+          .isEqualTo(new org.bikesched.admin.StepBatch(3, 3, 0, 1, true));
+      assertThat(bikesched.admin().findStep(step.id()).orElseThrow().batch())
+          .isEqualTo(new org.bikesched.admin.StepBatch(3, 3, 0, 1, true));
+    }
+  }
+
+  @Test
+  void theAdminComputesBatchCountsForEmptyMultipleHeldCancelledAndFailFastBatches()
+      throws Exception {
+    var item = TypedJob.of("batch-admin-counts-item", String.class);
+    var release = new CountDownLatch(1);
+    var batchIds = new AtomicReference<Map<String, UUID>>();
+    try (Bikesched bikesched = testNode("node-batch-admin-counts").maxConcurrentJobs(10).build()) {
+      bikesched.registerJobHandler(
+          item,
+          (job, payload) -> {
+            if (json("fail").equals(payload)) {
+              throw new IllegalStateException("boom");
+            }
+            release.await(10, TimeUnit.SECONDS);
+          });
+      UUID parent =
+          bikesched
+              .newJob("batch-admin-counts")
+              .handler(
+                  job -> {
+                    // 1. Empty batch
+                    job.newJobBatch("empty", item).schedule().await();
+                    // 2. Unbounded batch + bounded batch on the same parent
+                    JobBatch<Void> unbounded =
+                        job.newJobBatch("unbounded", item)
+                            .add("u1", json("u1"))
+                            .add("u2", json("u2"))
+                            .schedule();
+                    JobBatch<Void> bounded =
+                        job.newJobBatch("bounded", item)
+                            .add("b1", json("b1"))
+                            .add("b2", json("b2"))
+                            .add("b3", json("b3"))
+                            .parallelism(1)
+                            .schedule();
+                    batchIds.set(bounded.jobIds());
+                    unbounded.await();
+                    bounded.awaitResult();
+                  })
+              .schedule();
+      awaitState(parent, "WAITING");
+      List<org.bikesched.admin.StepInfo> steps = bikesched.admin().findSteps(parent);
+      assertThat(steps).hasSize(3);
+      assertThat(steps.get(0).name()).isEqualTo("empty");
+      assertThat(steps.get(0).batch())
+          .isEqualTo(new org.bikesched.admin.StepBatch(0, 0, 0, null, false));
+      assertThat(steps.get(1).name()).isEqualTo("unbounded");
+      assertThat(steps.get(1).batch())
+          .isEqualTo(new org.bikesched.admin.StepBatch(2, 0, 2, null, false));
+      assertThat(steps.get(2).name()).isEqualTo("bounded");
+      assertThat(steps.get(2).batch())
+          .isEqualTo(new org.bikesched.admin.StepBatch(3, 0, 1, 1, false));
+
+      // Cancel one held item directly: ended increments, active stays 1, nothing new admitted.
+      UUID held = batchIds.get().get("b3");
+      bikesched.cancel(held, "not needed");
+      awaitState(held, "CANCELLED");
+      assertThat(bikesched.admin().findStep(steps.get(2).id()).orElseThrow().batch())
+          .isEqualTo(new org.bikesched.admin.StepBatch(3, 1, 1, 1, false));
+
+      // Fail-fast batch ends early: ended == items and active == 0 even while a sibling still runs.
+      UUID failFastParent =
+          bikesched
+              .newJob("batch-admin-fail-fast")
+              .handler(
+                  job ->
+                      job.newJobBatch("ff", item)
+                          .maxAttempts(1)
+                          .add("slow", json("slow"))
+                          .add("bad", json("fail"))
+                          .failFast()
+                          .schedule()
+                          .awaitResult())
+              .schedule();
+      awaitState(failFastParent, "SUCCEEDED");
+      assertThat(bikesched.admin().findSteps(failFastParent).getFirst().batch())
+          .isEqualTo(new org.bikesched.admin.StepBatch(2, 2, 0, null, true));
+
       release.countDown();
       awaitState(parent, "SUCCEEDED");
     }

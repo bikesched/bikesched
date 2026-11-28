@@ -554,6 +554,7 @@ final class AdminHandler {
   private static List<Json.Obj> ancestors(Admin admin, JobSummary job) {
     List<Json.Obj> path = new ArrayList<>();
     UUID child = job.id();
+    boolean batchItem = job.batchKey() != null;
     UUID parentId = job.parentJobId();
     while (parentId != null && path.size() < MAX_ANCESTORS) {
       Optional<JobSummary> parent = admin.findJob(parentId);
@@ -562,12 +563,16 @@ final class AdminHandler {
         break;
       }
       UUID childId = child;
+      // Item steps of a batch are omitted from findSteps, so a batch item has no matching step
+      // there (and skipping it avoids computing the parent's batch counts on every item page).
       String stepName =
-          admin.findSteps(parentId).stream()
-              .filter(step -> childId.equals(step.childJobId()))
-              .map(StepInfo::name)
-              .findFirst()
-              .orElse(null);
+          batchItem
+              ? null
+              : admin.findSteps(parentId).stream()
+                  .filter(step -> childId.equals(step.childJobId()))
+                  .map(StepInfo::name)
+                  .findFirst()
+                  .orElse(null);
       path.addFirst(
           Json.object()
               .put("id", parentId)
@@ -577,6 +582,7 @@ final class AdminHandler {
               .put("exists", true)
               .put("stepName", stepName));
       child = parentId;
+      batchItem = parent.get().batchKey() != null;
       parentId = parent.get().parentJobId();
     }
     return path;

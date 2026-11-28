@@ -240,9 +240,6 @@ create table bikesched_steps (
     batch_step_id      uuid,                                -- the batch step of an item step (same job)
     batch_parallelism  integer,                             -- batch steps: items active at once, null: all
     batch_fail_fast    boolean          not null default false, -- batch steps: end at the first failed item
-    batch_item_count   integer,                             -- batch steps: the number of items
-    batch_active_count integer,                             -- batch steps: items admitted and not ended
-    batch_ended_count  integer,                             -- batch steps: items ended
     constraint bikesched_steps_pkey primary key (id),
     constraint bikesched_steps_job_id_name_key unique (job_id, name),
     constraint bikesched_steps_job_id_fkey
@@ -292,20 +289,14 @@ create table bikesched_steps (
                and (type <> 'SLEEP' or wake_at is not null)
                and (type <> 'POLL' or state <> 'WAITING' or wake_at is not null)
                and (deadline_at is null or type = 'POLL')),
-    -- Batch steps count their items and know their mode; only they fail fast, and they FAIL only
-    -- then. Item steps are child job steps pointing to their batch step.
+    -- Batch steps know their mode; only they fail fast, and they FAIL only then. Item steps are
+    -- child job steps pointing to their batch step.
     constraint bikesched_steps_batch_check
-        check ((type = 'CHILD_JOB_BATCH') = (batch_item_count is not null)
-               and (batch_item_count is null) = (batch_active_count is null)
-               and (batch_item_count is null) = (batch_ended_count is null)
-               and (batch_parallelism is null or type = 'CHILD_JOB_BATCH')
+        check ((batch_parallelism is null or type = 'CHILD_JOB_BATCH')
                and (not batch_fail_fast or type = 'CHILD_JOB_BATCH')
                and (type <> 'CHILD_JOB_BATCH' or state <> 'FAILED' or batch_fail_fast)
                and (batch_step_id is null or type = 'CHILD_JOB')
-               and batch_item_count >= 0 and batch_parallelism >= 1 and batch_active_count >= 0
-               and batch_ended_count between 0 and batch_item_count
-               and batch_active_count + batch_ended_count <= batch_item_count
-               and batch_active_count <= coalesce(batch_parallelism, batch_item_count)),
+               and batch_parallelism >= 1),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by_node_id is not null)),
     -- Only regular steps run handlers that can postpone the job.
@@ -328,6 +319,10 @@ create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_k
 -- The item steps of a batch step in their order: reading a batch's outcome, cancelling it.
 create index bikesched_steps_batch_step_id_idx on bikesched_steps (batch_step_id, id)
     where batch_step_id is not null;
+
+-- Whether a batch still has unfinished items: O(1) completion check on each item end.
+create index bikesched_steps_waiting_item_idx on bikesched_steps (batch_step_id)
+    where batch_step_id is not null and state = 'WAITING';
 
 -- The waiting batches of a job: looked up when it is claimed, locked when it ends.
 create index bikesched_steps_waiting_batch_idx on bikesched_steps (job_id)

@@ -104,9 +104,8 @@ public final class AdminStore {
                    nullif(s.wake_at, 'infinity') as wake_at, s.deadline_at, s.locked_by_node_id,
                    s.event_name, s.event_key, s.event_id, s.child_job_id, s.child_job_name,
                    coalesce(c.state, s.child_end_state) as child_job_state,
-                   c.id is not null as child_job_exists, s.batch_item_count, s.batch_ended_count,
-                   s.batch_active_count, coalesce(s.batch_parallelism, 0) as batch_parallelism,
-                   s.batch_fail_fast
+                   c.id is not null as child_job_exists,
+                   coalesce(s.batch_parallelism, 0) as batch_parallelism, s.batch_fail_fast
               from bikesched_steps s
               left join bikesched_jobs c on c.id = s.child_job_id""";
 
@@ -117,6 +116,20 @@ public final class AdminStore {
           + "\n where s.job_id = ? and s.batch_step_id is null\n order by s.started_at, s.name";
 
   private static final String FIND_STEP_SQL = STEP_COLUMNS + "\n where s.id = ?";
+
+  // Computed on demand only when a job's steps contain a CHILD_JOB_BATCH step: item steps along
+  // bikesched_steps_batch_step_id_idx, held items along bikesched_jobs_held_idx.
+  private static final String FIND_BATCH_COUNTS_SQL =
+      """
+            select s.batch_step_id,
+                   count(*)::int as items,
+                   count(*) filter (where s.state <> 'WAITING')::int as ended,
+                   count(*) filter (where s.state = 'WAITING')::int as waiting,
+                   (select count(*)::int from bikesched_jobs j
+                     where j.batch_step_id = s.batch_step_id and j.state = 'HELD') as held
+              from bikesched_steps s
+             where s.batch_step_id is not null and s.batch_step_id = any(?::uuid[])
+             group by s.batch_step_id""";
 
   private static final String FIND_STEP_RESULT_SQL =
       "select coalesce(result::text, 'null') as result from bikesched_steps where id = ?";
@@ -282,13 +295,19 @@ public final class AdminStore {
 
   public List<StepInfo> findSteps(UUID jobId) {
     return access.inReadOnlyTransaction(
-        db -> db.list(FIND_STEPS_SQL, AdminStore::stepInfo, jobId),
+        db -> enrichBatches(db, db.list(FIND_STEPS_SQL, AdminStore::stepInfo, jobId)),
         e -> new BikeschedException("Reading the steps of bikesched job " + jobId + " failed", e));
   }
 
   public Optional<StepInfo> findStep(UUID stepId) {
     return access.inReadOnlyTransaction(
-        db -> db.one(FIND_STEP_SQL, AdminStore::stepInfo, stepId),
+        db -> {
+          Optional<StepInfo> found = db.one(FIND_STEP_SQL, AdminStore::stepInfo, stepId);
+          if (found.isEmpty() || found.get().batch() == null) {
+            return found;
+          }
+          return Optional.of(enrichBatches(db, List.of(found.get())).getFirst());
+        },
         e -> new BikeschedException("Reading bikesched step " + stepId + " failed", e));
   }
 
@@ -298,6 +317,72 @@ public final class AdminStore {
         e ->
             new BikeschedException(
                 "Reading the result of bikesched step " + stepId + " failed", e));
+  }
+
+  private record BatchCounts(UUID batchStepId, int items, int ended, int active) {}
+
+  private static List<StepInfo> enrichBatches(Sql db, List<StepInfo> steps) throws SQLException {
+    List<UUID> batchIds =
+        steps.stream().filter(step -> step.batch() != null).map(StepInfo::id).toList();
+    if (batchIds.isEmpty()) {
+      return steps;
+    }
+    Map<UUID, BatchCounts> countsById = new LinkedHashMap<>();
+    for (BatchCounts row :
+        db.list(
+            FIND_BATCH_COUNTS_SQL,
+            r ->
+                new BatchCounts(
+                    r.uuid("batch_step_id"),
+                    r.integer("items"),
+                    r.integer("ended"),
+                    Math.max(0, r.integer("waiting") - r.integer("held"))),
+            Sql.array("uuid", batchIds.toArray(UUID[]::new)))) {
+      countsById.put(row.batchStepId(), row);
+    }
+    List<StepInfo> enriched = new ArrayList<>(steps.size());
+    for (StepInfo step : steps) {
+      StepBatch batch = step.batch();
+      if (batch == null) {
+        enriched.add(step);
+        continue;
+      }
+      BatchCounts counts = countsById.get(step.id());
+      StepBatch updated =
+          counts == null
+              ? batch
+              : new StepBatch(
+                  counts.items(),
+                  counts.ended(),
+                  counts.active(),
+                  batch.parallelism(),
+                  batch.failFast());
+      enriched.add(
+          new StepInfo(
+              step.id(),
+              step.jobId(),
+              step.name(),
+              step.type(),
+              step.state(),
+              step.attempts(),
+              step.failureAttempts(),
+              step.compensable(),
+              step.lastError(),
+              step.startedAt(),
+              step.finishedAt(),
+              step.waitUntil(),
+              step.deadline(),
+              step.nodeId(),
+              step.eventName(),
+              step.eventKey(),
+              step.eventId(),
+              step.childJobId(),
+              step.childJobName(),
+              step.childJobState(),
+              step.childJobExists(),
+              updated));
+    }
+    return enriched;
   }
 
   private static StepInfo stepInfo(Sql.Row row) throws SQLException {
@@ -325,9 +410,9 @@ public final class AdminStore {
         row.bool("child_job_exists"),
         row.string("type").equals("CHILD_JOB_BATCH")
             ? new StepBatch(
-                row.integer("batch_item_count"),
-                row.integer("batch_ended_count"),
-                row.integer("batch_active_count"),
+                0,
+                0,
+                0,
                 row.integer("batch_parallelism") == 0 ? null : row.integer("batch_parallelism"),
                 row.bool("batch_fail_fast"))
             : null);

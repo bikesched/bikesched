@@ -113,12 +113,7 @@ class JobBatchStressTest {
           .isEqualTo(ITEMS);
       assertThat(executions.jobsWith("work")).as("every item ran").isEqualTo(ITEMS);
       assertThat(maxActive.get()).as("items active at once").isLessThanOrEqualTo(PARALLELISM);
-      assertThat(
-              database.queryLong(
-                  "select batch_active_count from bikesched_steps where job_id = '"
-                      + parent
-                      + "' and type = 'CHILD_JOB_BATCH'"))
-          .isZero();
+      assertThat(database.queryLong(active)).as("no items still active").isZero();
       // started, resumed once, and replays of attempts the restart cut off
       assertThat(parentRuns.get()).isBetween(2L, 4L);
     }

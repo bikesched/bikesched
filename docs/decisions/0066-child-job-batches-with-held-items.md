@@ -34,25 +34,29 @@ Alternatives considered:
 
 bikesched starts a batch of child jobs as one durable step of its parent
 (`job.newJobBatch(stepName, job)…schedule()`), in one transaction fenced by the parent's lock:
-a `CHILD_JOB_BATCH` step with the item count, parallelism and mode, every item as a `CHILD` job
+a `CHILD_JOB_BATCH` step with its parallelism and mode, every item as a `CHILD` job
 with its batch step and key (`batch_step_id`, `batch_key`; ids are created in item order), and a
 `CHILD_JOB` step per item named `stepName/key`. Later runs return the stored batch.
 
 - **Parallelism**: with `parallelism(k)`, items beyond the first `k` are stored in the new job
-  state `HELD`, which the claim query never takes. The batch step counts its active and ended
-  items (`batch_active_count`, `batch_ended_count`); an item's end admits as many held items as
-  the counters allow, in item order, with `for update skip locked`.
-- **Resume once**: an item's end locks the batch step, completes its item step and the counters,
-  and only the last item resumes the parent. `JobBatch.await()` and `awaitResult()` suspend at the
-  batch step; `await()` returns all results or throws on failure, and `awaitResult()` returns a
-  sealed `JobBatchResult` (`Succeeded`, `Failed`, `Failed.Incomplete`) of every item's `JobResult`.
-  Waiting for a single item is rejected.
+  state `HELD`, which the claim query never takes. An active item's end admits one held item in
+  item order under the batch step's lock (`for no key update`); cancelling a held item directly
+  admits nothing, so parallelism stays exact without counter updates on the batch step.
+- **Resume once**: an item's end locks the batch step, completes its item step, checks whether any
+  item step is still `WAITING` along a partial index on `(batch_step_id) where state = 'WAITING'`,
+  and only the last item completes the batch step and resumes the parent. The admin computes batch
+  counts on demand from the item steps and held items only when a job has a batch step.
+  `JobBatch.await()` and `awaitResult()` suspend at the batch step; `await()` returns all results
+  or throws on failure, and `awaitResult()` returns a sealed `JobBatchResult` (`Succeeded`,
+  `Failed`, `Failed.Incomplete`) of every item's `JobResult`. Waiting for a single item is
+  rejected.
 - **Fail-fast** (`failFast()`): the first item that does not succeed ends the batch `FAILED`,
   resumes the parent and cancels the siblings in the same transaction: held items directly,
   scheduled and running ones by a cancel request, all with `skip locked`. Siblings skipped as
   locked get their cancel request right after the commit, in a transaction of their own.
 - **Lock order**: the ending item's row, the batch step, item steps by id, other items (`skip
-  locked` only), the parent's row. Every write of a batch follows it.
+  locked` only, or held rows under the batch step's lock), the parent's row. Every write of a batch
+  follows it.
 - **Cancellation and ends**: a timeout, the parent's cancellation, compensation and end without
   waiting cancel the held items; running items keep running. Compensation runs per admitted item
   in reverse order; a compensated batch restarts with the same keys.

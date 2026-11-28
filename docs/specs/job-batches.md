@@ -810,3 +810,10 @@ None: all are decided (§11).
     (`batch_active_count + batch_ended_count <= batch_item_count`, active at most the
     parallelism) and keep held items unattempted. A failed parent's retry without
     `compensateWith` keeps the stored batch, whose held items stay cancelled (documented).
+17. Batch counters dropped from `bikesched_steps`: `batch_item_count`, `batch_active_count` and
+    `batch_ended_count` are removed so `itemEnded` only locks the batch step without writing dead
+    tuple versions on every item end. Admission admits one `HELD` item per ended active item,
+    completion checks `not exists` along a new partial index `bikesched_steps_waiting_item_idx`
+    (`(batch_step_id) where batch_step_id is not null and state = 'WAITING'`), and `AdminStore`
+    computes `StepBatch` counts on demand only when a job has a `CHILD_JOB_BATCH` step. The admin
+    UI also displays the held item count alongside active items.

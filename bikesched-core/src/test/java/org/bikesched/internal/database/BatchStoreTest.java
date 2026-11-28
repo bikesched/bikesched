@@ -19,12 +19,11 @@ class BatchStoreTest extends AbstractStoreTest {
   void insertParentAndBatchStep() throws SQLException {
     execute("insert into bikesched_jobs (id, name) values ('" + parent + "', 'parent')");
     execute(
-        "insert into bikesched_steps (id, job_id, name, type, state, batch_item_count, batch_active_count,"
-            + " batch_ended_count, batch_parallelism) values ('"
+        "insert into bikesched_steps (id, job_id, name, type, state, batch_parallelism) values ('"
             + batchStep
             + "', '"
             + parent
-            + "', 'items', 'CHILD_JOB_BATCH', 'WAITING', 2, 1, 0, 1)");
+            + "', 'items', 'CHILD_JOB_BATCH', 'WAITING', 1)");
   }
 
   @Test
@@ -51,14 +50,22 @@ class BatchStoreTest extends AbstractStoreTest {
   }
 
   @Test
-  void onlyBatchStepsCountItemsAndFailFast() throws SQLException {
+  void onlyBatchStepsHaveParallelismAndFailFast() throws SQLException {
     assertThatThrownBy(
             () ->
                 execute(
-                    "insert into bikesched_steps (id, job_id, name, type, state, batch_item_count)"
+                    "insert into bikesched_steps (id, job_id, name, type, state, batch_parallelism)"
                         + " values (gen_random_uuid(), '"
                         + parent
                         + "', 'step', 'STEP', 'RUNNING', 2)"))
+        .hasMessageContaining("bikesched_steps_batch_check");
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "insert into bikesched_steps (id, job_id, name, type, state, batch_fail_fast)"
+                        + " values (gen_random_uuid(), '"
+                        + parent
+                        + "', 'step', 'STEP', 'RUNNING', true)"))
         .hasMessageContaining("bikesched_steps_batch_check");
     assertThatThrownBy(
             () ->
@@ -67,14 +74,6 @@ class BatchStoreTest extends AbstractStoreTest {
                         + batchStep
                         + "'"))
         .as("only fail-fast batches fail")
-        .hasMessageContaining("bikesched_steps_batch_check");
-    assertThatThrownBy(
-            () ->
-                execute(
-                    "update bikesched_steps set batch_ended_count = 3 where id = '"
-                        + batchStep
-                        + "'"))
-        .as("no more items ended than the batch has")
         .hasMessageContaining("bikesched_steps_batch_check");
     assertThatThrownBy(
             () ->
