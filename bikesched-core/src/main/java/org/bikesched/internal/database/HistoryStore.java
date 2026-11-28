@@ -651,9 +651,7 @@ public final class HistoryStore {
     }
     HistoryPosition after = query.after();
     if (after != null) {
-      // Not as a row comparison, which the index on created_at alone cannot serve.
-      scan.add("created_at <= ? and (created_at < ? or id < ?)");
-      parameters.add(Sql.timestamp(after.createdAt()));
+      scan.add("(created_at, id) < (?, ?)");
       parameters.add(Sql.timestamp(after.createdAt()));
       parameters.add(after.id());
     }

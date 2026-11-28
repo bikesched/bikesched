@@ -58,13 +58,14 @@ final class TimeSkip {
              where j.id = s.id and j.state in %s
             returning j.id, j.name, s.micros""";
 
-  // One job, shifted to its next due time; not one waiting without a deadline ('infinity').
+  // One job, shifted to its next due time; not one waiting without a deadline (scheduled_at is
+  // null).
   private static final String FAST_FORWARD_JOB_SQL =
       SHIFT_JOBS_SQL.formatted(
           """
           select id, greatest(ceil(extract(epoch from scheduled_at - now()) * 1000000), 0)::bigint
                  as micros
-            from bikesched_jobs where id = any(?) and isfinite(scheduled_at)""",
+            from bikesched_jobs where id = any(?) and scheduled_at is not null""",
           PENDING);
 
   private static final String ADVANCE_JOBS_SQL =

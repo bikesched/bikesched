@@ -64,9 +64,9 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0051](0051-node-names-are-not-unique.md) | Node names are not unique | Accepted |
 | [0052](0052-clean-ups-delete-in-resuming-batches.md) | Clean-ups delete in resuming batches | Accepted |
 | [0053](0053-releases-from-tags-with-release-branches.md) | Releases cut from tags, one release branch per minor | Accepted |
-| [0054](0054-time-ordered-ids.md) | Time-ordered ids (UUIDv7) | Accepted |
+| [0054](0054-time-ordered-ids.md) | Time-ordered ids (UUIDv7) | Accepted; short id search dropped by [0068](0068-schema-performance-review.md) |
 | [0055](0055-byte-limits-for-names-and-keys.md) | Byte limits for names and keys | Accepted |
-| [0056](0056-schema-naming-column-order-and-invariants.md) | Schema naming, column order and invariants | Accepted |
+| [0056](0056-schema-naming-column-order-and-invariants.md) | Schema naming, column order and invariants | Accepted; column order amended by [0068](0068-schema-performance-review.md) |
 | [0057](0057-steps-keyed-by-a-time-ordered-id.md) | Steps keyed by a time-ordered id | Accepted (history part superseded by [0062](0062-one-history-with-actions-and-actors.md)) |
 | [0058](0058-fixed-delay-recurrences-and-planned-runs.md) | Fixed-delay recurrences and a planned run on every occurrence | Accepted |
 | [0059](0059-job-name-and-job-type.md) | Job name and job type | Accepted |
@@ -78,3 +78,4 @@ format of Michael Nygard (Status, Context, Decision, Consequences), see
 | [0065](0065-suspending-kotlin-handlers.md) | Suspending Kotlin handlers | Accepted |
 | [0066](0066-child-job-batches-with-held-items.md) | Child job batches with held items | Accepted |
 | [0067](0067-result-types-on-typed-jobs.md) | Result types on typed jobs | Accepted |
+| [0068](0068-schema-performance-review.md) | Schema performance review: null deadlines, indexes and column order | Accepted |

@@ -42,12 +42,11 @@ public final class AdminStore {
     this.access = access;
   }
 
-  // The columns of a JobSummary from the jobs in %s; 'infinity' (a wait without a deadline)
-  // reads as null.
+  // The columns of a JobSummary from the jobs in %s.
   private static final String JOB_COLUMNS =
       """
             select j.id, j.name, j.type, j.state, j.attempts, j.max_attempts, j.priority,
-                   nullif(j.scheduled_at, 'infinity') as scheduled_at, j.created_at, j.updated_at,
+                   j.scheduled_at, j.created_at, j.updated_at,
                    j.finished_at, j.last_error, j.parent_job_id, p.name as parent_job_name,
                    j.recurrence, j.idempotency_key, j.reference, n.id as node_id,
                    n.name as node_name, j.batch_key
@@ -56,8 +55,7 @@ public final class AdminStore {
               left join bikesched_nodes n on n.id = j.locked_by_node_id""";
 
   // One page of jobs, newest first by their time-ordered ids, read along the primary key (or
-  // bikesched_jobs_name_id_idx with a name, bikesched_jobs_reference_idx with a reference, or
-  // bikesched_jobs_short_id_idx for an id search);
+  // bikesched_jobs_name_id_idx with a name, or bikesched_jobs_reference_idx with a reference);
   // parents and nodes are joined to the page only.
   private static final String JOB_PAGE =
       """
@@ -101,9 +99,9 @@ public final class AdminStore {
       """
             select s.id, s.job_id, s.name, s.type, s.state, s.attempts, s.failure_attempts,
                    s.compensable, s.last_error, s.started_at, s.finished_at,
-                   nullif(s.wake_at, 'infinity') as wake_at, s.deadline_at, s.locked_by_node_id,
+                   s.wake_at, s.deadline_at, s.locked_by_node_id,
                    s.event_name, s.event_key, s.event_id, s.child_job_id, s.child_job_name,
-                   coalesce(c.state, s.child_end_state) as child_job_state,
+                   coalesce(c.state, s.child_job_end_state) as child_job_state,
                    c.id is not null as child_job_exists,
                    coalesce(s.batch_parallelism, 0) as batch_parallelism, s.batch_fail_fast
               from bikesched_steps s
@@ -152,16 +150,6 @@ public final class AdminStore {
                           and (l.published_at, l.id) > (e.published_at, e.id)) as latest
               from bikesched_events e""";
 
-  // One page of unexpired events, newest first by their time-ordered ids, read along the primary
-  // key;
-  // the select list is only computed for the rows of the page.
-  private static final String EVENT_PAGE =
-      """
-
-             where e.expires_at > now()%s
-             order by e.id desc
-             limit ?""";
-
   private static final String FIND_EVENT_SQL = EVENT_COLUMNS + "\n where e.id = ?";
 
   private static final String FIND_EVENT_PAYLOAD_SQL =
@@ -190,7 +178,7 @@ public final class AdminStore {
   private static final String FIND_WAITING_STEPS_SQL =
       """
             select s.id, s.job_id, j.name as job_name, s.name, s.event_name, s.event_key,
-                   s.started_at, nullif(s.wake_at, 'infinity') as wake_at
+                   s.started_at, s.wake_at
               from bikesched_steps s
               join bikesched_jobs j on j.id = s.job_id
              where s.type = 'EVENT_WAIT' and s.state = 'WAITING' and s.event_name = ?
@@ -244,19 +232,6 @@ public final class AdminStore {
     return access.inReadOnlyTransaction(
         db -> db.list(sql, AdminStore::jobSummary, parameters.toArray()),
         e -> new BikeschedException("Finding bikesched jobs failed", e));
-  }
-
-  // The short id narrows the search along bikesched_jobs_short_id_idx, the whole suffix decides.
-  private static final String ID_SUFFIX =
-      "right(id::text, 8) = ? and right(replace(id::text, '-', ''), ?) = ?";
-
-  public List<JobSummary> findJobsByIdSuffix(String suffix, int limit) {
-    String sql =
-        JOB_COLUMNS.formatted(JOB_PAGE.formatted("\n              where " + ID_SUFFIX))
-            + "\n order by j.id desc";
-    return access.inReadOnlyTransaction(
-        db -> db.list(sql, AdminStore::jobSummary, idSuffixParameters(suffix, limit)),
-        e -> new BikeschedException("Finding bikesched jobs by id failed", e));
   }
 
   public RecurringJobRuns findRecurringJobRuns(String name, int limit) {
@@ -469,25 +444,17 @@ public final class AdminStore {
       parameters.add(query.beforeId());
     }
     parameters.add(query.limit());
-    String sql = EVENT_COLUMNS + EVENT_PAGE.formatted(where(conditions, "\n               and "));
+    String sql =
+        EVENT_COLUMNS
+            + """
+
+             where e.expires_at > now()%s
+             order by e.id desc
+             limit ?"""
+                .formatted(where(conditions, "\n               and "));
     return access.inReadOnlyTransaction(
         db -> db.list(sql, AdminStore::eventSummary, parameters.toArray()),
         e -> new BikeschedException("Finding bikesched events failed", e));
-  }
-
-  public List<EventSummary> findEventsByIdSuffix(String suffix, int limit) {
-    String sql =
-        EVENT_COLUMNS
-            + EVENT_PAGE.formatted(
-                "\n               and " + ID_SUFFIX.replace("id::text", "e.id::text"));
-    return access.inReadOnlyTransaction(
-        db -> db.list(sql, AdminStore::eventSummary, idSuffixParameters(suffix, limit)),
-        e -> new BikeschedException("Finding bikesched events by id failed", e));
-  }
-
-  // The parameters of ID_SUFFIX and the limit, for a suffix of 8 to 32 lower-case hex digits.
-  private static Object[] idSuffixParameters(String suffix, int limit) {
-    return new Object[] {suffix.substring(suffix.length() - 8), suffix.length(), suffix, limit};
   }
 
   public Optional<EventSummary> findEvent(UUID eventId) {

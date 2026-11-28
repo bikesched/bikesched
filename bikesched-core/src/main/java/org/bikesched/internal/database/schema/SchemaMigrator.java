@@ -119,12 +119,13 @@ public final class SchemaMigrator {
     execute(
         connection,
         """
-                create table if not exists %s (
-                    version           integer     primary key,
-                    description       text        not null,
-                    checksum          text        not null,
-                    installed_at      timestamptz not null default now(),
-                    execution_time_millis bigint      not null
+                create table if not exists %1$s (
+                    installed_at          timestamptz      not null default now(),
+                    execution_time_millis bigint           not null,
+                    version               integer          not null,
+                    description           text             not null,
+                    checksum              text collate "C" not null,
+                    constraint %1$s_pkey primary key (version)
                 )"""
             .formatted(HISTORY_TABLE));
 

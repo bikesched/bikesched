@@ -87,12 +87,12 @@ public final class StepStore {
             (state = 'SUCCEEDED' or type = 'CHILD_JOB' and state in ('WAITING', 'CANCELLED', 'TIMED_OUT')
              or type = 'CHILD_JOB_BATCH' and state <> 'COMPENSATED')""";
 
-  // A child job step keeps its child's outcome (child_end_state, last_error) when it is
+  // A child job step keeps its child's outcome (child_job_end_state, last_error) when it is
   // compensated.
   private static final String COMPENSATE_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'COMPENSATED', last_error = case when type = 'CHILD_JOB' and child_end_state is not null then last_error end
+               set state = 'COMPENSATED', last_error = case when type = 'CHILD_JOB' and child_job_end_state is not null then last_error end
              where id = ? and %s and %s"""
           .formatted(COMPENSABLE_STEP, JOB_LOCKED);
 
@@ -164,7 +164,7 @@ public final class StepStore {
 
   // Ends a RUNNING attempt whose handler suspended at a waiting step (an event wait, a sleep or a
   // wait for a child job): WAITING until the event arrives (the child ends) or wake_at
-  // (scheduled_at; 'infinity' for a wait without deadline) has passed. If the step is no longer
+  // (scheduled_at; null for a wait without deadline) has passed. If the step is no longer
   // WAITING (the event was published, the child ended since), the job is scheduled right away, as
   // is a job whose cancellation was requested (to cancel it). Suspending does not use up an
   // attempt.
@@ -173,14 +173,13 @@ public final class StepStore {
             update bikesched_jobs j
                set state = case when s.state = 'WAITING' then 'WAITING' else 'SCHEDULED' end,
                    scheduled_at = case when s.state = 'WAITING' and j.cancel_requested_at is null
-                                       then coalesce(s.wake_at, 'infinity')
+                                       then s.wake_at
                                        else now() end,
                    attempts = j.attempts - 1, locked_by_node_id = null, lock_token = null, locked_at = null, updated_at = now()
               from bikesched_steps s
              where j.id = ? and j.lock_token = ? and j.state = 'RUNNING'
                and s.id = ? and s.job_id = j.id
-            returning j.state, s.wake_at, j.attempts, j.name,
-                      case when j.scheduled_at < 'infinity' then j.scheduled_at end as due_at""";
+            returning j.state, s.wake_at, j.attempts, j.name, j.scheduled_at as due_at""";
 
   // Job.postpone in a step's handler: the step keeps no result and gives its attempt back, so the
   // next attempt starts it again (START_STEP_SQL) with the same attempt number.
@@ -222,7 +221,7 @@ public final class StepStore {
   // the child's end (JobStore) updates the same row, so a wait serializes with it.
   private static final String FIND_CHILD_WAIT_READ_ONLY_SQL =
       """
-            select id, name, state, child_end_state, result::text as result, last_error, wake_at,
+            select id, name, state, child_job_end_state, result::text as result, last_error, wake_at,
                    wake_at <= now() as deadline_passed, batch_step_id is not null as batch_item,
                    child_job_name
               from bikesched_steps where job_id = ? and child_job_id = ? and type = 'CHILD_JOB'""";
@@ -442,7 +441,7 @@ public final class StepStore {
             case SUCCEEDED ->
                 new ChildWait.ChildEnded(
                     step,
-                    row.enumValue("child_end_state", JobState.class),
+                    row.enumValue("child_job_end_state", JobState.class),
                     row.string("result"),
                     row.string("last_error"));
             case TIMED_OUT -> new ChildWait.ChildTimedOut(step);

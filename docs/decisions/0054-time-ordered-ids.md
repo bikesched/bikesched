@@ -37,9 +37,8 @@ so the id is known before the insert, as before, and no PostgreSQL version is re
   only): the primary keys serve the lists of all jobs and all events,
   `bikesched_jobs_type_id_idx (type, id)` the list of one job type.
   `bikesched_jobs_created_at_idx` and `bikesched_events_published_at_idx` are gone.
-- The short id is the last 8 hex digits, the random part. `Admin.findJobsByIdSuffix` and
-  `findEventsByIdSuffix` replace the prefix searches; an expression index on
-  `right(id::text, 8)` per table finds them.
+- The short id shown in the admin UI is the last 8 hex digits, the random part; kept for display
+  only (searching by it was dropped, see [ADR 0068](0068-schema-performance-review.md)).
 
 Rejected: keeping prefix search with UUIDv7 (every job of the same ~65 seconds shares its first 8
 digits, so a unique prefix needs about 20 digits), and staying with random ids.
@@ -51,6 +50,7 @@ digits, so a unique prefix needs about 20 digits), and staying with random ids.
   between nodes can swap jobs created within a few milliseconds of each other.
 - The admin's API cursor (`next`, `before`) is now the last id of a page instead of time and id.
 - An id reveals its creation time.
-- `bikesched_jobs` and `bikesched_events` keep the same number of indexes (an admin index
-  replaced by the narrower short id index), but their primary keys no longer receive random
+- `bikesched_jobs` and `bikesched_events` keep the same number of indexes as before this change
+  (an admin index replaced by the narrower short id index, since dropped, see
+  [ADR 0068](0068-schema-performance-review.md)), but their primary keys no longer receive random
   inserts.

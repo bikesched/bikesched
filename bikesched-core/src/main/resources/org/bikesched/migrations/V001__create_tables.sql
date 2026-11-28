@@ -1,17 +1,19 @@
 -- bikesched schema v1: nodes, jobs, steps, events and the history.
 -- States are text + CHECK constraints (not Postgres enums) so adding states later is a cheap migration.
--- Names (node, job, step and event names, recurrence descriptions) have at most 200
--- characters, event keys and idempotency keys at most 500: most are indexed, and B-tree entries are
--- limited to 2704 bytes. Since a character takes up to 4 bytes, they also have at most 3 bytes per
--- character in UTF-8 (600 and 1500), so an index on a name and a key stays at most 2100 bytes. The
--- library checks the same limits (ValidationUtil) before writing.
+-- Names (node, job, step and event names, recurrence descriptions, references, batch keys, actor
+-- names) have at most 200 characters, event keys and idempotency keys at most 500: most are
+-- indexed, and B-tree entries are limited to 2704 bytes. Since a character takes up to 4 bytes,
+-- they also have at most 3 bytes per character in UTF-8 (600 and 1500), so an index on a name and
+-- a key stays at most 2100 bytes. The library checks the same limits (ValidationUtil) before
+-- writing.
 -- Every text column but the messages holds an identifier (names, keys, types, states, recurrences,
 -- references) and uses the "C" collation: comparisons and sorts are byte-wise, so indexes on them
 -- are faster, can serve prefix searches and are not affected by collation changes of glibc or ICU
 -- upgrades. Lists sorted by name are in byte order (upper case before lower case).
--- The identifying columns and the state come first (a job's id, name, type and state; a step's id,
--- job, name, type and state); the other columns are ordered by alignment: uuids, then timestamps and
--- bigints, then integers and booleans, then text and jsonb, so rows have little padding.
+-- Columns are ordered for PostgreSQL physical layout: NOT NULL fixed-width columns first (uuids,
+-- then timestamptz and bigints, then integers, then booleans), then nullable fixed-width columns
+-- in the same alignment order, then variable-length columns (NOT NULL text, nullable text, jsonb).
+-- This avoids alignment padding and maximizes cached attribute offsets (attcacheoff).
 -- Ids are time-ordered UUIDs (version 7, created by the library), so new rows land at the end of
 -- the primary keys and of the indexes led by a job id.
 -- Messages (last_error, cancel_message) are not indexed and have no constraint: the library
@@ -21,8 +23,9 @@
 -- Nodes whose heartbeat is too old are considered dead; their RUNNING jobs can be rescheduled.
 -- The name (configured or the host name) is for people only: it need not be unique, so an instance
 -- restarted after a crash registers next to the stale row of its previous run. The id identifies it.
--- The heartbeat is the table's only frequent write; last_heartbeat_at has no index, so heartbeats
--- are HOT updates. The table has a few rows, read by sequential scans.
+-- The heartbeat is the table's only frequent write; last_heartbeat_at has no index and fillfactor
+-- leaves room on every page, so heartbeats stay HOT updates. The table has a few rows, read by
+-- sequential scans.
 create table bikesched_nodes (
     id                uuid             not null,
     started_at        timestamptz      not null default now(),
@@ -31,14 +34,14 @@ create table bikesched_nodes (
     constraint bikesched_nodes_pkey primary key (id),
     constraint bikesched_nodes_name_check
         check (char_length(name) between 1 and 200 and octet_length(name) <= 600)
-);
+) with (fillfactor = 70);
 
 -- Jobs are claimed by nodes with:  ... where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING')
 --                                  and scheduled_at <= now()
 --                                  order by priority desc, scheduled_at for update skip locked
--- A WAITING job waits for an event (see bikesched_events), for a child job or sleeps; its
--- scheduled_at is the deadline of the wait ('infinity' if it waits without one) or the wake-up time
--- of the sleep.
+-- A WAITING job waits for an event (see bikesched_events), for a child job, for a batch or sleeps;
+-- its scheduled_at is the deadline of the wait (null if it waits without one) or the wake-up time
+-- of the sleep or poll.
 -- A job that is cancelled or fails permanently after completing steps with a compensation is
 -- COMPENSATING (compensation_end_state: the state it ends in) until its compensations ran, or
 -- COMPENSATION_FAILED once they failed in max_attempts compensation attempts.
@@ -53,37 +56,37 @@ create table bikesched_nodes (
 -- parent may be deleted after its retention while the child still runs.
 create table bikesched_jobs (
     id                     uuid             not null,
-    name                   text collate "C" not null,           -- identifies the handler that executes the job
-    type                   text collate "C" not null default 'SINGLE',
-    state                  text collate "C" not null default 'SCHEDULED',
-    parent_job_id          uuid,                                -- the job that started this one as a child
-    batch_step_id          uuid,                                -- the batch step of the parent that started it
-    batch_key              text collate "C",                    -- its key in its batch
-    locked_by_node_id      uuid,
-    lock_token             uuid,                                -- new for every claim: fences the claim's writes
-    scheduled_at           timestamptz      not null default now(),
     created_at             timestamptz      not null default now(),
     updated_at             timestamptz      not null default now(),
+    priority               integer          not null default 0,
+    attempts               integer          not null default 0,
+    max_attempts           integer          not null default 3,
+    compensation_attempts  integer          not null default 0,
+    failure_attempts       integer          not null default 0, -- runs of its failure handler
+    scheduled_at           timestamptz      default now(),      -- null while WAITING without a deadline
     locked_at              timestamptz,
     finished_at            timestamptz,
     cancel_requested_at    timestamptz,                         -- Bikesched.cancel(jobId): cancelled on its next claim
     planned_run_at         timestamptz,                         -- planned run of an occurrence; unlike scheduled_at
                                                                 -- not moved by retries or event waits
     timeout_millis         bigint,                              -- max. duration of an attempt; null: node default / none
-    priority               integer          not null default 0,
-    attempts               integer          not null default 0,
-    max_attempts           integer          not null default 3,
-    compensation_attempts  integer          not null default 0,
-    failure_attempts       integer          not null default 0, -- runs of its failure handler
+    parent_job_id          uuid,                                -- the job that started this one as a child
+    batch_step_id          uuid,                                -- the batch step of the parent that started it
+    locked_by_node_id      uuid,
+    lock_token             uuid,                                -- new for every claim: fences the claim's writes
+    name                   text collate "C" not null,           -- identifies the handler that executes the job
+    type                   text collate "C" not null default 'SINGLE',
+    state                  text collate "C" not null default 'SCHEDULED',
     compensation_end_state text collate "C",                    -- CANCELLED or FAILED: the state a compensating job ends in
     failure_end_state      text collate "C",                    -- FAILED or COMPENSATION_FAILED: the state a FAILING job ends in
     recurrence             text collate "C",                    -- occurrence of a recurring job: its recurrence's description
     idempotency_key        text collate "C",                    -- dedups scheduling: unique per name while the job exists
     reference              text collate "C",                    -- the external entity the job is about; not unique
-    payload                jsonb,
-    result                 jsonb,                               -- Job.complete(result); only set when SUCCEEDED
+    batch_key              text collate "C",                    -- its key in its batch
     last_error             text,
     cancel_message         text,
+    payload                jsonb,
+    result                 jsonb,                               -- Job.complete(result); only set when SUCCEEDED
     constraint bikesched_jobs_pkey primary key (id),
     constraint bikesched_jobs_locked_by_node_id_fkey
         foreign key (locked_by_node_id) references bikesched_nodes (id),
@@ -92,6 +95,9 @@ create table bikesched_jobs (
     constraint bikesched_jobs_state_check
         check (state in ('SCHEDULED', 'RUNNING', 'WAITING', 'SUCCEEDED', 'FAILED', 'CANCELLED',
                          'COMPENSATING', 'COMPENSATION_FAILED', 'FAILING', 'HELD')),
+    -- Only a WAITING job (waiting without a deadline) may have no scheduled_at.
+    constraint bikesched_jobs_scheduled_at_check
+        check (scheduled_at is not null or state = 'WAITING'),
     -- Items of a batch know their batch step and key; only they can be HELD (not claimed until
     -- admitted by their batch's parallelism). Their ids are in item order.
     constraint bikesched_jobs_batch_check
@@ -112,7 +118,7 @@ create table bikesched_jobs (
         check (failure_end_state in ('FAILED', 'COMPENSATION_FAILED') and state in ('FAILING', 'RUNNING')
                or failure_end_state is null and state <> 'FAILING'),
     constraint bikesched_jobs_timeout_check
-        check (timeout_millis > 0),
+        check (timeout_millis is null or timeout_millis > 0),
     constraint bikesched_jobs_lock_check
         check ((state = 'RUNNING') = (locked_by_node_id is not null)
                and (locked_by_node_id is null) = (lock_token is null)
@@ -139,13 +145,15 @@ create table bikesched_jobs (
     constraint bikesched_jobs_type_columns_check
         check ((type = 'RECURRING') = (recurrence is not null)
                and (type = 'CHILD') = (parent_job_id is not null)
-               and parent_job_id <> id)
-);
+               and parent_job_id is distinct from id)
+) with (fillfactor = 85);
 
--- Polling index: only due-able jobs, in claim order. The name lets the claim skip jobs the node has
--- no handlers for on index entries.
+-- Polling index: only due-able jobs with a scheduled time, in claim order. Indefinite WAITING jobs
+-- (scheduled_at is null) are excluded. The name lets the claim skip jobs the node has no handlers
+-- for on index entries.
 create index bikesched_jobs_poll_idx on bikesched_jobs (priority desc, scheduled_at, name)
-    where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING');
+    where state in ('SCHEDULED', 'WAITING', 'COMPENSATING', 'FAILING')
+      and scheduled_at is not null;
 
 -- Recurring jobs (identified by their job name): at most one pending occurrence each. Finishing an
 -- occurrence inserts the next one in the same transaction; registering a recurring job and the
@@ -174,9 +182,6 @@ create index bikesched_jobs_locked_by_node_id_idx on bikesched_jobs (locked_by_n
 -- the list of all jobs, this index the list of one name.
 create index bikesched_jobs_name_id_idx on bikesched_jobs (name, id);
 
--- The admin's search by short id, the last 8 hex digits of the id (the random part of a UUIDv7).
-create index bikesched_jobs_short_id_idx on bikesched_jobs (right(id::text, 8));
-
 -- The admin's search by reference, newest first. Only jobs with a reference have an entry.
 create index bikesched_jobs_reference_idx on bikesched_jobs (reference, id)
     where reference is not null;
@@ -196,8 +201,10 @@ create index bikesched_jobs_held_idx on bikesched_jobs (batch_step_id, id)
 -- - EVENT_PUBLISH: published the event event_name/event_key (event_id) exactly once; SUCCEEDED
 --   when created, in the transaction that published the event.
 -- - CHILD_JOB: started the child job child_job_id named child_job_name exactly once; WAITING until the child ends
---   (SUCCEEDED, child_end_state = its terminal state, result = its result, last_error = its error or
+--   (SUCCEEDED, child_job_end_state = its terminal state, result = its result, last_error = its error or
 --   cancel message) or the parent's wait for it times out at wake_at (TIMED_OUT).
+-- - CHILD_JOB_BATCH: started a batch of child jobs; WAITING until all items end, fail-fast triggers,
+--   or wake_at has passed (TIMED_OUT).
 -- - POLL: checks an external service until it is ready; one row for all checks (attempts = the
 --   number of checks). RUNNING during a check, WAITING until the next check at wake_at (at most
 --   deadline_at), SUCCEEDED once ready (result = the ready value), TIMED_OUT once a check after
@@ -216,30 +223,30 @@ create index bikesched_jobs_held_idx on bikesched_jobs (batch_step_id, id)
 -- across its attempts), which every write to a single step uses, and by its name within its job,
 -- which the handler's replay looks it up by.
 create table bikesched_steps (
-    id                 uuid             not null,
-    job_id             uuid             not null,
-    name               text collate "C" not null,
-    type               text collate "C" not null default 'STEP',
-    state              text collate "C" not null default 'RUNNING',
-    locked_by_node_id  uuid,                                -- the node running the step (no FK: may outlive a dead node)
-    event_id           uuid,                                -- the event received or published (no FK: see above)
-    child_job_id       uuid,                                -- the child job started (no FK: see above)
-    started_at         timestamptz      not null default now(),
-    finished_at        timestamptz,
-    wake_at            timestamptz,
-    deadline_at        timestamptz,                         -- the deadline of a poll, none if null
-    attempts           integer          not null default 0,
-    failure_attempts   integer          not null default 0, -- runs of its failure handler while FAILING
-    compensable        boolean          not null default false,
-    child_end_state    text collate "C",                    -- the child's terminal state, once it ended
-    child_job_name     text collate "C",                    -- its name, checked on replays even after it was deleted
-    event_name         text collate "C",
-    event_key          text collate "C",
-    result             jsonb,
-    last_error         text,
-    batch_step_id      uuid,                                -- the batch step of an item step (same job)
-    batch_parallelism  integer,                             -- batch steps: items active at once, null: all
-    batch_fail_fast    boolean          not null default false, -- batch steps: end at the first failed item
+    id                  uuid             not null,
+    job_id              uuid             not null,
+    started_at          timestamptz      not null default now(),
+    attempts            integer          not null default 0,
+    failure_attempts    integer          not null default 0, -- runs of its failure handler while FAILING
+    compensable         boolean          not null default false,
+    batch_fail_fast     boolean          not null default false, -- batch steps: end at the first failed item
+    finished_at         timestamptz,
+    wake_at             timestamptz,
+    deadline_at         timestamptz,                         -- the deadline of a poll, none if null
+    batch_parallelism   integer,                             -- batch steps: items active at once, null: all
+    locked_by_node_id   uuid,                                -- the node running the step (no FK: may outlive a dead node)
+    event_id            uuid,                                -- the event received or published (no FK: see above)
+    child_job_id        uuid,                                -- the child job started (no FK: see above)
+    batch_step_id       uuid,                                -- the batch step of an item step (same job)
+    name                text collate "C" not null,
+    type                text collate "C" not null default 'STEP',
+    state               text collate "C" not null default 'RUNNING',
+    child_job_name      text collate "C",                    -- its name, checked on replays even after it was deleted
+    child_job_end_state text collate "C",                    -- the child's terminal state, once it ended
+    event_name          text collate "C",
+    event_key           text collate "C",
+    last_error          text,
+    result              jsonb,
     constraint bikesched_steps_pkey primary key (id),
     constraint bikesched_steps_job_id_name_key unique (job_id, name),
     constraint bikesched_steps_job_id_fkey
@@ -277,9 +284,10 @@ create table bikesched_steps (
     constraint bikesched_steps_child_check
         check ((child_job_id is not null) = (type = 'CHILD_JOB')
                and (child_job_name is not null) = (type = 'CHILD_JOB')
-               and (child_end_state is null or type = 'CHILD_JOB' and state in ('SUCCEEDED', 'COMPENSATED'))
-               and (type <> 'CHILD_JOB' or state <> 'SUCCEEDED' or child_end_state is not null)
-               and child_end_state in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED')),
+               and (child_job_end_state is null or type = 'CHILD_JOB' and state in ('SUCCEEDED', 'COMPENSATED'))
+               and (type <> 'CHILD_JOB' or state <> 'SUCCEEDED' or child_job_end_state is not null)
+               and (child_job_end_state is null
+                    or child_job_end_state in ('SUCCEEDED', 'FAILED', 'CANCELLED', 'COMPENSATION_FAILED'))),
     -- Only sleeps, event waits, child jobs and polls wait; a sleep and a waiting poll need their
     -- wake-up time. (An event wait or a wait for a child job without a timeout waits without a
     -- deadline.) Only polls have a deadline of their own.
@@ -296,7 +304,7 @@ create table bikesched_steps (
                and (not batch_fail_fast or type = 'CHILD_JOB_BATCH')
                and (type <> 'CHILD_JOB_BATCH' or state <> 'FAILED' or batch_fail_fast)
                and (batch_step_id is null or type = 'CHILD_JOB')
-               and batch_parallelism >= 1),
+               and (batch_parallelism is null or batch_parallelism >= 1)),
     constraint bikesched_steps_lock_check
         check ((state = 'RUNNING') = (locked_by_node_id is not null)),
     -- Only regular steps run handlers that can postpone the job.
@@ -310,7 +318,7 @@ create table bikesched_steps (
         check (char_length(event_key) between 1 and 500 and octet_length(event_key) <= 1500),
     constraint bikesched_steps_child_job_name_check
         check (char_length(child_job_name) between 1 and 200 and octet_length(child_job_name) <= 600)
-);
+) with (fillfactor = 85);
 
 -- Matching published events to the steps waiting for them.
 create index bikesched_steps_waiting_idx on bikesched_steps (event_name, event_key)
@@ -364,13 +372,18 @@ create table bikesched_events (
         check (expires_at >= published_at)
 );
 
-create index bikesched_events_name_key_idx on bikesched_events (name, key, published_at desc);
+create index bikesched_events_name_key_idx
+    on bikesched_events (name, key, published_at desc, id desc)
+    include (expires_at);
+
+-- Deduplicating keyed event publications on hot keys without scanning all events for (name, key).
+create index bikesched_events_idempotency_key_idx
+    on bikesched_events (name, key, idempotency_key)
+    include (expires_at)
+    where idempotency_key is not null;
 
 -- Deleting expired events.
 create index bikesched_events_expires_at_idx on bikesched_events (expires_at);
-
--- The admin's search by short id, the last 8 hex digits of the id (the random part of a UUIDv7).
-create index bikesched_events_short_id_idx on bikesched_events (right(id::text, 8));
 
 -- The admin's search by reference, newest first. Only events with a reference have an entry.
 create index bikesched_events_reference_idx on bikesched_events (reference, id)
@@ -396,20 +409,20 @@ create index bikesched_events_reference_idx on bikesched_events (reference, id)
 create table bikesched_history (
     subject_id   uuid             not null,
     id           uuid             not null,
-    step_id      uuid,                        -- JOB entries of a step
-    subject_type text collate "C" not null,
-    action       text collate "C" not null,
-    state        text collate "C",            -- JOB entries: the job's or step's state afterwards
-    node_id      uuid,                        -- the node that wrote the entry, if registered
-    caused_by_id uuid,
     created_at   timestamptz      not null default clock_timestamp(),
     attempt      integer,                     -- JOB entries: the job's attempt count after the change
+    step_id      uuid,                        -- JOB entries of a step
+    node_id      uuid,                        -- the node that wrote the entry, if registered
+    caused_by_id uuid,
+    subject_type text collate "C" not null,
+    action       text collate "C" not null,
     actor_type   text collate "C" not null,
+    state        text collate "C",            -- JOB entries: the job's or step's state afterwards
     actor_name   text collate "C",            -- USER entries: the user name
     data         jsonb,
     constraint bikesched_history_pkey primary key (subject_id, id),
     constraint bikesched_history_data_check
-        check (jsonb_typeof(data) = 'object'),
+        check (data is null or jsonb_typeof(data) = 'object'),
     constraint bikesched_history_subject_type_check
         check (subject_type in ('JOB', 'EVENT', 'NODE')),
     constraint bikesched_history_actor_type_check
@@ -420,7 +433,7 @@ create table bikesched_history (
         check ((attempt is not null) = (subject_type = 'JOB')
                and (state is not null) = (subject_type = 'JOB')
                and (step_id is null or subject_type = 'JOB')
-               and attempt >= 0),
+               and (attempt is null or attempt >= 0)),
     constraint bikesched_history_action_check
         check (case
                    when subject_type = 'JOB' and step_id is null then
@@ -447,13 +460,13 @@ create table bikesched_history (
 );
 
 -- Deleting entries after their retention, and the newest entries first (keyset paging by
--- (created_at, id): ties in created_at are rare and sorted by id after the fetch).
-create index bikesched_history_created_at_idx on bikesched_history (created_at);
+-- (created_at, id)).
+create index bikesched_history_created_at_idx on bikesched_history (created_at, id);
 
 -- The entries an event, job or node caused (an event's receivers, a dead node's released jobs).
 create index bikesched_history_caused_by_id_idx on bikesched_history (caused_by_id)
     where caused_by_id is not null;
 
 -- What users did, newest first.
-create index bikesched_history_user_idx on bikesched_history (created_at)
+create index bikesched_history_user_idx on bikesched_history (created_at, id)
     where actor_type = 'USER';

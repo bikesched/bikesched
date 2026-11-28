@@ -146,7 +146,7 @@ public static int advanceTime(DataSource dataSource, Duration duration, JobType<
   lock order could still deadlock with it, while a transaction that never waits cannot. Δ is
   the given duration for `advanceTime`, and `scheduled_at - now()` (at least zero) for
   `fastForward`, so the job lands exactly on its next due time and later deadlines (a poll's) keep
-  their distance. A job waiting without a deadline (`scheduled_at = 'infinity'`) is not
+  their distance. A job waiting without a deadline (`scheduled_at is null`) is not
   fast-forwarded.
 - Then `pg_notify('bikesched_jobs', type)` per moved type, so listening nodes poll at once instead
   of on their next poll or wake-up timer. The channel name is repeated in `TimeSkip`, as this

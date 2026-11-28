@@ -27,9 +27,11 @@ that the schema did not check.
   `compensation_end_state` and `failure_end_state`, `child_state` to `child_end_state`,
   `fixed_rate_at` to `planned_run_at`, and `bikesched_schema_migrations.execution_time_ms` to
   `execution_time_millis`.
-- Columns are ordered by alignment: uuids, then timestamps and bigints, then integers and
-  booleans, then text and jsonb. Measured, this saves 0 to 8 bytes per row; it is done for
-  readability and because it is free while V001 is edited in place.
+- Columns were ordered by alignment: uuids, then timestamps and bigints, then integers and
+  booleans, then text and jsonb (later amended by
+  [ADR 0068](0068-schema-performance-review.md) to the physical layout rule applied consistently
+  across tables). Measured, this saves 0 to 8 bytes per row; it is done for readability and
+  because it is free while V001 is edited in place.
 - New CHECKs: a job's `locked_at` goes with its lock, exactly ended jobs have `finished_at`,
   `planned_run_at` only on recurring occurrences, a cancel message only with a cancel request, no
   job is its own parent; unfinished steps have no `finished_at` and ended ones (except

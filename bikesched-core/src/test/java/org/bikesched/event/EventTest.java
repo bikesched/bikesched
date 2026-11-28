@@ -52,7 +52,7 @@ class EventTest extends AbstractBikeschedTest {
               .schedule();
 
       awaitState(jobId, "WAITING");
-      assertThat(count("id = '" + jobId + "' and attempts = 0 and scheduled_at = 'infinity'"))
+      assertThat(count("id = '" + jobId + "' and attempts = 0 and scheduled_at is null"))
           .as("waiting does not use up an attempt")
           .isEqualTo(1);
       assertThat(
