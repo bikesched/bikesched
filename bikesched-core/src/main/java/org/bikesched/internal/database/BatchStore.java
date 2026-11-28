@@ -50,8 +50,8 @@ public final class BatchStore {
 
   private static final String BATCH_COLUMNS =
       """
-            id, name, job_id, state, batch_item_count,
-            coalesce(batch_parallelism, 0) as batch_parallelism, batch_active_count, batch_ended_count,
+            id, name, job_id, state,
+            coalesce(batch_parallelism, 0) as batch_parallelism,
             batch_fail_fast, compensable, wake_at, wake_at <= now() as deadline_passed
               from bikesched_steps""";
 
@@ -63,18 +63,16 @@ public final class BatchStore {
 
   private static final String INSERT_BATCH_STEP_SQL =
       """
-            insert into bikesched_steps (id, job_id, name, type, state, attempts, batch_item_count,
-                                         batch_parallelism, batch_active_count, batch_ended_count,
-                                         batch_fail_fast, compensable)
-            values (?, ?, ?, 'CHILD_JOB_BATCH', 'WAITING', 1, ?, ?, ?, 0, ?, ?)""";
+            insert into bikesched_steps (id, job_id, name, type, state, attempts,
+                                         batch_parallelism, batch_fail_fast, compensable)
+            values (?, ?, ?, 'CHILD_JOB_BATCH', 'WAITING', 1, ?, ?, ?)""";
 
   // A compensated batch starts again when its parent is retried, with new children; it keeps its
   // parallelism, mode and compensation.
   private static final String RESTART_BATCH_STEP_SQL =
       """
             update bikesched_steps
-               set state = 'WAITING', batch_active_count = ?, batch_ended_count = 0, wake_at = null,
-                   last_error = null,
+               set state = 'WAITING', wake_at = null, last_error = null,
                    attempts = attempts + 1, started_at = now(), finished_at = null
              where id = ? and state = 'COMPENSATED'""";
 
@@ -136,17 +134,14 @@ public final class BatchStore {
              where s.id = ? and c.id = s.child_job_id and s.state = 'WAITING'
             returning c.state as child_state, c.last_error""";
 
-  private static final String COUNT_ENDED_SQL =
+  // Along bikesched_steps_waiting_item_idx: O(1) check whether any item of the batch still waits.
+  private static final String HAS_WAITING_ITEMS_SQL =
       """
-            update bikesched_steps
-               set batch_ended_count = batch_ended_count + ?, batch_active_count = batch_active_count - ?
-             where id = ?
-            returning batch_ended_count, batch_active_count""";
+            select exists (
+                select 1 from bikesched_steps
+                 where batch_step_id = ? and state = 'WAITING') as waiting""";
 
-  private static final String COUNT_CANCELLED_SQL =
-      "update bikesched_steps set batch_ended_count = batch_ended_count + ? where id = ?";
-
-  // Admits the first held items in item order, keeping a due time in the future the batch was
+  // Admits the next held item in item order, keeping a due time in the future the batch was
   // scheduled for. Held rows are locked only under the batch step's lock, so this never waits; it
   // does not skip locked rows either, which could leave the batch with nothing admitted.
   private static final String ADMIT_SQL =
@@ -156,18 +151,18 @@ public final class BatchStore {
               from (select id from bikesched_jobs
                      where batch_step_id = ? and state = 'HELD'
                      order by id
-                     limit ?
+                     limit 1
                        for no key update) h
              where j.id = h.id
             returning j.id, j.name, j.attempts, j.scheduled_at""";
 
+  // Along bikesched_steps_child_job_idx (child_job_id where type = 'CHILD_JOB' and state =
+  // 'WAITING').
   private static final String MAKE_COMPENSABLE_SQL =
       """
             update bikesched_steps set compensable = true
-             where batch_step_id = ? and child_job_id = any(?::uuid[])""";
-
-  private static final String COUNT_ADMITTED_SQL =
-      "update bikesched_steps set batch_active_count = batch_active_count + ? where id = ?";
+             where child_job_id = ? and type = 'CHILD_JOB' and state = 'WAITING'
+               and batch_step_id = ?""";
 
   private static final String END_BATCH_SQL =
       """
@@ -431,10 +426,7 @@ public final class BatchStore {
       String name,
       UUID jobId,
       StepState state,
-      int itemCount,
       int parallelism,
-      int activeCount,
-      int endedCount,
       boolean failFast,
       boolean compensable,
       @Nullable Instant wakeAt,
@@ -446,10 +438,7 @@ public final class BatchStore {
           row.string("name"),
           row.uuid("job_id"),
           row.enumValue("state", StepState.class),
-          row.integer("batch_item_count"),
           row.integer("batch_parallelism"),
-          row.integer("batch_active_count"),
-          row.integer("batch_ended_count"),
           row.bool("batch_fail_fast"),
           row.bool("compensable"),
           row.instant("wake_at"),
@@ -561,9 +550,7 @@ public final class BatchStore {
         stepId,
         parentJobId,
         stepName,
-        batch.items().size(),
         Sql.typed(batch.parallelism(), Types.INTEGER),
-        admitted,
         batch.failFast(),
         batch.compensable());
     List<ItemRef> items = newItems(batch);
@@ -659,7 +646,7 @@ public final class BatchStore {
             row.failFast(),
             row.compensable());
     int admitted = restarted.admitted();
-    db.update(RESTART_BATCH_STEP_SQL, admitted, step.id());
+    db.update(RESTART_BATCH_STEP_SQL, step.id());
     List<ItemRef> items = newItems(restarted);
     insertItems(db, parentJobId, step.id(), restarted, items);
     for (int from = 0; from < items.size(); from += CHUNK_SIZE) {
@@ -995,7 +982,7 @@ public final class BatchStore {
   private record EndedStep(UUID id, UUID childJobId) {}
 
   /**
-   * Cancels the held items of a batch, counting them as ended.
+   * Cancels the held items of a batch.
    *
    * @param endSteps whether to cancel their item steps too ({@code false} if the caller ended every
    *     waiting item step already)
@@ -1013,7 +1000,6 @@ public final class BatchStore {
     if (cancelled.isEmpty()) {
       return Set.of();
     }
-    db.update(COUNT_CANCELLED_SQL, cancelled.size(), batch.id());
     if (endSteps) {
       db.update(
           CANCEL_HELD_ITEM_STEPS_SQL,
@@ -1042,9 +1028,9 @@ public final class BatchStore {
 
   /**
    * After an item ended in a terminal state in the caller's transaction: completes its step with
-   * its outcome, counts it, admits held items as the parallelism allows, and ends the batch (and
-   * resumes its parent) once every item ended, or a fail-fast batch at the first item that did not
-   * succeed.
+   * its outcome, admits the next held item if the batch has a parallelism limit, and ends the batch
+   * (and resumes its parent) once no item still waits, or a fail-fast batch at the first item that
+   * did not succeed.
    *
    * @param itemId the item that ended
    * @param batchStepId its batch step
@@ -1085,24 +1071,19 @@ public final class BatchStore {
               .causedBy(itemId)
               .child(null, ended.get().state().name()));
     }
-    Counts counts =
-        db.one(
-                COUNT_ENDED_SQL,
-                row ->
-                    new Counts(row.integer("batch_ended_count"), row.integer("batch_active_count")),
-                1,
-                wasActive ? 1 : 0,
-                batchStepId)
-            .orElseThrow();
     if (batch.state() == StepState.WAITING && ended.isPresent()) {
       String key = itemStep.get().name().substring(batch.name().length() + 1);
       if (batch.failFast() && ended.get().state() != JobState.SUCCEEDED) {
         failFast(db, batch, key, itemId, ended.get(), changes);
       } else {
-        if (wasActive) {
-          admit(db, batch, counts.active(), itemId, changes);
-        }
-        if (counts.ended() >= batch.itemCount()) {
+        boolean admitted =
+            wasActive && batch.parallelism() > 0 && admitOne(db, batch, itemId, changes);
+        // An admitted held item still has a WAITING item step, so the batch cannot have ended.
+        boolean waiting =
+            admitted
+                || db.one(HAS_WAITING_ITEMS_SQL, row -> row.bool("waiting"), batchStepId)
+                    .orElse(false);
+        if (!waiting) {
           db.update(END_BATCH_SQL, StepState.SUCCEEDED.name(), null, batchStepId);
           changes.add(
               Change.step(
@@ -1122,16 +1103,10 @@ public final class BatchStore {
   /** A row of {@code COMPLETE_ITEM_STEP_SQL}. */
   private record EndedItem(JobState state, @Nullable String error) {}
 
-  /** A row of {@code COUNT_ENDED_SQL}. */
-  private record Counts(int ended, int active) {}
-
-  private void admit(Sql db, BatchRow batch, int active, UUID causedBy, List<Change> changes)
+  private boolean admitOne(Sql db, BatchRow batch, UUID causedBy, List<Change> changes)
       throws SQLException {
-    if (batch.parallelism() == 0 || active >= batch.parallelism()) {
-      return;
-    }
-    List<AdmittedItem> admitted =
-        db.list(
+    Optional<AdmittedItem> admitted =
+        db.one(
             ADMIT_SQL,
             row ->
                 new AdmittedItem(
@@ -1139,30 +1114,21 @@ public final class BatchStore {
                     row.string("name"),
                     row.integer("attempts"),
                     row.instant("scheduled_at")),
-            batch.id(),
-            batch.parallelism() - active);
+            batch.id());
     if (admitted.isEmpty()) {
-      return;
+      return false;
     }
-    db.update(COUNT_ADMITTED_SQL, admitted.size(), batch.id());
+    AdmittedItem item = admitted.get();
     if (batch.compensable()) {
-      db.update(
-          MAKE_COMPENSABLE_SQL,
-          batch.id(),
-          Sql.array("uuid", admitted.stream().map(AdmittedItem::id).toArray(UUID[]::new)));
+      db.update(MAKE_COMPENSABLE_SQL, item.id(), batch.id());
     }
-    for (AdmittedItem item : admitted) {
-      db.due(item.name(), item.scheduledAt());
-      changes.add(
-          Change.job(
-                  item.id(),
-                  JobAction.ADMITTED,
-                  JobState.SCHEDULED,
-                  item.attempts(),
-                  ActorType.NODE)
-              .causedBy(causedBy)
-              .dueAt(item.scheduledAt()));
-    }
+    db.due(item.name(), item.scheduledAt());
+    changes.add(
+        Change.job(
+                item.id(), JobAction.ADMITTED, JobState.SCHEDULED, item.attempts(), ActorType.NODE)
+            .causedBy(causedBy)
+            .dueAt(item.scheduledAt()));
+    return true;
   }
 
   /** A row of {@code ADMIT_SQL}. */
@@ -1289,7 +1255,7 @@ public final class BatchStore {
 
   /**
    * Cancels a held item via {@code Bikesched.cancel}: it ends {@code CANCELLED} right away (it
-   * never ran), counted as ended by its batch without admitting another one.
+   * never ran), completing its item step without admitting another item.
    *
    * @param jobId the item
    * @param message why it is cancelled, may be {@code null}
