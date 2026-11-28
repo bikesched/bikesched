@@ -2,8 +2,12 @@
 package org.bikesched.kotlin
 
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.delay
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
+import org.bikesched.job.JobBatchResult
+import org.bikesched.job.JobFailedException
 import org.bikesched.job.JobResult
 import org.bikesched.job.JobState
 import org.junit.jupiter.api.Test
@@ -38,7 +42,7 @@ class BatchesTest {
               key = format,
             )
           }
-        images += renders.await().orElseThrow()
+        images += renders.await()
       }
       val jobId = bikesched.createJob(name = parent, payload = "img-1")
 
@@ -70,7 +74,7 @@ class BatchesTest {
           ) {
             item("d", key = "fourth")
           }
-        results += batch.await().succeeded()
+        results += batch.awaitResult().succeeded()
       }
       val jobId = bikesched.createJob(name = parent)
 
@@ -99,7 +103,8 @@ class BatchesTest {
       bikesched.handleJobs<String>(send) { to -> sent += to }
       bikesched.handleJobs(parent) {
         val result =
-          startJobBatch<String, Unit>("mails", send, payloads = listOf("a@x.de", "b@x.de")).await()
+          startJobBatch<String, Unit>("mails", send, payloads = listOf("a@x.de", "b@x.de"))
+            .awaitResult()
         allSucceeded += result.isAllSucceeded
       }
       val jobId = bikesched.createJob(name = parent)
@@ -127,7 +132,7 @@ class BatchesTest {
           startJobBatch("checks", items = listOf(MixedBatchItem(virus, Scan(fileId), "virus"))) {
             item(nsfw, Scan(fileId), key = "nsfw")
           }
-        val result = checks.await()
+        val result = checks.awaitResult()
         reports += result.result<ScanReport>("virus")
         check(result.result<Boolean>("nsfw").orElseThrow() == false)
       }
@@ -159,7 +164,7 @@ class BatchesTest {
             failFast = true,
             maxAttempts = 1,
           )
-        unsucceeded += batch.await().unsucceeded().keys
+        unsucceeded += batch.awaitResult().unsucceeded().keys
       }
       val jobId = bikesched.createJob(name = parent)
 
@@ -210,8 +215,8 @@ class BatchesTest {
             // a later run adds nothing: the stored items count
             if (first) item(Render("img", "webp"), key = "webp")
           }
-        images += batch.await().result<Image>("webp").orElseThrow()
-        images += checkNotNull(batch.await().get("webp").orElseThrow())
+        images += batch.awaitResult().result<Image>("webp").orElseThrow()
+        images += checkNotNull(batch.awaitResult()["webp"].orElseThrow())
       }
       val jobId = bikesched.createJob(name = parent)
 
@@ -219,6 +224,82 @@ class BatchesTest {
         assertThat(bikesched.findJobOrNull(jobId)?.state()).isEqualTo(JobState.SUCCEEDED)
       }
       assertThat(images).containsExactly(Image("webp", 4), Image("webp", 4))
+    }
+  }
+
+  @Test
+  fun `await and awaitResult accept kotlin durations`() {
+    val parentAwait = unique("batch-kotlin-timeout-await")
+    val parentThrow = unique("batch-kotlin-timeout-throw")
+    val slow = unique("batch-kotlin-slow")
+    val outcomes = CopyOnWriteArrayList<JobResult<Unit>>()
+    val thrown = CopyOnWriteArrayList<JobFailedException>()
+
+    testNode("batches").use { bikesched ->
+      bikesched.handleJobs(slow) { delay(5_000.milliseconds) }
+      bikesched.handleJobs(parentAwait) {
+        val batch = startJobBatch<Any?, Unit>("items", slow, payloads = listOf(null))
+        outcomes += batch.awaitResult(300.milliseconds)["0"]
+      }
+      bikesched.handleJobs(parentThrow) {
+        val batch = startJobBatch<Any?, Unit>("items", slow, payloads = listOf(null))
+        try {
+          batch.await(300.milliseconds)
+        } catch (e: JobFailedException) {
+          thrown += e
+          throw e
+        }
+      }
+      val awaitId = bikesched.createJob(name = parentAwait)
+      val throwId = bikesched.createJob(name = parentThrow, maxAttempts = 1)
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(awaitId)?.state()).isEqualTo(JobState.SUCCEEDED)
+        assertThat(bikesched.findJobOrNull(throwId)?.state()).isEqualTo(JobState.FAILED)
+      }
+      assertThat(outcomes.single()).isInstanceOf(JobResult.TimedOut::class.java)
+      assertThat(thrown.single().result()).isInstanceOf(JobResult.TimedOut::class.java)
+    }
+  }
+
+  @Test
+  fun `awaitResult returns sealed Succeeded, Failed Incomplete and Failed`() {
+    val parent = unique("sealed-result")
+    val item = unique("sealed-item")
+    val branches = CopyOnWriteArrayList<String>()
+
+    testNode("batches").use { bikesched ->
+      bikesched.handleResultJobs<String, String>(item) { payload ->
+        check(!payload.startsWith("bad")) { "failed $payload" }
+        payload.uppercase()
+      }
+      bikesched.handleJobs<List<String>>(parent) { payloads ->
+        val result =
+          startJobBatch<String, String>("items", item, payloads = payloads, maxAttempts = 1)
+            .awaitResult()
+        branches +=
+          when (result) {
+            is JobBatchResult.Succeeded -> "succeeded:${result.results()}"
+            is JobBatchResult.Failed.Incomplete ->
+              "incomplete:${result.succeeded().keys}:${result.unsucceeded().keys}"
+            is JobBatchResult.Failed -> "failed:${result.unsucceeded().keys}"
+          }
+      }
+      val okId = bikesched.createJob(name = parent, payload = listOf("a", "b"))
+      val partialId = bikesched.createJob(name = parent, payload = listOf("a", "bad"))
+      val allFailedId = bikesched.createJob(name = parent, payload = listOf("bad1", "bad2"))
+
+      await().untilAsserted {
+        assertThat(bikesched.findJobOrNull(okId)?.state()).isEqualTo(JobState.SUCCEEDED)
+        assertThat(bikesched.findJobOrNull(partialId)?.state()).isEqualTo(JobState.SUCCEEDED)
+        assertThat(bikesched.findJobOrNull(allFailedId)?.state()).isEqualTo(JobState.SUCCEEDED)
+      }
+      assertThat(branches)
+        .containsExactlyInAnyOrder(
+          "succeeded:[A, B]",
+          "incomplete:[0]:[1]",
+          "failed:[0, 1]",
+        )
     }
   }
 }

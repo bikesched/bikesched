@@ -61,9 +61,9 @@ public interface JobBatchSettings<B extends JobBatchSettings<B>> {
 
   /**
    * Ends the batch at the first item that does not succeed (failed, cancelled or its compensation
-   * failed): the parent's {@link JobBatch#await()} returns right away, held items are cancelled and
-   * the other unfinished items get a cancellation request. By default a batch ends when all its
-   * items have ended.
+   * failed): the parent's {@link JobBatch#await()} throws (and {@link JobBatch#awaitResult()}
+   * returns) right away, held items are cancelled and the other unfinished items get a cancellation
+   * request. By default a batch ends when all its items have ended.
    *
    * @return this builder
    */

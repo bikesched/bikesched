@@ -69,12 +69,12 @@ public class MixedBatchItems internal constructor(private val builder: MixedJobB
  * Starts a batch of child jobs of [jobName] exactly once as a durable step of this job, see
  * `Job.newJobBatch(String, ResultJob)`; later runs return the same batch without starting again.
  * The items are distributed across the nodes, at most [parallelism] at a time, and [JobBatch.await]
- * returns all their outcomes with the results mapped to [R]:
+ * returns their results mapped to [R] (or [JobBatch.awaitResult] returns all outcomes):
  * ```
  * val renders = startJobBatch<Render, Image>("render", "render-format", parallelism = 4) {
  *     for (format in Format.ALL) item(Render(imageId, format), key = format.name)
  * }
- * val images: List<Image?> = renders.await().orElseThrow()
+ * val images: List<Image?> = renders.await()
  * ```
  *
  * The items come from [items], [pairs], [payloads] and the lambda, in that order; a batch with none
@@ -155,7 +155,7 @@ public inline fun <reified P, reified R> Job.startJobBatch(
  *     item("virus-scan", Scan(fileId), key = "virus")
  *     item("nsfw-check", Scan(fileId), key = "nsfw")
  * }
- * val virus: JobResult<ScanReport> = checks.await().result<ScanReport>("virus")
+ * val virus: JobResult<ScanReport> = checks.awaitResult().result<ScanReport>("virus")
  * ```
  *
  * The items come from [items] and the lambda, in that order. The other parameters are those of the

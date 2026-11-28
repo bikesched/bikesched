@@ -175,15 +175,15 @@ JobBatchResult<Thumbnail> resized = job.newJobBatch("resize", RESIZE_PHOTO)   //
         .addAll(album.files(), file -> file, file -> new Photo(albumId, file))  // key, payload
         .parallelism(2)
         .schedule()
-        .await();
+        .awaitResult();
 List<Thumbnail> thumbnails = new ArrayList<>(resized.succeeded().values());
 int skipped = resized.unsucceeded().size();
 ```
 
 - The batch is started once, in one transaction: it is a step of the parent.
-- The parent waits without a thread and resumes once, when every item has ended. A failed item
-  doesn't fail the parent; it decides from the outcomes (`orElseThrow()` for all or nothing,
-  `failFast()` to stop at the first failure).
+- The parent waits without a thread and resumes once, when every item has ended. `await()` returns
+  the results or throws if any item failed; `awaitResult()` returns the sealed `JobBatchResult` so
+  the parent decides from the outcomes (`failFast()` stops at the first failure).
 
 Example: [Fan-out](../bikesched-examples/README.md#fan-out). Details:
 [Batches](multi-step-jobs/child-jobs.md#batches).

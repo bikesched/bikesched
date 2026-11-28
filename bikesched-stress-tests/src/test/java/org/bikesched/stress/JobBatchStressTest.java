@@ -52,8 +52,7 @@ class JobBatchStressTest {
                 .addAll(IntStream.range(0, ITEMS).boxed().toList())
                 .parallelism(PARALLELISM)
                 .schedule()
-                .await()
-                .orElseThrow();
+                .await();
           });
       UUID parent = a.newJob(parentName).timeout(Duration.ofMinutes(2)).schedule();
       await("the batch was stored")

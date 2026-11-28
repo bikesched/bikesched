@@ -43,8 +43,10 @@ with its batch step and key (`batch_step_id`, `batch_key`; ids are created in it
   items (`batch_active_count`, `batch_ended_count`); an item's end admits as many held items as
   the counters allow, in item order, with `for update skip locked`.
 - **Resume once**: an item's end locks the batch step, completes its item step and the counters,
-  and only the last item resumes the parent. `JobBatch.await()` suspends at the batch step and
-  returns a `JobBatchResult` of every item's `JobResult`. Waiting for a single item is rejected.
+  and only the last item resumes the parent. `JobBatch.await()` and `awaitResult()` suspend at the
+  batch step; `await()` returns all results or throws on failure, and `awaitResult()` returns a
+  sealed `JobBatchResult` (`Succeeded`, `Failed`, `Failed.Incomplete`) of every item's `JobResult`.
+  Waiting for a single item is rejected.
 - **Fail-fast** (`failFast()`): the first item that does not succeed ends the batch `FAILED`,
   resumes the parent and cancels the siblings in the same transaction: held items directly,
   scheduled and running ones by a cancel request, all with `skip locked`. Siblings skipped as

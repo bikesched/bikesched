@@ -6,6 +6,8 @@ import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 import org.bikesched.RetryBackoff
 import org.bikesched.job.Job
+import org.bikesched.job.JobBatch
+import org.bikesched.job.JobBatchResult
 import org.bikesched.job.JobBuilder
 import org.bikesched.job.JobFailure
 import org.bikesched.job.JobSettings
@@ -57,6 +59,20 @@ public fun Job.postpone(delay: Duration): Unit = postpone(delay.toJavaDuration()
 /** Sleeps as a durable step, see `Job.sleep(String, Duration)`. */
 public fun Job.sleep(stepName: String, duration: Duration): Unit =
   sleep(stepName, duration.toJavaDuration())
+
+/**
+ * Waits for the batch at most for [timeout] and returns all results in item order, throwing if any
+ * item did not succeed or the wait timed out, see `JobBatch.await(Duration)`.
+ */
+public fun <R> JobBatch<R>.await(timeout: Duration): List<R?> = await(timeout.toJavaDuration())
+
+/**
+ * Waits for the batch at most for [timeout] and returns the outcome of every item without throwing,
+ * see `JobBatch.awaitResult(Duration)`. At the deadline the unfinished items are
+ * `JobResult.TimedOut` and held ones are cancelled; running items keep running.
+ */
+public fun <R> JobBatch<R>.awaitResult(timeout: Duration): JobBatchResult<R> =
+  awaitResult(timeout.toJavaDuration())
 
 /** A fixed-rate recurrence running every [interval], see `Recurrence.every(Duration)`. */
 public fun every(interval: Duration): Recurrence = Recurrence.every(interval.toJavaDuration())

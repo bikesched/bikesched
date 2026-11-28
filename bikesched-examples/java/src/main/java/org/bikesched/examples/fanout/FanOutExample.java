@@ -7,14 +7,12 @@ import java.io.PrintStream;
 import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.bikesched.Bikesched;
 import org.bikesched.examples.util.BikeschedUtil;
 import org.bikesched.job.JobBatchResult;
-import org.bikesched.job.JobResult;
 import org.bikesched.job.JobState;
 import org.bikesched.job.ResultJob;
 import org.bikesched.job.TypedJob;
@@ -113,27 +111,34 @@ public final class FanOutExample {
                   .parallelism(2)
                   .schedule()
                   // Fan in: the parent waits once, and resumes when every photo is done.
-                  .await();
+                  .awaitResult();
 
-          List<Thumbnail> thumbnails = new ArrayList<>(resized.succeeded().values());
-          List<String> skipped = new ArrayList<>();
-          resized
-              .unsucceeded()
-              .forEach(
-                  (file, outcome) -> {
-                    if (!(outcome instanceof JobResult.Failed)) {
-                      throw new IllegalStateException("Unexpected outcome: " + outcome);
-                    }
-                    skipped.add(file);
-                  });
+          ImportedAlbum imported;
+          switch (resized) {
+            case JobBatchResult.Succeeded<Thumbnail> all ->
+                imported = new ImportedAlbum(all.results(), List.of());
+            case JobBatchResult.Failed.Incomplete<Thumbnail> partial ->
+                imported =
+                    new ImportedAlbum(
+                        List.copyOf(partial.succeeded().values()),
+                        List.copyOf(partial.unsucceeded().keySet()));
+            case JobBatchResult.Failed<Thumbnail> failed -> {
+              job.fail("No photo could be resized: " + failed.unsucceeded().keySet())
+                  .remainingAttempts(0);
+              return;
+            }
+          }
 
           job.step(
               "publish-album",
               () ->
                   out.printf(
                       "%s [album]   published %s with %d photos, skipped %s%n",
-                      timestamp(), album.albumId(), thumbnails.size(), skipped));
-          job.complete(new ImportedAlbum(thumbnails, skipped));
+                      timestamp(),
+                      album.albumId(),
+                      imported.thumbnails().size(),
+                      imported.skipped()));
+          job.complete(imported);
         });
   }
 

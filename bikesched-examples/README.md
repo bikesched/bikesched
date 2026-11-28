@@ -302,8 +302,7 @@ JobBatchResult<Thumbnail> resized = job.newJobBatch("resize", RESIZE_PHOTO)
         .addAll(album.files(), file -> file, file -> new Photo(album.albumId(), file))
         .parallelism(2)
         .schedule()
-        .await();
-List<Thumbnail> thumbnails = new ArrayList<>(resized.succeeded().values());
+        .awaitResult();
 ```
 
 `RESIZE_PHOTO` is a `ResultJob<Photo, Thumbnail>`: its handler returns the thumbnail; a file that
@@ -472,7 +471,7 @@ sends a newsletter to 100 readers with
 [job batches](../docs/multi-step-jobs/child-jobs.md#batches). The newsletter job splits the readers
 into ten chunks and starts each chunk as a batch with `startJobBatch<Mail, Unit>("mails-$index",
 …)`: one child job per mail, keyed by the reader's address. It waits for each batch with
-`await().orElseThrow()` before it starts the next one, suspended without holding a thread.
+`await()` before it starts the next one, suspended without holding a thread.
 
 Each mail child job calls the suspending
 [`MailService`](kotlin/src/main/kotlin/org/bikesched/examples/kotlin/mail/MailService.kt), mocked

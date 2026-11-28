@@ -35,8 +35,8 @@ fun registerMailHandlers(node: Bikesched, mailService: MailService) {
         startJobBatch<Mail, Unit>("mails-$index", SEND_MAIL) {
           for (reader in readers) item(Mail(reader, subject), key = reader)
         }
-      // Throws if a mail failed for good: the job fails and can be retried.
-      batch.await().orElseThrow()
+      // Throws if a mail failed for good (each mail has its own retries first).
+      batch.await()
     }
   }
 }

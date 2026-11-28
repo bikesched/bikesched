@@ -56,7 +56,7 @@ omitted options keep the builder defaults:
 | `startJob(name, payload, stepName, at, delay, priority, maxAttempts, timeout, reference, compensation)` (in a handler) | starts a [child job](../multi-step-jobs/child-jobs.md) once as a durable step and returns its id, the same on every run; it has the parent's reference unless `reference` is given; the optional `compensation = { step, childId -> … }` e.g. cancels it |
 | `poll<T>(name, interval, timeout, onFailure) { step -> … }` (in a handler) | polls until the trailing handler returns `Poll.ready(value)`, checking every `interval` (a `Duration` or a `RetryBackoff`); once the optional `timeout` passes, the job fails with a `PollTimeoutException`, unless `onFailure = { failing -> … }` resolves the poll (it also handles a check failing in the last attempt); a `poll<Unit>` stores no value |
 | `awaitJob<T>(childJobId, timeout)` (in a handler) | waits for a child job and returns its `JobResult<T>`; `JobResult.TimedOut` once the optional `timeout` passed |
-| `startJobBatch<P, R>(stepName, jobName, items, pairs, payloads, parallelism, failFast, priority, maxAttempts, timeout, reference, at, delay, compensation) { item(payload, key) }` (in a handler) | starts a [batch](../multi-step-jobs/child-jobs.md#batches) of `jobName` once as a durable step and returns the `JobBatch<R>`; items come from `items` (`BatchItem(payload, key)`), `pairs` (key to payload), `payloads` (keyed by position) and the lambda, in that order; `R = Unit` for a job without a result (`P = Unit` is rejected); the lambda runs on every run, the items are checked and mapped only on the first; `await()` returns the typed `JobBatchResult<R>` |
+| `startJobBatch<P, R>(stepName, jobName, items, pairs, payloads, parallelism, failFast, priority, maxAttempts, timeout, reference, at, delay, compensation) { item(payload, key) }` (in a handler) | starts a [batch](../multi-step-jobs/child-jobs.md#batches) of `jobName` once as a durable step and returns the `JobBatch<R>`; items come from `items` (`BatchItem(payload, key)`), `pairs` (key to payload), `payloads` (keyed by position) and the lambda, in that order; `R = Unit` for a job without a result (`P = Unit` is rejected); the lambda runs on every run, the items are checked and mapped only on the first; `await()` returns the results or throws on failure, `awaitResult()` returns the sealed `JobBatchResult<R>` |
 | `startJobBatch(stepName, items, …) { item(jobName, payload, key) }` (in a handler) | a mixed batch, each item naming its job (`MixedBatchItem(jobName, payload, key)`); `result<T>(key)` reads one item's `JobResult<T>` |
 
 The optional trailing handler of `createJob` and `createRecurringJob` is registered for the name
@@ -99,10 +99,17 @@ poll or compensation runs in a nested `runBlocking` on the same thread.
   (the step's nested `runBlocking` runs them too), but only one step, event wait, sleep or poll of
   a job runs at a time: a second one started meanwhile fails the attempt with an
   `IllegalStateException`. Run concurrent work inside one step, as in the `prices` step above.
-- **Don't swallow a wait.** An event wait, sleep or poll that is not ready ends the attempt with an
-  internal `Error`. Let it propagate: `runCatching { waitForEvent(…) }` or a wait in a
-  `supervisorScope { launch { … } }` swallows it, and the code after the wait runs although the job
-  is suspended. Event waits, sleeps and polls hold no thread while they wait, so they need no
+- **Child jobs are not coroutine children.** A job's timeout cancels only its current attempt's
+  coroutine; it does not tick while the parent is `WAITING` on `awaitJob` or `batch.await()` (no
+  coroutine runs then), and a retried attempt leaves child jobs and batches untouched. When a parent
+  fails permanently, is cancelled, or hits a batch wait timeout (`batch.await(timeout)`), pending
+  `HELD` batch items are cancelled automatically, while already-running child jobs keep running on
+  their nodes unless the step's `compensation` cancels them (see
+  [Batches and cancellation](../multi-step-jobs/child-jobs.md#batches-and-cancellation)).
+- **Don't swallow a wait.** An event wait, sleep, poll or child/batch wait that is not ready ends
+  the attempt with an internal `Error`. Let it propagate: `runCatching { waitForEvent(…) }` or a
+  wait in a `supervisorScope { launch { … } }` swallows it, and the code after the wait runs
+  although the job is suspended. Durable waits hold no thread while they wait, so they need no
   suspending variant.
 
 ## Helpers for the Java API
@@ -111,7 +118,7 @@ poll or compensation runs in a nested `runBlocking` on the same thread.
 |---|---|
 | `bikesched(dataSource) { … }` | `Bikesched.builder(dataSource)…build()` |
 | `job.payload<T>()` | `payload(T.class)` |
-| `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `postpone(Duration)`, `sleep(String, Duration)`, `every(Duration)`, `everyAfterEnd(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
+| `schedule(Duration)`, `timeout(Duration)`, `retryAfter(Duration)`, `updateTimeout(Duration)`, `postpone(Duration)`, `sleep(String, Duration)`, `await(Duration)`, `awaitResult(Duration)`, `every(Duration)`, `everyAfterEnd(Duration)`, `fixedBackoff`, `exponentialBackoff` | `java.time.Duration` arguments |
 | `findJobOrNull(id)` | `Optional` |
 
 ## Nullability

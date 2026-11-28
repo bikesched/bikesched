@@ -22,7 +22,7 @@ import org.jspecify.annotations.Nullable;
  * The {@link JobBatchResult} implementation: the stored outcomes of a batch's items, their results
  * mapped from JSON per item when read.
  */
-final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatchResult<R> {
+abstract class DefaultJobBatchResult<R extends @Nullable Object> {
 
   private final String stepName;
   private final Map<String, ItemOutcome> items;
@@ -30,7 +30,22 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
   private final DefaultJob reader;
   private final Map<String, JobResult<R>> mapped = new ConcurrentHashMap<>();
 
-  DefaultJobBatchResult(
+  static <R extends @Nullable Object> JobBatchResult<R> of(
+      String stepName,
+      List<ItemOutcome> items,
+      Function<String, Class<?>> resultTypes,
+      DefaultJob reader) {
+    long succeededCount = items.stream().filter(DefaultJobBatchResult::succeeded).count();
+    if (succeededCount == items.size()) {
+      return new Succeeded<>(stepName, items, resultTypes, reader);
+    }
+    if (succeededCount > 0) {
+      return new Incomplete<>(stepName, items, resultTypes, reader);
+    }
+    return new Failed<>(stepName, items, resultTypes, reader);
+  }
+
+  private DefaultJobBatchResult(
       String stepName,
       List<ItemOutcome> items,
       Function<String, Class<?>> resultTypes,
@@ -45,16 +60,83 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
     this.reader = reader;
   }
 
-  @Override
-  public boolean isAllSucceeded() {
-    return items.values().stream().allMatch(DefaultJobBatchResult::succeeded);
+  static final class Succeeded<R extends @Nullable Object> extends DefaultJobBatchResult<R>
+      implements JobBatchResult.Succeeded<R> {
+
+    Succeeded(
+        String stepName,
+        List<ItemOutcome> items,
+        Function<String, Class<?>> resultTypes,
+        DefaultJob reader) {
+      super(stepName, items, resultTypes, reader);
+    }
+
+    @Override
+    public boolean isAllSucceeded() {
+      return true;
+    }
+
+    @Override
+    public List<@Nullable R> orElseThrow() {
+      return allResults();
+    }
+
+    @Override
+    public List<@Nullable R> results() {
+      return allResults();
+    }
+
+    @Override
+    String variant() {
+      return "Succeeded";
+    }
   }
+
+  static sealed class Failed<R extends @Nullable Object> extends DefaultJobBatchResult<R>
+      implements JobBatchResult.Failed<R> permits Incomplete {
+
+    Failed(
+        String stepName,
+        List<ItemOutcome> items,
+        Function<String, Class<?>> resultTypes,
+        DefaultJob reader) {
+      super(stepName, items, resultTypes, reader);
+    }
+
+    @Override
+    public boolean isAllSucceeded() {
+      return false;
+    }
+
+    @Override
+    String variant() {
+      return "Failed";
+    }
+  }
+
+  static final class Incomplete<R extends @Nullable Object> extends Failed<R>
+      implements JobBatchResult.Failed.Incomplete<R> {
+
+    Incomplete(
+        String stepName,
+        List<ItemOutcome> items,
+        Function<String, Class<?>> resultTypes,
+        DefaultJob reader) {
+      super(stepName, items, resultTypes, reader);
+    }
+
+    @Override
+    String variant() {
+      return "Failed.Incomplete";
+    }
+  }
+
+  abstract String variant();
 
   private static boolean succeeded(ItemOutcome item) {
     return item.childState() == JobState.SUCCEEDED;
   }
 
-  @Override
   public List<@Nullable R> orElseThrow() {
     List<String> unsucceeded =
         items.values().stream()
@@ -72,6 +154,10 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
               + new JobFailedException(first).getMessage(),
           first);
     }
+    return allResults();
+  }
+
+  List<@Nullable R> allResults() {
     List<@Nullable R> results = new ArrayList<>(items.size());
     for (String key : items.keySet()) {
       results.add(get(key).orElse(null));
@@ -79,7 +165,6 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
     return Collections.unmodifiableList(results);
   }
 
-  @Override
   public Map<String, @Nullable R> succeeded() {
     var results = new LinkedHashMap<String, @Nullable R>();
     for (ItemOutcome item : items.values()) {
@@ -91,7 +176,6 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
     return Collections.unmodifiableMap(results);
   }
 
-  @Override
   public Map<String, JobResult<R>> unsucceeded() {
     var results = new LinkedHashMap<String, JobResult<R>>();
     for (ItemOutcome item : items.values()) {
@@ -103,7 +187,6 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
     return Collections.unmodifiableMap(results);
   }
 
-  @Override
   public Map<String, JobResult<R>> all() {
     var results = new LinkedHashMap<String, JobResult<R>>();
     for (String key : items.keySet()) {
@@ -112,7 +195,6 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
     return Collections.unmodifiableMap(results);
   }
 
-  @Override
   @SuppressWarnings("unchecked")
   public JobResult<R> get(String key) {
     ItemOutcome item = item(key);
@@ -120,7 +202,6 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
         key, ignored -> (JobResult<R>) outcome(item, resultTypes.apply(key)));
   }
 
-  @Override
   public <T extends @Nullable Object> JobResult<T> get(String key, ResultJob<?, T> job) {
     Objects.requireNonNull(job, "job");
     ItemOutcome item = item(key);
@@ -138,7 +219,6 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
     return outcome(item, job.resultType());
   }
 
-  @Override
   public <T extends @Nullable Object> JobResult<T> get(String key, Class<T> type) {
     Objects.requireNonNull(type, "type");
     return outcome(item(key), type);
@@ -198,6 +278,12 @@ final class DefaultJobBatchResult<R extends @Nullable Object> implements JobBatc
 
   @Override
   public String toString() {
-    return "JobBatchResult[stepName=" + stepName + ", items=" + items.size() + "]";
+    return "JobBatchResult."
+        + variant()
+        + "[stepName="
+        + stepName
+        + ", items="
+        + items.size()
+        + "]";
   }
 }
